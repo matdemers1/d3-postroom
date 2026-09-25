@@ -272,6 +272,10 @@ importers:
       argon2:
         specifier: ^0.45.1
         version: 0.45.1
+    devDependencies:
+      '@postroom/smtp-proto':
+        specifier: workspace:*
+        version: link:../smtp-proto
 
   packages/crypto:
     dependencies:

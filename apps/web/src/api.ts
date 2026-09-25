@@ -62,7 +62,28 @@ export const api = {
   stepUp: (code: string) => call<{ ok: true }>('POST', '/api/auth/step-up', { code }),
   adminSessions: () => call<{ sessions: AdminSession[] }>('GET', '/api/admin/sessions'),
   revokeSession: (id: string) => call<{ ok: true }>('DELETE', `/api/admin/sessions/${encodeURIComponent(id)}`),
+  appPasswords: () => call<{ appPasswords: AppPassword[] }>('GET', '/api/app-passwords'),
+  createAppPassword: (input: { label: string; scopes: AppPasswordScope[] }) =>
+    call<AppPassword & { password: string }>('POST', '/api/app-passwords', input),
+  revokeAppPassword: (id: string) => call<{ ok: true }>('DELETE', `/api/app-passwords/${encodeURIComponent(id)}`),
 };
+
+export type AppPasswordScope = 'imap' | 'smtp' | 'dav' | 'sieve';
+
+/** An app password as the API lists it. The plaintext is only ever in the create response. */
+export interface AppPassword {
+  id: string;
+  accountId: string;
+  label: string;
+  prefix: string;
+  scopes: AppPasswordScope[];
+  createdAt: string;
+  lastUsedAt: string | null;
+  lastUsedIp: string | null;
+  revokedAt: string | null;
+  dailyRecipientCap: number | null;
+  frozenAt: string | null;
+}
 
 export interface AdminSession {
   id: string;
