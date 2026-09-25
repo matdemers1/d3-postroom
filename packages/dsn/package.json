@@ -1,0 +1,25 @@
+{
+  "name": "@postroom/dsn",
+  "private": true,
+  "version": "0.0.0",
+  "description": "RFC 3464 delivery status notifications: delay and failure reports",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/mime": "workspace:*"
+  },
+  "devDependencies": {}
+}
