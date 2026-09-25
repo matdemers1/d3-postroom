@@ -22,7 +22,8 @@
     "@postroom/crypto": "workspace:*",
     "@postroom/smtp-proto": "workspace:*",
     "@postroom/auth-checks": "workspace:*",
-    "@postroom/audit": "workspace:*"
+    "@postroom/audit": "workspace:*",
+    "@postroom/dsn": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

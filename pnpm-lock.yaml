@@ -121,6 +121,9 @@ importers:
       '@postroom/dns':
         specifier: workspace:*
         version: link:../../packages/dns
+      '@postroom/dsn':
+        specifier: workspace:*
+        version: link:../../packages/dsn
       '@postroom/queue':
         specifier: workspace:*
         version: link:../../packages/queue
@@ -333,7 +336,11 @@ importers:
 
   packages/dns: {}
 
-  packages/dsn: {}
+  packages/dsn:
+    dependencies:
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../db
 
   packages/proxy-protocol: {}
 
