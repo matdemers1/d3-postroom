@@ -261,6 +261,19 @@ importers:
 
   packages/proxy-protocol: {}
 
+  packages/queue:
+    dependencies:
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../db
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+
   packages/smtp-proto: {}
 
 packages:
