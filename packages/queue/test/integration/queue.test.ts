@@ -66,4 +66,24 @@ describe.skipIf(baseUrl === undefined)('job queue', () => {
     expect(seen.sort()).toEqual([1, 2]);
     expect(await t.db.job.count({ where: { queue: 'q5', status: 'done' } })).toBe(2);
   });
+
+  it('a manual worker runs only on drain(), on the injected clock', async () => {
+    const seen: number[] = [];
+    let clock = new Date('2030-01-01T00:00:00Z');
+    const worker = await startWorker({
+      db: t.db,
+      databaseUrl: t.url,
+      manual: true,
+      now: () => clock,
+      queues: { q6: (job) => { seen.push((job.payload as { n: number }).n); return Promise.resolve(); } },
+    });
+    await enqueue(t.db, 'q6', { n: 1 }, { runAt: new Date('2030-01-02T00:00:00Z') });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(seen).toEqual([]);
+    expect(await worker.drain()).toBe(0);
+    clock = new Date('2030-01-02T00:00:00Z');
+    expect(await worker.drain()).toBe(1);
+    expect(seen).toEqual([1]);
+    await worker.stop();
+  });
 });
