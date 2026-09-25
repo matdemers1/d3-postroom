@@ -1,5 +1,4 @@
 // Proves PST-T-0.5's doneWhen: a property test over mutating routes finds one audit row per call.
-import { randomUUID } from 'node:crypto';
 import type { Express } from 'express';
 import fc from 'fast-check';
 import request from 'supertest';
@@ -7,6 +6,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { missingAuditCount, waitForAuditGuard } from '../../src/index.js';
 import { buildApp } from './app.js';
+
+/** The guard correlates by the server-generated `x-request-id` response header, never a request one. */
+function serverRequestId(res: request.Response): string {
+  const id = res.headers['x-request-id'];
+  if (!id) throw new Error('response carried no x-request-id header');
+  return id;
+}
 
 const baseUrl = process.env['DATABASE_URL'];
 const KEYS = ['alpha', 'beta', 'gamma'] as const;
@@ -64,6 +70,32 @@ describe.skipIf(!baseUrl)('mutation audit guard + audited() (PST-T-0.5)', () => 
     expect(missingAuditCount.value).toBe(before + 1);
   });
 
+  it('a client cannot spoof the guard by replaying an earlier legitimate x-request-id', async () => {
+    // First, a genuinely audited mutation — server assigns its own requestId regardless of what
+    // (if anything) the client sends.
+    const legit = await request(app).put('/settings/replay-key').send({ value: 'legit' });
+    expect([200, 201]).toContain(legit.status);
+    const legitRequestId = serverRequestId(legit);
+    await waitForAuditGuard();
+    const legitAudits = await testDb.db.auditEvent.count({ where: { requestId: legitRequestId } });
+    expect(legitAudits).toBe(1);
+
+    // Now an attacker calls the unsafe (unaudited) route, replaying that earlier id as its own
+    // x-request-id header. If the guard trusted the client header, it would find the legit row
+    // under the replayed id and stay silent about this request's own unaudited mutation.
+    const before = missingAuditCount.value;
+    const spoof = await request(app)
+      .post('/settings/replay-attack-key/unsafe')
+      .set('x-request-id', legitRequestId)
+      .send({ value: 'attacker' });
+    expect(spoof.status).toBe(200);
+    // The server must have minted its own, different id for this request.
+    expect(serverRequestId(spoof)).not.toBe(legitRequestId);
+
+    await waitForAuditGuard();
+    expect(missingAuditCount.value).toBe(before + 1);
+  });
+
   it('property: random sequences of successful mutating calls each produce exactly one attributed audit row', async () => {
     const valueArb = fc.oneof(fc.string(), fc.integer(), fc.boolean());
     const opArb = fc.oneof(
@@ -83,17 +115,18 @@ describe.skipIf(!baseUrl)('mutation audit guard + audited() (PST-T-0.5)', () => 
         const shadow = new Map<string, unknown>();
 
         for (const op of ops) {
-          const requestId = randomUUID();
           if (op.kind === 'put') {
-            const res = await request(app).put(`/settings/${op.key}`).set('x-request-id', requestId).send({ value: op.value });
+            const res = await request(app).put(`/settings/${op.key}`).send({ value: op.value });
             expect([200, 201]).toContain(res.status);
+            const requestId = serverRequestId(res);
             expectations.push({ requestId, action: 'settings.upsert', key: op.key, before: shadow.get(op.key) ?? null, after: op.value });
             shadow.set(op.key, op.value);
           } else {
             const existed = shadow.has(op.key);
-            const res = await request(app).delete(`/settings/${op.key}`).set('x-request-id', requestId);
+            const res = await request(app).delete(`/settings/${op.key}`);
             if (existed) {
               expect(res.status).toBe(204);
+              const requestId = serverRequestId(res);
               expectations.push({ requestId, action: 'settings.delete', key: op.key, before: shadow.get(op.key), after: null });
               shadow.delete(op.key);
             } else {
