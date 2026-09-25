@@ -61,7 +61,8 @@ export function createApp(deps: ApiDeps): Express {
     app.use(express.static(dist, { index: false, maxAge: '1h', immutable: false }));
     app.get(/^(?!\/api\/).*/, (_req, res) => {
       res.setHeader('Cache-Control', 'no-cache');
-      res.sendFile(join(dist, 'index.html'));
+      // Relative to `root`: send refuses an absolute path containing a dot-directory.
+      res.sendFile('index.html', { root: dist });
     });
   }
   return app;
