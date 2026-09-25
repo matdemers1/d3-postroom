@@ -160,6 +160,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm fuzz:smoke
 
   # The only job that publishes, and only from main once everything above is green. Tagged by long

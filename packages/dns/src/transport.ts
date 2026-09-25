@@ -41,8 +41,11 @@ export function sendUdp(host: string, port: number, packet: Uint8Array, expected
       });
     });
 
-    socket.bind(0, () => {
-      socket.send(packet, port, host, (err) => {
+    // connect() binds an ephemeral port AND makes the kernel drop datagrams from any address but
+    // the resolver's, so an off-path spoofer must forge the source address as well as guess the
+    // port and the 16-bit id.
+    socket.connect(port, host, () => {
+      socket.send(packet, (err) => {
         if (err) {
           finish(() => {
             reject(err);
