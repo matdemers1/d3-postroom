@@ -1,9 +1,10 @@
-// Reconstructed RFC 7208 conformance cases, organised the way the canonical OpenSPF
-// "rfc7208-tests.yml" (Stuart Gathman / pyspf) is organised by section. IMPORTANT: this
-// environment has no network access to the upstream file, so these are NOT copied from it -
-// they are written from RFC 7208's own text (SS4-SS7, SS4.6.4) to exercise the same behaviour
-// the upstream suite is known to check. See the task notes for the honest accounting of what is
-// reconstructed vs. authored fresh.
+// Postroom-authored RFC 7208 conformance cases (not upstream content), organised the way the
+// canonical OpenSPF "rfc7208-tests.yml" (Stuart Gathman / pyspf) is organised by section. These
+// were written from RFC 7208's own text (SS4-SS7, SS4.6.4) before the real upstream suite was
+// available in this environment - it now lives at rfc7208-tests.upstream.json/.yml and runs in
+// full via ../spf-rfc7208-upstream.test.ts. This file is kept because spf-fuzz.test.ts and
+// spf-dns-adapter.test.ts still build on zone-dns.ts, and because its cases read more like
+// documentation of *why* each RFC section behaves the way it does.
 
 import type { SpfResult } from '../../../../src/spf/types.js';
 import type { SpfZone } from './zone-dns.js';

@@ -1,7 +1,10 @@
 // Macro expansion, RFC 7208 SS7. `%{letter [digits] [r] [delimiters]}`, plus the literal escapes
 // `%%`, `%_` and `%-`. Uppercase letters URL-escape their expansion (SS7.3). Steps for a letter
-// with a transformer: split on the delimiter set (default "."), keep the right-most `digits`
-// parts (if given), then reverse (if `r` was given), then rejoin with ".".
+// with a transformer: split on the delimiter set (default "."), reverse the parts (if `r` was
+// given), *then* keep the right-most `digits` parts (if given) of that order, then rejoin with
+// ".". Reversal before truncation matters whenever both are used together - RFC 7208 SS7.3's own
+// wording is "the number of right-hand ... after optional reversal", and it is what the real
+// RFC 7208 conformance suite's "macro-reverse-split-on-dash" test exercises.
 
 import { SpfPermError } from './errors.js';
 import { parseIPv6, ipv6ToDottedNibbles } from './ip.js';
@@ -19,6 +22,10 @@ export interface MacroContext {
   timestamp?: number | undefined;
   /** `c`, `r` and `t` are only defined while expanding an `exp=` explanation string (SS7.3). */
   inExp: boolean;
+  /** The `p` macro (SS7.3): the first forward-confirmed reverse-DNS name for the client IP,
+   * preferring one that is a subdomain of `domain`; "unknown" when none validates. Computed by
+   * the caller (it needs DNS) before expansion and threaded in here so expansion stays sync. */
+  validatedName?: string | undefined;
 }
 
 const MACRO_LETTERS = 'slodipvhcrtSLODIPVHCRT';
@@ -77,15 +84,15 @@ function expandLetter(letter: string, ctx: MacroContext): string {
         return ipv6ToDottedNibbles(v6);
       }
     case 'p':
-      // Validated domain name (SS7.3): we do not perform the forward-confirmed reverse-DNS
-      // lookup this would require, so per RFC 7208 SS7.3 we always report "unknown".
-      return 'unknown';
+      return ctx.validatedName ?? 'unknown';
     case 'v':
       return ctx.ipVersion === 4 ? 'in-addr' : 'ip6';
     case 'h':
       return ctx.helo;
     case 'c':
-      return ctx.ip;
+      // RFC 7208 SS7.3 doesn't mandate a case for the textual IP, but a canonical (lowercase)
+      // IPv6 form is what the real conformance suite's explanation text expects.
+      return ctx.ipVersion === 6 ? ctx.ip.toLowerCase() : ctx.ip;
     case 'r':
       return ctx.receivingDomain ?? 'unknown';
     case 't':
@@ -143,6 +150,7 @@ export function expandMacros(template: string, ctx: MacroContext): string {
       let expanded = expandLetter(letter, ctx);
       const delims = delimsRaw === '' ? '.' : delimsRaw;
       let parts = splitByDelims(expanded, delims);
+      if (reverseFlag === 'r') parts = parts.reverse();
       if (digitsRaw !== '') {
         const n = Number(digitsRaw);
         if (!Number.isInteger(n) || n <= 0) {
@@ -150,7 +158,6 @@ export function expandMacros(template: string, ctx: MacroContext): string {
         }
         parts = parts.slice(-n);
       }
-      if (reverseFlag === 'r') parts = parts.reverse();
       expanded = parts.join('.');
       if (upper) expanded = urlEscape(expanded);
       result += expanded;

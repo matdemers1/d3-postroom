@@ -72,8 +72,9 @@ export function ipv6CidrMatch(a: bigint, b: bigint, prefix: number): boolean {
   return (a & mask) === (b & mask);
 }
 
-/** Full 32-nibble dot-separated hex form used by the `%{i}` macro for IPv6 (RFC 7208 SS7.3). */
+/** Full 32-nibble dot-separated hex form used by the `%{i}` macro for IPv6 (RFC 7208 SS7.3).
+ * Uppercase to match the real conformance suite's expected explanation text. */
 export function ipv6ToDottedNibbles(v6: bigint): string {
-  const hex = v6.toString(16).padStart(32, '0');
+  const hex = v6.toString(16).padStart(32, '0').toUpperCase();
   return hex.split('').join('.');
 }

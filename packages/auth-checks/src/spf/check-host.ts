@@ -78,11 +78,53 @@ function macroContext(domain: string, args: CheckHostArgs): MacroContext {
   };
 }
 
-function expandDomainSpec(spec: string | undefined, domain: string, args: CheckHostArgs): string {
+/** RFC 7208 SS7.1: when a macro-expanded domain name used in a DNS query exceeds 253 octets,
+ * the left side is truncated - successive whole labels are dropped - until it fits. */
+function truncateDomainName(name: string): string {
+  let labels = name.split('.');
+  while (labels.length > 1 && labels.join('.').length > 253) {
+    labels = labels.slice(1);
+  }
+  return labels.join('.');
+}
+
+function usesPMacro(template: string): boolean {
+  return /%\{[pP]/.test(template);
+}
+
+/** RFC 7208 SS7.3: the `p` macro is the first forward-confirmed reverse-DNS name for the client
+ * IP, preferring one that is a subdomain of (or equal to) `domain` if more than one validates.
+ * Counted as one DNS-lookup term (like the `ptr` mechanism it reuses) since it does the same PTR
+ * + forward-confirm work. */
+async function computeValidatedName(domain: string, args: CheckHostArgs, dns: SpfDns, state: CheckHostState): Promise<string> {
+  countLookup(state, `p-macro:${domain}`);
+  const label = `ptr:${args.ip}(p-macro)`;
+  const { records, void: isVoid } = await safeDns(dns.ptr(args.ip), label);
+  countVoid(state, isVoid, label);
+  const wanted = domain.replace(/\.$/, '').toLowerCase();
+  let firstValidated: string | undefined;
+  let subdomainMatch: string | undefined;
+  for (const name of records.slice(0, MAX_PTR_NAMES)) {
+    const confirmed = await matchesA(name, 32, 128, args, dns, state, `${label}:${name}`);
+    if (!confirmed) continue;
+    firstValidated ??= name;
+    const normalized = name.replace(/\.$/, '').toLowerCase();
+    if (subdomainMatch === undefined && (normalized === wanted || normalized.endsWith(`.${wanted}`))) {
+      subdomainMatch = name;
+    }
+  }
+  return subdomainMatch ?? firstValidated ?? 'unknown';
+}
+
+async function expandDomainSpec(spec: string | undefined, domain: string, args: CheckHostArgs, dns: SpfDns, state: CheckHostState): Promise<string> {
   const template = spec === undefined || spec === '' ? '%{d}' : spec;
-  const expanded = expandMacros(template, macroContext(domain, args));
+  const ctx = macroContext(domain, args);
+  if (usesPMacro(template)) {
+    ctx.validatedName = await computeValidatedName(domain, args, dns, state);
+  }
+  const expanded = expandMacros(template, ctx);
   if (expanded === '') throw new SpfPermError('domain-spec expanded to the empty string');
-  return expanded;
+  return truncateDomainName(expanded);
 }
 
 async function safeDns<T>(promise: Promise<T>, label: string): Promise<T> {
@@ -143,9 +185,12 @@ function evalIp4(mechanism: Extract<Mechanism, { type: 'ip4' }>, args: CheckHost
 }
 
 function evalIp6(mechanism: Extract<Mechanism, { type: 'ip6' }>, args: CheckHostArgs): boolean {
-  if (clientAsIPv4(args) !== undefined) return false;
+  // Syntax must be fully checked even for a mechanism the current connection can never match
+  // (RFC 7208 SS5.6 note: "IP4-only implementations MUST fully syntax check ... even if they
+  // otherwise ignore them"), so the network is parsed before the client-version short-circuit.
   const network = parseIPv6(mechanism.ip);
   if (network === undefined) throw new SpfPermError(`invalid ip6 network: ${mechanism.ip}`);
+  if (clientAsIPv4(args) !== undefined) return false;
   const clientV6 = parseIPv6(args.ip);
   if (clientV6 === undefined) return false;
   return ipv6CidrMatch(clientV6, network, mechanism.prefix);
@@ -158,7 +203,7 @@ async function evalExists(
   dns: SpfDns,
   state: CheckHostState,
 ): Promise<boolean> {
-  const name = expandDomainSpec(mechanism.domainSpec, domain, args);
+  const name = await expandDomainSpec(mechanism.domainSpec, domain, args, dns, state);
   const { records, void: isVoid } = await safeDns(dns.a(name), `exists:${name}`);
   countVoid(state, isVoid, `exists:${name}`);
   return records.length > 0;
@@ -171,7 +216,7 @@ async function evalA(
   dns: SpfDns,
   state: CheckHostState,
 ): Promise<boolean> {
-  const name = expandDomainSpec(mechanism.domainSpec, domain, args);
+  const name = await expandDomainSpec(mechanism.domainSpec, domain, args, dns, state);
   return matchesA(name, mechanism.ip4Prefix, mechanism.ip6Prefix, args, dns, state, `a:${name}`);
 }
 
@@ -182,7 +227,7 @@ async function evalMx(
   dns: SpfDns,
   state: CheckHostState,
 ): Promise<boolean> {
-  const name = expandDomainSpec(mechanism.domainSpec, domain, args);
+  const name = await expandDomainSpec(mechanism.domainSpec, domain, args, dns, state);
   const { records, void: isVoid } = await safeDns(dns.mx(name), `mx:${name}`);
   countVoid(state, isVoid, `mx:${name}`);
   if (records.length > MAX_MX_NAMES) {
@@ -203,7 +248,7 @@ async function evalPtr(
   dns: SpfDns,
   state: CheckHostState,
 ): Promise<boolean> {
-  const target = expandDomainSpec(mechanism.domainSpec, domain, args);
+  const target = await expandDomainSpec(mechanism.domainSpec, domain, args, dns, state);
   const { records, void: isVoid } = await safeDns(dns.ptr(args.ip), `ptr:${args.ip}`);
   countVoid(state, isVoid, `ptr:${args.ip}`);
   const candidates = records.slice(0, MAX_PTR_NAMES);
@@ -259,8 +304,15 @@ export async function checkHost(domain: string, args: CheckHostArgs, dns: SpfDns
   let redirectSpec: string | undefined;
   for (const term of terms) {
     if (term.kind === 'modifier') {
-      if (term.modifier.type === 'exp') explanationSpec = term.modifier.domainSpec;
-      if (term.modifier.type === 'redirect') redirectSpec = term.modifier.domainSpec;
+      if (term.modifier.type === 'exp') {
+        // RFC 7208 SS6: exp and redirect MUST NOT appear more than once each.
+        if (explanationSpec !== undefined) throw new SpfPermError('exp= appears more than once');
+        explanationSpec = term.modifier.domainSpec;
+      }
+      if (term.modifier.type === 'redirect') {
+        if (redirectSpec !== undefined) throw new SpfPermError('redirect= appears more than once');
+        redirectSpec = term.modifier.domainSpec;
+      }
     }
   }
 
@@ -306,7 +358,7 @@ export async function checkHost(domain: string, args: CheckHostArgs, dns: SpfDns
       }
       case 'include': {
         countLookup(state, `include:${domain}`);
-        const includedDomain = expandDomainSpec(mechanism.domainSpec, domain, args);
+        const includedDomain = await expandDomainSpec(mechanism.domainSpec, domain, args, dns, state);
         const outcome = await checkHost(includedDomain, args, dns, state);
         // RFC 7208 SS5.2: map the included check_host() result to a match/no-match decision.
         if (outcome.result === 'pass') {
@@ -328,7 +380,7 @@ export async function checkHost(domain: string, args: CheckHostArgs, dns: SpfDns
       state.trace.push(`${domain}: matched ${mechanismText}`);
       const result = qualifierResult(mechanism.qualifier);
       if (result === 'fail' && explanationSpec !== undefined) {
-        const explanation = await resolveExplanation(explanationSpec, domain, args, dns);
+        const explanation = await resolveExplanation(explanationSpec, domain, args, dns, state);
         return { result, mechanism: mechanismText, explanation };
       }
       return { result, mechanism: mechanismText };
@@ -337,7 +389,7 @@ export async function checkHost(domain: string, args: CheckHostArgs, dns: SpfDns
 
   if (redirectSpec !== undefined) {
     countLookup(state, `redirect:${domain}`);
-    const redirectDomain = expandDomainSpec(redirectSpec, domain, args);
+    const redirectDomain = await expandDomainSpec(redirectSpec, domain, args, dns, state);
     if (redirectDomain === domain) {
       throw new SpfPermError(`redirect= points back at the same domain: ${domain}`);
     }
@@ -351,14 +403,17 @@ export async function checkHost(domain: string, args: CheckHostArgs, dns: SpfDns
   return { result: 'neutral' };
 }
 
-async function resolveExplanation(spec: string, domain: string, args: CheckHostArgs, dns: SpfDns): Promise<string | undefined> {
+async function resolveExplanation(spec: string, domain: string, args: CheckHostArgs, dns: SpfDns, state: CheckHostState): Promise<string | undefined> {
   try {
-    const target = expandDomainSpec(spec, domain, args);
+    const target = await expandDomainSpec(spec, domain, args, dns, state);
     const { records } = await safeDns(dns.txt(target), `exp:${target}`);
     const first = records[0];
     if (first === undefined) return undefined;
     const ctx = macroContext(domain, args);
     ctx.inExp = true;
+    if (usesPMacro(first)) {
+      ctx.validatedName = await computeValidatedName(domain, args, dns, state);
+    }
     return expandMacros(first, ctx);
   } catch {
     // A broken exp= must never turn a well-formed "fail" into a temperror/permerror (SS6.2).

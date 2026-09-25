@@ -13,6 +13,18 @@ function detectIpVersion(ip: string): 4 | 6 {
   return ip.includes(':') ? 6 : 4;
 }
 
+/** RFC 7208 SS4.3: a <sender>/HELO domain that is a domain-literal (e.g. "[1.2.3.4]"), that is
+ * not itself a syntactically valid DNS name (a label over 63 octets, an empty label, or over 253
+ * octets total), or that is not even dotted (never a real FQDN) never reaches a DNS query at
+ * all - the result is "none", not an error, and not a lookup we'd otherwise have to fail loudly. */
+function isValidInitialDomain(domain: string): boolean {
+  if (domain.startsWith('[')) return false;
+  if (!domain.includes('.')) return false;
+  if (domain.length > 253) return false;
+  const labels = domain.split('.');
+  return labels.every((label) => label.length >= 1 && label.length <= 63);
+}
+
 export async function evaluateSpf(options: EvaluateSpfOptions): Promise<EvaluateSpfResult> {
   const state = newCheckHostState();
   const ipVersion = detectIpVersion(options.ip);
@@ -33,8 +45,8 @@ export async function evaluateSpf(options: EvaluateSpfOptions): Promise<Evaluate
   const sender = scope === 'helo' ? `postmaster@${helo}` : (mailFrom ?? '');
   const domain = scope === 'helo' ? helo : domainPart(sender) || helo;
 
-  if (domain === '') {
-    return { result: 'none', domain: '', scope, lookups: 0, voidLookups: 0, trace: ['no usable domain to evaluate'] };
+  if (domain === '' || !isValidInitialDomain(domain)) {
+    return { result: 'none', domain, scope, lookups: 0, voidLookups: 0, trace: [`not a usable domain to evaluate: ${domain}`] };
   }
   // A sender with no local-part (e.g. "@example.com") is treated as "postmaster" (SS4.3).
   const effectiveSender = localPart(sender) === '' ? `postmaster@${domain}` : sender;

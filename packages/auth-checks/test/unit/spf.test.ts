@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { authResultsSpf, evaluateSpf, parseRecord, parseTerm, selectSpfRecord, SpfPermError, NO_SPF_RECORD } from '../../src/index.js';
 import { createZoneDns } from './fixtures/spf/zone-dns.js';
-import { rfc7208TestCases } from './fixtures/spf/rfc7208-tests.js';
+import { rfc7208TestCases } from './fixtures/spf/rfc7208-tests.authored.js';
 
 describe('evaluateSpf against the RFC 7208 test suite', () => {
   const bySection = new Map<string, typeof rfc7208TestCases>();
