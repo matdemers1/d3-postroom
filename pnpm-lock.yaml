@@ -38,18 +38,29 @@ importers:
       '@postroom/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@postroom/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
     devDependencies:
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
 
   apps/dav:
+    dependencies:
+      '@postroom/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
     devDependencies:
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
 
   apps/delivery:
+    dependencies:
+      '@postroom/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
     devDependencies:
       tsx:
         specifier: ^4.23.13
@@ -62,18 +73,30 @@ importers:
         version: 4.23.13
 
   apps/imap:
+    dependencies:
+      '@postroom/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
     devDependencies:
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
 
   apps/smtp-in:
+    dependencies:
+      '@postroom/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
     devDependencies:
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
 
   apps/submission:
+    dependencies:
+      '@postroom/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
     devDependencies:
       tsx:
         specifier: ^4.23.13
@@ -108,6 +131,10 @@ importers:
         version: 8.3.0(@types/node@22.20.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)
 
   apps/worker:
+    dependencies:
+      '@postroom/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
     devDependencies:
       tsx:
         specifier: ^4.23.13
@@ -124,6 +151,8 @@ importers:
       argon2:
         specifier: ^0.45.1
         version: 0.45.1
+
+  packages/daemon: {}
 
   packages/db:
     dependencies:

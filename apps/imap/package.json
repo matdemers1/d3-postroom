@@ -13,7 +13,9 @@
     "dev": "node --conditions=source --import tsx --watch src/main.ts",
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@postroom/daemon": "workspace:*"
+  },
   "devDependencies": {
     "tsx": "^4.23.13"
   }

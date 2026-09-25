@@ -1,32 +1,95 @@
-# Postroom home stack — skeleton. One image, one entrypoint per daemon (PST-ADR-001, PST-REQ-004).
+# Postroom home stack. One image, one entrypoint per daemon (PST-ADR-001, PST-REQ-004).
 # The protocol daemons share the wireguard sidecar's network namespace, so inbound arrives over the
 # tunnel from the Lightsail edge and outbound :25 egresses from the edge IP (PST-ADR-002).
-# Nothing here is published to the internet until the security gate passes (PST-ADR-005).
+# Nothing here publishes a host port: mail ingress is the WireGuard tunnel, web ingress is the
+# Cloudflare Tunnel (docker-compose.tunnel.yml). Nothing is public until the gate (PST-ADR-005).
+#
+# This file is the development/CI copy. The host copy (Shipyard-managed) pins literal
+# `image: …:sha-<40hex>` lines and reads the same env files.
 name: postroom
 
 x-app: &app
   image: ghcr.io/matdemers1/d3-postroom/server:${POSTROOM_TAG:-local}
-  env_file: .env
+  env_file:
+    - path: .env
+      required: false
+  environment: &app-env
+    DATABASE_URL: ${DATABASE_URL:-postgres://postroom:${POSTGRES_PASSWORD:-postroom-dev}@postgres:5432/postroom}
   restart: unless-stopped
+  volumes:
+    - blobs:/var/lib/postroom/blobs
   depends_on:
     postgres: { condition: service_healthy }
 
 services:
+  # The network namespace the protocol daemons live in. With WG_* set it brings up wg0 to the edge
+  # (PST-T-0.14); without, it is a bare namespace so the stack still runs on a laptop and in CI.
   wireguard:
-    image: lscr.io/linuxserver/wireguard   # pin by digest when P0 lands (PST-T-0.14)
+    image: ghcr.io/matdemers1/d3-postroom/wireguard:${POSTROOM_TAG:-local}
+    build: { context: docker/wireguard }
     cap_add: [NET_ADMIN]
+    env_file:
+      - path: .env
+        required: false
+    sysctls:
+      # Lets the unprivileged daemons bind 25/465/587/993/4190 inside this namespace only.
+      net.ipv4.ip_unprivileged_port_start: 0
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/wg-health"]
+      interval: 10s
+      retries: 6
 
-  smtp-in:     { <<: *app, command: ["smtp-in"],    network_mode: "service:wireguard" }
-  submission:  { <<: *app, command: ["submission"], network_mode: "service:wireguard" }
-  imap:        { <<: *app, command: ["imap"],       network_mode: "service:wireguard" }
-  delivery:    { <<: *app, command: ["delivery"],   network_mode: "service:wireguard" }
-  dav:         { <<: *app, command: ["dav"] }
-  api:         { <<: *app, command: ["api"] }
-  worker:      { <<: *app, command: ["worker"] }
+  smtp-in:
+    <<: *app
+    command: ["smtp-in"]
+    network_mode: "service:wireguard"
+    environment: { <<: *app-env, HEALTH_PORT: "9101" }
+    depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
+  submission:
+    <<: *app
+    command: ["submission"]
+    network_mode: "service:wireguard"
+    environment: { <<: *app-env, HEALTH_PORT: "9102" }
+    depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
+  imap:
+    <<: *app
+    command: ["imap"]
+    network_mode: "service:wireguard"
+    environment: { <<: *app-env, HEALTH_PORT: "9103" }
+    depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
+  delivery:
+    <<: *app
+    command: ["delivery"]
+    network_mode: "service:wireguard"
+    environment: { <<: *app-env, HEALTH_PORT: "9104" }
+    depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
+  dav:
+    <<: *app
+    command: ["dav"]
+    environment: { <<: *app-env, HEALTH_PORT: "9105" }
+  api:
+    <<: *app
+    command: ["api"]
+    environment: { <<: *app-env, HEALTH_PORT: "3300" }
+  worker:
+    <<: *app
+    command: ["worker"]
+    environment: { <<: *app-env, HEALTH_PORT: "9106" }
+    volumes:
+      - blobs:/var/lib/postroom/blobs
+      - backups:/var/lib/postroom/backups
+
+  # One-shot: `docker compose run --rm migrate`. Shipyard runs the same argv as its migrate step.
+  migrate:
+    <<: *app
+    command: ["migrate"]
+    restart: "no"
+    profiles: [tools]
 
   unbound:
-    image: mvance/unbound   # validating recursive resolver for DNSBL + DANE (PST-REQ-064); pin in P1
+    # Validating recursive resolver for DNSBL + DANE (PST-REQ-064); configured in PST-T-1.4.
+    image: mvance/unbound:1.22.0
     restart: unless-stopped
 
   postgres:
@@ -34,10 +97,10 @@ services:
     environment:
       POSTGRES_DB: postroom
       POSTGRES_USER: postroom
-    env_file: postgres.env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postroom-dev}
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postroom"]
+      test: ["CMD-SHELL", "pg_isready -U postroom -d postroom"]
       interval: 5s
       retries: 20
     restart: unless-stopped
@@ -45,3 +108,4 @@ services:
 volumes:
   pgdata:
   blobs:
+  backups:

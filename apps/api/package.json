@@ -14,7 +14,8 @@
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
   "dependencies": {
-    "@postroom/config": "workspace:*"
+    "@postroom/config": "workspace:*",
+    "@postroom/daemon": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"
