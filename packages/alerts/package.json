@@ -1,0 +1,23 @@
+{
+  "name": "@postroom/alerts",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Operator alerts through the D3 Auth mail relay (PST-REQ-096), never Postroom's own queue",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
