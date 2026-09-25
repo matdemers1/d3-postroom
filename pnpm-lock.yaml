@@ -214,7 +214,11 @@ importers:
         specifier: ^7.2.2
         version: 7.2.2
 
-  packages/auth-checks: {}
+  packages/auth-checks:
+    dependencies:
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../crypto
 
   packages/blobstore:
     dependencies:
