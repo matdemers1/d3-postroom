@@ -1,0 +1,22 @@
+{
+  "name": "@postroom/submission",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Authenticated submission on :465/:587",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "start": "node dist/main.js",
+    "dev": "node --conditions=source --import tsx --watch src/main.ts",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/daemon": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.13"
+  }
+}

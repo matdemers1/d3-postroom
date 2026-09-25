@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/.vite
+**/coverage
+.git
+.claude
+.env
+.env.*
+!.env.example
+*.log
+corpus
+fixtures/private
+fixtures/spamassassin
+fuzz/.work
+playwright-report
+test-results

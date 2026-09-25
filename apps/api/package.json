@@ -1,0 +1,34 @@
+{
+  "name": "@postroom/api",
+  "private": true,
+  "version": "0.0.0",
+  "description": "HTTP API and web login: dual login, admin, setup",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "start": "node dist/main.js",
+    "dev": "node --conditions=source --import tsx --watch src/main.ts",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@d3cloudio/auth-client": "0.1.1",
+    "@postroom/audit": "workspace:*",
+    "@postroom/config": "workspace:*",
+    "@postroom/crypto": "workspace:*",
+    "@postroom/daemon": "workspace:*",
+    "@postroom/db": "workspace:*",
+    "argon2": "^0.45.1",
+    "express": "^5.2.1",
+    "otpauth": "^9.5.2",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.2.2",
+    "tsx": "^4.23.13"
+  }
+}

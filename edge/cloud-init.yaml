@@ -1,0 +1,86 @@
+#cloud-config
+# Postroom edge (PST-ADR-002, PST-REQ-013, PST-REQ-017): a stateless L4 forwarder on Lightsail.
+# It holds no mail, no TLS keys and no credentials except its own WireGuard key, which is generated
+# here on first boot and never leaves the instance. Rebuilt from this file, never patched.
+#
+# Rendered by edge/provision.sh, which replaces the @@PLACEHOLDERS@@.
+package_update: true
+package_upgrade: true
+packages: [wireguard-tools, nftables, nodejs, unattended-upgrades]
+
+write_files:
+  - path: /etc/sysctl.d/90-postroom-edge.conf
+    content: |
+      net.ipv4.ip_forward = 1
+  - path: /opt/postroom-edge/edge.mjs.gz.b64
+    permissions: '0644'
+    content: @@EDGE_BUNDLE_B64@@
+  - path: /etc/postroom-edge.env
+    permissions: '0644'
+    content: |
+      HOME_HOST=10.77.0.2
+      EDGE_PORTS=25,465,587,993,4190
+      EDGE_MAX_PER_IP=20
+  - path: /etc/systemd/system/postroom-edge.service
+    content: |
+      [Unit]
+      Description=Postroom edge forwarder (L4, PROXY v2 to home over WireGuard)
+      After=network-online.target wg-quick@wg0.service
+      Wants=network-online.target
+      [Service]
+      EnvironmentFile=/etc/postroom-edge.env
+      ExecStart=/usr/bin/node /opt/postroom-edge/edge.mjs
+      DynamicUser=yes
+      AmbientCapabilities=CAP_NET_BIND_SERVICE
+      CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+      NoNewPrivileges=yes
+      ProtectSystem=strict
+      ProtectHome=yes
+      PrivateTmp=yes
+      Restart=always
+      RestartSec=2
+      LimitNOFILE=65536
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/nftables.conf
+    permissions: '0644'
+    content: |
+      #!/usr/sbin/nft -f
+      flush ruleset
+      table inet edge {
+        chain input {
+          type filter hook input priority filter; policy drop;
+          ct state established,related accept
+          ct state invalid drop
+          iif lo accept
+          meta l4proto { icmp, ipv6-icmp } accept
+          udp dport 51820 accept
+          ip saddr @@ADMIN_CIDR@@ tcp dport 22 accept
+          tcp dport { 25, 465, 587, 993, 4190 } accept
+        }
+        # Home may send exactly one thing through the edge: outbound SMTP on :25 (delivery), so it
+        # leaves from the static IP whose PTR is mx.d3cloud.io. The edge is never an open proxy.
+        chain forward {
+          type filter hook forward priority filter; policy drop;
+          ct state established,related accept
+          iifname "wg0" ip saddr 10.77.0.2 tcp dport 25 accept
+        }
+      }
+      table ip edge_nat {
+        chain postrouting {
+          type nat hook postrouting priority srcnat; policy accept;
+          ip saddr 10.77.0.0/24 oifname != "wg0" masquerade
+        }
+      }
+
+runcmd:
+  - [sh, -c, 'base64 -d /opt/postroom-edge/edge.mjs.gz.b64 | gunzip > /opt/postroom-edge/edge.mjs && rm /opt/postroom-edge/edge.mjs.gz.b64']
+  - [sh, -c, 'echo "@@EDGE_BUNDLE_SHA256@@  /opt/postroom-edge/edge.mjs" | sha256sum -c -']
+  - [sysctl, --system]
+  - [sh, -c, 'umask 077 && wg genkey > /etc/wireguard/edge.key && wg pubkey < /etc/wireguard/edge.key > /etc/wireguard/edge.pub']
+  - [sh, -c, 'printf "[Interface]\nAddress = 10.77.0.1/24\nListenPort = 51820\nPostUp = wg set %%i private-key /etc/wireguard/edge.key\n\n[Peer]\n# home (the Zima wireguard sidecar)\nPublicKey = @@HOME_WG_PUBLIC_KEY@@\nAllowedIPs = 10.77.0.2/32\n" > /etc/wireguard/wg0.conf && chmod 600 /etc/wireguard/wg0.conf']
+  - [systemctl, enable, --now, nftables]
+  - [systemctl, enable, --now, wg-quick@wg0]
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, --now, postroom-edge]
+  - [sh, -c, 'echo "postroom-edge ready: $(cat /etc/wireguard/edge.pub)" > /dev/console']

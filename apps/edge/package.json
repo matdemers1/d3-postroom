@@ -1,0 +1,23 @@
+{
+  "name": "@postroom/edge",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Stateless Lightsail forwarder: listeners, PROXY v2, per-IP caps, 421 when home is gone",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "start": "node dist/main.js",
+    "dev": "node --conditions=source --import tsx --watch src/main.ts",
+    "test:integration": "vitest run --project integration --passWithNoTests",
+    "bundle": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node20 --conditions=source --minify-syntax --legal-comments=none --outfile=dist/edge.mjs"
+  },
+  "dependencies": {
+    "@postroom/proxy-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.13"
+  }
+}

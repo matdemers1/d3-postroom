@@ -1,0 +1,30 @@
+{
+  "name": "@postroom/audit",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Audit trail: every mutation records actor, action, entity, before and after (PST-REQ-009)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/db": "workspace:*",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.2.2"
+  }
+}

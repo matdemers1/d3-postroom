@@ -40,3 +40,5 @@ fixtures/spamassassin/
 
 # Fuzzer working state; crashers are promoted to fixtures by hand.
 fuzz/.work/
+.claude/worktrees/
+edge/.secrets/

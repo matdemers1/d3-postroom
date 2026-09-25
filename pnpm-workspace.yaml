@@ -2,6 +2,7 @@ packages:
   - apps/*
   - packages/*
   - workers/*
+  - e2e
 
 # Supply-chain policy, as in Foreman, Shipyard and D3 Auth: nothing published in the last seven
 # days, no provenance downgrades, no exotic transitive sources.
@@ -11,4 +12,18 @@ trustPolicyIgnoreAfter: 43200
 blockExoticSubdeps: true
 
 # pnpm 10 runs no install scripts unless named here; each entry is a decision recorded when added.
-onlyBuiltDependencies: []
+# Allowed: esbuild installs the binary tsx and Vite run on; argon2 builds its native binding
+# (without it, hashing segfaults); @prisma/engines fetches the schema engine migrations use.
+onlyBuiltDependencies:
+  - esbuild
+  - argon2
+  - '@prisma/engines'
+# Refused: prisma's own postinstall (the build runs `prisma generate` itself).
+ignoredBuiltDependencies:
+  - prisma
+
+# prisma@7.10.0 (the CLI only) was published without the SLSA provenance 7.8.0–7.9.1 carried; its
+# runtime packages at 7.10.0 have it. Same finding D3 Auth and Foreman recorded: a publishing slip,
+# not a takeover. Remove with the next Prisma upgrade.
+trustPolicyExclude:
+  - prisma@7.10.0
