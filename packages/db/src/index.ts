@@ -2,7 +2,7 @@
 export const PACKAGE = '@postroom/db';
 
 export { createDb, Prisma, type Db } from './db.js';
-export { AddressKind, SpecialUse, AppPasswordScope, ActorKind, AccountKind, DkimAlgorithm, JobStatus, RecipientState } from './generated/prisma/enums.js';
+export { AddressKind, SpecialUse, AppPasswordScope, ActorKind, AccountKind, DkimAlgorithm, JobStatus, RecipientState, InboundState } from './generated/prisma/enums.js';
 export type {
   Account,
   IdentityLink,
@@ -21,6 +21,10 @@ export type {
   OutboundMessage,
   OutboundRecipient,
   DeliveryAttempt,
+  InboundSession,
+  InboundMessage,
+  MessageVerdict,
+  GreylistEntry,
 } from './generated/prisma/client.js';
 export { normalizeDomain, normalizeLocalPart, parseAddress, randomUidValidity, type ParsedAddress } from './normalize.js';
 export { seed, DEFAULT_MAILBOXES, type SeedOptions, type SeedResult } from './seeding.js';

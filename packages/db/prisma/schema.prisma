@@ -78,6 +78,16 @@ enum RecipientState {
   @@map("recipient_state")
 }
 
+enum InboundState {
+  spooled
+  processing
+  filed
+  rejected
+  failed
+
+  @@map("inbound_state")
+}
+
 enum AppPasswordScope {
   imap
   smtp
@@ -278,20 +288,31 @@ model Mailbox {
 
 /// One message in one mailbox. The raw RFC 5322 bytes live in the blob, never here.
 model Message {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mailboxId    String   @map("mailbox_id") @db.Uuid
-  uid          Int
-  modseq       BigInt
-  blobSha256   String   @map("blob_sha256")
-  size         Int
-  internalDate DateTime @map("internal_date") @db.Timestamptz(6)
-  receivedAt   DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mailboxId        String    @map("mailbox_id") @db.Uuid
+  uid              Int
+  modseq           BigInt
+  blobSha256       String    @map("blob_sha256")
+  size             Int
+  internalDate     DateTime  @map("internal_date") @db.Timestamptz(6)
+  receivedAt       DateTime  @default(now()) @map("received_at") @db.Timestamptz(6)
   /// System flags (\Seen, \Answered, ...) and keywords, as IMAP spells them.
-  flags        String[] @default([])
+  flags            String[]  @default([])
+  /// The inbound spool row this copy was filed from; unique per mailbox so a replayed "file" stage
+  /// can never file the same message twice (PST-T-2.7).
+  inboundMessageId String?   @map("inbound_message_id") @db.Uuid
+  /// Denormalised from the headers at filing time, for lists and search.
+  messageIdHeader  String?   @map("message_id_header")
+  subject          String?
+  fromAddress      String?   @map("from_address")
+  sentAt           DateTime? @map("sent_at") @db.Timestamptz(6)
 
-  mailbox Mailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
-  blob    Blob    @relation(fields: [blobSha256], references: [sha256], onDelete: Restrict)
+  mailbox Mailbox         @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  blob    Blob            @relation(fields: [blobSha256], references: [sha256], onDelete: Restrict)
+  inbound InboundMessage? @relation(fields: [inboundMessageId], references: [id], onDelete: SetNull)
+  verdict MessageVerdict?
 
+  @@unique([mailboxId, inboundMessageId])
   @@unique([mailboxId, uid])
   @@index([mailboxId, modseq])
   @@index([blobSha256])
@@ -469,4 +490,79 @@ model DeliveryAttempt {
 
   @@index([recipientId, startedAt])
   @@map("delivery_attempt")
+}
+
+// ─── PST-P-2: the inbound spool, verdicts, greylisting ───────────────────────────────────────────
+
+/// One SMTP connection to smtp-in, as the daemon saw it (the real client from PROXY v2).
+model InboundSession {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  startedAt DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt   DateTime? @map("ended_at") @db.Timestamptz(6)
+  clientIp  String    @map("client_ip")
+  proxied   Boolean   @default(false)
+  helo      String?
+  rdns      String?
+  tls       String?
+
+  messages InboundMessage[]
+
+  @@index([startedAt])
+  @@index([clientIp, startedAt])
+  @@map("inbound_session")
+}
+
+/// A message smtp-in accepted (250) or hard-rejected with a Rejects copy. The row and its blob are
+/// committed before the 250 (PST-REQ-060); the worker's stages take it from `spooled` to `filed`.
+model InboundMessage {
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId         String?      @map("session_id") @db.Uuid
+  receivedAt        DateTime     @default(now()) @map("received_at") @db.Timestamptz(6)
+  envelopeFrom      String       @map("envelope_from")
+  /// [{ address, accountIds, kind, tag? }] as resolved at RCPT time.
+  recipients        Json
+  blobSha256        String       @map("blob_sha256")
+  size              Int
+  state             InboundState @default(spooled)
+  /// SPF, DKIM[], DMARC, ARC, DNSBL, attachment policy — each with its reasons.
+  verdicts          Json         @default("{}")
+  /// accept | reject | quarantine, and why.
+  disposition       String       @default("accept")
+  dispositionReason String?      @map("disposition_reason")
+  /// The SMTP reply actually sent to the client.
+  smtpReply         String?      @map("smtp_reply")
+  lastError         String?      @map("last_error")
+  filedAt           DateTime?    @map("filed_at") @db.Timestamptz(6)
+
+  session  InboundSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  messages Message[]
+
+  @@index([state, receivedAt])
+  @@map("inbound_message")
+}
+
+/// Why a filed message looks the way it does: authentication, attachment policy, and (P5) the
+/// bucket decision. Sorting decisions always store their reasons (PST-ADR-007).
+model MessageVerdict {
+  messageId   String   @id @map("message_id") @db.Uuid
+  auth        Json     @default("{}")
+  attachments Json     @default("[]")
+  bucket      String?
+  reasons     String[] @default([])
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("message_verdict")
+}
+
+/// Greylisting triplets (client /24 or /64, envelope sender, recipient), hashed (PST-T-2.8).
+model GreylistEntry {
+  key       String    @id
+  firstSeen DateTime  @default(now()) @map("first_seen") @db.Timestamptz(6)
+  passedAt  DateTime? @map("passed_at") @db.Timestamptz(6)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("greylist_entry")
 }
