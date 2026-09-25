@@ -64,11 +64,16 @@ function statusFor(kind: 'delay' | 'failure', enhanced: string | null): string {
 }
 
 /**
- * Builds the `onDsn` hook the delivery worker calls. Idempotent per (recipient, kind): if the
- * recipient's *DsnSentAt is already set for this kind, the hook is a no-op, so a retried call (the
- * worker's own retry-on-throw, or `sweep()` re-emitting an unconfirmed failure DSN) never files a
- * second copy. Generates no DSN for a null envelope sender (PST-REQ-034's "send the sender a DSN"
- * has no sender to send to, and RFC 3834 forbids replying to one).
+ * Builds the `onDsn` hook the delivery worker calls. Idempotent per (recipient, kind), including
+ * against two concurrent calls (the worker never makes them, but `sweep()`'s failure-DSN retry
+ * could overlap a still-running one): the read of `recipient.*DsnSentAt` up front is only a fast
+ * path that skips the header read and buildDsn work when it is obviously already done. The actual
+ * guarantee is the `UPDATE ... WHERE *DsnSentAt IS NULL` claim as the first statement inside the
+ * filing transaction — Postgres locks that row for the transaction's life, so a second concurrent
+ * call blocks there and, once the first commits, finds the column already set and does nothing (no
+ * thrown error, no second message filed); if the first instead rolls back, the second's claim
+ * succeeds and it files the one DSN. Generates no DSN for a null envelope sender (PST-REQ-034's
+ * "send the sender a DSN" has no sender to send to, and RFC 3834 forbids replying to one).
  */
 export function createDsnHook(options: CreateDsnHookOptions): DsnHook {
   const { db, blobstore } = options;
@@ -134,7 +139,15 @@ export function createDsnHook(options: CreateDsnHookOptions): DsnHook {
       messageId: `dsn-${intent.recipientId}-${intent.kind}@${reportingMta}`,
     });
 
-    await db.$transaction(async (tx) => {
+    const filedId = await db.$transaction(async (tx) => {
+      // The atomic claim: whichever caller's UPDATE commits first wins the row; the loser's
+      // WHERE fails once it unblocks, so it does nothing rather than racing the file/audit below.
+      const claim = await tx.outboundRecipient.updateMany({
+        where: intent.kind === 'delay' ? { id: intent.recipientId, delayDsnSentAt: null } : { id: intent.recipientId, failureDsnSentAt: null },
+        data: intent.kind === 'delay' ? { delayDsnSentAt: clock() } : { failureDsnSentAt: clock() },
+      });
+      if (claim.count === 0) return null;
+
       const put = await blobstore.put(dsnBuffer, { tx });
       const filed = await fileLocalMessage(tx, {
         accountId: message.accountId,
@@ -150,7 +163,12 @@ export function createDsnHook(options: CreateDsnHookOptions): DsnHook {
         entityId: intent.recipientId,
         after: { messageId: filed.id, mailboxId: filed.mailboxId, uid: filed.uid, address: intent.address },
       });
+      return filed.id;
     });
+    if (filedId === null) {
+      log('dsn-already-claimed', { recipientId: intent.recipientId, kind: intent.kind });
+      return;
+    }
     log('dsn-filed', { recipientId: intent.recipientId, kind: intent.kind, address: intent.address });
   };
 }
