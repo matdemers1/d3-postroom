@@ -1,0 +1,290 @@
+// Postroom core schema (PST-T-0.4). One database shape every daemon shares.
+//
+// Invariants the SQL migration also enforces with CHECK constraints, because a daemon that writes
+// raw SQL must not be able to break them either:
+//   - domain names, address local parts and blob digests are stored lowercased (PST-REQ-012);
+//   - mailbox.uidvalidity > 0, mailbox.uidnext >= 1, modseqs >= 0 (RFC 9051, RFC 7162);
+//   - blob.refcount >= 0. A blob row is never modified except for its refcount (PST-REQ-012);
+//   - identity links are unique by (issuer, subject), never by email (PST-REQ-005).
+//
+// The database holds only a blob's *wrapped* DEK. The KEK that unwraps it is never written here
+// (PST-REQ-010). Every mutation writes an audit_event row, which is append-only (PST-REQ-009).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────
+
+enum AddressKind {
+  primary
+  alias
+  masked
+  service
+
+  @@map("address_kind")
+}
+
+enum SpecialUse {
+  inbox
+  sent
+  drafts
+  trash
+  junk
+  archive
+  rejects
+
+  @@map("special_use")
+}
+
+enum AppPasswordScope {
+  imap
+  smtp
+  dav
+  sieve
+
+  @@map("app_password_scope")
+}
+
+enum ActorKind {
+  account
+  system
+  service
+  anonymous
+
+  @@map("actor_kind")
+}
+
+// ─── Accounts and identity ────────────────────────────────────────────────
+
+model Account {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  displayName  String    @map("display_name")
+  isAdmin      Boolean   @default(false) @map("is_admin")
+  /// Argon2id hash (peppered). Null for a D3-Auth-only account, or before /setup sets it.
+  passwordHash String?   @map("password_hash")
+  /// TOTP secret, encrypted at rest. Null until enrolment.
+  totpSecret   Bytes?    @map("totp_secret")
+  totpEnabled  Boolean   @default(false) @map("totp_enabled")
+  disabledAt   DateTime? @map("disabled_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  identityLinks  IdentityLink[]
+  addresses      Address[]
+  addressTargets AddressTarget[]
+  mailboxes      Mailbox[]
+  appPasswords   AppPassword[]
+  sessions       Session[]
+  auditEvents    AuditEvent[]
+
+  @@map("account")
+}
+
+/// An external identity (D3 Auth OIDC) linked by (issuer, subject). Email is informational only.
+model IdentityLink {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId  String    @map("account_id") @db.Uuid
+  issuer     String
+  subject    String
+  email      String?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([issuer, subject])
+  @@index([accountId])
+  @@map("identity_link")
+}
+
+/// A protocol credential. IMAP/SMTP/DAV/Sieve accept these only, never the account password.
+model AppPassword {
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId  String             @map("account_id") @db.Uuid
+  label      String
+  /// Public lookup prefix, so verification hashes one candidate rather than all of them.
+  prefix     String             @unique
+  hash       String
+  scopes     AppPasswordScope[]
+  lastUsedAt DateTime?          @map("last_used_at") @db.Timestamptz(6)
+  lastUsedIp String?            @map("last_used_ip")
+  revokedAt  DateTime?          @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("app_password")
+}
+
+/// A web session. The id is stored hashed; the cookie holds the only copy of the raw token.
+model Session {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  idHash    String    @unique @map("id_hash")
+  accountId String    @map("account_id") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  stepUpAt  DateTime? @map("step_up_at") @db.Timestamptz(6)
+  ip        String?
+  userAgent String?   @map("user_agent")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([expiresAt])
+  @@map("session")
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("setting")
+}
+
+// ─── Domains and addresses ────────────────────────────────────────────────
+
+model Domain {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Lowercase; CHECK-enforced.
+  name      String   @unique
+  isPrimary Boolean  @default(false) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  addresses Address[]
+
+  @@map("domain")
+}
+
+/// An address at one of our domains. primary/service/masked addresses belong to one account;
+/// an alias fans out to one or more accounts through address_target.
+model Address {
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Lowercase; CHECK-enforced.
+  localPart String      @map("local_part")
+  domainId  String      @map("domain_id") @db.Uuid
+  kind      AddressKind
+  /// Owner for primary, masked and service addresses. Null for an alias.
+  accountId String?     @map("account_id") @db.Uuid
+  /// The site a masked address was handed to.
+  siteTag   String?     @map("site_tag")
+  killedAt  DateTime?   @map("killed_at") @db.Timestamptz(6)
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  domain  Domain          @relation(fields: [domainId], references: [id], onDelete: Restrict)
+  account Account?        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  targets AddressTarget[]
+
+  @@unique([localPart, domainId])
+  @@index([accountId])
+  @@map("address")
+}
+
+model AddressTarget {
+  addressId String   @map("address_id") @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  address Address @relation(fields: [addressId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([addressId, accountId])
+  @@index([accountId])
+  @@map("address_target")
+}
+
+// ─── Mail store ───────────────────────────────────────────────────────────
+
+model Mailbox {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId     String      @map("account_id") @db.Uuid
+  name          String
+  specialUse    SpecialUse? @map("special_use")
+  uidvalidity   Int
+  uidnext       Int         @default(1)
+  highestModseq BigInt      @default(0) @map("highest_modseq")
+  subscribed    Boolean     @default(true)
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@unique([accountId, name])
+  @@map("mailbox")
+}
+
+/// One message in one mailbox. The raw RFC 5322 bytes live in the blob, never here.
+model Message {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mailboxId    String   @map("mailbox_id") @db.Uuid
+  uid          Int
+  modseq       BigInt
+  blobSha256   String   @map("blob_sha256")
+  size         Int
+  internalDate DateTime @map("internal_date") @db.Timestamptz(6)
+  receivedAt   DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  /// System flags (\Seen, \Answered, ...) and keywords, as IMAP spells them.
+  flags        String[] @default([])
+
+  mailbox Mailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  blob    Blob    @relation(fields: [blobSha256], references: [sha256], onDelete: Restrict)
+
+  @@unique([mailboxId, uid])
+  @@index([mailboxId, modseq])
+  @@index([blobSha256])
+  @@map("message")
+}
+
+/// Content-addressed, encrypted raw message. Named by SHA-256 of the plaintext (lowercase hex).
+/// Immutable except for refcount; storing the same message twice yields one row, refcount 2.
+model Blob {
+  sha256     String   @id
+  size       Int
+  /// This blob's DEK, wrapped by the KEK. The KEK itself is never in the database.
+  wrappedDek Bytes    @map("wrapped_dek")
+  /// Identifier of the KEK that wrapped the DEK, so a rotation knows what to rewrap.
+  kekId      String   @map("kek_id")
+  /// AEAD algorithm of the blob body, e.g. "aes-256-gcm".
+  aead       String
+  nonce      Bytes
+  refcount   Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  messages Message[]
+
+  @@map("blob")
+}
+
+// ─── Audit ────────────────────────────────────────────────────────────────
+
+/// Append-only record of every mutation, from any surface (PST-REQ-009).
+model AuditEvent {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  at             DateTime  @default(now()) @db.Timestamptz(6)
+  actorAccountId String?   @map("actor_account_id") @db.Uuid
+  actorKind      ActorKind @map("actor_kind")
+  action         String
+  entityType     String    @map("entity_type")
+  entityId       String?   @map("entity_id")
+  before         Json?
+  after          Json?
+  ip             String?
+  userAgent      String?   @map("user_agent")
+  requestId      String?   @map("request_id")
+
+  actor Account? @relation(fields: [actorAccountId], references: [id], onDelete: SetNull)
+
+  @@index([at])
+  @@index([entityType, entityId])
+  @@index([actorAccountId])
+  @@map("audit_event")
+}
