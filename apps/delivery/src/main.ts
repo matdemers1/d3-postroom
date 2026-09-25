@@ -1,6 +1,5 @@
-// Outbound delivery daemon (PST-P-1): runs the 'outbound' queue. Until the direct MX client lands
-// (PST-T-1.6) its transport defers everything with a reason that says so, so the daemon is honest:
-// accepted mail waits in the queue, visibly, rather than looking delivered.
+// Outbound delivery daemon (PST-P-1): runs the 'outbound' queue through the direct MX client
+// (PST-T-1.6). It lives in the wireguard sidecar's network namespace, so :25 leaves from the edge.
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
 import { createDb } from '@postroom/db';
@@ -24,8 +23,8 @@ await runDaemon({
     const sweepMs = envInt(ctx.env, 'DELIVERY_SWEEP_MS', 60_000);
     const blobRoot = envString(ctx.env, 'BLOB_ROOT', '/var/lib/postroom/blobs');
 
-    // Opened on first use: the placeholder transport never reads a message, and the KEK should
-    // not be required by a daemon that cannot deliver yet.
+    // Opened on first use, so the daemon boots (and reports health) before the first message
+    // needs the KEK.
     let blobs: BlobStore | undefined;
     const openMessage = (sha256: string): ReturnType<BlobStore['get']> => {
       blobs ??= createBlobStore({ root: blobRoot, db, kek: loadKek({ env: ctx.env }) });
@@ -34,7 +33,7 @@ await runDaemon({
 
     const delivery = createDeliveryWorker({
       db,
-      transports: transportsFromEnv(ctx.env),
+      transports: transportsFromEnv(ctx.env, ctx.log),
       openMessage,
       leaseMs,
       attemptTimeoutMs,
