@@ -1,0 +1,38 @@
+# Postroom (PST-T-0.10). Host-local and argv-only: the copy that counts is
+# /DATA/shipyard/apps/postroom.yml on the Zima; this file is the record, kept in step by hand.
+#
+# Every daemon runs from one image (PST-ADR-001); the wireguard sidecar is its own image. The
+# migration is an explicit one-shot with the NEW image before the swap — Postroom never migrates on
+# boot. /health on the api answers {status, revision, schemaRevision}.
+name: postroom
+repo: matdemers1/d3-postroom
+workflow: ci.yml
+compose:
+  files:
+    - /DATA/postroom/docker-compose.yml
+    - /DATA/postroom/docker-compose.tunnel.yml
+  project: postroom
+services:
+  api: { image: ghcr.io/matdemers1/d3-postroom/server }
+  worker: { image: ghcr.io/matdemers1/d3-postroom/server }
+  smtp-in: { image: ghcr.io/matdemers1/d3-postroom/server }
+  submission: { image: ghcr.io/matdemers1/d3-postroom/server }
+  imap: { image: ghcr.io/matdemers1/d3-postroom/server }
+  delivery: { image: ghcr.io/matdemers1/d3-postroom/server }
+  dav: { image: ghcr.io/matdemers1/d3-postroom/server }
+  wireguard: { image: ghcr.io/matdemers1/d3-postroom/wireguard }
+health:
+  service: api
+  port: 3300
+  path: /health
+soakSeconds: 90
+steps:
+  migrate:
+    service: api
+    argv: [migrate]
+envFiles:
+  - /DATA/postroom/postroom.env
+  - /DATA/postroom/postgres.env
+foreman:
+  project: PST
+  environment: production
