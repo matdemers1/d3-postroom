@@ -1,0 +1,47 @@
+# Postroom home stack — skeleton. One image, one entrypoint per daemon (PST-ADR-001, PST-REQ-004).
+# The protocol daemons share the wireguard sidecar's network namespace, so inbound arrives over the
+# tunnel from the Lightsail edge and outbound :25 egresses from the edge IP (PST-ADR-002).
+# Nothing here is published to the internet until the security gate passes (PST-ADR-005).
+name: postroom
+
+x-app: &app
+  image: ghcr.io/matdemers1/d3-postroom/server:${POSTROOM_TAG:-local}
+  env_file: .env
+  restart: unless-stopped
+  depends_on:
+    postgres: { condition: service_healthy }
+
+services:
+  wireguard:
+    image: lscr.io/linuxserver/wireguard   # pin by digest when P0 lands (PST-T-0.14)
+    cap_add: [NET_ADMIN]
+    restart: unless-stopped
+
+  smtp-in:     { <<: *app, command: ["smtp-in"],    network_mode: "service:wireguard" }
+  submission:  { <<: *app, command: ["submission"], network_mode: "service:wireguard" }
+  imap:        { <<: *app, command: ["imap"],       network_mode: "service:wireguard" }
+  delivery:    { <<: *app, command: ["delivery"],   network_mode: "service:wireguard" }
+  dav:         { <<: *app, command: ["dav"] }
+  api:         { <<: *app, command: ["api"] }
+  worker:      { <<: *app, command: ["worker"] }
+
+  unbound:
+    image: mvance/unbound   # validating recursive resolver for DNSBL + DANE (PST-REQ-064); pin in P1
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: postroom
+      POSTGRES_USER: postroom
+    env_file: postgres.env
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postroom"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  blobs:

@@ -1,0 +1,42 @@
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+*.log
+pnpm-debug.log*
+
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+playwright-report/
+test-results/
+
+backups/
+*.dump
+*.sql.gz
+
+# Keys never belong in the repo: KEK, DKIM, WireGuard, ACME account.
+*.key
+*.pem
+keys/
+edge/*.wg.conf
+
+# The private calibration corpus is real mail. It is never committed (PST-REQ-108).
+# Only fixtures/golden (synthetic) is.
+corpus/
+fixtures/private/
+
+# Downloaded at test time only — no licence to redistribute, never sent into a live system.
+fixtures/spamassassin/
+
+# Fuzzer working state; crashers are promoted to fixtures by hand.
+fuzz/.work/
