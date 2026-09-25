@@ -181,6 +181,9 @@ importers:
       '@postroom/dns':
         specifier: workspace:*
         version: link:../../packages/dns
+      '@postroom/dnsbl':
+        specifier: workspace:*
+        version: link:../../packages/dnsbl
       '@postroom/dsn':
         specifier: workspace:*
         version: link:../../packages/dsn
@@ -268,9 +271,33 @@ importers:
 
   apps/worker:
     dependencies:
+      '@postroom/attachments':
+        specifier: workspace:*
+        version: link:../../packages/attachments
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@postroom/blobstore':
+        specifier: workspace:*
+        version: link:../../packages/blobstore
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/dsn':
+        specifier: workspace:*
+        version: link:../../packages/dsn
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../../packages/mime
+      '@postroom/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
     devDependencies:
       tsx:
         specifier: ^4.23.13
@@ -388,6 +415,12 @@ importers:
         version: 4.23.13
 
   packages/dns: {}
+
+  packages/dnsbl:
+    dependencies:
+      '@postroom/dns':
+        specifier: workspace:*
+        version: link:../dns
 
   packages/dsn:
     dependencies:

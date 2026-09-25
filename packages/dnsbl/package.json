@@ -1,0 +1,25 @@
+{
+  "name": "@postroom/dnsbl",
+  "private": true,
+  "version": "0.0.0",
+  "description": "DNSBL client via our own resolver and a Spamhaus DQS key; refuses public resolvers",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/dns": "workspace:*"
+  },
+  "devDependencies": {}
+}
