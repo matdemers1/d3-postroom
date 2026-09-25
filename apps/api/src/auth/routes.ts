@@ -31,7 +31,6 @@ import {
   deleteSession,
   issueSession,
   readCookie,
-  readMeta,
   setSessionCookie,
 } from './sessions.js';
 import { completeSetup, isSetupRequired, SetupConflict } from './setup.js';
@@ -697,14 +696,16 @@ async function endSessionsFor(
       where: { issuer_subject: { issuer, subject: logout.sub } },
     });
     const ended: string[] = [];
-    if (link !== null && !repeated) {
-      const sessions = await tx.session.findMany({ where: { accountId: link.accountId }, select: { id: true } });
+    if (!repeated) {
+      // Only the sessions this (iss, sub) signed in with D3 Auth — never a password session of the
+      // same account.
+      const sessions = await tx.session.findMany({
+        where: { method: 'oidc', oidcIssuer: issuer, oidcSubject: logout.sub },
+        select: { id: true },
+      });
       for (const s of sessions) {
-        const meta = await readMeta(tx, s.id);
-        if (meta.method === 'oidc' && meta.sub === logout.sub && meta.iss === issuer) {
-          await deleteSession(tx, s.id);
-          ended.push(s.id);
-        }
+        await deleteSession(tx, s.id);
+        ended.push(s.id);
       }
     }
     await recordAudit(tx, {

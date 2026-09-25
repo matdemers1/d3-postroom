@@ -7,7 +7,7 @@ export interface AuthState {
   oidcAvailable: boolean;
   signedIn: boolean;
   account?: { id: string; displayName: string; isAdmin: boolean; totpEnabled: boolean; address: string | null };
-  method?: 'password' | 'oidc' | 'setup';
+  method?: 'password' | 'oidc';
 }
 
 export class ApiError extends Error {

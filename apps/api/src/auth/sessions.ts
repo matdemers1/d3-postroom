@@ -13,12 +13,11 @@ export const ABSOLUTE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Slide the idle expiry at most this often, so an active tab does not write on every request. */
 const SLIDE_EVERY_MS = 60 * 1000;
 
-export type SignInMethod = 'password' | 'oidc' | 'setup';
+export type SignInMethod = 'password' | 'oidc';
 
 /**
- * What a session knows beyond the row: how it signed in and, for D3 Auth, the (iss, sub) and the
- * roles claim at sign-in. Kept in `setting` under a per-session key until the session table grows
- * a column for it; written in the same transaction as the session and deleted with it.
+ * What a session knows beyond who it belongs to: how it signed in and, for D3 Auth, the (iss, sub)
+ * it signed in as and the roles claim at sign-in. Stored on the session row itself.
  */
 export interface SessionMeta {
   method: SignInMethod;
@@ -26,8 +25,6 @@ export interface SessionMeta {
   iss?: string;
   sub?: string;
 }
-
-export const metaKey = (sessionId: string): string => `auth.session.${sessionId}`;
 
 export function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
@@ -63,9 +60,12 @@ export async function issueSession(
       expiresAt,
       ip: req.ip ?? null,
       userAgent: (req.get('user-agent') ?? '').slice(0, 512) || null,
+      method: meta.method,
+      roles: meta.roles,
+      oidcIssuer: meta.iss ?? null,
+      oidcSubject: meta.sub ?? null,
     },
   });
-  await tx.setting.create({ data: { key: metaKey(row.id), value: { ...meta } } });
   return { id: row.id, token, expiresAt };
 }
 
@@ -80,15 +80,18 @@ export interface ResolvedSession {
   meta: SessionMeta;
 }
 
-function parseMeta(value: unknown): SessionMeta {
-  const obj = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
-  const method = obj['method'] === 'oidc' || obj['method'] === 'setup' ? obj['method'] : 'password';
-  const roles = Array.isArray(obj['roles']) ? obj['roles'].filter((r): r is string => typeof r === 'string') : [];
+/** The session row's sign-in metadata. The column is CHECK-constrained to password|oidc. */
+export function metaOf(row: {
+  method: string;
+  roles: string[];
+  oidcIssuer: string | null;
+  oidcSubject: string | null;
+}): SessionMeta {
   return {
-    method,
-    roles,
-    ...(typeof obj['iss'] === 'string' ? { iss: obj['iss'] } : {}),
-    ...(typeof obj['sub'] === 'string' ? { sub: obj['sub'] } : {}),
+    method: row.method === 'oidc' ? 'oidc' : 'password',
+    roles: row.roles,
+    ...(row.oidcIssuer === null ? {} : { iss: row.oidcIssuer }),
+    ...(row.oidcSubject === null ? {} : { sub: row.oidcSubject }),
   };
 }
 
@@ -107,8 +110,7 @@ export async function resolveSession(db: Db, token: string, now: Date): Promise<
   if (slid - row.expiresAt.getTime() > SLIDE_EVERY_MS) {
     await db.session.update({ where: { id: row.id }, data: { expiresAt: new Date(slid) } });
   }
-  const metaRow = await db.setting.findUnique({ where: { key: metaKey(row.id) } });
-  const meta = parseMeta(metaRow?.value);
+  const meta = metaOf(row);
   return {
     sessionId: row.id,
     accountId: row.accountId,
@@ -120,12 +122,7 @@ export async function resolveSession(db: Db, token: string, now: Date): Promise<
   };
 }
 
-export async function readMeta(tx: Prisma.TransactionClient | Db, sessionId: string): Promise<SessionMeta> {
-  const row = await tx.setting.findUnique({ where: { key: metaKey(sessionId) } });
-  return parseMeta(row?.value);
-}
-
-/** Ends a session and its meta. Returns what was deleted, for the audit row. */
+/** Ends a session. Returns what was deleted, for the audit row. */
 export async function deleteSession(
   tx: Prisma.TransactionClient,
   sessionId: string,
@@ -133,7 +130,6 @@ export async function deleteSession(
   const row = await tx.session.findUnique({ where: { id: sessionId } });
   if (row === null) return null;
   await tx.session.delete({ where: { id: sessionId } });
-  await tx.setting.deleteMany({ where: { key: metaKey(sessionId) } });
   return { id: row.id, accountId: row.accountId, createdAt: row.createdAt, ip: row.ip };
 }
 
