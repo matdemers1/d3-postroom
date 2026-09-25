@@ -13,10 +13,11 @@
   "scripts": {
     "lint": "eslint vitest.shared.ts && pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present --filter '!@postroom/e2e' test",
     "build": "pnpm -r --if-present build",
     "test:integration": "pnpm -r --if-present --workspace-concurrency=1 test:integration",
-    "fuzz:smoke": "node scripts/fuzz-smoke.mjs"
+    "fuzz:smoke": "node scripts/fuzz-smoke.mjs",
+    "e2e": "pnpm --filter @postroom/e2e test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
