@@ -1,0 +1,221 @@
+name: CI
+
+# The ecosystem gate, cheapest first (PST-REQ-002): lint → unit → integration (PostgreSQL 16) →
+# e2e against the composed stack → fuzz-smoke → images. Every job needs the one before it, and only
+# a push to main that passed all of them publishes `sha-` images to GHCR. GitHub-hosted runners only:
+# this repo is public, and a self-hosted runner would execute any fork's pull request.
+#
+# Every action is pinned to a commit SHA, never a tag: a tag is a mutable pointer.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: The private corpus is never committed (PST-REQ-108)
+        run: |
+          if git ls-files | grep -E '^(corpus/|fixtures/private/|fixtures/spamassassin/)'; then
+            echo 'private or unlicensed mail is tracked in git' >&2
+            exit 1
+          fi
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+
+  unit:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+
+  integration:
+    needs: unit
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postroom
+          POSTGRES_PASSWORD: postroom
+          POSTGRES_DB: postroom
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postroom -d postroom"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postroom:postroom@127.0.0.1:5432/postroom
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Migration drift check — schema.prisma and migrations/ must agree
+        working-directory: packages/db
+        env:
+          SHADOW_DATABASE_URL: postgresql://postroom:postroom@127.0.0.1:5432/shadow
+        run: |
+          PGPASSWORD=postroom psql -h 127.0.0.1 -U postroom -d postroom -c 'CREATE DATABASE shadow;'
+          pnpm exec prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema prisma/schema.prisma \
+            --exit-code
+      - run: pnpm test:integration
+
+  # Compose is what runs on the host, so the image is built the way it will be built there and the
+  # e2e suite drives the stack rather than a dev server.
+  e2e:
+    needs: integration
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci-postgres-password
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: No host ports anywhere in the base compose file
+        run: |
+          if docker compose config | grep -qE '^\s+(ports|published):'; then
+            echo 'the base compose file publishes a port; ingress is WireGuard and the tunnel only' >&2
+            exit 1
+          fi
+      - name: Build the images
+        run: |
+          docker build -t ghcr.io/matdemers1/d3-postroom/server:local .
+          docker compose build wireguard
+      - name: Boot on an empty database, migrate, seed twice
+        run: |
+          docker compose up -d --wait postgres
+          docker compose run --rm migrate
+          docker compose run --rm migrate seed
+          docker compose run --rm migrate seed
+          docker compose up -d --wait
+          docker compose ps
+      - name: Every daemon is its own container (PST-REQ-004)
+        run: ./scripts/compose-smoke.sh
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        if: hashFiles('e2e/package.json') != ''
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: hashFiles('e2e/package.json') != ''
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: e2e
+        if: hashFiles('e2e/package.json') != ''
+        env:
+          POSTROOM_URL: http://127.0.0.1:3300
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @postroom/e2e exec playwright install --with-deps chromium
+          pnpm --filter @postroom/e2e test
+      - name: Keep the report when e2e failed
+        if: failure() && hashFiles('e2e/package.json') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: e2e-report
+          path: e2e/playwright-report
+          retention-days: 7
+      - name: Show the logs when something failed
+        if: failure()
+        run: docker compose logs
+      - name: Stop
+        if: always()
+        run: docker compose down -v
+
+  # Every parser's fuzz harness, briefly, with a fixed seed (PST-T-4.2 runs them for real nightly).
+  fuzz-smoke:
+    needs: e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm fuzz:smoke
+
+  # The only job that publishes, and only from main once everything above is green. Tagged by long
+  # SHA, labelled with the revision and schema Shipyard verifies before and after a swap.
+  images:
+    needs: fuzz-smoke
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - image: server
+            context: .
+            file: Dockerfile
+          - image: wireguard
+            context: docker/wireguard
+            file: docker/wireguard/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 2
+      - name: Schema and migration labels
+        id: labels
+        run: |
+          schema=$(ls packages/db/prisma/migrations | grep -E '^[0-9]{14}_' | sort | tail -1)
+          migration=$(git log -1 --format='%(trailers:key=Shipyard-Migration,valueonly)' | head -1 | tr -d '[:space:]')
+          echo "schema=${schema}" >> "$GITHUB_OUTPUT"
+          echo "migration=${migration:-none}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+          labels: |
+            dev.d3cloud.shipyard.schema=${{ steps.labels.outputs.schema }}
+            dev.d3cloud.shipyard.migration=${{ steps.labels.outputs.migration }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          # The Zima host is x86_64.
+          platforms: linux/amd64
+          push: true
+          build-args: REVISION=${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}

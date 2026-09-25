@@ -24,7 +24,7 @@ if (command !== undefined && DAEMONS.includes(command)) {
   }
   await import(main);
 } else if (command === 'migrate') {
-  run(join(root, 'node_modules', '.bin', 'prisma'), ['migrate', 'deploy'], join(root, 'packages', 'db'));
+  run(join(root, 'packages', 'db', 'node_modules', '.bin', 'prisma'), ['migrate', 'deploy'], join(root, 'packages', 'db'));
 } else if (command === 'seed') {
   const seed = join(root, 'packages', 'db', 'dist', 'seed.js');
   run(process.execPath, [seed, ...rest], root);

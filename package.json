@@ -15,7 +15,8 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
-    "test:integration": "pnpm -r --if-present --workspace-concurrency=1 test:integration"
+    "test:integration": "pnpm -r --if-present --workspace-concurrency=1 test:integration",
+    "fuzz:smoke": "node scripts/fuzz-smoke.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
