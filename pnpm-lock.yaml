@@ -164,9 +164,33 @@ importers:
 
   apps/submission:
     dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@postroom/auth-checks':
+        specifier: workspace:*
+        version: link:../../packages/auth-checks
+      '@postroom/blobstore':
+        specifier: workspace:*
+        version: link:../../packages/blobstore
+      '@postroom/credentials':
+        specifier: workspace:*
+        version: link:../../packages/credentials
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/delivery':
+        specifier: workspace:*
+        version: link:../delivery
+      '@postroom/smtp-proto':
+        specifier: workspace:*
+        version: link:../../packages/smtp-proto
     devDependencies:
       tsx:
         specifier: ^4.23.13
@@ -308,6 +332,8 @@ importers:
         version: 4.23.13
 
   packages/dns: {}
+
+  packages/dsn: {}
 
   packages/proxy-protocol: {}
 

@@ -22,7 +22,6 @@
     "@postroom/blobstore": "workspace:*",
     "@postroom/crypto": "workspace:*",
     "@postroom/auth-checks": "workspace:*",
-    "@postroom/mime": "workspace:*",
     "@postroom/audit": "workspace:*"
   },
   "devDependencies": {
