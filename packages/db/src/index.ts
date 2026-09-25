@@ -19,3 +19,4 @@ export type {
 } from './generated/prisma/client.js';
 export { normalizeDomain, normalizeLocalPart, parseAddress, randomUidValidity, type ParsedAddress } from './normalize.js';
 export { seed, DEFAULT_MAILBOXES, type SeedOptions, type SeedResult } from './seeding.js';
+export { schemaRevision } from './revision.js';
