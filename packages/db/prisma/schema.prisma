@@ -43,6 +43,41 @@ enum SpecialUse {
   @@map("special_use")
 }
 
+enum AccountKind {
+  person
+  service
+
+  @@map("account_kind")
+}
+
+enum DkimAlgorithm {
+  rsa_sha256     @map("rsa-sha256")
+  ed25519_sha256 @map("ed25519-sha256")
+
+  @@map("dkim_algorithm")
+}
+
+enum JobStatus {
+  pending
+  running
+  done
+  failed
+  dead
+
+  @@map("job_status")
+}
+
+enum RecipientState {
+  queued
+  attempting
+  deferred
+  delivered
+  bounced
+  cancelled
+
+  @@map("recipient_state")
+}
+
 enum AppPasswordScope {
   imap
   smtp
@@ -64,25 +99,28 @@ enum ActorKind {
 // ─── Accounts and identity ────────────────────────────────────────────────
 
 model Account {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  displayName  String    @map("display_name")
-  isAdmin      Boolean   @default(false) @map("is_admin")
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  displayName  String      @map("display_name")
+  isAdmin      Boolean     @default(false) @map("is_admin")
   /// Argon2id hash (peppered). Null for a D3-Auth-only account, or before /setup sets it.
-  passwordHash String?   @map("password_hash")
+  passwordHash String?     @map("password_hash")
   /// TOTP secret, encrypted at rest. Null until enrolment.
-  totpSecret   Bytes?    @map("totp_secret")
-  totpEnabled  Boolean   @default(false) @map("totp_enabled")
-  disabledAt   DateTime? @map("disabled_at") @db.Timestamptz(6)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  totpSecret   Bytes?      @map("totp_secret")
+  totpEnabled  Boolean     @default(false) @map("totp_enabled")
+  disabledAt   DateTime?   @map("disabled_at") @db.Timestamptz(6)
+  /// A person, or a service mailbox an ecosystem app submits through (PST-T-1.12).
+  kind         AccountKind @default(person)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  identityLinks  IdentityLink[]
-  addresses      Address[]
-  addressTargets AddressTarget[]
-  mailboxes      Mailbox[]
-  appPasswords   AppPassword[]
-  sessions       Session[]
-  auditEvents    AuditEvent[]
+  outboundMessages OutboundMessage[]
+  identityLinks    IdentityLink[]
+  addresses        Address[]
+  addressTargets   AddressTarget[]
+  mailboxes        Mailbox[]
+  appPasswords     AppPassword[]
+  sessions         Session[]
+  auditEvents      AuditEvent[]
 
   @@map("account")
 }
@@ -106,19 +144,24 @@ model IdentityLink {
 
 /// A protocol credential. IMAP/SMTP/DAV/Sieve accept these only, never the account password.
 model AppPassword {
-  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  accountId  String             @map("account_id") @db.Uuid
-  label      String
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId         String             @map("account_id") @db.Uuid
+  label             String
   /// Public lookup prefix, so verification hashes one candidate rather than all of them.
-  prefix     String             @unique
-  hash       String
-  scopes     AppPasswordScope[]
-  lastUsedAt DateTime?          @map("last_used_at") @db.Timestamptz(6)
-  lastUsedIp String?            @map("last_used_ip")
-  revokedAt  DateTime?          @map("revoked_at") @db.Timestamptz(6)
-  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  prefix            String             @unique
+  hash              String
+  scopes            AppPasswordScope[]
+  lastUsedAt        DateTime?          @map("last_used_at") @db.Timestamptz(6)
+  lastUsedIp        String?            @map("last_used_ip")
+  revokedAt         DateTime?          @map("revoked_at") @db.Timestamptz(6)
+  /// Recipients this credential may submit per rolling 24 hours (PST-T-1.10). Null = the default.
+  dailyRecipientCap Int?               @map("daily_recipient_cap")
+  /// Set when the cap tripped; submission holds mail until an admin thaws it.
+  frozenAt          DateTime?          @map("frozen_at") @db.Timestamptz(6)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account          Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  outboundMessages OutboundMessage[]
 
   @@index([accountId])
   @@map("app_password")
@@ -160,6 +203,7 @@ model Domain {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   addresses Address[]
+  dkimKeys  DkimKey[]
 
   @@map("domain")
 }
@@ -287,4 +331,132 @@ model AuditEvent {
   @@index([entityType, entityId])
   @@index([actorAccountId])
   @@map("audit_event")
+}
+
+// ─── PST-P-1: DKIM keys, the job queue, the outbound queue ───────────────────────────────────────
+
+/// A DKIM signing key. The private key is sealed by the KEK (PST-REQ-039); the database never holds
+/// it in the clear. Selectors are dated so rotation can overlap (PST-T-7.4).
+model DkimKey {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  domainId      String        @map("domain_id") @db.Uuid
+  selector      String
+  algorithm     DkimAlgorithm
+  /// The value published in DNS: `v=DKIM1; k=…; p=…`.
+  dnsRecord     String        @map("dns_record")
+  /// PKCS#8 DER sealed with the KEK, aad = "dkim:<domain>:<selector>".
+  sealedPrivate Bytes         @map("sealed_private")
+  kekId         String        @map("kek_id")
+  activeFrom    DateTime      @default(now()) @map("active_from") @db.Timestamptz(6)
+  retiredAt     DateTime?     @map("retired_at") @db.Timestamptz(6)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
+
+  @@unique([domainId, selector])
+  @@map("dkim_key")
+}
+
+/// The Postgres job queue every stage runs on (PST-T-1.5, PST-T-2.7): claimed with
+/// FOR UPDATE SKIP LOCKED, retried with backoff, replayable, and idempotent by key.
+model Job {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  queue          String
+  payload        Json
+  status         JobStatus @default(pending)
+  runAt          DateTime  @default(now()) @map("run_at") @db.Timestamptz(6)
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(10) @map("max_attempts")
+  lockedAt       DateTime? @map("locked_at") @db.Timestamptz(6)
+  lockedBy       String?   @map("locked_by")
+  lastError      String?   @map("last_error")
+  /// A second enqueue with the same key is a no-op, so a crashed producer can safely retry.
+  idempotencyKey String?   @unique @map("idempotency_key")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt     DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  @@index([queue, status, runAt])
+  @@map("job")
+}
+
+/// A message accepted for outbound delivery: the raw bytes (DKIM-signed) live in the blob store.
+model OutboundMessage {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId     String   @map("account_id") @db.Uuid
+  appPasswordId String?  @map("app_password_id") @db.Uuid
+  /// RFC 5321 reverse-path; empty string for the null sender (DSNs).
+  envelopeFrom  String   @map("envelope_from")
+  headerFrom    String   @map("header_from")
+  messageId     String?  @map("message_id")
+  subject       String?
+  blobSha256    String   @map("blob_sha256")
+  size          Int
+  /// DSN parameters from MAIL FROM (RFC 3461): RET=FULL|HDRS and ENVID.
+  dsnRet        String?  @map("dsn_ret")
+  dsnEnvid      String?  @map("dsn_envid")
+  submittedVia  String   @map("submitted_via")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account     Account             @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  appPassword AppPassword?        @relation(fields: [appPasswordId], references: [id], onDelete: SetNull)
+  recipients  OutboundRecipient[]
+
+  @@index([accountId, createdAt])
+  @@map("outbound_message")
+}
+
+/// One recipient of an outbound message, with its own state machine (the data model's lifecycle).
+model OutboundRecipient {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outboundMessageId String         @map("outbound_message_id") @db.Uuid
+  address           String
+  domain            String
+  state             RecipientState @default(queued)
+  attempts          Int            @default(0)
+  nextAttemptAt     DateTime       @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  lastCode          Int?           @map("last_code")
+  lastEnhanced      String?        @map("last_enhanced")
+  lastText          String?        @map("last_text")
+  deliveredAt       DateTime?      @map("delivered_at") @db.Timestamptz(6)
+  delayDsnSentAt    DateTime?      @map("delay_dsn_sent_at") @db.Timestamptz(6)
+  failureDsnSentAt  DateTime?      @map("failure_dsn_sent_at") @db.Timestamptz(6)
+  /// DSN NOTIFY (RFC 3461); null = the default (FAILURE,DELAY).
+  dsnNotify         String?        @map("dsn_notify")
+  /// Which transport to use: direct MX, or the SES fallback (PST-ADR-003).
+  transport         String         @default("direct")
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  message     OutboundMessage   @relation(fields: [outboundMessageId], references: [id], onDelete: Cascade)
+  attemptsLog DeliveryAttempt[]
+
+  @@index([state, nextAttemptAt])
+  @@index([outboundMessageId])
+  @@map("outbound_recipient")
+}
+
+/// Every attempt to hand a recipient to a remote MX, with what the wire said (PST-T-1.13).
+model DeliveryAttempt {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipientId    String    @map("recipient_id") @db.Uuid
+  startedAt      DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime? @map("finished_at") @db.Timestamptz(6)
+  transport      String
+  mxHost         String?   @map("mx_host")
+  mxIp           String?   @map("mx_ip")
+  localIp        String?   @map("local_ip")
+  tlsVersion     String?   @map("tls_version")
+  tlsCipher      String?   @map("tls_cipher")
+  tlsPeer        String?   @map("tls_peer")
+  remoteCode     Int?      @map("remote_code")
+  remoteEnhanced String?   @map("remote_enhanced")
+  remoteText     String?   @map("remote_text")
+  /// delivered | deferred | bounced | error
+  outcome        String
+  error          String?
+
+  recipient OutboundRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, startedAt])
+  @@map("delivery_attempt")
 }
