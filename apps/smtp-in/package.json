@@ -25,7 +25,8 @@
     "@postroom/queue": "workspace:*",
     "@postroom/audit": "workspace:*",
     "@postroom/proxy-protocol": "workspace:*",
-    "@postroom/attachments": "workspace:*"
+    "@postroom/attachments": "workspace:*",
+    "@postroom/dsn": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

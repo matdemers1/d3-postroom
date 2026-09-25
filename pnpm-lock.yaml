@@ -181,6 +181,9 @@ importers:
       '@postroom/dns':
         specifier: workspace:*
         version: link:../../packages/dns
+      '@postroom/dsn':
+        specifier: workspace:*
+        version: link:../../packages/dsn
       '@postroom/mime':
         specifier: workspace:*
         version: link:../../packages/mime

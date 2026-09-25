@@ -34,7 +34,13 @@ import {
   type SessionContext,
   type SmtpReply,
 } from '@postroom/smtp-proto';
-import { acceptMessage as defaultAcceptMessage, type AcceptMessage, type InboundRecipient } from './data.js';
+import {
+  acceptMessage as defaultAcceptMessage,
+  createAcceptMessage,
+  type AcceptMessage,
+  type InboundRecipient,
+  type InboundStorage,
+} from './data.js';
 import { checkGreylist, type GreylistInput, type GreylistVerdict } from './greylist.js';
 import { buildReceived, receivedProtocol } from './headers.js';
 import { canonicalIp, type ReverseLookup } from './rdns.js';
@@ -61,6 +67,8 @@ export interface SmtpInOptions {
   readonly dkimDns: DkimDns;
   readonly reverseLookup: ReverseLookup;
   readonly acceptMessage?: AcceptMessage;
+  /** Durable storage for DATA (PST-T-2.6). Without it (and without `acceptMessage`) DATA is 451. */
+  readonly storage?: InboundStorage;
   readonly greylist?: (input: GreylistInput) => Promise<GreylistVerdict>;
   readonly log: Log;
   readonly now?: () => Date;
@@ -145,6 +153,8 @@ class InboundConnection {
     private readonly store: RecipientStore,
     readonly clientIp: string,
     readonly clientPort: number | undefined,
+    private readonly proxied: boolean,
+    private readonly acceptor: AcceptMessage,
   ) {}
 
   hooks(): ServerHooks {
@@ -233,14 +243,14 @@ class InboundConnection {
       recipients: tx.recipients.map((r) => r.rcpt),
       date: receivedAt,
     });
-    const accept = this.opts.acceptMessage ?? defaultAcceptMessage;
-    const r = await accept(
+    const r = await this.acceptor(
       {
         sessionId: ctx.id,
         transactionId: tx.id,
         hostname: this.opts.hostname,
         clientIp: this.clientIp,
         clientPort: this.clientPort,
+        proxied: this.proxied,
         helo,
         rdns,
         secure: ctx.secure,
@@ -261,6 +271,7 @@ class InboundConnection {
 
 export function createSmtpInServer(opts: SmtpInOptions): SmtpInServer {
   const store = opts.recipientStore ?? prismaRecipientStore(opts.db);
+  const acceptor = opts.acceptMessage ?? (opts.storage === undefined ? defaultAcceptMessage : createAcceptMessage(opts.storage));
   const perIp = new Map<string, number>();
   const sessions = new Set<ServerSession>();
   const sockets = new Set<Socket>();
@@ -316,7 +327,7 @@ export function createSmtpInServer(opts: SmtpInOptions): SmtpInServer {
     socket.once('close', () => { release(clientIp); });
 
     const started = Date.now();
-    const conn = new InboundConnection(opts, store, clientIp, clientPort);
+    const conn = new InboundConnection(opts, store, clientIp, clientPort, via === 'proxy', acceptor);
     const session = createServerSession(socket, {
       hostname: opts.hostname,
       maxSize: opts.maxSize,
