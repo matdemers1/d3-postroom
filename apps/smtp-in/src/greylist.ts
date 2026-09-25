@@ -14,7 +14,7 @@
 // the caller as not having determined them and skips greylisting rather than deferring blind. See the
 // task's needsOutside for the one-line change to server.ts that supplies real values.
 import { createHash } from 'node:crypto';
-import { isIPv4, isIPv6 } from 'node:net';
+import { BlockList, isIP, isIPv4, isIPv6 } from 'node:net';
 import type { Db } from '@postroom/db';
 import { canonicalIp } from './rdns.js';
 
@@ -225,4 +225,17 @@ export async function checkGreylist(db: Db | null, input: GreylistInput, policy:
 export async function pruneGreylist(db: Db, now: Date = new Date()): Promise<number> {
   const result = await db.greylistEntry.deleteMany({ where: { expiresAt: { lt: now } } });
   return result.count;
+}
+
+const PRIVATE = new BlockList();
+for (const [net, bits] of [['10.0.0.0', 8], ['172.16.0.0', 12], ['192.168.0.0', 16], ['127.0.0.0', 8], ['100.64.0.0', 10]] as const) {
+  PRIVATE.addSubnet(net, bits, 'ipv4');
+}
+for (const [net, bits] of [['::1', 128], ['fc00::', 7], ['fe80::', 10]] as const) PRIVATE.addSubnet(net, bits, 'ipv6');
+
+/** Loopback, RFC 1918, CGNAT/tailnet (100.64/10), ULA and link-local: never greylisted. */
+export function isPrivateClient(ip: string): boolean {
+  const v4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip)?.[1];
+  if (v4 !== undefined) return PRIVATE.check(v4, 'ipv4');
+  return isIP(ip) === 4 ? PRIVATE.check(ip, 'ipv4') : isIP(ip) === 6 ? PRIVATE.check(ip, 'ipv6') : false;
 }

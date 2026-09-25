@@ -41,7 +41,7 @@ import {
   type InboundRecipient,
   type InboundStorage,
 } from './data.js';
-import { checkGreylist, type GreylistInput, type GreylistVerdict } from './greylist.js';
+import { checkGreylist, isPrivateClient, isSoftListed, type GreylistInput, type GreylistVerdict } from './greylist.js';
 import { buildReceived, receivedProtocol } from './headers.js';
 import { canonicalIp, type ReverseLookup } from './rdns.js';
 import { prismaRecipientStore, resolveRecipient, RecipientReplies, type RecipientStore } from './recipients.js';
@@ -214,8 +214,19 @@ class InboundConnection {
     }
     const res = await resolveRecipient(this.store, to);
     if (!res.ok) return answer(res.reject, res.reason);
-    const greylist = this.opts.greylist ?? ((input: GreylistInput) => checkGreylist(this.opts.db, input));
-    const verdict = await greylist({ clientIp: this.clientIp, mailFrom: tx.mailFrom, recipient: res.address });
+    // Hosts on the LAN/tailnet (and the loopback) are never greylisted: the policy exists for
+    // strangers on the internet, and PROXY v2 means internet clients never look private here.
+    const greylist =
+      this.opts.greylist ??
+      ((input: GreylistInput) => (isPrivateClient(input.clientIp) ? Promise.resolve<GreylistVerdict>('pass') : checkGreylist(this.opts.db, input)));
+    const verdict = await greylist({
+      clientIp: this.clientIp,
+      mailFrom: tx.mailFrom,
+      recipient: res.address,
+      spfResult: tx.spf.result,
+      fcrdns: (await this.rdns) !== null,
+      softListed: isSoftListed(this.clientIp),
+    });
     if (verdict === 'defer') return answer(reply(451, '4.7.1', 'Greylisted, please try again later'), 'greylisted');
     tx.recipients.push({ rcpt: text, resolution: res });
     return answer(RecipientReplies.ok, res.kind);
