@@ -118,6 +118,10 @@ describe.skipIf(!baseUrl)('Sign in with D3 Auth (PST-REQ-005, PST-REQ-007)', () 
     });
     expect(link.accountId).toBe(body.account?.id);
     expect(issuer.stats.token).toBeGreaterThan(0);
+    // Sign-in metadata lives on the session row, not in `setting`.
+    const row = await db.session.findFirstOrThrow({ where: { accountId: link.accountId } });
+    expect(row).toMatchObject({ method: 'oidc', roles: [], oidcIssuer: issuer.url, oidcSubject: 'alice-1' });
+    expect(await db.setting.count({ where: { key: { startsWith: 'auth.' } } })).toBe(0);
     expect(await db.auditEvent.count({ where: { action: 'auth.signin', actorAccountId: link.accountId } })).toBe(1);
 
     // No admin role and no admin flag: the admin API refuses.
@@ -183,6 +187,7 @@ describe.skipIf(!baseUrl)('Sign in with D3 Auth (PST-REQ-005, PST-REQ-007)', () 
     expect(body.account?.isAdmin).toBe(true);
     const account = await db.account.findUniqueOrThrow({ where: { id: body.account?.id ?? '' } });
     expect(account.isAdmin).toBe(false);
+    expect((await db.session.findFirstOrThrow({ where: { accountId: account.id } })).roles).toEqual(['admin']);
     expect((await request(app).get('/api/admin/sessions').set('cookie', cookieHeader(jar))).status).toBe(200);
   });
 
@@ -203,6 +208,10 @@ describe.skipIf(!baseUrl)('Sign in with D3 Auth (PST-REQ-005, PST-REQ-007)', () 
   it('back-channel logout ends the D3 Auth sessions of that subject, once', async () => {
     const { jar } = await oidcSignIn({ sub: 'bcl-5', email: 'bcl@example.com', roles: [] });
     expect((await state(jar)).signedIn).toBe(true);
+    // A second D3 Auth session for the same subject: back-channel logout ends both, looked up by
+    // (oidcIssuer, oidcSubject).
+    const second = await oidcSignIn({ sub: 'bcl-5', email: 'bcl@example.com', roles: [] });
+    expect((await state(second.jar)).signedIn).toBe(true);
 
     const bad = await request(app).post('/api/auth/oidc/backchannel-logout').type('form').send({ logout_token: 'nope' });
     expect(bad.status).toBe(400);
@@ -211,8 +220,9 @@ describe.skipIf(!baseUrl)('Sign in with D3 Auth (PST-REQ-005, PST-REQ-007)', () 
     // Server-to-server: no CSRF header, no cookie — the signed token is the authentication.
     const res = await request(app).post('/api/auth/oidc/backchannel-logout').type('form').send({ logout_token: token });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ ok: true, ended: 1, repeated: false });
+    expect(res.body).toMatchObject({ ok: true, ended: 2, repeated: false });
     expect((await state(jar)).signedIn).toBe(false);
+    expect((await state(second.jar)).signedIn).toBe(false);
 
     const again = await request(app).post('/api/auth/oidc/backchannel-logout').type('form').send({ logout_token: token });
     expect(again.body).toMatchObject({ ok: true, ended: 0, repeated: true });

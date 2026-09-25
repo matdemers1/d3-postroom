@@ -5,7 +5,7 @@ import { Router } from 'express';
 import type { ApiDeps } from '../deps.js';
 import { currentSession, handle, requireStepUp } from './middleware.js';
 import { runtimeFor } from './runtime.js';
-import { deleteSession, readMeta } from './sessions.js';
+import { deleteSession } from './sessions.js';
 
 export function adminRoutes(deps: ApiDeps): Router {
   const rt = runtimeFor(deps);
@@ -22,19 +22,17 @@ export function adminRoutes(deps: ApiDeps): Router {
         orderBy: { createdAt: 'desc' },
         take: 500,
       });
-      const sessions = await Promise.all(
-        rows.map(async (row) => ({
+      const sessions = rows.map((row) => ({
           id: row.id,
           accountId: row.accountId,
           displayName: row.account.displayName,
-          method: (await readMeta(db, row.id)).method,
+          method: row.method,
           createdAt: row.createdAt.toISOString(),
           expiresAt: row.expiresAt.toISOString(),
           ip: row.ip,
           userAgent: row.userAgent,
           current: row.id === me.sessionId,
-        })),
-      );
+        }));
       res.setHeader('Cache-Control', 'no-store');
       res.json({ sessions });
     }),

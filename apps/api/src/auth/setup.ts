@@ -91,7 +91,7 @@ export async function completeSetup(
       },
     });
     await burnStep(tx, operator.id, input.step);
-    const session = await issueSession(tx, operator.id, { method: 'setup', roles: [] }, req, now);
+    const session = await issueSession(tx, operator.id, { method: 'password', roles: [] }, req, now);
     const address = `${input.login}@${domain.name}`;
     await recordAudit(tx, {
       actor: { kind: 'account', accountId: operator.id },
