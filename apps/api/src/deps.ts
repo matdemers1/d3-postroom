@@ -19,6 +19,11 @@ export interface ApiConfig {
   d3authIssuer?: string | undefined;
   d3authClientId?: string | undefined;
   d3authClientSecret?: string | undefined;
+  /**
+   * One-time token first-run setup requires (SETUP_TOKEN). Unset means setup is accepted only from
+   * loopback and private client addresses, so a public deploy without it fails closed.
+   */
+  setupToken?: string | undefined;
   /** The primary mail domain, used only when /setup finds none in the database. */
   domain?: string | undefined;
   /** The clock. Injected by tests so the five-minute step-up window can be walked past. */

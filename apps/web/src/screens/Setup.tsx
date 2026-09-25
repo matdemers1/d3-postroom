@@ -24,11 +24,12 @@ const MIN_PASSWORD = 12;
  */
 export function Setup({ onDone }: { onDone: () => Promise<void> }) {
   const navigate = useNavigate();
+  const [setupToken, setSetupToken] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [enrol, setEnrol] = useState<{ setupToken: string; secret: string; otpauthUri: string } | null>(null);
+  const [enrol, setEnrol] = useState<{ enrolToken: string; secret: string; otpauthUri: string } | null>(null);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,7 +43,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
     setError(null);
     setBusy(true);
     api
-      .setupBegin({ displayName, login, password })
+      .setupBegin({ setupToken, displayName, login, password })
       .then((result) => {
         setEnrol(result);
       })
@@ -60,7 +61,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
     setError(null);
     setBusy(true);
     api
-      .setupComplete({ setupToken: enrol.setupToken, code })
+      .setupComplete({ setupToken, enrolToken: enrol.enrolToken, code })
       .then(async () => {
         await onDone();
         void navigate('/', { replace: true });
@@ -89,11 +90,21 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
           )}
           {enrol === null ? (
             <Stack as="form" gap="16" onSubmit={begin} aria-label="Operator account">
+              <FormField label="Setup token" help="Printed in the server's env file (SETUP_TOKEN).">
+                <PasswordInput
+                  name="setupToken"
+                  autoComplete="off"
+                  autoFocus
+                  value={setupToken}
+                  onChange={(e) => {
+                    setSetupToken(e.target.value.trim());
+                  }}
+                />
+              </FormField>
               <FormField label="Display name">
                 <Input
                   name="displayName"
                   autoComplete="name"
-                  autoFocus
                   required
                   value={displayName}
                   onChange={(e) => {

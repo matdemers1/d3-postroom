@@ -24,6 +24,7 @@ await runDaemon({
         d3authClientId: envString(ctx.env, 'D3AUTH_CLIENT_ID', '') || undefined,
         d3authClientSecret: envString(ctx.env, 'D3AUTH_CLIENT_SECRET', '') || undefined,
         domain: envString(ctx.env, 'DOMAIN', '') || undefined,
+        setupToken: envString(ctx.env, 'SETUP_TOKEN', '') || undefined,
       },
     });
     const port = envInt(ctx.env, 'HEALTH_PORT', envInt(ctx.env, 'API_PORT', 3300));
