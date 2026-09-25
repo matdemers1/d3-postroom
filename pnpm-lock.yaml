@@ -94,9 +94,30 @@ importers:
 
   apps/delivery:
     dependencies:
+      '@postroom/auth-checks':
+        specifier: workspace:*
+        version: link:../../packages/auth-checks
+      '@postroom/blobstore':
+        specifier: workspace:*
+        version: link:../../packages/blobstore
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/dns':
+        specifier: workspace:*
+        version: link:../../packages/dns
+      '@postroom/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
+      '@postroom/smtp-proto':
+        specifier: workspace:*
+        version: link:../../packages/smtp-proto
     devDependencies:
       tsx:
         specifier: ^4.23.13
