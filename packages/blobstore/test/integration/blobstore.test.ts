@@ -3,9 +3,14 @@ import { mkdtemp, readdir, readFile, rm, stat as fsStat, utimes, writeFile, mkdi
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
-import { setFlagsFromString } from 'node:v8';
-import { runInNewContext } from 'node:vm';
-import { DecryptError, generateKek, WRAPPED_DEK_BYTES, type Kek } from '@postroom/crypto';
+import {
+  DecryptError,
+  generateKek,
+  SEGMENT_BYTES,
+  STREAM_HEADER_BYTES,
+  WRAPPED_DEK_BYTES,
+  type Kek,
+} from '@postroom/crypto';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -150,46 +155,58 @@ describe.skipIf(!baseUrl)('blob store', () => {
     expect((await store.getBuffer(row.sha256)).equals(message)).toBe(true);
   });
 
-  it('streams a ~30 MB message with heap growth well below the message size', async () => {
+  it('streams a ~30 MB message: the source never runs far ahead of what has reached disk', async () => {
     const total = 30 * 1024 * 1024;
     const chunk = 64 * 1024;
     const seed = randomBytes(chunk);
     const hash = createHash('sha256');
+    const tmp = join(root, 'tmp');
+    const sealedSegment = SEGMENT_BYTES + 16; // plaintext + GCM tag
+
+    // Plaintext bytes that have reached the temp file: strip the stream header and one tag per
+    // full sealed segment. OS-independent, unlike heap samples: a put that buffered the message
+    // would let the source run the whole 30 MB ahead of the file.
+    const plaintextOnDisk = async (): Promise<number> => {
+      const names = await readdir(tmp);
+      if (names.length === 0) return 0;
+      expect(names).toHaveLength(1);
+      let size: number;
+      try {
+        size = (await fsStat(join(tmp, names[0] ?? ''))).size;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+        throw err;
+      }
+      const body = Math.max(0, size - STREAM_HEADER_BYTES);
+      return body - 16 * Math.floor(body / sealedSegment);
+    };
+
+    let produced = 0;
+    let peakInFlight = 0;
     async function* source(): AsyncGenerator<Buffer> {
       for (let sent = 0; sent < total; sent += chunk) {
         const piece = Buffer.from(seed);
         piece.writeUInt32BE(sent, 0);
         hash.update(piece);
-        await Promise.resolve(); // an async source, as a socket is
+        peakInFlight = Math.max(peakInFlight, produced - (await plaintextOnDisk()));
+        produced += piece.length;
         yield piece;
       }
     }
-    // Buffers live outside the V8 heap, so a design that buffered the message would show up in
-    // arrayBuffers, not heapUsed: count both. Collect before each sample so what is measured is
-    // memory still reachable, not garbage the collector has not got round to.
-    setFlagsFromString('--expose-gc');
-    const gc = runInNewContext('gc') as () => void;
-    const used = (): number => {
-      gc();
-      const m = process.memoryUsage();
-      return m.heapUsed + m.arrayBuffers;
-    };
-    const baseline = used();
-    let peak = baseline;
-    const sampler = setInterval(() => {
-      peak = Math.max(peak, used());
-    }, 20);
-    let result;
-    try {
-      result = await store.put(source());
-    } finally {
-      clearInterval(sampler);
-    }
-    peak = Math.max(peak, used());
-    console.info(`30 MB put: peak heap+arrayBuffers growth ${((peak - baseline) / 1048576).toFixed(1)} MB`);
+
+    // Diagnostic only: heap + arrayBuffers varies too much across OSes to assert on.
+    const baseline = process.memoryUsage();
+    const result = await store.put(source());
+    const after = process.memoryUsage();
+    const mb = (n: number): string => (n / 1048576).toFixed(1);
+    console.info(
+      `30 MB put: peak in flight ${mb(peakInFlight)} MB; heap+arrayBuffers delta ` +
+        `${mb(after.heapUsed + after.arrayBuffers - baseline.heapUsed - baseline.arrayBuffers)} MB`,
+    );
+
     expect(result.size).toBe(total);
     expect(result.sha256).toBe(hash.digest('hex'));
-    expect(peak - baseline).toBeLessThan(total / 10);
+    expect(peakInFlight).toBeLessThan(4 * 1024 * 1024);
 
     // And reads back as a stream, verified end to end.
     expect(await store.verify(result.sha256)).toBe(true);
