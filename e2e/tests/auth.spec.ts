@@ -30,6 +30,9 @@ test('first run: setup enrols TOTP, then lands in the shell', async ({ page, req
   await expect(page).toHaveURL(/\/setup$/);
   await expect(page.getByRole('heading', { name: 'Set up Postroom' })).toBeVisible();
 
+  // A stack started with SETUP_TOKEN needs it here; one without accepts setup from a private address.
+  const setupToken = process.env['E2E_SETUP_TOKEN'];
+  if (setupToken !== undefined && setupToken !== '') await page.getByLabel('Setup token').fill(setupToken);
   await page.getByRole('textbox', { name: 'Display name' }).fill(OPERATOR_DEFAULTS.displayName);
   await page.getByRole('textbox', { name: 'Login' }).fill(OPERATOR_DEFAULTS.login);
   await page.getByLabel('Password', { exact: true }).fill(OPERATOR_DEFAULTS.password);

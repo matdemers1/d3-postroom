@@ -95,14 +95,14 @@ describe.skipIf(!baseUrl)('dual login: native path, setup, admin gate, step-up (
     it('requires TOTP enrolment, confirmed with a code, before setup completes', async () => {
       const begin = await request(app).post('/api/auth/setup/begin').set(CSRF).send(OPERATOR);
       expect(begin.status).toBe(200);
-      const { setupToken, secret, otpauthUri } = begin.body as { setupToken: string; secret: string; otpauthUri: string };
+      const { enrolToken, secret, otpauthUri } = begin.body as { enrolToken: string; secret: string; otpauthUri: string };
       expect(otpauthUri).toMatch(/^otpauth:\/\/totp\/Postroom:matt\?/);
       expect(secret).toMatch(/^[A-Z2-7]{32}$/);
 
       // Nothing is written to the account until the code proves the authenticator works.
       expect((await db.account.findUniqueOrThrow({ where: { id: seededOperatorId } })).passwordHash).toBeNull();
 
-      const wrong = await request(app).post('/api/auth/setup/complete').set(CSRF).send({ setupToken, code: '000000' });
+      const wrong = await request(app).post('/api/auth/setup/complete').set(CSRF).send({ enrolToken, code: '000000' });
       expect(wrong.status).toBe(400);
       expect(await db.auditEvent.count({ where: { action: 'auth.setup.code_rejected' } })).toBe(1);
       expect(await state()).toMatchObject({ setupRequired: true });
@@ -110,7 +110,7 @@ describe.skipIf(!baseUrl)('dual login: native path, setup, admin gate, step-up (
       const done = await request(app)
         .post('/api/auth/setup/complete')
         .set(CSRF)
-        .send({ setupToken, code: totpCode(secret, clock.now()) });
+        .send({ enrolToken, code: totpCode(secret, clock.now()) });
       expect(done.status).toBe(200);
       operatorSecret = secret;
 
@@ -146,7 +146,7 @@ describe.skipIf(!baseUrl)('dual login: native path, setup, admin gate, step-up (
 
       const begin = await request(app).post('/api/auth/setup/begin').set(CSRF).send({ ...OPERATOR, login: 'other' });
       expect(begin.status).toBe(409);
-      const complete = await request(app).post('/api/auth/setup/complete').set(CSRF).send({ setupToken: 'x', code: '123456' });
+      const complete = await request(app).post('/api/auth/setup/complete').set(CSRF).send({ enrolToken: 'x', code: '123456' });
       expect(complete.status).toBe(409);
     });
   });
