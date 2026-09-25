@@ -1,8 +1,8 @@
 {
-  "name": "@postroom/auth-checks",
+  "name": "@postroom/mime",
   "private": true,
   "version": "0.0.0",
-  "description": "Message authentication: DKIM signing now; SPF, DKIM verify, DMARC and ARC in PST-P-2",
+  "description": "Streaming RFC 5322/MIME parser: multipart, transfer encodings, RFC 2047/2231, charsets, bounded memory",
   "type": "module",
   "exports": {
     ".": {
@@ -18,9 +18,6 @@
     "test": "vitest run --project unit --passWithNoTests",
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
-  "dependencies": {
-    "@postroom/crypto": "workspace:*",
-    "@postroom/dns": "workspace:*"
-  },
+  "dependencies": {},
   "devDependencies": {}
 }

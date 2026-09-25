@@ -240,6 +240,9 @@ importers:
       '@postroom/crypto':
         specifier: workspace:*
         version: link:../crypto
+      '@postroom/dns':
+        specifier: workspace:*
+        version: link:../dns
 
   packages/blobstore:
     dependencies:
@@ -283,6 +286,8 @@ importers:
         version: 4.23.13
 
   packages/dns: {}
+
+  packages/mime: {}
 
   packages/proxy-protocol: {}
 
