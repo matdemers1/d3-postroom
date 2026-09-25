@@ -5,7 +5,9 @@ import { defineConfig, type ViteUserConfig } from 'vitest/config';
 //
 // Workspace packages export a `source` condition pointing at `src/`, so a test never needs a
 // sibling built first. The image and `tsc -p tsconfig.build.json` resolve `dist` instead.
-const conditions = ['source', 'import', 'module', 'node', 'default'];
+// Not 'import'/'module': Vitest hands these to Node for externalised dependencies, and `pg` then
+// require()s pg-pool's ESM build and fails ("Class extends value [object Module]").
+const conditions = ['source', 'node', 'default'];
 
 export function postroomVitest(_dir: string): ViteUserConfig {
   const resolve = { conditions };
