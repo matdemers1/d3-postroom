@@ -127,6 +127,10 @@ describe.skipIf(!baseUrl)('dual login: native path, setup, admin gate, step-up (
       const account = await db.account.findUniqueOrThrow({ where: { id: seededOperatorId } });
       expect(account.passwordHash).toMatch(/^\$argon2id\$/);
       expect(account.totpEnabled).toBe(true);
+      // The step the setup code used is burnt on the account row.
+      expect(account.totpLastStep).not.toBeNull();
+      expect((await db.session.findFirstOrThrow({ where: { accountId: seededOperatorId } })).method).toBe('password');
+      expect(await db.setting.count({ where: { key: { startsWith: 'auth.' } } })).toBe(0);
       // Sealed under the KEK: the base32 secret is nowhere in the stored bytes.
       expect(Buffer.from(account.totpSecret ?? new Uint8Array()).toString('latin1')).not.toContain(secret);
       // The session row stores the token's hash only.

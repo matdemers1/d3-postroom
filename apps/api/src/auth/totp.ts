@@ -46,29 +46,17 @@ export function openTotpSecret(kek: Kek, sealed: Uint8Array, accountId: string):
   return openWithKek(kek, sealed, `totp:${accountId}`).toString('utf8');
 }
 
-// The last accepted step lives in `setting` because the account table has no column for it yet.
-const lastStepKey = (accountId: string): string => `auth.totp-last-step.${accountId}`;
-
 type Tx = Prisma.TransactionClient;
-
-export async function lastStep(tx: Tx, accountId: string): Promise<number | null> {
-  const row = await tx.setting.findUnique({ where: { key: lastStepKey(accountId) } });
-  return typeof row?.value === 'number' ? row.value : null;
-}
 
 /**
  * Accept `step` only if it is newer than the last one this account used, and burn it. Returns
- * false for a replay. Run inside the transaction that acts on the code, so two concurrent uses of
- * one code cannot both win (the upsert takes the row lock).
+ * false for a replay. Run inside the transaction that acts on the code: the conditional update is
+ * one statement, so two concurrent uses of one code cannot both win.
  */
 export async function burnStep(tx: Tx, accountId: string, step: number): Promise<boolean> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lastStepKey(accountId)}))`;
-  const last = await lastStep(tx, accountId);
-  if (last !== null && step <= last) return false;
-  await tx.setting.upsert({
-    where: { key: lastStepKey(accountId) },
-    create: { key: lastStepKey(accountId), value: step },
-    update: { value: step },
+  const { count } = await tx.account.updateMany({
+    where: { id: accountId, OR: [{ totpLastStep: null }, { totpLastStep: { lt: BigInt(step) } }] },
+    data: { totpLastStep: BigInt(step) },
   });
-  return true;
+  return count === 1;
 }
