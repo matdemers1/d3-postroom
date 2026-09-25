@@ -51,9 +51,9 @@ async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: u
 
 export const api = {
   state: () => call<AuthState>('GET', '/api/auth/state'),
-  setupBegin: (input: { displayName: string; login: string; password: string }) =>
-    call<{ setupToken: string; secret: string; otpauthUri: string }>('POST', '/api/auth/setup/begin', input),
-  setupComplete: (input: { setupToken: string; code: string }) =>
+  setupBegin: (input: { setupToken: string; displayName: string; login: string; password: string }) =>
+    call<{ enrolToken: string; secret: string; otpauthUri: string }>('POST', '/api/auth/setup/begin', input),
+  setupComplete: (input: { setupToken: string; enrolToken: string; code: string }) =>
     call<{ ok: true }>('POST', '/api/auth/setup/complete', input),
   signIn: (input: { login: string; password: string }) =>
     call<{ next: 'totp'; challenge: string }>('POST', '/api/auth/signin', input),
@@ -62,7 +62,28 @@ export const api = {
   stepUp: (code: string) => call<{ ok: true }>('POST', '/api/auth/step-up', { code }),
   adminSessions: () => call<{ sessions: AdminSession[] }>('GET', '/api/admin/sessions'),
   revokeSession: (id: string) => call<{ ok: true }>('DELETE', `/api/admin/sessions/${encodeURIComponent(id)}`),
+  appPasswords: () => call<{ appPasswords: AppPassword[] }>('GET', '/api/app-passwords'),
+  createAppPassword: (input: { label: string; scopes: AppPasswordScope[] }) =>
+    call<AppPassword & { password: string }>('POST', '/api/app-passwords', input),
+  revokeAppPassword: (id: string) => call<{ ok: true }>('DELETE', `/api/app-passwords/${encodeURIComponent(id)}`),
 };
+
+export type AppPasswordScope = 'imap' | 'smtp' | 'dav' | 'sieve';
+
+/** An app password as the API lists it. The plaintext is only ever in the create response. */
+export interface AppPassword {
+  id: string;
+  accountId: string;
+  label: string;
+  prefix: string;
+  scopes: AppPasswordScope[];
+  createdAt: string;
+  lastUsedAt: string | null;
+  lastUsedIp: string | null;
+  revokedAt: string | null;
+  dailyRecipientCap: number | null;
+  frozenAt: string | null;
+}
 
 export interface AdminSession {
   id: string;
@@ -102,6 +123,8 @@ export function describeError(error: unknown): string {
       return 'This account has no authenticator enrolled. Ask the operator to set one up.';
     case 'setup_complete':
       return 'Setup is already complete. Sign in instead.';
+    case 'setup_token_required':
+      return 'That setup token did not match. Copy SETUP_TOKEN from the server\'s env file.';
     case 'setup_expired':
       return 'Setup took too long. Start again.';
     case 'login_taken':

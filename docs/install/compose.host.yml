@@ -1,0 +1,47 @@
+# The Zima's /DATA/postroom/docker-compose.yml, as Shipyard manages it. Differences from the repo's
+# development compose: literal `image: …:sha-<40hex>` lines (ZimaOS's loader reads no .env, and
+# Shipyard rewrites these lines at deploy time), env from files, and no build: anywhere.
+# Replace SHA below with the commit being adopted before the first Shipyard action.
+name: postroom
+
+x-app: &app
+  image: ghcr.io/matdemers1/d3-postroom/server:sha-SHA
+  env_file: [/DATA/postroom/postroom.env]
+  restart: unless-stopped
+  volumes: [blobs:/var/lib/postroom/blobs]
+  depends_on: { postgres: { condition: service_healthy } }
+
+services:
+  wireguard:
+    image: ghcr.io/matdemers1/d3-postroom/wireguard:sha-SHA
+    cap_add: [NET_ADMIN]
+    env_file: [/DATA/postroom/postroom.env]
+    sysctls: { net.ipv4.ip_unprivileged_port_start: 0 }
+    restart: unless-stopped
+    healthcheck: { test: ["CMD", "/usr/local/bin/wg-health"], interval: 10s, retries: 6 }
+  smtp-in:    { <<: *app, command: ["smtp-in"],    network_mode: "service:wireguard", environment: { HEALTH_PORT: "9101" }, depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } } }
+  submission: { <<: *app, command: ["submission"], network_mode: "service:wireguard", environment: { HEALTH_PORT: "9102" }, depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } } }
+  imap:       { <<: *app, command: ["imap"],       network_mode: "service:wireguard", environment: { HEALTH_PORT: "9103" }, depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } } }
+  delivery:   { <<: *app, command: ["delivery"],   network_mode: "service:wireguard", environment: { HEALTH_PORT: "9104" }, depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } } }
+  dav:        { <<: *app, command: ["dav"],    environment: { HEALTH_PORT: "9105" } }
+  api:        { <<: *app, command: ["api"],    environment: { HEALTH_PORT: "3300" } }
+  worker:
+    <<: *app
+    command: ["worker"]
+    environment: { HEALTH_PORT: "9106" }
+    volumes: [blobs:/var/lib/postroom/blobs, backups:/var/lib/postroom/backups]
+  unbound:
+    image: mvance/unbound:1.22.0
+    volumes: [/DATA/postroom/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro]
+    restart: unless-stopped
+  postgres:
+    image: postgres:16
+    env_file: [/DATA/postroom/postgres.env]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U postroom -d postroom"], interval: 5s, retries: 20 }
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  blobs:
+  backups:

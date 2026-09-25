@@ -1,0 +1,11 @@
+# Postroom's own Cloudflare Tunnel (web + API only; mail never rides it). Remotely managed: the
+# ingress (mail.d3cloud.io → http://api:3300, later dav./usercontent./mta-sts./autoconfig.) lives in
+# Cloudflare, so this only needs the token, from tunnel.env (ZimaOS's loader reads no .env).
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.0
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    env_file: [/DATA/postroom/tunnel.env]
+    depends_on:
+      api: { condition: service_healthy }

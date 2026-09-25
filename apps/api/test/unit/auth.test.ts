@@ -57,3 +57,19 @@ describe('auth pieces', () => {
     expect(res.status).toBe(503);
   });
 });
+
+describe('setup gate', () => {
+  it('recognises loopback and private addresses, and nothing public', async () => {
+    const { isPrivateAddress, checkSetupGate } = await import('../../src/auth/setup-gate.js');
+    for (const ip of ['127.0.0.1', '::ffff:127.0.0.1', '::1', '10.9.8.7', '172.16.0.1', '172.31.255.255', '192.168.1.1', 'fd12::1', 'fc00::1']) {
+      expect(isPrivateAddress(ip), ip).toBe(true);
+    }
+    for (const ip of ['203.0.113.9', '172.32.0.1', '8.8.8.8', '::ffff:8.8.8.8', '2001:db8::1', '', undefined]) {
+      expect(isPrivateAddress(ip), String(ip)).toBe(false);
+    }
+    expect(checkSetupGate('tok', 'tok', '8.8.8.8')).toEqual({ ok: true });
+    expect(checkSetupGate('tok', 'nope', '127.0.0.1')).toEqual({ ok: false, reason: 'token_mismatch' });
+    expect(checkSetupGate('tok', undefined, '127.0.0.1')).toEqual({ ok: false, reason: 'token_missing' });
+    expect(checkSetupGate(null, undefined, '8.8.8.8')).toEqual({ ok: false, reason: 'address_not_private' });
+  });
+});
