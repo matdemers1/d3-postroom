@@ -157,6 +157,9 @@ importers:
 
   apps/smtp-in:
     dependencies:
+      '@postroom/attachments':
+        specifier: workspace:*
+        version: link:../../packages/attachments
       '@postroom/audit':
         specifier: workspace:*
         version: link:../../packages/audit
@@ -286,6 +289,12 @@ importers:
         version: 9.5.2
 
   packages/alerts: {}
+
+  packages/attachments:
+    dependencies:
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
 
   packages/audit:
     dependencies:
