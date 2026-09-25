@@ -15,7 +15,7 @@ if (harnesses.length === 0) {
 }
 let failed = 0;
 for (const name of harnesses) {
-  const run = spawnSync(process.execPath, [join(root, name, 'smoke.mjs')], { stdio: 'inherit', env: { ...process.env, FUZZ_SEED: '424242' } });
+  const run = spawnSync(process.execPath, [join(root, name, 'smoke.mjs')], { stdio: 'inherit', env: { ...process.env, FUZZ_SEED: process.env.FUZZ_SEED ?? '424242' } });
   if (run.status !== 0) { failed++; console.error(`fuzz-smoke: ${name} failed`); }
 }
 process.exit(failed === 0 ? 0 : 1);
