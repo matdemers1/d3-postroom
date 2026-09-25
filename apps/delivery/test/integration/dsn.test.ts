@@ -239,4 +239,42 @@ describe.skipIf(baseUrl === undefined)('DSN generation (PST-T-1.7)', () => {
     expect(after).toHaveLength(1);
     await worker.stop();
   });
+
+  it('two truly concurrent onDsn calls for the same recipient+kind file exactly one DSN, with no thrown error', async () => {
+    clock = new Date(T0);
+    const accountId = await newSender();
+    const { worker: w } = setup(() => reply.reject());
+    const worker = await w;
+    const { messageId } = await submit(accountId, ['race@bounce.test']);
+    expect(await worker.drain()).toBe(1);
+    await worker.stop();
+
+    // The delivery worker committed the recipient's bounce, but never called onDsn itself here
+    // (its own onDsn already fired and claimed the DSN above); race two independent hook instances
+    // against the SAME still-unclaimed intent by resetting the sentAt column first.
+    const r = await t.db.outboundRecipient.findFirstOrThrow({ where: { outboundMessageId: messageId } });
+    await t.db.outboundRecipient.update({ where: { id: r.id }, data: { failureDsnSentAt: null } });
+    await t.db.message.deleteMany({ where: { mailbox: { accountId } } });
+    await t.db.mailbox.deleteMany({ where: { accountId } });
+
+    const intent = {
+      kind: 'failure' as const,
+      recipientId: r.id,
+      outboundMessageId: r.outboundMessageId,
+      address: r.address,
+      code: 550,
+      enhanced: '5.1.1',
+      text: 'No such user',
+      queuedAt: r.createdAt,
+      at: clock,
+    };
+    const hookA = createDsnHook({ db: t.db, blobstore: blobs, now: () => clock });
+    const hookB = createDsnHook({ db: t.db, blobstore: blobs, now: () => clock });
+    await expect(Promise.all([hookA(intent), hookB(intent)])).resolves.toEqual([undefined, undefined]);
+
+    const msgs = await inboxMessages(accountId);
+    expect(msgs).toHaveLength(1);
+    const after = await t.db.outboundRecipient.findUniqueOrThrow({ where: { id: r.id } });
+    expect(after.failureDsnSentAt).not.toBeNull();
+  });
 });
