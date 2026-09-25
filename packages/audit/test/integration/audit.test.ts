@@ -1,11 +1,22 @@
 // Proves PST-T-0.5's doneWhen: a property test over mutating routes finds one audit row per call.
-import type { Express } from 'express';
+import type { Server } from 'node:http';
 import fc from 'fast-check';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { missingAuditCount, waitForAuditGuard } from '../../src/index.js';
 import { buildApp } from './app.js';
+
+// supertest(app) — an Express *function*, not a listening server — binds a fresh ephemeral
+// http.Server for every single request and tears it down once that request completes. The
+// property test below fires well over a hundred requests in quick succession; the resulting
+// churn of listen(0)/close() cycles was observed (1 in ~8 full-suite runs) to produce a spurious
+// ETIMEDOUT from supertest, which the fast-check reporter can surface as almost any status code
+// depending on where in the sequence it lands. Listening once and handing supertest the live
+// server, closed only in afterAll, removes that churn entirely.
+function buildServer(db: Parameters<typeof buildApp>[0]): Server {
+  return buildApp(db).listen(0);
+}
 
 /** The guard correlates by the server-generated `x-request-id` response header, never a request one. */
 function serverRequestId(res: request.Response): string {
@@ -19,20 +30,26 @@ const KEYS = ['alpha', 'beta', 'gamma'] as const;
 
 describe.skipIf(!baseUrl)('mutation audit guard + audited() (PST-T-0.5)', () => {
   let testDb: TestDatabase;
-  let app: Express;
+  let server: Server;
 
   beforeAll(async () => {
     testDb = await createTestDatabase(baseUrl ?? '', 'pst_t05');
-    app = buildApp(testDb.db);
+    server = buildServer(testDb.db);
   }, 60_000);
 
   afterAll(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
     await testDb.drop();
   });
 
   it('a route that throws after the write persists nothing and writes no audit row', async () => {
     const before = missingAuditCount.value;
-    const res = await request(app).post('/settings/boom-key/boom').send({ value: 'x' });
+    const res = await request(server).post('/settings/boom-key/boom').send({ value: 'x' });
     expect(res.status).toBe(500);
 
     const row = await testDb.db.setting.findUnique({ where: { key: 'boom-key' } });
@@ -48,7 +65,7 @@ describe.skipIf(!baseUrl)('mutation audit guard + audited() (PST-T-0.5)', () => 
 
   it('a 400 validation failure never touches the database and writes no audit row', async () => {
     const before = await testDb.db.auditEvent.count();
-    const res = await request(app).post('/settings-validate').send({});
+    const res = await request(server).post('/settings-validate').send({});
     expect(res.status).toBe(400);
     const after = await testDb.db.auditEvent.count();
     expect(after).toBe(before);
@@ -56,7 +73,7 @@ describe.skipIf(!baseUrl)('mutation audit guard + audited() (PST-T-0.5)', () => 
 
   it('a GET writes no audit row', async () => {
     const before = await testDb.db.auditEvent.count();
-    const res = await request(app).get('/settings/does-not-exist');
+    const res = await request(server).get('/settings/does-not-exist');
     expect(res.status).toBe(404);
     const after = await testDb.db.auditEvent.count();
     expect(after).toBe(before);
@@ -64,7 +81,7 @@ describe.skipIf(!baseUrl)('mutation audit guard + audited() (PST-T-0.5)', () => 
 
   it('a route that mutates without audited() trips the guard', async () => {
     const before = missingAuditCount.value;
-    const res = await request(app).post('/settings/unsafe-key/unsafe').send({ value: 1 });
+    const res = await request(server).post('/settings/unsafe-key/unsafe').send({ value: 1 });
     expect(res.status).toBe(200);
     await waitForAuditGuard();
     expect(missingAuditCount.value).toBe(before + 1);
@@ -73,7 +90,7 @@ describe.skipIf(!baseUrl)('mutation audit guard + audited() (PST-T-0.5)', () => 
   it('a client cannot spoof the guard by replaying an earlier legitimate x-request-id', async () => {
     // First, a genuinely audited mutation — server assigns its own requestId regardless of what
     // (if anything) the client sends.
-    const legit = await request(app).put('/settings/replay-key').send({ value: 'legit' });
+    const legit = await request(server).put('/settings/replay-key').send({ value: 'legit' });
     expect([200, 201]).toContain(legit.status);
     const legitRequestId = serverRequestId(legit);
     await waitForAuditGuard();
@@ -84,7 +101,7 @@ describe.skipIf(!baseUrl)('mutation audit guard + audited() (PST-T-0.5)', () => 
     // x-request-id header. If the guard trusted the client header, it would find the legit row
     // under the replayed id and stay silent about this request's own unaudited mutation.
     const before = missingAuditCount.value;
-    const spoof = await request(app)
+    const spoof = await request(server)
       .post('/settings/replay-attack-key/unsafe')
       .set('x-request-id', legitRequestId)
       .send({ value: 'attacker' });
@@ -116,14 +133,14 @@ describe.skipIf(!baseUrl)('mutation audit guard + audited() (PST-T-0.5)', () => 
 
         for (const op of ops) {
           if (op.kind === 'put') {
-            const res = await request(app).put(`/settings/${op.key}`).send({ value: op.value });
+            const res = await request(server).put(`/settings/${op.key}`).send({ value: op.value });
             expect([200, 201]).toContain(res.status);
             const requestId = serverRequestId(res);
             expectations.push({ requestId, action: 'settings.upsert', key: op.key, before: shadow.get(op.key) ?? null, after: op.value });
             shadow.set(op.key, op.value);
           } else {
             const existed = shadow.has(op.key);
-            const res = await request(app).delete(`/settings/${op.key}`);
+            const res = await request(server).delete(`/settings/${op.key}`);
             if (existed) {
               expect(res.status).toBe(204);
               const requestId = serverRequestId(res);
