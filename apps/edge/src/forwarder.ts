@@ -48,9 +48,15 @@ export interface CloseOptions {
   readonly graceMs?: number;
 }
 
+export interface ForwarderStats {
+  readonly total: number;
+  readonly perIp: ReadonlyMap<string, number>;
+}
+
 export interface Forwarder {
   close(options?: CloseOptions): Promise<void>;
   ports(): readonly { port: number; role: ListenerRole }[];
+  stats(): ForwarderStats;
 }
 
 interface ConnectionCounters {
@@ -130,6 +136,22 @@ export function startForwarder(
       release(clientIp);
     }
 
+    // The slot acquired above must come back no matter what happens next — including a client
+    // that errors or disconnects before home ever connects (PST-T-0.13 refutation #1), and
+    // including a client RST arriving during the home-connect window, which must not throw an
+    // uncaught 'error' and take the whole process down (refutation #2).
+    let clientGoneBeforeHome = false;
+    client.once('close', () => {
+      clientGoneBeforeHome = true;
+      releaseOnce();
+    });
+    client.on('error', () => {
+      // Swallowed deliberately: an error on the client socket (e.g. ECONNRESET) is handled by
+      // the 'close' listener above, which always fires after 'error' and releases the slot. A
+      // socket 'error' with no listener is what crashes the process — this listener's only job
+      // is to exist.
+    });
+
     client.setTimeout(config.idleTimeoutMs, () => {
       client.destroy();
     });
@@ -143,8 +165,20 @@ export function startForwarder(
     home.once('close', () => {
       openSockets.delete(home);
     });
+    // Same reasoning as the client: never let an unhandled 'error' on the home socket crash the
+    // forwarder. onHomeUnreachable (below) and the post-connect handler (further below) both
+    // attach their own 'error' listeners, so this is a safety net for any gap between them.
+    home.on('error', () => {
+      // Swallowed deliberately — see the comment above.
+    });
 
     let connectedToHome = false;
+
+    client.once('close', () => {
+      if (!connectedToHome) {
+        home.destroy();
+      }
+    });
 
     function onHomeUnreachable(): void {
       if (connectedToHome) return;
@@ -169,6 +203,11 @@ export function startForwarder(
     home.once('timeout', onHomeUnreachable);
 
     home.once('connect', () => {
+      if (clientGoneBeforeHome) {
+        home.destroy();
+        releaseOnce();
+        return;
+      }
       connectedToHome = true;
       home.off('error', onHomeUnreachable);
       home.off('timeout', onHomeUnreachable);
@@ -259,6 +298,9 @@ export function startForwarder(
               : listener.port;
           return { port, role: listener.role };
         });
+      },
+      stats(): ForwarderStats {
+        return { total: counters.total, perIp: new Map(counters.perIp) };
       },
       close(closeOptions: CloseOptions = {}): Promise<void> {
         const graceMs = closeOptions.graceMs ?? 0;
