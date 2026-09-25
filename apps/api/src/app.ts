@@ -5,6 +5,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { auditContext, mutationAuditGuard } from '@postroom/audit';
 import { schemaRevision } from '@postroom/db';
 import { appPasswordRoutes } from './app-passwords/index.js';
+import { deliveryRoutes } from './delivery/index.js';
 import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import type { ApiDeps } from './deps.js';
 
@@ -51,6 +52,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/auth', authRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
   app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));
+  app.use('/api/messages', requireSession(deps), deliveryRoutes(deps));
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not_found' });
   });

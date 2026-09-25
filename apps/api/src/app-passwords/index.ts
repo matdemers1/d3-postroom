@@ -14,9 +14,10 @@ import {
   type AppPasswordView,
 } from '@postroom/credentials';
 import { AccountKind, AppPasswordScope } from '@postroom/db';
+import { thawCredential } from '@postroom/delivery';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { currentSession, handle } from '../auth/middleware.js';
+import { currentSession, handle, requireStepUp } from '../auth/middleware.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 
@@ -125,6 +126,31 @@ export function appPasswordRoutes(deps: ApiDeps): Router {
         }
         throw error;
       }
+    }),
+  );
+
+  // PST-T-1.10 / PST-REQ-044: an admin thaws a credential the automatic cap froze — destructive
+  // enough (it resumes held outbound mail) to sit behind the same step-up as other admin mutations.
+  router.post(
+    '/:id/thaw',
+    requireStepUp(deps),
+    handle(async (req, res) => {
+      const me = currentSession(req);
+      if (!me.isAdmin) {
+        res.status(403).json({ error: 'forbidden' });
+        return;
+      }
+      const id = String(req.params['id']);
+      if (!UUID.test(id)) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      const result = await thawCredential(db, id, { kind: 'account', accountId: me.accountId }, rt.now());
+      if (!result.thawed) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      res.json({ ok: true, rescheduled: result.rescheduled });
     }),
   );
 

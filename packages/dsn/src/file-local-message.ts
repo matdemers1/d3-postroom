@@ -44,27 +44,31 @@ interface MailboxCursor {
  * Locks the mailbox row for the rest of the transaction (creating it first if this account has
  * never had one by this name — an account made outside `seed()`, as every test account is). The
  * row lock is what makes concurrent filings into the same mailbox serialize on uidnext/modseq.
+ *
+ * Creation itself must survive two callers racing to create the *same new* mailbox: a plain
+ * "SELECT FOR UPDATE, then INSERT if absent" has both racers find no row and both attempt the
+ * INSERT, and the loser gets a unique-constraint error instead of the winner's row. Doing the
+ * INSERT first, with `ON CONFLICT (account_id, name) DO NOTHING`, makes it safe to run
+ * unconditionally: Postgres itself serialises two inserts of the same key (the second blocks on
+ * the first's uncommitted row until it commits, then finds the conflict and does nothing), so by
+ * the time the SELECT ... FOR UPDATE below runs, exactly one row exists for both callers to lock —
+ * whichever call actually created it.
  */
 async function lockOrCreateMailbox(tx: FileLocalMessageTx, accountId: string, name: string): Promise<MailboxCursor> {
+  const specialUse = SPECIAL_USE_BY_NAME[name] ?? null;
+  await tx.$executeRaw`
+    INSERT INTO mailbox (account_id, name, special_use, uidvalidity)
+    VALUES (${accountId}::uuid, ${name}, ${specialUse}::special_use, ${randomUidValidity(randomInt)})
+    ON CONFLICT (account_id, name) DO NOTHING`;
+
   const rows = await tx.$queryRaw<{ id: string; uidnext: number; highest_modseq: bigint }[]>`
     SELECT id::text AS id, uidnext, highest_modseq
     FROM mailbox
     WHERE account_id = ${accountId}::uuid AND name = ${name}
     FOR UPDATE`;
   const found = rows[0];
-  if (found !== undefined) return { id: found.id, uidnext: found.uidnext, highestModseq: found.highest_modseq };
-
-  const specialUse = SPECIAL_USE_BY_NAME[name];
-  const created = await tx.mailbox.create({
-    data: {
-      accountId,
-      name,
-      ...(specialUse === undefined ? {} : { specialUse }),
-      uidvalidity: randomUidValidity(randomInt),
-    },
-    select: { id: true, uidnext: true, highestModseq: true },
-  });
-  return created;
+  if (found === undefined) throw new Error(`mailbox "${name}" for account ${accountId} was neither found nor created`);
+  return { id: found.id, uidnext: found.uidnext, highestModseq: found.highest_modseq };
 }
 
 /**

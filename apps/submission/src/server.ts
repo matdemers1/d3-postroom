@@ -28,6 +28,7 @@ import {
   type SmtpReply,
 } from '@postroom/smtp-proto';
 import { allowAllCaps, type CheckCaps } from './caps-seam.js';
+import { isCredentialFrozen } from './caps/index.js';
 import { loadSigningKeys } from './dkim.js';
 import { inspectHeaders, rewriteHeaders } from './headers.js';
 import { SASL_MECHANISMS, readCredentials } from './sasl.js';
@@ -49,6 +50,8 @@ export const SubmissionReplies = {
   headerTooLarge: reply(552, '5.3.4', 'Header block too large'),
   dkimUnconfigured: reply(451, '4.3.5', 'DKIM keys not configured for the sender domain'),
   notAccepted: reply(451, '4.3.0', 'Local error, message not accepted'),
+  /** PST-REQ-044: a frozen credential may still authenticate, but every MAIL is refused. */
+  credentialFrozen: reply(452, '4.7.0', 'Credential frozen by rate cap; contact the operator'),
 } as const satisfies Record<string, SmtpReply>;
 
 /** Test seam: runs inside the accepting transaction, after every write, before the commit. */
@@ -175,7 +178,7 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
         return { ok: true, identity: creds.username };
       },
 
-      onMail: (from, _params, ctx) => {
+      onMail: async (from, _params, ctx) => {
         // PST-REQ-053: no transaction without an authenticated account, from any address.
         if (ctx.auth === null || login === null) return SubmissionReplies.authRequired;
         if (from.kind === 'null') return SubmissionReplies.nullSender;
@@ -183,13 +186,27 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
           log('sender-refused', { session: ctx.id, accountId: login.accountId, reason: 'envelope' });
           return SubmissionReplies.senderNotOwned;
         }
+        // PST-REQ-044: AUTH still succeeds for a frozen credential, but no new message may start.
+        if (await isCredentialFrozen(o.db, login.appPasswordId)) {
+          log('caps-refused', { session: ctx.id, accountId: login.accountId, stage: 'mail' });
+          return SubmissionReplies.credentialFrozen;
+        }
         return undefined;
       },
 
-      onRcpt: (to, _params, ctx) => {
+      onRcpt: async (to, _params, ctx) => {
         if (ctx.auth === null || login === null) return SubmissionReplies.authRequired;
         if (to.kind === 'postmaster') return SubmissionReplies.recipientNotQualified;
         if (to.mailbox.domain.startsWith('[')) return SubmissionReplies.recipientLiteral;
+        // PST-REQ-043: the cap+1th recipient (counting this transaction's accepted recipients plus
+        // this candidate, against the credential's rolling window) is refused with 452.
+        const tx = ctx.transaction;
+        const soFar = tx === null ? [] : tx.recipients.map((r) => (r.to.kind === 'mailbox' ? formatMailbox(r.to.mailbox) : ''));
+        const decision = await checkCaps({ accountId: login.accountId, appPasswordId: login.appPasswordId }, [...soFar, formatMailbox(to.mailbox)]);
+        if (decision.action === 'reject') {
+          log('caps-refused', { session: ctx.id, accountId: login.accountId, stage: 'rcpt' });
+          return decision.reply;
+        }
         return reply(250, '2.1.5', 'Recipient OK');
       },
 
