@@ -1,0 +1,15 @@
+# CI/e2e only: publish the api on loopback so Playwright on the runner can reach it, and give the
+# stack throwaway secrets. Never used on a host. D3 Auth points at a closed port on purpose: the
+# e2e suite then proves the password path works with the issuer down (PST-REQ-005); the OIDC code
+# flow itself is covered by apps/api's integration tests against e2e/fake-issuer.
+services:
+  api:
+    ports: ["127.0.0.1:3300:3300"]
+    environment:
+      PASSWORD_PEPPER: e2e-pepper-not-a-secret
+      SESSION_SECRET: e2e-session-secret-not-a-secret
+      POSTROOM_KEK: ${E2E_KEK:?set E2E_KEK to base64 of 32 bytes}
+      WEB_ORIGIN: http://127.0.0.1:3300
+      D3AUTH_ISSUER: http://127.0.0.1:1
+      D3AUTH_CLIENT_ID: postroom
+      D3AUTH_CLIENT_SECRET: e2e-client-secret
