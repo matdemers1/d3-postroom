@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "@postroom/crypto": "workspace:*",
-    "@postroom/dns": "workspace:*"
+    "@postroom/dns": "workspace:*",
+    "@postroom/mime": "workspace:*"
   },
   "devDependencies": {}
 }

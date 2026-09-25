@@ -252,6 +252,9 @@ importers:
       '@postroom/dns':
         specifier: workspace:*
         version: link:../dns
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
 
   packages/blobstore:
     dependencies:
