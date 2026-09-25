@@ -62,6 +62,7 @@ services:
   delivery:
     <<: *app
     command: ["delivery"]
+    # Streams signed messages out of the blob store; the KEK comes from .env (POSTROOM_KEK).
     network_mode: "service:wireguard"
     environment: { <<: *app-env, HEALTH_PORT: "9104" }
     depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }

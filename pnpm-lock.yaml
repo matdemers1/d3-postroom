@@ -94,6 +94,9 @@ importers:
 
   apps/delivery:
     dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
       '@postroom/auth-checks':
         specifier: workspace:*
         version: link:../../packages/auth-checks

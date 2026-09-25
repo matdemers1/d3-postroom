@@ -107,6 +107,8 @@ model Account {
   /// TOTP secret, encrypted at rest. Null until enrolment.
   totpSecret   Bytes?      @map("totp_secret")
   totpEnabled  Boolean     @default(false) @map("totp_enabled")
+  /// The last TOTP time step accepted, so a code cannot be replayed within its window.
+  totpLastStep BigInt?     @map("totp_last_step")
   disabledAt   DateTime?   @map("disabled_at") @db.Timestamptz(6)
   /// A person, or a service mailbox an ecosystem app submits through (PST-T-1.12).
   kind         AccountKind @default(person)
@@ -169,19 +171,27 @@ model AppPassword {
 
 /// A web session. The id is stored hashed; the cookie holds the only copy of the raw token.
 model Session {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  idHash    String    @unique @map("id_hash")
-  accountId String    @map("account_id") @db.Uuid
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
-  stepUpAt  DateTime? @map("step_up_at") @db.Timestamptz(6)
-  ip        String?
-  userAgent String?   @map("user_agent")
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  idHash      String    @unique @map("id_hash")
+  accountId   String    @map("account_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  stepUpAt    DateTime? @map("step_up_at") @db.Timestamptz(6)
+  ip          String?
+  userAgent   String?   @map("user_agent")
+  /// How this session signed in: "password" (with TOTP) or "oidc".
+  method      String    @default("password")
+  /// The D3 Auth `roles` claim at sign-in, for the admin gate (PST-REQ-007). Empty for password.
+  roles       String[]  @default([])
+  /// For an OIDC session: the identity it came from, so back-channel logout can find it.
+  oidcIssuer  String?   @map("oidc_issuer")
+  oidcSubject String?   @map("oidc_subject")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
   @@index([expiresAt])
+  @@index([oidcIssuer, oidcSubject])
   @@map("session")
 }
 
