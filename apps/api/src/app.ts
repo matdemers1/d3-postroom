@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { auditContext, mutationAuditGuard } from '@postroom/audit';
 import { schemaRevision } from '@postroom/db';
-import { adminRoutes, authRoutes, csrfGuard, requireAdmin, setupPageGuard } from './auth/index.js';
+import { appPasswordRoutes } from './app-passwords/index.js';
+import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import type { ApiDeps } from './deps.js';
 
 // No third-party script, frame or connection, ever (PST-REQ-159, PST-REQ-175). HTML mail renders on
@@ -49,6 +50,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api', express.json({ limit: '1mb' }), auditContext(), mutationAuditGuard(deps.db), csrfGuard(deps));
   app.use('/api/auth', authRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
+  app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not_found' });
   });
