@@ -51,9 +51,9 @@ async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: u
 
 export const api = {
   state: () => call<AuthState>('GET', '/api/auth/state'),
-  setupBegin: (input: { displayName: string; login: string; password: string }) =>
-    call<{ setupToken: string; secret: string; otpauthUri: string }>('POST', '/api/auth/setup/begin', input),
-  setupComplete: (input: { setupToken: string; code: string }) =>
+  setupBegin: (input: { setupToken: string; displayName: string; login: string; password: string }) =>
+    call<{ enrolToken: string; secret: string; otpauthUri: string }>('POST', '/api/auth/setup/begin', input),
+  setupComplete: (input: { setupToken: string; enrolToken: string; code: string }) =>
     call<{ ok: true }>('POST', '/api/auth/setup/complete', input),
   signIn: (input: { login: string; password: string }) =>
     call<{ next: 'totp'; challenge: string }>('POST', '/api/auth/signin', input),
@@ -102,6 +102,8 @@ export function describeError(error: unknown): string {
       return 'This account has no authenticator enrolled. Ask the operator to set one up.';
     case 'setup_complete':
       return 'Setup is already complete. Sign in instead.';
+    case 'setup_token_required':
+      return 'That setup token did not match. Copy SETUP_TOKEN from the server\'s env file.';
     case 'setup_expired':
       return 'Setup took too long. Start again.';
     case 'login_taken':

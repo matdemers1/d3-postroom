@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { inMemorySeen, LogoutTokenError, verifyLogoutToken, type VerifiedLogout } from '@d3cloudio/auth-client';
 import { audited, getAuditContext, recordAudit, type Actor } from '@postroom/audit';
 import { AddressKind, normalizeLocalPart, parseAddress, type Account, type Db } from '@postroom/db';
-import express, { Router, type Response } from 'express';
+import express, { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { ApiDeps } from '../deps.js';
 import { currentSession, handle, requireSession, sessionOf } from './middleware.js';
@@ -34,6 +34,7 @@ import {
   setSessionCookie,
 } from './sessions.js';
 import { completeSetup, isSetupRequired, SetupConflict } from './setup.js';
+import { checkSetupGate } from './setup-gate.js';
 import { burnStep, generateTotpSecret, matchStep, openTotpSecret, provisioningUri } from './totp.js';
 
 const Login = z.string().trim().min(1).max(320);
@@ -49,7 +50,7 @@ const SetupBegin = z.object({
     .regex(/^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/, 'letters, digits, dot, dash or underscore'),
   password: z.string().min(MIN_PASSWORD_LENGTH).max(1024),
 });
-const SetupComplete = z.object({ setupToken: z.string().min(1).max(200), code: Code });
+const SetupComplete = z.object({ enrolToken: z.string().min(1).max(200), code: Code });
 const SignIn = z.object({ login: Login, password: Password });
 const SignInTotp = z.object({ challenge: z.string().min(1).max(200), code: Code });
 const StepUp = z.object({ code: Code });
@@ -122,6 +123,26 @@ export function authRoutes(deps: ApiDeps): Router {
   const router = Router();
   const nowMs = (): number => rt.now().getTime();
 
+  /**
+   * SETUP_TOKEN, or a private client address when it is unset. A refusal is audited without the
+   * presented value, and answered 403 {error:'setup_token_required'}.
+   */
+  const setupAllowed = async (req: Request, res: Response): Promise<boolean> => {
+    const body = req.body as Record<string, unknown> | undefined;
+    const gate = checkSetupGate(rt.setupToken, body?.['setupToken'], req.ip);
+    if (gate.ok) return true;
+    await recordAudit(db, {
+      actor: anonymous,
+      action: 'auth.setup.denied',
+      entityType: 'setup',
+      entityId: null,
+      after: { reason: gate.reason, path: req.path },
+      context: getAuditContext(req),
+    });
+    res.status(403).json({ error: 'setup_token_required' });
+    return false;
+  };
+
   router.get(
     '/state',
     handle(async (req, res) => {
@@ -165,6 +186,7 @@ export function authRoutes(deps: ApiDeps): Router {
         res.status(409).json({ error: 'setup_complete' });
         return;
       }
+      if (!(await setupAllowed(req, res))) return;
       const parsed = SetupBegin.safeParse(req.body);
       if (!parsed.success) {
         badRequest(res, parsed.error);
@@ -172,8 +194,9 @@ export function authRoutes(deps: ApiDeps): Router {
       }
       const { displayName, login, password } = parsed.data;
       const totpSecret = generateTotpSecret();
-      const setupToken = randomBytes(32).toString('base64url');
-      rt.setups.set(setupToken, {
+      // The handle for this enrolment in flight — not SETUP_TOKEN, which the operator brings.
+      const enrolToken = randomBytes(32).toString('base64url');
+      rt.setups.set(enrolToken, {
         displayName,
         login,
         passwordHash: await hashPassword(password, rt.pepper),
@@ -191,7 +214,7 @@ export function authRoutes(deps: ApiDeps): Router {
         after: { displayName, login },
         context: getAuditContext(req),
       });
-      res.json({ setupToken, secret: totpSecret, otpauthUri: provisioningUri(totpSecret, login) });
+      res.json({ enrolToken, secret: totpSecret, otpauthUri: provisioningUri(totpSecret, login) });
     }),
   );
 
@@ -206,12 +229,13 @@ export function authRoutes(deps: ApiDeps): Router {
         res.status(409).json({ error: 'setup_complete' });
         return;
       }
+      if (!(await setupAllowed(req, res))) return;
       const parsed = SetupComplete.safeParse(req.body);
       if (!parsed.success) {
         badRequest(res, parsed.error);
         return;
       }
-      const pending = rt.setups.get(parsed.data.setupToken, nowMs());
+      const pending = rt.setups.get(parsed.data.enrolToken, nowMs());
       if (pending === undefined) {
         res.status(400).json({ error: 'setup_expired' });
         return;
@@ -219,7 +243,7 @@ export function authRoutes(deps: ApiDeps): Router {
       const step = matchStep(pending.totpSecret, parsed.data.code, rt.now());
       if (step === null) {
         pending.attempts += 1;
-        if (pending.attempts >= MAX_CODE_ATTEMPTS) rt.setups.delete(parsed.data.setupToken);
+        if (pending.attempts >= MAX_CODE_ATTEMPTS) rt.setups.delete(parsed.data.enrolToken);
         await recordAudit(db, {
           actor: anonymous,
           action: 'auth.setup.code_rejected',
@@ -240,7 +264,7 @@ export function authRoutes(deps: ApiDeps): Router {
           getAuditContext(req),
           rt.now(),
         );
-        rt.setups.delete(parsed.data.setupToken);
+        rt.setups.delete(parsed.data.enrolToken);
         setSessionCookie(res, done.session.token, rt.secure);
         res.json({ ok: true, account: { id: done.accountId, address: done.address } });
       } catch (error) {

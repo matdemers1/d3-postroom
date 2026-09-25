@@ -37,6 +37,8 @@ export interface AuthRuntime {
   now: () => Date;
   pepper: string | null;
   sessionSecret: string | null;
+  /** SETUP_TOKEN; null means setup is accepted from private addresses only. */
+  setupToken: string | null;
   kek: Kek | null;
   domain: string;
   throttle: SignInThrottle;
@@ -117,6 +119,7 @@ export function runtimeFor(deps: ApiDeps): AuthRuntime {
     now,
     pepper: blank(deps.config.passwordPepper),
     sessionSecret: blank(deps.config.sessionSecret),
+    setupToken: blank(deps.config.setupToken),
     kek: loadKek(deps.config.kekBase64),
     domain: blank(deps.config.domain) ?? 'd3cloud.io',
     throttle: new SignInThrottle(),
