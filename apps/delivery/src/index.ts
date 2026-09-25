@@ -24,3 +24,5 @@ export { deliveryHealth } from './health.js';
 export type { DeliveryHealth } from './health.js';
 export { notBuiltTransport, transportFromEnv, transportsFromEnv, NOT_BUILT } from './transports/index.js';
 export type { AttemptDetails, DeliveryRecipient, DeliveryRequest, DeliveryResult, Transport } from './transports/types.js';
+export { HELD_TEXT, holdGroup, isCredentialFrozen, reenqueueHeld, thawCredential } from './hold.js';
+export type { ThawResult } from './hold.js';

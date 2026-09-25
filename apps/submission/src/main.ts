@@ -9,10 +9,12 @@
 // SUBMISSION_MAX_RECIPIENTS (100), LISTEN_HOST, HEALTH_PORT.
 import { readFileSync } from 'node:fs';
 import type { Server } from 'node:net';
+import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
 import { envInt, envString, runDaemon } from '@postroom/daemon';
 import { createDb } from '@postroom/db';
+import { createCapsChecker } from './caps/index.js';
 import { DAEMON } from './daemon.js';
 import { createSubmissionListeners, type SubmissionStorage } from './server.js';
 
@@ -57,6 +59,20 @@ await runDaemon({
     }
 
     let storage: SubmissionStorage | undefined;
+    const checkCaps = createCapsChecker({
+      db,
+      hourlyDefault: envInt(ctx.env, 'SUBMISSION_CAP_HOURLY', 100),
+      dailyDefault: envInt(ctx.env, 'SUBMISSION_CAP_DAILY', 500),
+      sendAlert: createAlertSender(
+        {
+          url: envString(ctx.env, 'MAIL_RELAY_URL', ''),
+          token: envString(ctx.env, 'MAIL_RELAY_TOKEN', ''),
+          to: envString(ctx.env, 'ALERT_TO', ''),
+        },
+        { log: ctx.log },
+      ),
+      log: ctx.log,
+    });
     const listeners = createSubmissionListeners({
       db,
       hostname: envString(ctx.env, 'SUBMISSION_HOSTNAME', 'mail.d3cloud.io'),
@@ -71,6 +87,7 @@ await runDaemon({
         return storage;
       },
       tls,
+      checkCaps,
       log: ctx.log,
     });
 

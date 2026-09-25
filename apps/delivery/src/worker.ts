@@ -23,6 +23,7 @@ import type { Readable } from 'node:stream';
 import type { Db, Job, OutboundRecipient, Prisma } from '@postroom/db';
 import { enqueue, type Handler } from '@postroom/queue';
 import { OUTBOUND_QUEUE, outboundJobKey, type OutboundJobPayload } from './enqueue.js';
+import { holdGroup, isCredentialFrozen } from './hold.js';
 import { nextState, parseNotify, type AttemptOutcome, type DsnIntent } from './state.js';
 import type { DeliveryResult, Transport } from './transports/types.js';
 
@@ -209,9 +210,14 @@ export function createDeliveryWorker(options: DeliveryWorkerOptions): DeliveryWo
     const startedAt = clock();
     await recoverInterrupted(startedAt, group);
 
-    const message = await db.outboundMessage.findUnique({ where: { id: group.messageId } });
+    const message = await db.outboundMessage.findUnique({ where: { id: group.messageId }, include: { appPassword: { select: { frozenAt: true } } } });
     if (message === null) {
       log('outbound-message-missing', { job: job.id, messageId: group.messageId });
+      return;
+    }
+    // PST-REQ-044: a frozen credential's queued mail waits, untouched, until it is thawed.
+    if (isCredentialFrozen(message)) {
+      await holdGroup(db, group, startedAt, log);
       return;
     }
 
