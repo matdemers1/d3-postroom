@@ -22,7 +22,8 @@
     "@postroom/blobstore": "workspace:*",
     "@postroom/crypto": "workspace:*",
     "@postroom/auth-checks": "workspace:*",
-    "@postroom/audit": "workspace:*"
+    "@postroom/audit": "workspace:*",
+    "@postroom/alerts": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

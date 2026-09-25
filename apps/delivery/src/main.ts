@@ -6,6 +6,7 @@ import { createDb } from '@postroom/db';
 import { envInt, envString, runDaemon } from '@postroom/daemon';
 import { startWorker } from '@postroom/queue';
 import { DAEMON } from './daemon.js';
+import { createDsnHook } from './dsn.js';
 import { OUTBOUND_QUEUE } from './enqueue.js';
 import { deliveryHealth } from './health.js';
 import { transportsFromEnv } from './transports/index.js';
@@ -26,15 +27,14 @@ await runDaemon({
     // Opened on first use, so the daemon boots (and reports health) before the first message
     // needs the KEK.
     let blobs: BlobStore | undefined;
-    const openMessage = (sha256: string): ReturnType<BlobStore['get']> => {
-      blobs ??= createBlobStore({ root: blobRoot, db, kek: loadKek({ env: ctx.env }) });
-      return blobs.get(sha256);
-    };
+    const getBlobs = (): BlobStore => (blobs ??= createBlobStore({ root: blobRoot, db, kek: loadKek({ env: ctx.env }) }));
+    const openMessage = (sha256: string): ReturnType<BlobStore['get']> => getBlobs().get(sha256);
 
     const delivery = createDeliveryWorker({
       db,
       transports: transportsFromEnv(ctx.env, ctx.log),
       openMessage,
+      onDsn: (intent) => createDsnHook({ db, blobstore: getBlobs(), log: ctx.log })(intent),
       leaseMs,
       attemptTimeoutMs,
       log: ctx.log,

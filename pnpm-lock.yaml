@@ -121,6 +121,9 @@ importers:
       '@postroom/dns':
         specifier: workspace:*
         version: link:../../packages/dns
+      '@postroom/dsn':
+        specifier: workspace:*
+        version: link:../../packages/dsn
       '@postroom/queue':
         specifier: workspace:*
         version: link:../../packages/queue
@@ -194,6 +197,9 @@ importers:
 
   apps/submission:
     dependencies:
+      '@postroom/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
       '@postroom/audit':
         specifier: workspace:*
         version: link:../../packages/audit
@@ -278,6 +284,8 @@ importers:
       otpauth:
         specifier: ^9.5.2
         version: 9.5.2
+
+  packages/alerts: {}
 
   packages/audit:
     dependencies:
@@ -369,7 +377,11 @@ importers:
 
   packages/dns: {}
 
-  packages/dsn: {}
+  packages/dsn:
+    dependencies:
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../db
 
   packages/mime: {}
 
