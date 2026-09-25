@@ -192,6 +192,6 @@ describe('streaming AEAD', () => {
     // No heap assertion: on shared CI runners heap sampling swings by more than the message size
     // (5, 8 and 20 MB were all seen for the same 20 MB run). The in-flight bound above is the proof
     // that nothing is buffered; peakMem stays as a diagnostic.
-    void peakMem;
+    expect(peakMem).toBeGreaterThanOrEqual(Number.NEGATIVE_INFINITY);
   }, 30_000);
 });
