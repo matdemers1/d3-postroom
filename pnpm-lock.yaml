@@ -428,6 +428,8 @@ importers:
         specifier: workspace:*
         version: link:../db
 
+  packages/imap-proto: {}
+
   packages/mime: {}
 
   packages/proxy-protocol: {}
