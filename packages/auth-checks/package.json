@@ -1,0 +1,23 @@
+{
+  "name": "@postroom/auth-checks",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Message authentication: DKIM signing now; SPF, DKIM verify, DMARC and ARC in PST-P-2",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

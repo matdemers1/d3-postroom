@@ -1,0 +1,23 @@
+{
+  "name": "@postroom/smtp-proto",
+  "private": true,
+  "version": "0.0.0",
+  "description": "SMTP wire protocol: strict CRLF line reader, command parser, reply writer, extensions (RFC 5321)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
