@@ -18,13 +18,22 @@ export function getAuditContext(req: Request): RequestContext {
   return ctx;
 }
 
-/** Attaches `req.audit` (requestId, ip, userAgent) so every audit row can be traced to a request. */
+/**
+ * Attaches `req.audit` (requestId, ip, userAgent) so every audit row can be traced to a request.
+ *
+ * `requestId` is always generated here with `randomUUID()` — never taken from an incoming header.
+ * A client-controlled correlation id would let a request replay an earlier, legitimately-audited
+ * id and make {@link mutationAuditGuard} "find" that unrelated row instead of noticing its own
+ * mutation went unaudited. Any `x-request-id` the client sent is preserved only as
+ * `clientRequestId`, informationally, and never used to look anything up.
+ */
 export function auditContext(): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const headerId = req.get('x-request-id');
-    const requestId = headerId && headerId.length > 0 ? headerId : randomUUID();
+    const requestId = randomUUID();
+    const clientRequestId = req.get('x-request-id');
     (req as AuditedRequest).audit = {
       requestId,
+      clientRequestId: clientRequestId && clientRequestId.length > 0 ? clientRequestId : null,
       ip: req.ip ?? null,
       userAgent: req.get('user-agent') ?? null,
     };
