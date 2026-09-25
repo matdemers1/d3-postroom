@@ -1,0 +1,23 @@
+{
+  "name": "@postroom/config",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Environment parsing shared by every daemon: one schema, blank means default",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

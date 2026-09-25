@@ -1,0 +1,23 @@
+{
+  "name": "@postroom/proxy-protocol",
+  "private": true,
+  "version": "0.0.0",
+  "description": "PROXY protocol v2 encoder/decoder and the peer-trust rule (PST-REQ-016)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

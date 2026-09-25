@@ -1,0 +1,20 @@
+{
+  "name": "@postroom/imap",
+  "private": true,
+  "version": "0.0.0",
+  "description": "IMAP4rev1/rev2 on :993",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "start": "node dist/main.js",
+    "dev": "node --conditions=source --import tsx --watch src/main.ts",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "tsx": "^4.23.13"
+  }
+}

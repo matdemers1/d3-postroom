@@ -11,4 +11,6 @@ trustPolicyIgnoreAfter: 43200
 blockExoticSubdeps: true
 
 # pnpm 10 runs no install scripts unless named here; each entry is a decision recorded when added.
-onlyBuiltDependencies: []
+# Allowed: esbuild installs the binary tsx and Vite run on.
+onlyBuiltDependencies:
+  - esbuild

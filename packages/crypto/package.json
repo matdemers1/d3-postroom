@@ -1,0 +1,23 @@
+{
+  "name": "@postroom/crypto",
+  "private": true,
+  "version": "0.0.0",
+  "description": "KEK load, per-blob DEKs, AEAD wrap/unwrap and the sealed KEK recovery bundle (PST-ADR-009)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

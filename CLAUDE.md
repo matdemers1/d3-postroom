@@ -28,7 +28,13 @@ pnpm -r lint
 pnpm -r test
 ```
 
-(Nothing to run yet: the repo is a skeleton until PST-P-0.)
+```bash
+pnpm test:integration   # needs DATABASE_URL pointing at PostgreSQL 16
+```
+
+Workspace packages export a `source` condition pointing at `src/`: tests, typecheck and `tsx` resolve
+siblings from source, and `tsc -p tsconfig.build.json` resolves their built `dist`. `pnpm -r build`
+is topological, so a clean build works in one command.
 
 ## Non-negotiables
 

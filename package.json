@@ -11,10 +11,11 @@
   },
   "packageManager": "pnpm@10.34.5",
   "scripts": {
-    "lint": "pnpm -r --if-present lint",
+    "lint": "eslint vitest.shared.ts && pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
-    "build": "pnpm -r --if-present build"
+    "build": "pnpm -r --if-present build",
+    "test:integration": "pnpm -r --if-present --workspace-concurrency=1 test:integration"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
