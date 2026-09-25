@@ -18,6 +18,7 @@
     "test": "vitest run --project unit --passWithNoTests",
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "argon2": "^0.45.1"
+  }
 }
