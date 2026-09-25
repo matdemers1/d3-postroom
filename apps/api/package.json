@@ -23,7 +23,9 @@
     "argon2": "^0.45.1",
     "express": "^5.2.1",
     "otpauth": "^9.5.2",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@postroom/credentials": "workspace:*",
+    "@postroom/delivery": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

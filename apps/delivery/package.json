@@ -21,9 +21,17 @@
     "@postroom/blobstore": "workspace:*",
     "@postroom/crypto": "workspace:*",
     "@postroom/smtp-proto": "workspace:*",
-    "@postroom/auth-checks": "workspace:*"
+    "@postroom/auth-checks": "workspace:*",
+    "@postroom/audit": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   }
 }

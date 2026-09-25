@@ -103,6 +103,13 @@ export interface WorkerOptions {
   pollMs?: number;
   leaseMs?: number;
   log?: (event: string, fields?: Record<string, unknown>) => void;
+  /** Clock for claims and retry scheduling; tests inject a fake one to walk a schedule without waiting. */
+  now?: () => Date;
+  /**
+   * No background loop and no LISTEN connection: jobs run only when the caller calls drain(). For
+   * tests that drive time by hand, where a loop woken by NOTIFY would race the test's own drain().
+   */
+  manual?: boolean;
 }
 
 export interface RunningWorker {
@@ -115,20 +122,21 @@ export interface RunningWorker {
 export async function startWorker(options: WorkerOptions): Promise<RunningWorker> {
   const workerId = options.workerId ?? `worker-${randomUUID()}`;
   const log = options.log ?? (() => undefined);
+  const clock = options.now ?? (() => new Date());
   let stopped = false;
   const isStopped = (): boolean => stopped;
   let running: Promise<void> = Promise.resolve();
   let wake: (() => void) | undefined;
 
   const runOne = async (queue: string, handler: Handler): Promise<boolean> => {
-    const job = await claim(options.db, queue, { workerId, ...(options.leaseMs === undefined ? {} : { leaseMs: options.leaseMs }) });
+    const job = await claim(options.db, queue, { workerId, now: clock(), ...(options.leaseMs === undefined ? {} : { leaseMs: options.leaseMs }) });
     if (job === null) return false;
     try {
       await handler(job);
       await complete(options.db, job);
       log('job-done', { queue, id: job.id, attempts: job.attempts });
     } catch (error) {
-      const outcome = await fail(options.db, job, error);
+      const outcome = await fail(options.db, job, error, { now: clock() });
       log('job-failed', { queue, id: job.id, attempts: job.attempts, outcome, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
@@ -145,6 +153,10 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
       if (!any) return ran;
     }
   };
+
+  if (options.manual === true) {
+    return { drain, stop: () => { stopped = true; return Promise.resolve(); } };
+  }
 
   const listener = new pg.Client({ connectionString: options.databaseUrl });
   await listener.connect();

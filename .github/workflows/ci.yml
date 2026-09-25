@@ -96,15 +96,18 @@ jobs:
     runs-on: ubuntu-latest
     env:
       POSTGRES_PASSWORD: ci-postgres-password
+      COMPOSE_FILE: docker-compose.yml:docker-compose.e2e.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: No host ports anywhere in the base compose file
         run: |
-          if docker compose config | grep -qE '^\s+(ports|published):'; then
+          if docker compose -f docker-compose.yml config | grep -qE '^\s+(ports|published):'; then
             echo 'the base compose file publishes a port; ingress is WireGuard and the tunnel only' >&2
             exit 1
           fi
+      - name: A throwaway KEK for this run
+        run: echo "E2E_KEK=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
       - name: Build the images
         run: |
           docker build -t ghcr.io/matdemers1/d3-postroom/server:local .

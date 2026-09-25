@@ -47,6 +47,9 @@ importers:
       '@postroom/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@postroom/credentials':
+        specifier: workspace:*
+        version: link:../../packages/credentials
       '@postroom/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
@@ -56,6 +59,9 @@ importers:
       '@postroom/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@postroom/delivery':
+        specifier: workspace:*
+        version: link:../delivery
       argon2:
         specifier: ^0.45.1
         version: 0.45.1
@@ -94,6 +100,9 @@ importers:
 
   apps/delivery:
     dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
       '@postroom/auth-checks':
         specifier: workspace:*
         version: link:../../packages/auth-checks
@@ -254,6 +263,18 @@ importers:
         version: link:../db
 
   packages/config: {}
+
+  packages/credentials:
+    dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../db
+      argon2:
+        specifier: ^0.45.1
+        version: 0.45.1
 
   packages/crypto:
     dependencies:
