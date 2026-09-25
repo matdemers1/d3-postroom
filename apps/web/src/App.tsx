@@ -1,5 +1,72 @@
-import { appTitle } from './title';
+import { useCallback, useEffect, useState } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Alert, AuthLayout, Spinner, ThemeProvider } from '@d3cloud/ui';
+import { api, redirectFor, type AuthState } from './api';
+import { AdminSessions } from './screens/AdminSessions';
+import { Mail } from './screens/Mail';
+import { Setup } from './screens/Setup';
+import { Shell } from './screens/Shell';
+import { SignIn } from './screens/SignIn';
+
+export const THEME_KEY = 'postroom-theme';
+
+function Gate() {
+  const location = useLocation();
+  const [state, setState] = useState<AuthState | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setState(await api.state());
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  if (failed) {
+    return (
+      <AuthLayout title="Postroom is not answering">
+        <Alert tone="danger" title="Could not reach the server">
+          Reload the page in a moment.
+        </Alert>
+      </AuthLayout>
+    );
+  }
+  if (state === null) {
+    return (
+      <AuthLayout title="Postroom" focusOnMount={false}>
+        <Spinner label="Loading" />
+      </AuthLayout>
+    );
+  }
+
+  const target = redirectFor(state, location.pathname);
+  if (target !== null && target !== location.pathname) return <Navigate to={target} replace />;
+
+  return (
+    <Routes>
+      <Route path="/setup" element={<Setup onDone={refresh} />} />
+      <Route path="/signin" element={<SignIn state={state} onSignedIn={refresh} />} />
+      <Route element={<Shell state={state} onSignedOut={refresh} />}>
+        <Route index element={<Mail />} />
+        <Route path="/admin/sessions" element={<AdminSessions />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  );
+}
 
 export function App() {
-  return <main>{appTitle()}</main>;
+  return (
+    <ThemeProvider storageKey={THEME_KEY}>
+      <BrowserRouter>
+        <Gate />
+      </BrowserRouter>
+    </ThemeProvider>
+  );
 }
