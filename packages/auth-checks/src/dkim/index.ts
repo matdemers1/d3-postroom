@@ -54,6 +54,7 @@ export {
   authResultsDkim,
   createDkimVerifier,
   createDkimVerifierStream,
+  fetchKey as fetchDkimKey,
   type DkimDns,
   type DkimResult,
   type DkimResultCode,
@@ -61,6 +62,7 @@ export {
   type DkimVerifier,
   type DkimVerifierOptions,
   type DkimVerifierStream,
+  type KeyLookup as DkimKeyLookup,
   type VerificationStats,
 } from './verify.js';
 export {

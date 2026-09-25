@@ -179,7 +179,8 @@ class VerifierTransform extends Transform implements DkimVerifierStream {
   }
 }
 
-type KeyLookup =
+/** A key record lookup's outcome. Exported for the ARC verifier, which uses the same key records. */
+export type KeyLookup =
   | { readonly kind: 'key'; readonly key: DkimKeyRecord }
   | { readonly kind: 'temperror' | 'permerror'; readonly reason: string };
 
@@ -302,9 +303,11 @@ class Verification {
     }
     for (const h of this.hashers.values()) h.digest();
     const fromDomain = singleFromDomain(this.fields);
+    const fromNote = fromCountNote(this.fields);
     const out: DkimResult[] = [];
     for (const [index, slot] of this.slots.entries()) {
-      out.push(await this.evaluate(slot, index, fromDomain));
+      const r = await this.evaluate(slot, index, fromDomain);
+      out.push(fromNote === undefined ? r : { ...r, reasons: [...r.reasons, fromNote] });
     }
     return out;
   }
@@ -417,8 +420,8 @@ function toBuffer(chunk: Uint8Array | string): Buffer {
   return Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.length);
 }
 
-/** Look up and parse the key record. Never throws. */
-async function fetchKey(dns: DkimDns, name: string): Promise<KeyLookup> {
+/** Look up and parse the key record at `name` (<s>._domainkey.<d>). Never throws. */
+export async function fetchKey(dns: DkimDns, name: string): Promise<KeyLookup> {
   let records: readonly string[];
   try {
     const answer = await dns.txt(name);
@@ -446,6 +449,18 @@ async function fetchKey(dns: DkimDns, name: string): Promise<KeyLookup> {
 
 function isResolverResult(x: readonly string[] | ResolverResult): x is ResolverResult {
   return !Array.isArray(x);
+}
+
+/**
+ * A note for every result when the message does not have exactly one From header: with two, a
+ * signature can cover one From while a reader sees the other (RFC 6376 §8.15), so nothing aligns
+ * unambiguously.
+ */
+function fromCountNote(fields: readonly HeaderField[]): string | undefined {
+  const n = fields.filter((f) => f.key === 'from').length;
+  if (n === 1) return undefined;
+  if (n === 0) return 'message has no From header; alignment is impossible (RFC 5322 §3.6 requires one)';
+  return `message has ${n} From headers; alignment is ambiguous (RFC 6376 §8.15)`;
 }
 
 function singleFromDomain(fields: readonly HeaderField[]): string | undefined {
