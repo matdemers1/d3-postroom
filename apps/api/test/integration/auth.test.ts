@@ -92,6 +92,15 @@ describe.skipIf(!baseUrl)('dual login: native path, setup, admin gate, step-up (
       expect(res.status).toBe(400);
     });
 
+    it('names the login field when it carries another domain, and takes our own domain as its local part (PST-T-11.6)', async () => {
+      const foreign = await request(app).post('/api/auth/setup/begin').set(CSRF).send({ ...OPERATOR, login: 'matthew@demers.dev' });
+      expect(foreign.status).toBe(400);
+      expect(foreign.body).toEqual({ error: 'invalid_request', fields: [{ path: 'login', message: 'foreign_domain' }] });
+      const own = await request(app).post('/api/auth/setup/begin').set(CSRF).send({ ...OPERATOR, login: 'Matt@D3cloud.io' });
+      expect(own.status).toBe(200);
+      expect((own.body as { otpauthUri: string }).otpauthUri).toMatch(/^otpauth:\/\/totp\/Postroom:matt\?/);
+    });
+
     it('requires TOTP enrolment, confirmed with a code, before setup completes', async () => {
       const begin = await request(app).post('/api/auth/setup/begin').set(CSRF).send(OPERATOR);
       expect(begin.status).toBe(200);
