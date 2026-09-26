@@ -21,7 +21,9 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
-import { createDb, normalizeLocalPart, SpecialUse } from '../packages/db/dist/index.js';
+// The built db package is loaded only by the CLI (main / findAccountAndInbox), never at import:
+// the integration test imports seedInbox with nothing built, as CI runs tests before it builds.
+const loadDb = () => import('../packages/db/dist/index.js');
 
 export const DEFAULT_COUNT = 50_000;
 export const DEFAULT_THREADS = 15_000;
@@ -119,6 +121,7 @@ export async function seedInbox(db, opts) {
 }
 
 async function findAccountAndInbox(db, login) {
+  const { normalizeLocalPart, SpecialUse } = await loadDb();
   const localPart = normalizeLocalPart(login);
   const address = await db.address.findFirst({
     where: { localPart, kind: 'primary', domain: { isPrimary: true } },
@@ -145,6 +148,7 @@ async function main() {
   if (databaseUrl === undefined || databaseUrl === '') throw new Error('set DATABASE_URL or pass --database-url');
   if (values.account === undefined) throw new Error('--account <login> is required');
 
+  const { createDb } = await loadDb();
   const db = createDb(databaseUrl);
   try {
     const { accountId, mailboxId } = await findAccountAndInbox(db, values.account);
