@@ -31,6 +31,8 @@ export interface ThreadSweepOptions {
   readonly limit?: number;
   /** Skip rows filed more recently than this, so the sweep never races the live path (default 30s). */
   readonly graceMs?: number;
+  /** Only rows whose id sorts after this one (the cursor a previous run returned as `lastId`). */
+  readonly afterId?: string;
 }
 
 export interface ThreadSweepResult {
@@ -40,6 +42,10 @@ export interface ThreadSweepResult {
   readonly threaded: number;
   /** Candidates that already had a threadId by the time this run reached them. */
   readonly skipped: number;
+  /** Candidates that could not be threaded (unreadable blob, parse error); retried next pass. */
+  readonly failed: number;
+  /** The last id this run looked at; pass it back as `afterId` so a bad row never starves the rest. */
+  readonly lastId: string | null;
 }
 
 /**
@@ -52,7 +58,7 @@ export async function sweepUnthreaded(deps: ThreadSweepDeps, options: ThreadSwee
   const cutoff = new Date(deps.now().getTime() - graceMs);
 
   const candidates = await deps.db.message.findMany({
-    where: { threadId: null, receivedAt: { lte: cutoff } },
+    where: { threadId: null, receivedAt: { lte: cutoff }, ...(options.afterId === undefined ? {} : { id: { gt: options.afterId } }) },
     select: { id: true, blobSha256: true, receivedAt: true, mailbox: { select: { accountId: true } } },
     orderBy: { id: 'asc' },
     take: limit,
@@ -60,6 +66,7 @@ export async function sweepUnthreaded(deps: ThreadSweepDeps, options: ThreadSwee
 
   let threaded = 0;
   let skipped = 0;
+  let failed = 0;
   for (const row of candidates) {
     // Re-check right before assigning: another sweep run, or a slow live path, may have threaded
     // this row since the select above.
@@ -69,22 +76,44 @@ export async function sweepUnthreaded(deps: ThreadSweepDeps, options: ThreadSwee
       continue;
     }
 
-    const parsed = summarise(await collectBlob(deps.blobs, row.blobSha256));
-    await assignThread(deps.db, {
-      accountId: row.mailbox.accountId,
-      messageId: row.id,
-      ...(parsed.messageId === null ? {} : { messageIdHeader: parsed.messageId }),
-      ...(parsed.inReplyTo[0] === undefined ? {} : { inReplyTo: parsed.inReplyTo[0] }),
-      references: parsed.references,
-      subject: parsed.subject ?? '',
-      from: parsed.fromAddress ?? '',
-      to: parsed.toAddress ?? '',
-      date: parsed.sentAt === null ? row.receivedAt : new Date(parsed.sentAt),
-    });
-    threaded++;
+    // One bad row (an unreadable blob, a parse error) is logged and passed over: it must not stop
+    // the rows behind it from being threaded, this run or any later one.
+    try {
+      const parsed = summarise(await collectBlob(deps.blobs, row.blobSha256));
+      await assignThread(deps.db, {
+        accountId: row.mailbox.accountId,
+        messageId: row.id,
+        ...(parsed.messageId === null ? {} : { messageIdHeader: parsed.messageId }),
+        ...(parsed.inReplyTo[0] === undefined ? {} : { inReplyTo: parsed.inReplyTo[0] }),
+        references: parsed.references,
+        subject: parsed.subject ?? '',
+        from: parsed.fromAddress ?? '',
+        to: parsed.toAddress ?? '',
+        date: parsed.sentAt === null ? row.receivedAt : new Date(parsed.sentAt),
+      });
+      threaded++;
+    } catch (error) {
+      failed++;
+      deps.log('thread-sweep-row-failed', { messageId: row.id, error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
-  const result: ThreadSweepResult = { scanned: candidates.length, threaded, skipped };
-  if (result.scanned > 0) deps.log('thread-sweep', { scanned: result.scanned, threaded: result.threaded, skipped: result.skipped });
+  const result: ThreadSweepResult = { scanned: candidates.length, threaded, skipped, failed, lastId: candidates.at(-1)?.id ?? null };
+  if (result.scanned > 0) deps.log('thread-sweep', { scanned: result.scanned, threaded: result.threaded, skipped: result.skipped, failed: result.failed });
   return result;
+}
+
+/**
+ * A sweeper that walks the candidates with a cursor: each call continues after the last row the
+ * previous call looked at, and starts over once a pass comes back short. Rows that keep failing are
+ * revisited once per pass, never ahead of everything else.
+ */
+export function createThreadSweeper(deps: ThreadSweepDeps, options: Omit<ThreadSweepOptions, 'afterId'> = {}): () => Promise<ThreadSweepResult> {
+  const limit = options.limit ?? DEFAULT_SWEEP_LIMIT;
+  let cursor: string | undefined;
+  return async () => {
+    const result = await sweepUnthreaded(deps, { ...options, limit, ...(cursor === undefined ? {} : { afterId: cursor }) });
+    cursor = result.scanned < limit || result.lastId === null ? undefined : result.lastId;
+    return result;
+  };
 }
