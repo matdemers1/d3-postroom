@@ -119,3 +119,23 @@ describe('buildProfile', () => {
     expect((xml.match(/xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx/g) ?? []).length).toBe(4); // IMAP + SMTP + CalDAV + CardDAV
   });
 });
+
+describe('buildProfile: Apple payload keys', () => {
+  it('uses the Configuration Profile Reference key names for the principal URL', () => {
+    const profile = buildProfile({
+      accountId: 'acc-1',
+      displayName: 'Alice',
+      email: 'alice@d3cloud.io',
+      appPassword: 'app-password',
+      imapHost: 'mail.d3cloud.io',
+      submissionHost: 'mail.d3cloud.io',
+      davHost: 'dav.d3cloud.io',
+      principalUrl: 'https://dav.d3cloud.io/dav/principals/acc-1/',
+    }) as { PayloadContent: Record<string, unknown>[] };
+    const [, caldav, carddav] = profile.PayloadContent;
+    expect(caldav).toMatchObject({ PayloadType: 'com.apple.caldav.account', CalDAVPrincipalURL: 'https://dav.d3cloud.io/dav/principals/acc-1/' });
+    expect(carddav).toMatchObject({ PayloadType: 'com.apple.carddav.account', CardDAVPrincipalURL: 'https://dav.d3cloud.io/dav/principals/acc-1/' });
+    expect(caldav).not.toHaveProperty('CalDAVAccountPrincipalURL');
+    expect(carddav).not.toHaveProperty('CardDAVAccountPrincipalURL');
+  });
+});

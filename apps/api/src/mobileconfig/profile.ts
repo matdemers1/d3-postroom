@@ -62,7 +62,7 @@ function caldavPayload(input: ProfileInput): PlistValue {
     CalDAVUseSSL: true,
     CalDAVUsername: input.email,
     CalDAVPassword: input.appPassword,
-    CalDAVAccountPrincipalURL: input.principalUrl,
+    CalDAVPrincipalURL: input.principalUrl,
   };
 }
 
@@ -80,7 +80,7 @@ function carddavPayload(input: ProfileInput): PlistValue {
     CardDAVUseSSL: true,
     CardDAVUsername: input.email,
     CardDAVPassword: input.appPassword,
-    CardDAVAccountPrincipalURL: input.principalUrl,
+    CardDAVPrincipalURL: input.principalUrl,
   };
 }
 
