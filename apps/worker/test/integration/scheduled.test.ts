@@ -190,6 +190,29 @@ describe.skipIf(baseUrl === undefined)('scheduled loop (PST-T-9.1)', () => {
     expect(await db.message.count({ where: { id: pending.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
   });
 
+  it('undo racing the release tick: exactly one wins — never an undone message that was also sent', async () => {
+    for (let round = 0; round < 8; round++) {
+      const me = await person();
+      const pending = await hold(me, { releaseAt: clock.now() });
+      // The same conditional transition the API's cancelHeld makes (apps/api/src/compose/store.ts).
+      const undo = db.pendingSend
+        .updateMany({ where: { id: pending.id, state: 'held' }, data: { state: 'cancelled', reason: 'undone', finishedAt: clock.now() } })
+        .then((n) => (n.count === 1 ? 'undone' : 'too-late'));
+      const [undone, ...releases] = await Promise.all([undo, releaseOne(deps, pending.id), releaseOne(deps, pending.id)]);
+      const sent = await outboundFor(me, pending.messageIdHeader);
+      const state = (await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id } })).state;
+      if (undone === 'undone') {
+        expect(releases.every((r) => r === 'skipped')).toBe(true);
+        expect(sent).toHaveLength(0);
+        expect(state).toBe('cancelled');
+      } else {
+        expect(releases.filter((r) => r === 'released')).toHaveLength(1);
+        expect(sent).toHaveLength(1);
+        expect(state).not.toBe('cancelled');
+      }
+    }
+  });
+
   it('removing the Drafts copy from any client cancels the send', async () => {
     const me = await person();
     const pending = await hold(me, { releaseAt: new Date(clock.now().getTime() + 5_000) });

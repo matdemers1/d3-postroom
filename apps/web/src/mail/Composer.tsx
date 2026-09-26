@@ -27,6 +27,8 @@ import {
   stateFromSaved,
   toLocalInput,
   undoSeconds,
+  setUndoSeconds,
+  UNDO_CHOICES,
   type ComposeDraft,
   type ComposeState,
   type SendTiming,
@@ -67,6 +69,8 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
   // PST-T-9.1: send later (PST-REQ-141) and remind if no reply (PST-REQ-143).
   const [timing, setTiming] = useState<SendTiming>({ kind: 'now' });
   const [remind, setRemind] = useState<number | null>(null);
+  // PST-REQ-140: the undo window is the person's choice, remembered in this browser.
+  const [undo, setUndo] = useState<number>(() => undoSeconds(storage()));
   const toRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -201,7 +205,7 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
       setError('Your account has no address to send from.');
       return;
     }
-    const timed = sendOptions(timing, undoSeconds(storage()), remind, new Date());
+    const timed = sendOptions(timing, undo, remind, new Date());
     if (!timed.ok) {
       setError(timed.error);
       return;
@@ -308,6 +312,19 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
             onValueChange={(v) => { setRemind(v === 'none' ? null : Number(v)); }}
           />
         </FormField>
+        {timing.kind === 'now' ? (
+          <FormField label="Undo send" help="How long a sent message waits, so you can take it back.">
+            <Select
+              options={UNDO_CHOICES.map((seconds) => ({ value: String(seconds), label: seconds === 0 ? 'Off — send at once' : `${String(seconds)} seconds` }))}
+              value={String(undo)}
+              onValueChange={(v) => {
+                const seconds = Number(v);
+                setUndo(seconds);
+                setUndoSeconds(storage(), seconds);
+              }}
+            />
+          </FormField>
+        ) : null}
         {timing.kind === 'later' ? (
           <FormField label="Send at" help="It waits in Drafts until then; you can cancel it there.">
             <Input type="datetime-local" value={timing.local} min={toLocalInput(new Date())} onChange={(e) => { setTiming({ kind: 'later', local: e.target.value }); }} />

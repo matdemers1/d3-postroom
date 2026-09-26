@@ -205,6 +205,8 @@ export function sendErrorText(error: unknown): string {
 /** The undo window when the person has not chosen one (PST-REQ-140). 0 turns undo off. */
 export const UNDO_DEFAULT_SECONDS = 10;
 export const UNDO_MAX_SECONDS = 30;
+/** The choices the composer offers; 0 turns undo off. */
+export const UNDO_CHOICES: readonly number[] = [0, 5, 10, 20, 30];
 const UNDO_KEY = 'postroom.undoSeconds';
 
 /** The undo window this browser uses: a whole number of seconds, 0–30, default 10. */
