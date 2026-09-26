@@ -17,6 +17,7 @@ import { usercontentConfig, usercontentDispatch } from './usercontent/index.js';
 import { deliveryRoutes } from './delivery/index.js';
 import { exportRoutes } from './export/index.js';
 import { senderRoutes } from './senders/index.js';
+import { sieveRoutes } from './sieve/index.js';
 import { importRoutes } from './import/index.js';
 import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import { isSecureOrigin } from './auth/sessions.js';
@@ -102,6 +103,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
   app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));
   app.use('/api/senders', requireSession(deps), senderRoutes(deps));
+  app.use('/api/sieve', requireSession(deps), sieveRoutes(deps));
   app.use('/api/messages', requireSession(deps), deliveryRoutes(deps));
   app.use('/api/export', requireSession(deps), exportRoutes(deps));
   app.use('/api/compose', requireSession(deps), composeRoutes(deps));

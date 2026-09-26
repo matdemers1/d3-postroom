@@ -156,6 +156,10 @@ model Account {
   // PST-T-8.2: CalDAV calendars and CardDAV address books.
   davCollections DavCollection[]
 
+  // PST-T-9.5: Sieve scripts (ManageSieve + the webmail rules builder) and vacation replies sent.
+  sieveScripts         SieveScript[]
+  sieveVacationReplies SieveVacationReply[]
+
   @@map("account")
 }
 
@@ -892,4 +896,48 @@ model DavChange {
   @@id([collectionId, seq])
   @@index([collectionId, name])
   @@map("dav_change")
+}
+
+// ─── Sieve (PST-T-9.5, PST-REQ-148, PST-REQ-149, PST-REQ-150) ───────────────────────────────────
+
+/// One Sieve script of one account, as ManageSieve (RFC 5804) and the webmail rules builder store it.
+/// At most one script per account is active: a partial unique index on (account_id) WHERE active
+/// (in the migration's SQL, because Prisma cannot express it). The worker's sieve stage runs the
+/// active script. The content is kept exactly as uploaded; it always compiled when it was stored.
+model SieveScript {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  /// RFC 5804 script name: 1-128 characters, no control characters.
+  name      String
+  content   String
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, name])
+  @@map("sieve_script")
+}
+
+/// A vacation auto-reply that was sent (RFC 5230 §4.2): the once-per-sender-per-:days memory. One
+/// per (account, inbound message) at most, so a replayed sieve stage never sends a second reply.
+model SieveVacationReply {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId         String   @map("account_id") @db.Uuid
+  /// The envelope sender the reply went to, lowercased.
+  sender            String
+  /// The vacation :handle (or the interpreter's hash of reason/subject/from/mime).
+  handle            String
+  /// The inbound spool row that triggered the reply.
+  inboundMessageId  String?  @map("inbound_message_id") @db.Uuid
+  /// The queued reply.
+  outboundMessageId String?  @map("outbound_message_id") @db.Uuid
+  sentAt            DateTime @default(now()) @map("sent_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, inboundMessageId])
+  @@index([accountId, sender, handle, sentAt])
+  @@map("sieve_vacation_reply")
 }

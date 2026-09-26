@@ -533,3 +533,51 @@ export const importApi = {
   start: (input: StartImportInput) => call<ImportStatus>('POST', '/api/import', input),
   cancel: (id: string) => call<ImportStatus>('POST', `/api/import/${encodeURIComponent(id)}/cancel`),
 };
+
+// --- Sieve rules (PST-T-9.5, PST-REQ-150) ------------------------------------------------------
+
+export interface SieveScriptSummary {
+  name: string;
+  active: boolean;
+  size: number;
+  updatedAt: string;
+}
+
+export interface SieveScript extends SieveScriptSummary {
+  content: string;
+}
+
+/** A compile error: 1-based line and column, and the message (which starts "line L, column C: "). */
+export interface SieveCompileError {
+  line: number;
+  column: number;
+  message: string;
+}
+
+export interface SieveScriptList {
+  scripts: SieveScriptSummary[];
+  extensions: string[];
+  maxScripts: number;
+  maxScriptBytes: number;
+}
+
+const scriptPath = (name: string): string => `/api/sieve/scripts/${encodeURIComponent(name)}`;
+
+export const sieveApi = {
+  list: () => call<SieveScriptList>('GET', '/api/sieve/scripts'),
+  get: (name: string) => call<SieveScript>('GET', scriptPath(name)),
+  /** 422 invalid_script (body.compileError has the line) when it does not compile. */
+  put: (name: string, content: string) => call<SieveScriptSummary>('PUT', scriptPath(name), { content }),
+  /** 409 script_active for the active script. */
+  remove: (name: string) => call<{ ok: true }>('DELETE', scriptPath(name)),
+  activate: (name: string) => call<{ ok: true }>('POST', `${scriptPath(name)}/activate`),
+  deactivate: () => call<{ ok: true }>('POST', '/api/sieve/deactivate'),
+  check: (content: string) => call<{ valid: boolean; error: SieveCompileError | null }>('POST', '/api/sieve/check', { content }),
+};
+
+/** The compile error in a refused save, if that is why it was refused. */
+export function compileErrorOf(error: unknown): SieveCompileError | null {
+  if (!(error instanceof ApiError) || error.code !== 'invalid_script') return null;
+  const body = error.body as { compileError?: SieveCompileError } | null;
+  return body?.compileError ?? null;
+}

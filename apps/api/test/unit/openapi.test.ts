@@ -56,6 +56,14 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/compose/drafts/{id}',
         'PUT /api/compose/drafts/{id}',
         'DELETE /api/compose/drafts/{id}',
+        // PST-T-9.5: Sieve scripts for the rules builder.
+        'GET /api/sieve/scripts',
+        'GET /api/sieve/scripts/{name}',
+        'PUT /api/sieve/scripts/{name}',
+        'DELETE /api/sieve/scripts/{name}',
+        'POST /api/sieve/scripts/{name}/activate',
+        'POST /api/sieve/deactivate',
+        'POST /api/sieve/check',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit']);
