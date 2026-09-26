@@ -39,4 +39,21 @@ describe('describeError', () => {
     expect(describeError(new ApiError(401, 'invalid_credentials', null))).toBe('Those details did not match.');
     expect(describeError(new Error('network'))).toMatch(/did not answer/);
   });
+
+  it('names which password rule failed (PST-T-4.9, PST-REQ-091)', () => {
+    expect(describeError(new ApiError(400, 'weak_password', { error: 'weak_password', problems: ['common'] }))).toMatch(
+      /common breached passwords/,
+    );
+    expect(describeError(new ApiError(400, 'weak_password', { error: 'weak_password', problems: ['too_short'] }))).toMatch(
+      /at least 12 characters/,
+    );
+    expect(describeError(new ApiError(400, 'weak_password', { error: 'weak_password', problems: ['context_word'] }))).toMatch(
+      /Postroom's own name/,
+    );
+    expect(
+      describeError(new ApiError(400, 'weak_password', { error: 'weak_password', problems: ['too_short', 'common'] })),
+    ).toBe("That password must be at least 12 characters; is one of the most common breached passwords.");
+    // No problems array at all: still a sentence, never a crash.
+    expect(describeError(new ApiError(400, 'weak_password', null))).toMatch(/too weak/);
+  });
 });
