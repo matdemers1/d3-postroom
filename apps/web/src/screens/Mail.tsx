@@ -1,13 +1,10 @@
-import { EmptyState, Page, PageHeader } from '@d3cloud/ui';
+import '../mail/mail.css';
+import { MailView } from '../mail/MailView';
 
-/** A placeholder until the mail store lands (PST-P-3): the shell needs somewhere to arrive. */
+/**
+ * Mail (PST-T-3.10): the three-pane view — the shell's sidebar holds the mailboxes, then the
+ * message list and the reading pane; push navigation below tablet width.
+ */
 export function Mail() {
-  return (
-    <Page>
-      <PageHeader title="Mail" />
-      <EmptyState kind="empty" heading="No mail here yet" size="page" headingLevel={2}>
-        Postroom is not receiving mail yet. Your inbox appears here once delivery is switched on.
-      </EmptyState>
-    </Page>
-  );
+  return <MailView />;
 }
