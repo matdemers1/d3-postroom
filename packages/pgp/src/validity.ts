@@ -269,3 +269,68 @@ export function signingAuthority(key: OpenPgpKey, material: KeyMaterial): Author
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Encryption capability (PST-T-12.2): which key in a block a message is encrypted to.
+//
+// A subkey counts only through a subkey binding (0x18) by the primary that verifies and grants key
+// flag 0x04 or 0x08 (RFC 9580 §5.2.3.29); the primary only when its latest valid self-signature
+// grants one of them (or carries no flags at all and its algorithm can only be RSA). Revoked and
+// expired keys are skipped. Algorithms the writer cannot encrypt to are skipped with a reason.
+
+/** Public-key algorithms the writer can make a PKESK for: RSA (1, 2) and ECDH over Curve25519Legacy (18). */
+export function canEncryptTo(m: KeyMaterial): boolean {
+  if (m.publicKey === null) return false;
+  if (m.algorithm === 1 || m.algorithm === 2) return true;
+  return m.algorithm === 18 && m.curveOid === '2b060104019755010501';
+}
+
+function usable(key: OpenPgpKey, m: KeyMaterial, now: Date): boolean {
+  const state = keyState(key, m);
+  if (state.revocations.length > 0) return false;
+  if (state.expiresAt !== null && state.expiresAt.getTime() <= now.getTime()) return false;
+  return state.selfSignatureExpiresAt === null || state.selfSignatureExpiresAt.getTime() > now.getTime();
+}
+
+/**
+ * The key materials of `key` a message may be encrypted to at `now`, newest subkey first. Empty
+ * when there is none; `reason` then says why.
+ */
+export function encryptionMaterials(key: OpenPgpKey, now: Date = new Date()): { materials: KeyMaterial[]; reason: string | null } {
+  const primary = key.primary;
+  const mine = key.signatures.filter((ks) => byPrimary(ks.sig, primary));
+  if (!usable(key, primary, now)) return { materials: [], reason: 'the key is revoked or expired' };
+  const out: KeyMaterial[] = [];
+  let unsupported = false;
+  const subkeys = [...key.subkeys].sort((a, b) => b.created.getTime() - a.created.getTime());
+  for (const sub of subkeys) {
+    const binding = latestValid(
+      primary,
+      mine.filter((ks) => ks.sig.type === SignatureType.SubkeyBinding && ks.target.kind === 'subkey' && ks.target.subkey.fingerprint === sub.fingerprint),
+    );
+    if (binding === null) continue;
+    const flags = keyFlags(binding.sig);
+    if (flags === null || (flags & 0x0c) === 0 || !usable(key, sub, now)) continue;
+    if (canEncryptTo(sub)) out.push(sub);
+    else unsupported = true;
+  }
+  if (out.length === 0) {
+    const self = latestValid(
+      primary,
+      mine.filter((ks) => (ks.target.kind === 'uid' && CERTIFICATIONS.has(ks.sig.type)) || (ks.target.kind === 'key' && ks.sig.type === SignatureType.DirectKey)),
+    );
+    const flags = self === null ? null : keyFlags(self.sig);
+    const allowed = flags === null ? primary.algorithm === 1 || primary.algorithm === 2 : (flags & 0x0c) !== 0;
+    if (self !== null && allowed) {
+      if (canEncryptTo(primary)) out.push(primary);
+      else unsupported = true;
+    }
+  }
+  if (out.length > 0) return { materials: out, reason: null };
+  return { materials: [], reason: unsupported ? 'the key can encrypt only with an algorithm Postroom does not write (only RSA and Curve25519 ECDH)' : 'the key has no subkey or primary that may encrypt' };
+}
+
+/** The key materials of `key` that may sign now, with a secret half loaded: primary first. */
+export function signingMaterials(key: OpenPgpKey): KeyMaterial[] {
+  return [key.primary, ...key.subkeys].filter((m) => m.secretKey !== null && [1, 3, 22, 27].includes(m.algorithm) && signingAuthority(key, m) === null);
+}

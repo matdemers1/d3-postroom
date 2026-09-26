@@ -248,6 +248,8 @@ export interface CertOptions {
   /** Subject/issuer CN and serial (vary them for several certificates in one message). */
   cn?: string;
   serial?: Buffer;
+  /** The subject key and the self-signature's algorithm (PST-T-12.2): Ed25519 (default), ECDSA P-256, or RSA-2048. */
+  keyType?: 'ed25519' | 'p256' | 'rsa';
 }
 
 export interface ForgedCert {
@@ -260,7 +262,9 @@ export interface ForgedCert {
 }
 
 export function forgeCert(o: CertOptions = {}): ForgedCert {
-  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const kt = o.keyType ?? 'ed25519';
+  const { privateKey, publicKey } = kt === 'p256' ? generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) : kt === 'rsa' ? generateKeyPairSync('rsa', { modulusLength: 2048 }) : generateKeyPairSync('ed25519');
+  const sigAlg = kt === 'p256' ? seq(oid('1.2.840.10045.4.3.2')) : kt === 'rsa' ? seq(oid('1.2.840.113549.1.1.11'), Buffer.of(5, 0)) : seq(oid(ED25519));
   const cn = o.cn ?? 'Erin Test (TEST ONLY)';
   const serial = o.serial ?? Buffer.of(0x01, 0x23, 0x45);
   const exts = [ext('2.5.29.17', seq(encodeTlv(TagClass.Context, false, 1, Buffer.from(o.email ?? 'erin@example.test', 'latin1'))))];
@@ -271,14 +275,14 @@ export function forgeCert(o: CertOptions = {}): ForgedCert {
   const tbs = seq(
     ctx(0, int(Buffer.of(2))),
     int(serial),
-    seq(oid(ED25519)),
+    sigAlg,
     name(cn),
     seq(utc(o.notBefore ?? new Date('2026-01-01T00:00:00Z')), utc(o.notAfter ?? new Date('2046-01-01T00:00:00Z'))),
     name(cn),
     publicKey.export({ format: 'der', type: 'spki' }),
     ctx(3, seq(...exts)),
   );
-  const der = seq(tbs, seq(oid(ED25519)), encodeTlv(TagClass.Universal, false, UTag.BitString, Buffer.concat([Buffer.of(0), sign(null, tbs, privateKey)])));
+  const der = seq(tbs, sigAlg, encodeTlv(TagClass.Universal, false, UTag.BitString, Buffer.concat([Buffer.of(0), sign(kt === 'ed25519' ? null : 'sha256', tbs, privateKey)])));
   const pem = `-----BEGIN CERTIFICATE-----\n${der.toString('base64').replace(/(.{64})/g, '$1\n')}\n-----END CERTIFICATE-----\n`;
   return {
     pem,

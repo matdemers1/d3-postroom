@@ -268,6 +268,11 @@ function tryKey(make: () => KeyObject): KeyObject | null {
   }
 }
 
+/** How many octets of a (secret) key packet body are its public part (RFC 9580 §5.5.2). */
+export function publicPartLength(body: Buffer): number {
+  return parsePublicBody(body).end;
+}
+
 /** A public key or public subkey packet body. */
 export function parsePublicKeyPacket(body: Buffer): KeyMaterial {
   return parsePublicBody(body).material;
@@ -323,15 +328,24 @@ export function parseSecretKeyPacket(body: Buffer): KeyMaterial {
       }
       break;
     }
-    case 22:
-      readMpi(r);
+    case 22: {
+      // EdDSALegacy over Ed25519: the 32-octet seed as an MPI, in native order (RFC 9580 §5.5.5.5).
+      const s = readMpi(r);
+      if (m.curveOid === OID.ed25519Legacy && parsed.pub.point !== undefined && s.length <= 32) {
+        const x = parsed.pub.point.subarray(1);
+        m.secretKey = tryKey(() => createPrivateKey({ key: { kty: 'OKP', crv: 'Ed25519', d: b64url(padStart(Buffer.from(s), 32)), x: b64url(x) }, format: 'jwk' }));
+      }
       break;
+    }
     case 25:
       r.bytes(32);
       break;
-    case 27:
-      r.bytes(32);
+    case 27: {
+      const d = r.bytes(32);
+      const x = parsed.pub.point;
+      if (x !== undefined) m.secretKey = tryKey(() => createPrivateKey({ key: { kty: 'OKP', crv: 'Ed25519', d: b64url(d), x: b64url(x) }, format: 'jwk' }));
       break;
+    }
     default:
       // Other algorithms: leave the material unread; the key stays usable for its public half.
       return m;
