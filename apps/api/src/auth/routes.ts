@@ -67,6 +67,11 @@ const PasswordChange = z.object({
 });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** An attempt refused by the throttle is an attempt to get past anti-automation (ASVS 5.0 16.3.3). */
+function logThrottled(req: Request): void {
+  process.stderr.write(`${JSON.stringify({ event: 'auth-throttled', method: req.method, path: req.path, ip: req.ip ?? null, requestId: getAuditContext(req).requestId })}\n`);
+}
+
 function weakPassword(res: Response, problems: PasswordProblem[]): void {
   res.status(400).json({ error: 'weak_password', problems });
 }
@@ -339,6 +344,7 @@ export function authRoutes(deps: ApiDeps): Router {
       // Throttle before hashing: a rejected guess must not have cost 64 MiB of Argon2id first.
       const wait = rt.throttle.retryAfter(login, ip, nowMs());
       if (wait > 0) {
+        logThrottled(req);
         res.setHeader('Retry-After', String(Math.ceil(wait / 1000)));
         res.status(429).json({ error: 'too_many_attempts', retryAfterSeconds: Math.ceil(wait / 1000) });
         return;
@@ -414,6 +420,7 @@ export function authRoutes(deps: ApiDeps): Router {
       const ip = req.ip ?? 'unknown';
       const wait = rt.throttle.retryAfter(pending.login, ip, nowMs());
       if (wait > 0) {
+        logThrottled(req);
         res.setHeader('Retry-After', String(Math.ceil(wait / 1000)));
         res.status(429).json({ error: 'too_many_attempts', retryAfterSeconds: Math.ceil(wait / 1000) });
         return;
@@ -470,6 +477,8 @@ export function authRoutes(deps: ApiDeps): Router {
     handle(async (req, res) => {
       const session = await sessionOf(rt, req);
       clearSessionCookie(res, rt.secure);
+      // Whatever the signed-in app left in this browser goes with the session (ASVS 5.0 14.3.1).
+      res.setHeader('Clear-Site-Data', '"cache", "storage"');
       if (session === null) {
         res.status(401).json({ error: 'unauthenticated' });
         return;
@@ -513,6 +522,7 @@ export function authRoutes(deps: ApiDeps): Router {
       const ip = req.ip ?? 'unknown';
       const wait = rt.throttle.retryAfter(throttleKey, ip, nowMs());
       if (wait > 0) {
+        logThrottled(req);
         res.setHeader('Retry-After', String(Math.ceil(wait / 1000)));
         res.status(429).json({ error: 'too_many_attempts', retryAfterSeconds: Math.ceil(wait / 1000) });
         return;
@@ -651,6 +661,7 @@ export function authRoutes(deps: ApiDeps): Router {
       const ip = req.ip ?? 'unknown';
       const wait = rt.throttle.retryAfter(throttleKey, ip, nowMs());
       if (wait > 0) {
+        logThrottled(req);
         res.setHeader('Retry-After', String(Math.ceil(wait / 1000)));
         res.status(429).json({ error: 'too_many_attempts', retryAfterSeconds: Math.ceil(wait / 1000) });
         return;

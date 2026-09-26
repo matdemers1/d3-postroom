@@ -17,7 +17,7 @@ import { AccountKind, AppPasswordScope } from '@postroom/db';
 import { thawCredential } from '@postroom/delivery';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { currentSession, handle, requireAdmin, requireStepUp } from '../auth/middleware.js';
+import { currentSession, handle, recordDenied, requireAdmin, requireStepUp } from '../auth/middleware.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 
@@ -66,6 +66,7 @@ export function appPasswordRoutes(deps: ApiDeps): Router {
       return null;
     }
     if (!me.isAdmin) {
+      await recordDenied(rt, req, me.accountId, 'not_admin');
       res.status(403).json({ error: 'forbidden' });
       return null;
     }

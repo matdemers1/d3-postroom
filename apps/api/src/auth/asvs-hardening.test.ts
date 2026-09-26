@@ -1,7 +1,7 @@
 // Unit proofs for the fixes the ASVS 5.0 L2 self-assessment made (PST-T-4.3, PST-REQ-091;
 // docs/security/asvs-l2.md). The database-backed routes are covered by apps/api's integration suite.
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Db } from '@postroom/db';
 import { createApp, HSTS } from '../app.js';
 import { openTransaction, sealTransaction, SECURE_TX_COOKIE, TX_COOKIE, txCookieName } from './oidc.js';
@@ -77,5 +77,37 @@ describe('new routes sit behind the session and CSRF guards', () => {
   ] as const)('%s %s: 403 cross-site, 401 without a session', async (method, path) => {
     expect((await request(app)[method](path).set('origin', 'https://evil.example')).status).toBe(403);
     expect((await request(app)[method](path).set('x-postroom-csrf', '1')).status).toBe(401);
+  });
+});
+
+describe('errors and caching (ASVS 14.3.2, 16.3.4, 16.5.1)', () => {
+  const app = createApp({ db, env: {}, config: loopback });
+
+  it('answers malformed JSON with a generic JSON error and the request id, never a stack', async () => {
+    const res = await request(app)
+      .post('/api/auth/signin')
+      .set('x-postroom-csrf', '1')
+      .set('content-type', 'application/json')
+      .send('{"login":');
+    expect(res.status).toBe(400);
+    expect(res.headers['content-type']).toMatch(/^application\/json; charset=utf-8/);
+    expect(res.body).toEqual({ error: 'invalid_json', requestId: res.headers['x-request-id'] });
+    expect(res.text).not.toMatch(/at \w+ \(|node_modules|SyntaxError/);
+  });
+
+  it('hides an unexpected failure behind { error: "internal" }', async () => {
+    // An empty fake database makes the session lookup throw inside the handler.
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const res = await request(app).get('/api/auth/state');
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'internal', requestId: res.headers['x-request-id'] });
+    // …and the operator's log gets the detail, keyed by the same request id.
+    expect(String(stderr.mock.calls[0]?.[0])).toContain(`"requestId":"${String(res.headers['x-request-id'])}"`);
+    stderr.mockRestore();
+  });
+
+  it('marks every /api response no-store unless a route says otherwise', async () => {
+    const res = await request(app).get('/api/nothing');
+    expect(res.headers['cache-control']).toBe('no-store');
   });
 });
