@@ -19,6 +19,7 @@ export type Stage =
   | 'helo'
   | 'starttls'
   | 'tls'
+  | 'auth'
   | 'mail'
   | 'rcpt'
   | 'data'

@@ -60,5 +60,10 @@ export interface DeliveryResult {
 export interface Transport {
   /** Recorded as DeliveryAttempt.transport: 'direct' | 'ses' | a test name. */
   readonly name: string;
+  /**
+   * Whether this transport takes over a recipient domain whatever the recipient was enqueued with
+   * (the SES fallback's DELIVERY_SES_DOMAINS). Decided by the worker at each attempt.
+   */
+  claims?: (domain: string) => boolean;
   deliver: (request: DeliveryRequest) => Promise<DeliveryResult>;
 }

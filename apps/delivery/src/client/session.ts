@@ -63,11 +63,22 @@ export const RFC5321_TIMEOUTS: CommandTimeouts = {
 
 export type Log = (event: string, fields?: Record<string, unknown>) => void;
 
+/** Credentials for a smarthost (the SES fallback, PST-T-1.11). Never logged, never sent before verified TLS. */
+export interface SmarthostAuth {
+  user: string;
+  password: string;
+}
+
 export interface SessionConfig {
   heloName: string;
   timeouts: CommandTimeouts;
   tlsOptions: tls.ConnectionOptions;
   log: Log;
+  /**
+   * Smarthost mode: STARTTLS is required, the certificate must verify against the host name, and
+   * the session authenticates (AUTH PLAIN, else LOGIN) before MAIL FROM. Unset = opportunistic MX.
+   */
+  smarthost?: SmarthostAuth;
 }
 
 export interface Target {
@@ -150,6 +161,11 @@ function describePeer(secure: tls.TLSSocket): string {
 
 function tlsOptionsFor(target: Target, cfg: SessionConfig): tls.ConnectionOptions {
   const host = target.host.replace(/\.$/, '');
+  if (cfg.smarthost !== undefined) {
+    // A smarthost is a name we chose, and we are about to hand it a password: the certificate
+    // must verify against that name. Last, so no tlsOptions (a test CA, say) can switch it off.
+    return { minVersion: 'TLSv1.2', ...(isIP(host) === 0 ? { servername: host } : {}), ...cfg.tlsOptions, rejectUnauthorized: true };
+  }
   return {
     // Opportunistic STARTTLS (RFC 3207): without DANE or MTA-STS there is no authenticated name to
     // hold the peer to, so an unverifiable certificate still beats plaintext. Whether it verified is
@@ -177,6 +193,34 @@ async function streamBody(conn: SmtpConnection, request: DeliveryRequest, blockT
     unsubscribe();
     if (!stream.destroyed) stream.destroy();
   }
+}
+
+function base64(text: string): string {
+  return Buffer.from(text, 'utf8').toString('base64');
+}
+
+/**
+ * RFC 4954 AUTH over the verified TLS session: PLAIN when offered, else LOGIN. Null = authenticated.
+ * A refusal is never a verdict on the message: 4xx keeps its code (temporary), anything else is an
+ * `error`, so a bad credential defers mail rather than bouncing it. Reply text is the server's own
+ * and never echoes the credential.
+ */
+async function authenticate(conn: SmtpConnection, auth: SmarthostAuth, caps: Map<string, string[]>, cfg: SessionConfig, target: Target): Promise<SessionResult | null> {
+  const timeout = cfg.timeouts.mail;
+  const mechanisms = (caps.get('AUTH') ?? []).map((m) => m.toUpperCase());
+  let reply: SmtpReply;
+  if (mechanisms.includes('PLAIN')) {
+    reply = await conn.command('auth', `AUTH PLAIN ${base64(`\0${auth.user}\0${auth.password}`)}`, timeout);
+  } else if (mechanisms.includes('LOGIN')) {
+    reply = await conn.command('auth', 'AUTH LOGIN', timeout);
+    if (reply.code === 334) reply = await conn.command('auth', base64(auth.user), timeout);
+    if (reply.code === 334) reply = await conn.command('auth', base64(auth.password), timeout);
+  } else {
+    return { kind: 'next', outcome: { kind: 'error', error: `${target.host} [${target.ip}] smarthost offers neither AUTH PLAIN nor AUTH LOGIN` } };
+  }
+  if (reply.code === 235) return null;
+  cfg.log('smarthost-auth-refused', { host: target.host, ip: target.ip, code: reply.code, text: replyText(reply) });
+  return nextFromReply(target, 'AUTH', reply);
 }
 
 /** Run one session. Resolves once the final reply to DATA (or the last definitive reply) is read. */
@@ -209,6 +253,20 @@ export async function runSession(conn: SmtpConnection, target: Target, request: 
       } else {
         cfg.log('starttls-refused', { mxHost: target.host, mxIp: target.ip, code: starttls.code, text: replyText(starttls) });
       }
+    }
+
+    if (cfg.smarthost !== undefined) {
+      // Never AUTH over plaintext, nor over TLS whose certificate did not verify.
+      const secure = conn.tlsSocket;
+      if (secure === null) {
+        return { kind: 'next', outcome: { kind: 'error', error: `${target.host} [${target.ip}] smarthost did not complete STARTTLS: refusing to authenticate in plaintext` } };
+      }
+      if (!secure.authorized) {
+        conn.fail(new Error('smarthost certificate did not verify'));
+        return { kind: 'next', outcome: { kind: 'error', error: `${target.host} [${target.ip}] smarthost certificate did not verify: ${String(secure.authorizationError)}` } };
+      }
+      const refused = await authenticate(conn, cfg.smarthost, caps, cfg, target);
+      if (refused !== null) return refused;
     }
 
     if (unsafeAddress(request.envelopeFrom)) {
