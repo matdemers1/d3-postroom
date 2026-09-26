@@ -243,7 +243,7 @@ test.describe('at 390 px', () => {
     await expect(page).toHaveURL(/\/mail$/);
     await expect(page.getByRole('heading', { name: 'Mailboxes', level: 2 })).toBeVisible();
     await page.getByRole('navigation', { name: 'Mailboxes' }).getByRole('link', { name: /^Archive/ }).click();
-    await expect(page.getByRole('listbox', { name: 'Messages in Archive' }).or(page.getByRole('heading', { name: 'No messages here' }))).toBeVisible();
+    await expect(page.getByRole('listbox', { name: 'Messages in Archive' }).or(page.getByRole('heading', { name: 'Nothing archived' }))).toBeVisible();
   });
 });
 

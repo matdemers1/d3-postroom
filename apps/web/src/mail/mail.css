@@ -73,8 +73,10 @@
 }
 
 .pr-listhead__title:focus-visible {
-  outline: var(--focus-width) solid var(--color-focus);
-  outline-offset: var(--focus-offset);
+  /* PST-T-11.4: focus moves here programmatically (tabIndex=-1) on every push, so a screen reader
+     starts in the right place; a heading is not a control, and a ring around it on every open is
+     noise. Keyboard users keep the list cursor and the row outline. */
+  outline: none;
 }
 
 .pr-listhead__count {
@@ -98,6 +100,33 @@
 
 .pr-search > :first-child {
   flex: 1;
+}
+
+/* PST-T-11.4: the move notice and its Undo on one line. */
+.pr-notice__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.pr-notice__row:has(> .pr-notice:empty):not(:has(> button)) {
+  display: none;
+}
+
+/* The search field's "/" key hint (PST-T-11.4). */
+.pr-search__key {
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-11);
+  line-height: var(--leading-14);
+  color: var(--color-fg-faint);
+}
+
+/* The Priority / People split fills the list's width, so its three segments share it evenly. */
+.pr-split {
+  align-self: stretch;
 }
 
 .pr-notice {
@@ -148,8 +177,12 @@
 }
 
 .pr-row[aria-current='true'] {
+  /* The open message: a leading accent bar, not just a 1.08:1 tint (PST-T-11.4). A border, since
+     shadows are not part of the system; the padding gives the bar's width back. */
   background: var(--color-accent-muted);
   color: var(--color-fg);
+  border-left: calc(var(--focus-width) * 2) solid var(--color-accent);
+  padding-left: calc(var(--space-16) - var(--focus-width) * 2);
 }
 
 .pr-row[aria-selected='true'] {
@@ -227,8 +260,8 @@
 }
 
 .pr-reader__subject:focus-visible {
-  outline: var(--focus-width) solid var(--color-focus);
-  outline-offset: var(--focus-offset);
+  /* See .pr-listhead__title: programmatic focus on a heading, not a control (PST-T-11.4). */
+  outline: none;
 }
 
 .pr-reader__meta {
@@ -337,6 +370,137 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-14);
+}
+
+/* PST-T-11.4: a collapsed row reads as a closed message, not a divider — chevron, the sender's
+   name, and the first line of what they wrote, muted, under it. */
+.pr-thread__collapsed {
+  align-items: flex-start;
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-md);
+}
+
+.pr-thread__chevron {
+  display: flex;
+  flex: none;
+  padding-top: var(--space-2);
+  color: var(--color-fg-faint);
+}
+
+.pr-thread__collapsed-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.pr-thread__snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
+}
+
+/* --- The reader's toolbar (PST-T-11.4): three groups on one row, wrapping as groups ------------- */
+
+.pr-reader__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-16);
+  row-gap: var(--space-8);
+}
+
+/* --- The phishing verdict above the warnings (PST-T-11.4) ----------------------------------------- */
+
+.pr-phish__verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-12);
+}
+
+.pr-phish__verdict-text {
+  margin: 0;
+  flex: 1 1 16rem;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+/* --- The Newsletters feed (PST-T-5.6; styled in PST-T-11.4) --------------------------------------- */
+
+.pr-mail__feed {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: var(--space-24);
+  background: var(--color-bg);
+}
+
+.pr-mail[data-layout='push'] .pr-mail__feed {
+  padding: var(--space-16);
+}
+
+.pr-mail__feed > * {
+  max-width: 48rem;
+  margin-inline: auto;
+}
+
+.pr-mail__feed > .pr-listhead__title {
+  margin-bottom: var(--space-16);
+}
+
+.pr-feed__toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pr-feed__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.pr-feed__item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-12);
+}
+
+.pr-feed__item-head > :first-child {
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.pr-feed__item-subject {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+  overflow-wrap: anywhere;
+}
+
+.pr-feed__item-meta {
+  margin-top: var(--space-4);
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.pr-feed__item-actions {
+  flex: none;
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
 }
 
 /* --- The delivery timeline (PST-T-6.4) ------------------------------------------------------------ */
@@ -515,6 +679,29 @@
     width: 100vw;
     border-width: 0;
     padding: var(--space-16);
+  }
+}
+
+/* PST-T-11.4: the drawer scrolls as one piece, so its only Close sat after the whole report —
+   out of reach on a phone. The footer sticks to the bottom edge instead, in thumb reach, at every
+   width. The modal's own padding is taken back so the bar spans it. */
+.d3-modal.pr-inspect .d3-modal__footer {
+  position: sticky;
+  bottom: calc(var(--space-20) * -1);
+  z-index: 1;
+  margin-inline: calc(var(--space-20) * -1);
+  margin-bottom: calc(var(--space-20) * -1);
+  padding: var(--space-12) var(--space-20);
+  background: var(--color-surface-raised);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+@media (max-width: 40rem) {
+  .d3-modal.pr-inspect .d3-modal__footer {
+    bottom: calc(var(--space-16) * -1);
+    margin-inline: calc(var(--space-16) * -1);
+    margin-bottom: calc(var(--space-16) * -1);
+    padding-inline: var(--space-16);
   }
 }
 
@@ -707,4 +894,43 @@
 
 .pr-inspect__download {
   font-size: var(--text-13);
+}
+
+/* --- The composer's actions (PST-T-11.4): stuck to the bottom of the pane that scrolls ------------- */
+
+.pr-composer__actions {
+  position: sticky;
+  bottom: calc(var(--space-24) * -1);
+  z-index: 1;
+  margin-inline: calc(var(--space-24) * -1);
+  padding: var(--space-12) var(--space-24);
+  background: var(--color-bg);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.pr-mail[data-layout='push'] .pr-composer__actions {
+  bottom: calc(var(--space-16) * -1);
+  margin-inline: calc(var(--space-16) * -1);
+  padding-inline: var(--space-16);
+}
+
+/* At phone width @d3cloud/ui stacks form actions into full-width rows — four rows would cover half
+   the screen once they stick. The composer keeps them in one wrapping row, Send last (rightmost). */
+@media (max-width: 639.98px) {
+  .pr-composer__actions .d3-fa,
+  .pr-composer__actions .d3-fa__main,
+  .pr-composer__actions .d3-fa__leading {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .pr-composer__actions .d3-fa {
+    justify-content: space-between;
+  }
+
+  .pr-composer__actions .d3-fa__main > *,
+  .pr-composer__actions .d3-fa__leading > * {
+    width: auto;
+  }
 }

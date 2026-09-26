@@ -376,3 +376,13 @@ export function applyTemplate(text: string, trigger: { start: number; end: numbe
   const next = text.slice(0, trigger.start) + filled + text.slice(trigger.end);
   return { text: next, cursor: trigger.start + filled.length };
 }
+
+/** ⌘↵ on a Mac, Ctrl+Enter elsewhere: send from any composer field (PST-T-11.4). Never mid-IME. */
+export function isSendChord(e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; nativeEvent?: { isComposing?: boolean } }): boolean {
+  if (e.key !== 'Enter' || e.altKey || e.shiftKey) return false;
+  if (e.nativeEvent?.isComposing === true) return false;
+  return e.metaKey !== e.ctrlKey;
+}
+
+/** The chord as the Send button's tooltip says it. */
+export const SEND_CHORD_HINT = '⌘↵ or Ctrl+Enter';

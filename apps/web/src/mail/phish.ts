@@ -22,9 +22,27 @@ const KIND_TITLE: Record<PhishWarning['kind'], string> = {
   'link-mismatch': 'A link goes somewhere unexpected',
 };
 
-/** The heading shown above a warning's reason — a short label, never a substitute for the reason itself. */
-export function phishWarningTitle(kind: PhishWarning['kind']): string {
+/**
+ * The heading shown above a warning's reason — a short label, never a substitute for the reason
+ * itself. An auth failure is one kind for three different checks, so with its reason the title
+ * names the check (PST-T-11.4): two cards both titled "Authentication failed" said nothing.
+ */
+export function phishWarningTitle(kind: PhishWarning['kind'], reason?: string): string {
+  if (kind === 'auth-failure' && reason !== undefined) {
+    if (/^DMARC failed/.test(reason)) return 'DMARC check failed';
+    if (/publishes DMARC/.test(reason)) return 'No DMARC result for a protected domain';
+    if (/^SPF failed/.test(reason)) return 'SPF check failed';
+    if (/^DKIM/.test(reason)) return 'DKIM signature did not pass';
+  }
   return KIND_TITLE[kind];
+}
+
+/** The one-line verdict above the warnings, by the worst severity present (sorted worst first). */
+export function phishVerdict(sorted: readonly Pick<PhishWarning, 'severity'>[]): string {
+  const worst = sorted[0]?.severity;
+  if (worst === 'high') return 'This message may be a phishing attempt. Do not reply, open links or download attachments unless you are sure who sent it.';
+  if (worst === 'medium') return 'Something about this message does not add up. Check who sent it before you act on it.';
+  return 'Postroom noticed something unusual about this message.';
 }
 
 export const PHISH_TONE_OF: Record<PhishWarning['severity'], 'danger' | 'warning' | 'info'> = { high: 'danger', medium: 'warning', low: 'info' };

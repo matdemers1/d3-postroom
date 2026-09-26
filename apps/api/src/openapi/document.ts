@@ -57,6 +57,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   MailboxList: S.MailboxList,
   MessageSummary: S.MessageSummary,
   MessageList: S.MessageList,
+  MailboxSplit: S.MailboxSplit,
   MessageDetail: S.MessageDetail,
   OutboundLookup: z.object({ outboundId: z.uuid().nullable() }),
   Attachment: S.Attachment,
@@ -106,6 +107,15 @@ export const ROUTES: RouteSpec[] = [
     params: S.IdParams,
     query: S.MessageListQuery,
     responses: { '200': { description: 'A page; nextCursor is null on the last.', schema: 'MessageList' }, ...COMMON, '404': err('Not a mailbox of the caller.') },
+  },
+  {
+    method: 'get',
+    path: '/api/mailboxes/{id}/split',
+    operationId: 'getMailboxSplit',
+    tag: 'Mailboxes',
+    summary: "The Priority / People split: totals and unread counts of each keyword.",
+    params: S.IdParams,
+    responses: { '200': { description: 'Counts per sorting keyword.', schema: 'MailboxSplit' }, ...COMMON, '404': err('Not a mailbox of the caller.') },
   },
   {
     method: 'get',

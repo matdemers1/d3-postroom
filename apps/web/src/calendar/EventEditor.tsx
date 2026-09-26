@@ -323,6 +323,8 @@ export function EventEditor({
                 set({ allDay: c === true });
               }}
             />
+            {/* PST-T-11.4: start on one row, end on the next, and the time fields wide enough for
+                "10:00 AM" — at xs the AM/PM was clipped under the picker icon ("10:00 AI"). */}
             <Cluster gap="12">
               <FormField label="Start date" width="sm">
                 <Input
@@ -337,7 +339,7 @@ export function EventEditor({
                 />
               </FormField>
               {form.allDay ? null : (
-                <FormField label="Start time" width="xs">
+                <FormField label="Start time" width="sm">
                   <Input
                     type="time"
                     value={form.startTime}
@@ -347,6 +349,8 @@ export function EventEditor({
                   />
                 </FormField>
               )}
+            </Cluster>
+            <Cluster gap="12">
               <FormField label="End date" width="sm">
                 <Input
                   type="date"
@@ -357,7 +361,7 @@ export function EventEditor({
                 />
               </FormField>
               {form.allDay ? null : (
-                <FormField label="End time" width="xs">
+                <FormField label="End time" width="sm">
                   <Input
                     type="time"
                     value={form.endTime}

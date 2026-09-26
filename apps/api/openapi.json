@@ -1734,6 +1734,56 @@
         ],
         "additionalProperties": false
       },
+      "MailboxSplit": {
+        "type": "object",
+        "properties": {
+          "priority": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unseen": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "total",
+              "unseen"
+            ],
+            "additionalProperties": false
+          },
+          "people": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unseen": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "total",
+              "unseen"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "priority",
+          "people"
+        ],
+        "additionalProperties": false
+      },
       "MdnResponse": {
         "type": "object",
         "properties": {
@@ -9933,6 +9983,20 @@
               "minimum": 1,
               "maximum": 200
             }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "description": "Only messages carrying this sorting keyword: the Inbox's Priority / People split (PST-REQ-101).",
+            "schema": {
+              "description": "Only messages carrying this sorting keyword: the Inbox's Priority / People split (PST-REQ-101).",
+              "type": "string",
+              "enum": [
+                "$Priority",
+                "$People"
+              ]
+            }
           }
         ],
         "responses": {
@@ -9942,6 +10006,69 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MessageList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a mailbox of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mailboxes/{id}/split": {
+      "get": {
+        "operationId": "getMailboxSplit",
+        "tags": [
+          "Mailboxes"
+        ],
+        "summary": "The Priority / People split: totals and unread counts of each keyword.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Counts per sorting keyword.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailboxSplit"
                 }
               }
             }

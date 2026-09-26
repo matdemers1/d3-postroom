@@ -51,3 +51,24 @@ export function collapsedSummary(message: Pick<MessageSummary, 'from' | 'subject
 export function mightJoinThread(threadId: string | null): boolean {
   return threadId !== null;
 }
+
+/**
+ * A collapsed row's one-line preview of its body (PST-T-11.4): the words the sender wrote, not the
+ * quote of the message before it or the "On …, X wrote:" line that introduces it. Null when there is
+ * no text part, or nothing but quoted text.
+ */
+export function snippetOf(text: string | null | undefined, max = 140): string | null {
+  if (text === null || text === undefined) return null;
+  const words: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('>')) continue;
+    if (/^On .+ wrote:$/.test(line)) break;
+    if (line === '--' || line === '-- ') break;
+    words.push(line);
+    if (words.join(' ').length >= max) break;
+  }
+  const joined = words.join(' ').replace(/\s+/g, ' ').trim();
+  if (joined === '') return null;
+  return joined.length > max ? `${joined.slice(0, max - 1).trimEnd()}…` : joined;
+}

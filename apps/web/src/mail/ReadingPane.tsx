@@ -26,7 +26,7 @@
 // and an HTML-only message says so.
 import { forwardRef, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Alert, Badge, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, Skeleton, Stack } from '@d3cloud/ui';
+import { Alert, Badge, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, IconButton, Skeleton, Stack } from '@d3cloud/ui';
 import { attemptRemoteText, attemptSummary, deferralReason, deliveryPhase, dsnFiledAt, isPending, NO_DELIVERY_RECORD_TEXT, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
 import { InspectDrawer } from './InspectDrawer';
 import { InviteSection } from '../invites/InviteSection';
@@ -49,10 +49,11 @@ import {
   type Phish,
   type RenderTicket,
 } from '../api';
-import { byteSize, fullDate, header } from './format';
-import { PaperclipIcon, StarIcon } from './icons';
+import { byteSize, displayName, fullDate, header } from './format';
+import { ChevronIcon, DangerIcon, InfoIcon, PaperclipIcon, StarIcon, WarningIcon } from './icons';
 import { isStarred } from './list';
-import { PHISH_TONE_OF, phishWarningTitle, sortPhishWarnings } from './phish';
+import { PHISH_TONE_OF, phishVerdict, phishWarningTitle, sortPhishWarnings } from './phish';
+import { snippetOf } from './thread';
 import { SessionEnded } from '../screens/states';
 
 export interface OpenMessage {
@@ -70,11 +71,15 @@ export interface ReadingPaneProps {
   canTrash: boolean;
   onAction: (action: 'reply' | 'replyAll' | 'forward' | 'archive' | 'delete' | 'markUnread' | 'star') => void;
   onRetry: () => void;
+  /** Snooze/Unsnooze, placed inside the action toolbar beside Archive and Delete (PST-T-11.4). */
+  snooze?: ReactNode;
+  /** Moves a message a phishing warning is about to Junk; absent when there is no Junk mailbox. */
+  onMoveToJunk?: ((message: MessageDetail) => void) | undefined;
   children?: ReactNode;
 }
 
 export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(function ReadingPane(
-  { open, back, canArchive, canTrash, onAction, onRetry, children },
+  { open, back, canArchive, canTrash, onAction, onRetry, snooze, onMoveToJunk, children },
   headingRef,
 ) {
   if (open === null) {
@@ -138,17 +143,23 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
         <h2 id="pr-reader-subject" className="pr-reader__subject" tabIndex={-1} ref={headingRef}>
           {subject}
         </h2>
-        <div role="group" aria-label="Message actions">
-          <Cluster gap="8">
+        {/* PST-T-11.4: one toolbar in three groups — triage (Archive, Delete, Snooze) first, then the
+            replies, then the rest — with Snooze inside it rather than on a line of its own, and Star as
+            an icon so the row fits beside the list at 1280px. */}
+        <div role="group" aria-label="Message actions" className="pr-reader__actions">
+          <Cluster gap="4">
+            <Button size="sm" variant="ghost" disabled={!canArchive} onClick={() => { onAction('archive'); }}>Archive</Button>
+            <Button size="sm" variant="ghost" disabled={!canTrash} onClick={() => { onAction('delete'); }}>Delete</Button>
+            {snooze}
+          </Cluster>
+          <Cluster gap="4">
             <Button size="sm" variant="secondary" onClick={() => { onAction('reply'); }}>Reply</Button>
             <Button size="sm" variant="ghost" onClick={() => { onAction('replyAll'); }}>Reply all</Button>
             <Button size="sm" variant="ghost" onClick={() => { onAction('forward'); }}>Forward</Button>
-            <Button size="sm" variant="ghost" disabled={!canArchive} onClick={() => { onAction('archive'); }}>Archive</Button>
-            <Button size="sm" variant="ghost" disabled={!canTrash} onClick={() => { onAction('delete'); }}>Delete</Button>
+          </Cluster>
+          <Cluster gap="4">
             <Button size="sm" variant="ghost" onClick={() => { onAction('markUnread'); }}>Mark unread</Button>
-            <Button size="sm" variant="ghost" pressed={starred} icon={<StarIcon filled={starred} />} onClick={() => { onAction('star'); }}>
-              Star
-            </Button>
+            <IconButton size="sm" variant="ghost" label={starred ? 'Unstar' : 'Star'} pressed={starred} icon={<StarIcon filled={starred} />} onClick={() => { onAction('star'); }} />
             <InspectDrawer messageId={detail.id} />
           </Cluster>
         </div>
@@ -158,7 +169,8 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
           body={body}
           bodyStatus={bodyStatus}
           onRetry={onRetry}
-          fallback={<MessageContent detail={detail} body={body} bodyStatus={bodyStatus} onRetry={onRetry} />}
+          onMoveToJunk={onMoveToJunk}
+          fallback={<MessageContent detail={detail} body={body} bodyStatus={bodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} />}
         />
       </Stack>
     </article>
@@ -187,12 +199,14 @@ function ThreadConversation({
   body,
   bodyStatus,
   onRetry,
+  onMoveToJunk,
   fallback,
 }: {
   detail: MessageDetail;
   body: MessageBody | null;
   bodyStatus: OpenMessage['bodyStatus'];
   onRetry: () => void;
+  onMoveToJunk?: ((message: MessageDetail) => void) | undefined;
   fallback: ReactNode;
 }): ReactNode {
   const { subscribe } = useMail();
@@ -205,6 +219,8 @@ function ThreadConversation({
   const [thread, setThread] = useState<MessageSummary[] | null>(null);
   const [toggled, setToggled] = useState<ReadonlySet<string>>(new Set());
   const [extra, setExtra] = useState<ReadonlyMap<string, ExtraMessage>>(new Map());
+  // PST-T-11.4: a collapsed row's sender name and first line, from its body (fetched once per row).
+  const [previews, setPreviews] = useState<ReadonlyMap<string, MessageBody | null>>(new Map());
 
   const loadThread = useCallback((id: string | null) => {
     if (id === null) return;
@@ -220,6 +236,7 @@ function ThreadConversation({
     setThread(null);
     setToggled(new Set());
     setExtra(new Map());
+    setPreviews(new Map());
     setThreadId(detail.threadId);
     if (detail.threadId !== null) loadThread(detail.threadId);
     api.message(detail.id).then(
@@ -284,6 +301,28 @@ function ThreadConversation({
     // state each render and would make this effect fire on every render if listed directly.
   }, [expandedKey, detail.id]);
 
+  // Bodies for the collapsed rows' previews: a thread is a handful of messages, and each body is
+  // asked for once. A row that is expanded later reuses its own fetch (extra) instead.
+  const collapsedKey = rows.filter((r) => !r.expanded).map((r) => r.message.id).join(',');
+  useEffect(() => {
+    const ids = collapsedKey === '' ? [] : collapsedKey.split(',');
+    let cancelled = false;
+    for (const id of ids) {
+      if (previews.has(id)) continue;
+      setPreviews((prev) => (prev.has(id) ? prev : new Map(prev).set(id, null)));
+      api.messageBody(id).then(
+        (b) => {
+          if (!cancelled) setPreviews((prev) => new Map(prev).set(id, b));
+        },
+        () => undefined,
+      );
+    }
+    return () => {
+      cancelled = true;
+    };
+    // collapsedKey (a joined string) is the real dependency, as with expandedKey above.
+  }, [collapsedKey]);
+
   if (thread === null || !isConversation(thread)) return fallback;
 
   const threadSubject = thread[thread.length - 1]?.subject ?? null;
@@ -301,7 +340,7 @@ function ThreadConversation({
               rowDetail === null ? (
                 <Skeleton variant="text" lines={3} />
               ) : (
-                <MessageContent detail={rowDetail} body={rowBody} bodyStatus={rowBodyStatus} onRetry={onRetry} />
+                <MessageContent detail={rowDetail} body={rowBody} bodyStatus={rowBodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} />
               )
             ) : (
               <button
@@ -310,14 +349,32 @@ function ThreadConversation({
                 aria-expanded={false}
                 onClick={() => { setToggled((t) => toggleRow(t, message.id)); }}
               >
-                <span className="pr-thread__collapsed-summary">{collapsedSummary(message, threadSubject)}</span>
-                <span className="pr-reader__note">{fullDate(message.date)}</span>
+                <CollapsedRow message={message} threadSubject={threadSubject} preview={previews.get(message.id) ?? null} />
               </button>
             )}
           </li>
         );
       })}
     </Stack>
+  );
+}
+
+/** A collapsed thread row: chevron, sender name, date, and the first line of what they wrote. */
+function CollapsedRow({ message, threadSubject, preview }: { message: MessageSummary; threadSubject: string | null; preview: MessageBody | null }) {
+  const from = header(preview, 'From');
+  const name = from === null ? collapsedSummary(message, threadSubject) : collapsedSummary({ from: displayName(from), subject: message.subject }, threadSubject);
+  const snippet = snippetOf(preview?.text);
+  return (
+    <>
+      <span className="pr-thread__chevron" aria-hidden="true">
+        <ChevronIcon />
+      </span>
+      <span className="pr-thread__collapsed-main">
+        <span className="pr-thread__collapsed-summary">{name}</span>
+        {snippet === null ? null : <span className="pr-thread__snippet">{snippet}</span>}
+      </span>
+      <span className="pr-reader__note">{fullDate(message.date)}</span>
+    </>
   );
 }
 
@@ -390,11 +447,13 @@ function MessageContent({
   body,
   bodyStatus,
   onRetry,
+  onMoveToJunk,
 }: {
   detail: MessageDetail;
   body: MessageBody | null;
   bodyStatus: OpenMessage['bodyStatus'];
   onRetry: () => void;
+  onMoveToJunk?: ((message: MessageDetail) => void) | undefined;
 }) {
   const { mailboxes } = useMail();
   const use = mailboxes?.find((m) => m.id === detail.mailboxId)?.specialUse;
@@ -402,7 +461,7 @@ function MessageContent({
   return (
     <Stack gap="16">
       <MessageMeta detail={detail} body={body} />
-      <PhishBanner phish={detail.phish} />
+      <PhishBanner phish={detail.phish} inJunk={use === 'junk'} onMoveToJunk={onMoveToJunk === undefined ? undefined : () => { onMoveToJunk(detail); }} />
       {wantsReceipt(detail, body, ownMailbox) ? <ReceiptPrompt key={detail.id} messageId={detail.id} /> : null}
       <InviteSection messageId={detail.id} />
       <MessageText body={body} status={bodyStatus} onRetry={onRetry} />
@@ -554,17 +613,32 @@ function DeliveryRecipientRow({ recipient: r }: { recipient: DeliveryRecipient }
 // navigation without a screen reader announcing over whatever the reader was doing. Sorting and
 // labelling live in ./phish.ts, unit tested there.
 
-function PhishBanner({ phish }: { phish: Phish | null }) {
+const TONE_ICON = { danger: <DangerIcon />, warning: <WarningIcon />, info: <InfoIcon /> } as const;
+
+function PhishBanner({ phish, inJunk, onMoveToJunk }: { phish: Phish | null; inJunk: boolean; onMoveToJunk: (() => void) | undefined }) {
   if (phish === null || phish.warnings.length === 0) return null;
   const sorted = sortPhishWarnings(phish.warnings);
+  // PST-T-11.4: a one-line verdict and the one action that answers it, above the evidence; each
+  // warning keeps its own alert, now with a tone icon (severity never rests on colour alone) and a
+  // title that names the check that failed.
+  const verdict = phishVerdict(sorted);
   return (
     <section aria-label="Phishing and authentication warnings" className="pr-reader__phish" data-testid="phish-warnings">
       <Stack gap="8">
+        <div className="pr-phish__verdict">
+          <p className="pr-phish__verdict-text">{verdict}</p>
+          {onMoveToJunk !== undefined && !inJunk ? (
+            <Button size="sm" variant="secondary" onClick={onMoveToJunk}>
+              Move to Junk
+            </Button>
+          ) : null}
+        </div>
         {sorted.map((w, index) => (
           <Alert
             key={`${w.kind}-${String(index)}`}
             tone={PHISH_TONE_OF[w.severity]}
-            title={phishWarningTitle(w.kind)}
+            icon={TONE_ICON[PHISH_TONE_OF[w.severity]]}
+            title={phishWarningTitle(w.kind, w.reason)}
             dynamic={w.severity === 'high'}
             data-testid="phish-warning"
             data-phish-kind={w.kind}

@@ -245,10 +245,14 @@ export async function ownMailbox(db: Db | Tx, accountId: string, id: string): Pr
 export async function listMessages(
   db: Db,
   mailboxId: string,
-  opts: { cursor: number | undefined; limit: number },
+  opts: { cursor: number | undefined; limit: number; keyword?: SplitKeyword | undefined },
 ): Promise<{ messages: MessageSummaryJson[]; nextCursor: string | null }> {
   const rows = await db.message.findMany({
-    where: { mailboxId, ...(opts.cursor !== undefined ? { uid: { lt: opts.cursor } } : {}) },
+    where: {
+      mailboxId,
+      ...(opts.cursor !== undefined ? { uid: { lt: opts.cursor } } : {}),
+      ...(opts.keyword !== undefined ? { flags: { has: opts.keyword } } : {}),
+    },
     orderBy: { uid: 'desc' },
     take: opts.limit + 1,
     include: { verdict: { select: { bucket: true, scores: true } } },
@@ -257,6 +261,22 @@ export async function listMessages(
   const last = page[page.length - 1];
   const days = await trashRetentionDays(db, [mailboxId]);
   return { messages: page.map((m) => summaryJson(m, days.get(m.mailboxId) ?? null)), nextCursor: rows.length > opts.limit && last !== undefined ? String(last.uid) : null };
+}
+
+/** The keywords the worker files INBOX mail with (apps/worker/src/stages/file.ts). */
+export type SplitKeyword = '$Priority' | '$People';
+
+/** Totals and unread counts of the Inbox's Priority / People split (PST-REQ-101). */
+export async function mailboxSplit(db: Db, mailboxId: string): Promise<{ priority: { total: number; unseen: number }; people: { total: number; unseen: number } }> {
+  const count = async (keyword: SplitKeyword) => {
+    const [total, unseen] = await Promise.all([
+      db.message.count({ where: { mailboxId, flags: { has: keyword } } }),
+      db.message.count({ where: { mailboxId, flags: { has: keyword }, NOT: { flags: { has: '\\Seen' } } } }),
+    ]);
+    return { total, unseen };
+  };
+  const [priority, people] = await Promise.all([count('$Priority'), count('$People')]);
+  return { priority, people };
 }
 
 export async function findOwnMessage(db: Db | Tx, accountId: string, id: string): Promise<(Message & { verdict: MessageVerdict | null }) | null> {
