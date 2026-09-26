@@ -4,6 +4,7 @@
 import { ApiError, type ComposeFields, type MessageBody, type MessageDetail, type PendingSend, type SavedDraft, type SendResult } from '../api';
 import type { ComposeMode } from './route';
 import { addressOf, displayName, fullDate, header, splitAddresses } from './format';
+import { keyErrorText } from '../keys/format';
 
 export interface ComposeDraft {
   mode: ComposeMode;
@@ -215,6 +216,15 @@ export function sendErrorText(error: unknown): string {
       return 'Pick a time in the future to send it.';
     case 'send_at_too_far':
       return 'A message can be scheduled at most a year ahead.';
+    // PST-T-12.2: Sign / Encrypt refusals (never a plaintext send).
+    case 'recipient_keys_missing':
+    case 'signing_key_missing':
+    case 'own_key_missing':
+    case 'crypto_mixed':
+    case 'private_key_unavailable':
+    case 'recipient_key_unusable':
+    case 'signing_key_unusable':
+      return keyErrorText(error);
     default:
       return `Nothing was sent (${error.code}). Try again.`;
   }

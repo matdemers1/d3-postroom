@@ -4,6 +4,7 @@ import { Alert, AuthLayout, Spinner, ThemeProvider } from '@d3cloud/ui';
 import { api, redirectFor, type AuthState } from './api';
 import { Calendar } from './calendar/Calendar';
 import { Contacts } from './contacts/Contacts';
+import { Keys } from './keys/Keys';
 import { MailProvider } from './mail/MailContext';
 import { TemplatesScreen } from './compose/TemplatesScreen';
 import { AdminDeliverability } from './screens/AdminDeliverability';
@@ -95,6 +96,8 @@ function Gate() {
         <Route path="/account/device-setup" element={<DeviceSetup />} />
         <Route path="/account/rules" element={<Rules />} />
         <Route path="/account/templates" element={<TemplatesScreen />} />
+        {/* PST-T-12.2: OpenPGP keys and S/MIME certificates. */}
+        <Route path="/account/keys" element={<Keys />} />
         <Route path="/admin/sessions" element={<AdminSessions />} />
         <Route path="/admin/health" element={<AdminHealth />} />
         <Route path="/admin/jobs" element={<AdminJobs />} />
