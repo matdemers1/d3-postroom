@@ -13,12 +13,12 @@ import {
   PageHeader,
   Section,
   Select,
-  Skeleton,
   Stack,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, type AdminQueueRecipient, type QueueScope, type QueueStateFilter } from '../api';
+import { Loading, LoadFailed } from './states';
 
 const STATE_OPTIONS: { value: '' | QueueStateFilter; label: string }[] = [
   { value: '', label: 'All queued mail' },
@@ -59,7 +59,7 @@ const when = (iso: string): string => new Date(iso).toLocaleString(undefined, { 
 export function AdminQueue() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [sesConfigured, setSesConfigured] = useState(true);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [domain, setDomain] = useState('');
   const [state, setState] = useState<'' | QueueStateFilter>('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -77,9 +77,9 @@ export function AdminQueue() {
       const result = await api.adminQueue({ ...(d === '' ? {} : { domain: d }), ...(s === '' ? {} : { state: s }) });
       setRows(result.messages.flatMap((m) => m.recipients.map((r) => ({ ...r, subject: m.subject, headerFrom: m.headerFrom }))));
       setSesConfigured(result.sesConfigured);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -221,12 +221,10 @@ export function AdminQueue() {
         </Alert>
       )}
 
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load the queue" headingLevel={2} action={<Button onClick={() => void load(domain, state)}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="the queue" onRetry={() => void load(domain, state)} />
       ) : rows === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading the queue" />
       ) : (
         <Table
           caption="Outbound queue"

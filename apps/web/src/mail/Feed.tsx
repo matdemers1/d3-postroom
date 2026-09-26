@@ -10,6 +10,7 @@ import { api, ApiError, senderProfilePath, type Mailbox, type MessageSummary, ty
 import { fullDate } from './format';
 import { isUnread, SEEN } from './list';
 import { MAIL_FRAME_HEIGHT, MAIL_FRAME_SANDBOX } from './ReadingPane';
+import { LoadFailed } from '../screens/states';
 
 const PAGE = 20;
 
@@ -145,19 +146,19 @@ export function Feed({ mailbox }: FeedProps) {
   const [messages, setMessages] = useState<MessageSummary[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [marking, setMarking] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const loadFirstPage = useCallback(async () => {
     setMessages(null);
-    setLoadError(false);
+    setLoadError(null);
     try {
       const page = await api.messages(mailbox.id, { limit: PAGE });
       setMessages(page.messages);
       setCursor(page.nextCursor);
-    } catch {
-      setLoadError(true);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, [mailbox.id]);
 
@@ -211,20 +212,18 @@ export function Feed({ mailbox }: FeedProps) {
   // point so a future "hide unsubscribed senders" filter has somewhere to plug in.
   const forgetSender = (_address: string): void => {};
 
-  if (loadError) {
-    return (
-      <Alert tone="warning" title="Could not load the feed" actions={<Button size="sm" onClick={() => { void loadFirstPage(); }}>Try again</Button>}>
-        Postroom did not answer.
-      </Alert>
-    );
+  if (loadError !== null) {
+    return <LoadFailed error={loadError} what="the feed" onRetry={() => void loadFirstPage()} size="inline" />;
   }
 
   if (messages === null) {
     return (
-      <Stack gap="16">
-        <Skeleton variant="block" height={220} />
-        <Skeleton variant="block" height={220} />
-      </Stack>
+      <div role="status" aria-label="Loading the feed" aria-busy="true">
+        <Stack gap="16">
+          <Skeleton variant="block" height={220} />
+          <Skeleton variant="block" height={220} />
+        </Stack>
+      </div>
     );
   }
 

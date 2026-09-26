@@ -4,9 +4,11 @@
 //     or under window.innerWidth) — no horizontal scroll, even with long unbroken strings (message
 //     IDs, addresses) or a wide admin table (a table may scroll INSIDE its own container; the page
 //     itself never does);
-//   - every interactive element not explicitly allowlisted below is at least 44×44 CSS px, or has
-//     an equivalent hit area (extended with an invisible ::after, not a visual resize, so dense rows
-//     of small buttons still fit — see apps/web/src/styles/mobile-targets.css);
+//   - every interactive element not explicitly allowlisted below owns a 44×44 CSS px hit area,
+//     proven by hit-testing (document.elementFromPoint at its centre and 20 px out each way): its
+//     own box is that big, or every probe lands on it — and no probe ever lands on a different
+//     control, so an invisible extension can never steal a neighbour's tap (see
+//     apps/web/src/styles/mobile-targets.css);
 //   - the primary action for the screen is reachable without ever scrolling sideways.
 //
 // This test skips itself outside the 'mobile' Playwright project — the desktop project's exit demo
@@ -52,37 +54,66 @@ const INLINE_TEXT_LINK_ALLOWLIST = [
   'svg, svg *',
 ].join(', ');
 
-interface SmallTarget {
+interface TargetProblem {
+  kind: 'small' | 'overlap';
   tag: string;
   role: string | null;
   name: string;
   className: string;
   width: number;
   height: number;
+  /** For an overlap: the control a probe inside this one's hit area actually landed on. */
+  stolenBy?: string;
+  at?: string;
 }
 
 // The e2e project has no DOM lib (see support.ts's note on calendar-contacts.spec.ts): every
 // browser global reached from a page.evaluate is described structurally through a cast, exactly as
 // the rest of this suite does (deliverability.spec.ts's overflow check, calendar-contacts.spec.ts's
 // `El` interface for chip elements).
+interface EvalRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
 interface EvalElement {
   tagName: string;
   className: unknown;
   getAttribute(name: string): string | null;
-  getBoundingClientRect(): { width: number; height: number };
+  getBoundingClientRect(): EvalRect;
   textContent: string | null;
+  contains(other: EvalElement): boolean;
+  closest(selector: string): EvalElement | null;
+  /** On a <label>: the control it labels (clicking the label activates it). */
+  control?: EvalElement | null;
+  scrollIntoView(opts: { block: string; inline: string }): void;
 }
 interface EvalDocument {
   documentElement: { scrollWidth: number; clientWidth: number };
   querySelectorAll(selector: string): EvalElement[];
+  elementFromPoint(x: number, y: number): EvalElement | null;
 }
 interface EvalWindow {
   document: EvalDocument;
   innerWidth: number;
-  getComputedStyle(el: EvalElement): { display: string; visibility: string; getPropertyValue(name: string): string };
+  innerHeight: number;
+  getComputedStyle(el: EvalElement): { display: string; visibility: string; pointerEvents: string };
 }
-/** No horizontal scroll, and every interactive element meets the 44×44 CSS px minimum (or is
- * allowlisted above, inline-text-link style). */
+
+/**
+ * No horizontal scroll, and every interactive element (not allowlisted above) owns a 44×44 CSS px
+ * hit area — measured by hit-testing, not by anything the stylesheet says about itself. Each
+ * element is scrolled into view and probed with document.elementFromPoint at its centre and 20 px
+ * out on each side (clamped to the viewport):
+ *   - a probe may land on the element, on something inside it, on its own <label>, or on nothing
+ *     interactive — but never on a different interactive control (an invisible extension that shadows a neighbour's
+ *     box would send a tap meant for one control to another);
+ *   - an element whose own box is under 44 px either way must have every probe land on itself —
+ *     otherwise its "equivalent hit area" does not exist.
+ */
 async function assertMobileFriendly(page: Page, context?: string): Promise<void> {
   const overflow = await page.evaluate(() => {
     const w = globalThis as unknown as EvalWindow;
@@ -90,7 +121,7 @@ async function assertMobileFriendly(page: Page, context?: string): Promise<void>
   });
   expect(overflow.scrollWidth, `${context ?? ''}: document.documentElement.scrollWidth (${String(overflow.scrollWidth)}) exceeds innerWidth (${String(overflow.innerWidth)}) — a page-level horizontal scroll`).toBeLessThanOrEqual(overflow.innerWidth);
 
-  const small = await page.evaluate((allow: string) => {
+  const problems = await page.evaluate((allow: string) => {
     const w = globalThis as unknown as EvalWindow;
     // Radix (behind @d3cloud/ui's Select and Checkbox) renders a visually-hidden, non-interactive
     // native <select>/<input> alongside the real, visible control — for browser autofill and plain
@@ -99,32 +130,82 @@ async function assertMobileFriendly(page: Page, context?: string): Promise<void>
     // per-screen, is what actually describes it (it is not a control at all, on any screen).
     const NOT_A_REAL_TARGET = ':not([aria-hidden="true"]):not([tabindex="-1"])';
     const SELECTOR = `a[href], button, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="option"], [role="combobox"], [role="spinbutton"], input:not([type="hidden"])${NOT_A_REAL_TARGET}, select${NOT_A_REAL_TARGET}, textarea, summary, [tabindex]:not([tabindex="-1"]):not([role="tablist"]):not([role="listbox"]):not([role="radiogroup"]):not([role="group"])`;
-    const out: { tag: string; role: string | null; name: string; className: string; width: number; height: number }[] = [];
+    // What a probe landing somewhere would actually activate. A scrolling region (tabindex="0" on a
+    // table wrapper or the calendar's week view) is focusable for the keyboard, not a pointer
+    // control: a tap on its empty space activates nothing, so it never "steals" a tap.
+    const CONTROL = SELECTOR.replace(', [tabindex]:not([tabindex="-1"])', ', [tabindex]:not([tabindex="-1"]):not([role="region"]):not([role="tabpanel"]):not(table):not(div):not(section)');
+    const describe = (el: EvalElement): string =>
+      `${el.tagName.toLowerCase()}${el.getAttribute('role') === null ? '' : `[role=${el.getAttribute('role') ?? ''}]`} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 40).replace(/\s+/g, ' ')}"`;
+    const out: TargetProblem[] = [];
     const allowed = new Set(w.document.querySelectorAll(allow));
     for (const el of w.document.querySelectorAll(SELECTOR)) {
       if (allowed.has(el)) continue;
       const style = w.getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden') continue;
-      const rect = el.getBoundingClientRect();
+      if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') continue;
+      let rect = el.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) continue; // not actually rendered (e.g. a hidden drawer)
-      // The rendered box, plus any hit-area extension declared via CSS variables --hit-w/--hit-h
-      // (apps/web/src/styles/mobile-targets.css sets these on elements it enlarges invisibly).
-      const hitW = Number.parseFloat(style.getPropertyValue('--hit-w')) || rect.width;
-      const hitH = Number.parseFloat(style.getPropertyValue('--hit-h')) || rect.height;
-      if (hitW < 44 || hitH < 44) {
+      if (rect.bottom <= 0 || rect.top >= w.innerHeight || rect.right <= 0 || rect.left >= w.innerWidth) {
+        el.scrollIntoView({ block: 'center', inline: 'nearest' });
+        rect = el.getBoundingClientRect();
+      }
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      // Something else (a sticky header, a drawer) covers this control's centre: it is not a
+      // pointer target where it sits right now, so there is nothing of its own to measure.
+      const centreHit = w.document.elementFromPoint(cx, cy);
+      if (centreHit === null || !(centreHit === el || el.contains(centreHit) || centreHit.contains(el))) continue;
+      const clampX = (x: number): number => Math.min(Math.max(x, 0), w.innerWidth - 1);
+      const clampY = (y: number): number => Math.min(Math.max(y, 0), w.innerHeight - 1);
+      const probes: [number, number, string][] = [
+        [cx, cy, 'centre'],
+        [clampX(cx - 20), cy, 'left'],
+        [clampX(cx + 20), cy, 'right'],
+        [cx, clampY(cy - 20), 'top'],
+        [cx, clampY(cy + 20), 'bottom'],
+      ];
+      const small = rect.width < 43.5 || rect.height < 43.5;
+      let allOwn = true;
+      for (const [x, y, at] of probes) {
+        const hit = w.document.elementFromPoint(x, y);
+        if (hit === null) {
+          allOwn = false;
+          continue;
+        }
+        // The control's own <label> activates it too (a Checkbox's text beside its box).
+        if (hit === el || el.contains(hit) || hit.closest('label')?.control === el) continue;
+        allOwn = false;
+        const owner = hit.closest(CONTROL);
+        // A probe that lands on this control's own container (a label wrapping it, a row that holds
+        // it) or on plain content is fine; a different control is not.
+        if (owner === null || owner.contains(el)) continue;
         out.push({
+          kind: 'overlap',
           tag: el.tagName.toLowerCase(),
           role: el.getAttribute('role'),
-          name: (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 60).replace(/\s+/g, ' '),
+          name: describe(el),
           className: typeof el.className === 'string' ? el.className : '',
-          width: Math.round(hitW),
-          height: Math.round(hitH),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          stolenBy: describe(owner),
+          at,
+        });
+        break;
+      }
+      if (small && !allOwn && !out.some((p) => p.name === describe(el) && p.kind === 'overlap')) {
+        out.push({
+          kind: 'small',
+          tag: el.tagName.toLowerCase(),
+          role: el.getAttribute('role'),
+          name: describe(el),
+          className: typeof el.className === 'string' ? el.className : '',
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
         });
       }
     }
     return out;
-  }, INLINE_TEXT_LINK_ALLOWLIST) as SmallTarget[];
-  expect(small, `${context ?? ''}: elements under 44×44 CSS px (or declared hit area) — ${JSON.stringify(small)}`).toEqual([]);
+  }, INLINE_TEXT_LINK_ALLOWLIST);
+  expect(problems, `${context ?? ''}: tap targets that are under 44×44 CSS px by hit-test, or whose hit area lands on another control — ${JSON.stringify(problems)}`).toEqual([]);
 }
 
 let api: APIRequestContext;
@@ -242,10 +323,32 @@ test.describe('signed in', () => {
     await expect(page.getByRole('heading', { name: 'Calendar', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/calendar');
 
-    await api.post('/api/contacts', { headers: CSRF, data: { firstName: 'Ada', lastName: `Lovelace ${t}`, emails: [`ada.${t}@example.org`] } }).catch(() => undefined);
+    const books = (await (await api.get('/api/contacts/address-books')).json()) as { addressBooks: { id: string }[] };
+    const book = books.addressBooks[0];
+    if (book === undefined) throw new Error('no address book');
+    const created = await api.post(`/api/contacts/address-books/${book.id}/cards`, {
+      headers: CSRF,
+      data: {
+        fn: `Ada Lovelace-Byron-King-Noel ${t}`,
+        given: 'Ada',
+        family: `Lovelace ${t}`,
+        emails: [{ address: `ada.a-very-long-unbroken-address-${t}@analytical-engines.example.org`, type: 'work' }],
+        tels: [{ value: '+44 20 7946 0000', type: 'cell' }],
+        org: 'Analytical Engines',
+        note: 'Met at the conference.',
+      },
+    });
+    expect(created.ok(), `contact create answered ${String(created.status())}`).toBe(true);
+    const card = (await created.json()) as { addressBookId: string; name: string };
     await page.goto('/contacts');
     await expect(page.getByRole('heading', { name: 'Contacts', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/contacts');
+
+    // App.tsx's /contacts/:addressBookId/:name — one contact, opened from its own URL.
+    const cardPath = `/contacts/${encodeURIComponent(card.addressBookId)}/${encodeURIComponent(card.name)}`;
+    await page.goto(cardPath);
+    await expect(page.getByRole('heading', { name: `Ada Lovelace-Byron-King-Noel ${t}` }).first()).toBeVisible();
+    await assertMobileFriendly(page, cardPath);
 
     await page.goto('/contacts/new');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();

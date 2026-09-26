@@ -10,11 +10,11 @@ import {
   Page,
   PageHeader,
   Select,
-  Skeleton,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, INBOUND_STAGES, api, describeError, type AdminJob, type InboundStage } from '../api';
+import { Loading, LoadFailed } from './states';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -52,7 +52,7 @@ function inboundMessageIdOf(job: AdminJob): string | null {
  */
 export function AdminJobs() {
   const [jobs, setJobs] = useState<AdminJob[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [status, setStatus] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<AdminJob | null>(null);
@@ -62,9 +62,9 @@ export function AdminJobs() {
   const load = useCallback(async (s: string) => {
     try {
       setJobs((await api.adminJobs(s === '' ? {} : { status: s })).jobs);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -161,12 +161,10 @@ export function AdminJobs() {
           {notice}
         </Alert>
       )}
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load jobs" headingLevel={2} action={<Button onClick={() => void load(status)}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="jobs" onRetry={() => void load(status)} />
       ) : jobs === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading jobs" />
       ) : (
         <Table
           caption="Jobs"

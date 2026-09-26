@@ -21,13 +21,13 @@ import {
   PageHeader,
   Section,
   Select,
-  Skeleton,
   Stack,
   Textarea,
 } from '@d3cloud/ui';
 import { ApiError, contactPath, contactsApi, describeError, type AddressBook, type ContactDetail, type ContactInput, type ContactSummary } from '../api';
 import { useMediaQuery } from '../mail/useMedia';
 import { blankContact, contactProblem, EMAIL_TYPES, inputOf, rowKey, TEL_TYPES, toForm, typeOptions, type ContactForm } from './form';
+import { Loading, LoadFailed } from '../screens/states';
 
 const SPLIT_QUERY = '(min-width: 900px)';
 
@@ -54,7 +54,7 @@ export function Contacts() {
 
   const [books, setBooks] = useState<AddressBook[] | null>(null);
   const [contacts, setContacts] = useState<ContactSummary[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [query, setQuery] = useState('');
   const [bookFilter, setBookFilter] = useState('all');
   const [notice, setNotice] = useState<string | null>(null);
@@ -64,9 +64,9 @@ export function Contacts() {
       const [b, c] = await Promise.all([contactsApi.addressBooks(), contactsApi.list()]);
       setBooks(b.addressBooks);
       setContacts(c.contacts);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -104,12 +104,10 @@ export function Contacts() {
           />
         ) : null}
       </FilterBar>
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load contacts" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="contacts" onRetry={() => void load()} />
       ) : contacts === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading contacts" />
       ) : (
         <DataList
           aria-label="Contacts"
@@ -217,6 +215,7 @@ function ContactPane({
 }) {
   const [contact, setContact] = useState<ContactDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailure, setLoadFailure] = useState<unknown>(null);
   const [editing, setEditing] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -225,8 +224,10 @@ function ContactPane({
     try {
       setContact(await contactsApi.get(addressBookId, name));
       setError(null);
+      setLoadFailure(null);
     } catch (caught) {
       setError(caught instanceof ApiError && caught.status === 404 ? 'This contact no longer exists.' : describeError(caught));
+      setLoadFailure(caught);
     }
   }, [addressBookId, name]);
 
@@ -235,13 +236,16 @@ function ContactPane({
   }, [load]);
 
   if (error !== null && contact === null) {
-    return (
-      <Alert tone="danger" title="Could not open the contact">
-        {error}
-      </Alert>
-    );
+    if (loadFailure instanceof ApiError && loadFailure.status === 404) {
+      return (
+        <EmptyState kind="empty" heading="This contact no longer exists" headingLevel={2} size="inline">
+          It was deleted, perhaps from another device.
+        </EmptyState>
+      );
+    }
+    return <LoadFailed error={loadFailure} what="this contact" onRetry={() => void load()} size="inline" />;
   }
-  if (contact === null) return <Skeleton variant="block" />;
+  if (contact === null) return <Loading label="Loading this contact" />;
 
   if (editing) {
     return (
@@ -314,7 +318,7 @@ function ContactPane({
           {contact.org === '' ? null : <DescriptionItem term="Organisation">{contact.org}</DescriptionItem>}
           {contact.emails.map((e, i) => (
             <DescriptionItem key={`e${String(i)}`} term={e.type === null ? 'E-mail' : `E-mail (${e.type})`}>
-              <a href={`mailto:${e.address}`}>{e.address}</a>
+              <a className="pr-contacts__email" href={`mailto:${e.address}`}>{e.address}</a>
             </DescriptionItem>
           ))}
           {contact.tels.map((t, i) => (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Button, Card, CardBody, CardTitle, EmptyState, Grid, Page, PageHeader, Skeleton } from '@d3cloud/ui';
+import { Badge, Button, Card, CardBody, CardTitle, EmptyState, Grid, Page, PageHeader } from '@d3cloud/ui';
 import { api, type HealthTile, type HealthTileState } from '../api';
+import { Loading, LoadFailed } from './states';
 
 const REFRESH_MS = 30_000;
 
@@ -37,15 +38,15 @@ function Tile({ tile }: { tile: HealthTile }) {
  */
 export function AdminHealth() {
   const [tiles, setTiles] = useState<HealthTile[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     try {
       setTiles((await api.adminHealth()).tiles);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -70,12 +71,14 @@ export function AdminHealth() {
           </Button>
         }
       />
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load health" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="health" onRetry={() => void load()} />
       ) : tiles === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading health" />
+      ) : tiles.length === 0 ? (
+        <EmptyState kind="empty" heading="No health checks reported" headingLevel={2}>
+          The server answered, but with nothing to check. Refresh once the daemons are up.
+        </EmptyState>
       ) : (
         <Grid as="ul" minItemWidth="sm" aria-label="Health tiles">
           {tiles.map((tile) => (

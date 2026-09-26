@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Button, Card, CardBody, CardTitle, EmptyState, Page, PageHeader, Skeleton, Table, type TableColumn } from '@d3cloud/ui';
+import { Badge, Button, Card, CardBody, CardTitle, EmptyState, Page, PageHeader, Table, type TableColumn } from '@d3cloud/ui';
 import { api, parseSmtpLiveBlock, type SmtpLiveLine, type SmtpTranscriptDetail, type SmtpTranscriptSummary } from '../../api';
+import { Loading, LoadFailed } from '../../screens/states';
 
 const when = (iso: string | null): string =>
   iso === null ? '—' : new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
@@ -123,15 +124,15 @@ function TranscriptDetailView({ detail, onClose }: { detail: SmtpTranscriptDetai
  */
 export function AdminSmtpViewer() {
   const [transcripts, setTranscripts] = useState<SmtpTranscriptSummary[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [selected, setSelected] = useState<SmtpTranscriptDetail | null>(null);
 
   const load = useCallback(async () => {
     try {
       setTranscripts((await api.adminSmtpTranscripts({ limit: 100 })).transcripts);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -162,12 +163,10 @@ export function AdminSmtpViewer() {
             setSelected(null);
           }}
         />
-      ) : loadError ? (
-        <EmptyState kind="error" heading="Could not load transcripts" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      ) : loadError !== null ? (
+        <LoadFailed error={loadError} what="transcripts" onRetry={() => void load()} />
       ) : transcripts === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading transcripts" />
       ) : transcripts.length === 0 ? (
         <EmptyState kind="empty" heading="No transcripts yet" headingLevel={2}>
           They appear here once a session ends.

@@ -1,7 +1,7 @@
 import './calendar.css';
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Alert, Button, Cluster, EmptyState, IconButton, Page, PageHeader, SegmentedControl, Skeleton } from '@d3cloud/ui';
+import { Alert, Button, Cluster, EmptyState, IconButton, Page, PageHeader, SegmentedControl } from '@d3cloud/ui';
 import { calendarApi, type Calendar as CalendarJson, type EventInstance } from '../api';
 import { useMediaQuery } from '../mail/useMedia';
 import { EventEditor, type EditorTarget } from './EventEditor';
@@ -22,6 +22,7 @@ import {
   visibleDays,
   type View,
 } from './layout';
+import { Loading, LoadFailed } from '../screens/states';
 
 /** Below this the grid is an agenda list (PST-REQ-136's 390 px phone layout). */
 const GRID_QUERY = '(min-width: 640px)';
@@ -83,7 +84,7 @@ export function Calendar() {
   const [calendars, setCalendars] = useState<CalendarJson[] | null>(null);
   const [instances, setInstances] = useState<EventInstance[] | null>(null);
   const [truncated, setTruncated] = useState(false);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorTarget | null>(null);
   const [focusDay, setFocusDay] = useState(anchor);
@@ -111,9 +112,9 @@ export function Calendar() {
       setCalendars(cals.calendars);
       setInstances(list.instances);
       setTruncated(list.truncated);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, [range, tz]);
 
@@ -238,14 +239,10 @@ export function Calendar() {
   );
 
   let body;
-  if (loadError) {
-    body = (
-      <EmptyState kind="error" heading="Could not load the calendar" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-        The server did not answer.
-      </EmptyState>
-    );
+  if (loadError !== null) {
+    body = <LoadFailed error={loadError} what="the calendar" onRetry={() => void load()} />;
   } else if (instances === null) {
-    body = <Skeleton variant="block" />;
+    body = <Loading label="Loading the calendar" height={320} />;
   } else if (!grid) {
     body = <Agenda days={days} instances={list} tz={tz} todayDay={todayDay} onOpen={openEdit} onNew={openNew} />;
   } else if (view === 'month') {
@@ -367,6 +364,11 @@ export function Calendar() {
       ) : null}
       <section className="pr-cal" aria-label="Calendar">
         {toolbar}
+        {grid && loadError === null && instances !== null && list.length === 0 ? (
+          <EmptyState kind="empty" heading="Nothing scheduled" headingLevel={2} size="row">
+            No events this {view}.
+          </EmptyState>
+        ) : null}
         {body}
       </section>
       <EventEditor
