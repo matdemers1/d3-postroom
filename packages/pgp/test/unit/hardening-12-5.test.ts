@@ -120,6 +120,21 @@ describe('(2) a revocation that arrives only in an attached copy of a stored key
     }
   });
 
+  it('an uncheckable attached 0x28 on the signing subkey is ignored too', async () => {
+    const k = forgeKey({ subkey: { revocation: { created: new Date('2026-02-01T00:00:00Z'), reason: 2 } } });
+    const stored = without(k.armored, [0x28]);
+    const a = decodeArmor(k.armored);
+    if (a === null) throw new Error('no armor');
+    const patched = readPackets(a.data).map((pk) => {
+      if (pk.tag !== Tag.Signature || pk.body[1] !== 0x28) return encodePacket(pk.tag, pk.body);
+      const body = Buffer.from(pk.body);
+      body[3] = 100;
+      return encodePacket(pk.tag, body);
+    });
+    const attached = encodeArmor('PGP PUBLIC KEY BLOCK', Buffer.concat(patched));
+    expect((await analyse(stored, k.fingerprint, attached, (p) => k.signWithSubkey(p, { created }))).status).toBe('verified-known-key');
+  });
+
   it("a revocation in some other key's block is never applied to the stored key", async () => {
     const k = forgeKey();
     const other = forgeKey({ revocation: { created: new Date('2026-02-01T00:00:00Z') } });
