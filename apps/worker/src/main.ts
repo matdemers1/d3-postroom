@@ -1,14 +1,21 @@
 // The worker daemon: runs the inbound pipeline (PST-T-2.7) on the 'inbound' queue — verify, parse,
-// classify, sieve, file, notify — for every message smtp-in spooled. ACME, backups and the restore
-// drill join it in later phases.
+// classify, sieve, file, notify — for every message smtp-in spooled — and, on their own queues and
+// worker, the nightly backup and restore drill (PST-T-0.16, PST-T-0.17). ACME joins in a later phase.
+import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
 import { createDb } from '@postroom/db';
 import { envInt, envString, runDaemon } from '@postroom/daemon';
 import { startWorker } from '@postroom/queue';
+import { backupHandler, BACKUP_QUEUE } from './backup/job.js';
+import { DRILL_QUEUE, startNightly } from './backup/schedule.js';
+import { maintenanceDeps } from './backup/wire.js';
 import { DAEMON } from './daemon.js';
-import { inboundHealth } from './health.js';
+import { drillHandler } from './drill/drill.js';
+import { inboundHealth, maintenanceHealth } from './health.js';
+import { buildMonitors, createMonitorRunner } from './monitors/index.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
+import { createThreadSweeper } from './sweep/thread-sweep.js';
 
 await runDaemon({
   name: DAEMON,
@@ -42,9 +49,74 @@ await runDaemon({
       leaseMs,
       log: ctx.log,
     });
-    ctx.addHealth(async () => ({ inbound: await inboundHealth(db) }));
-    ctx.log('inbound-worker', { leaseMs, blobRoot });
+    // Backups and drills get their own worker, so a long dump never holds up inbound mail, and a
+    // lease longer than any backup, so a running one is not claimed a second time.
+    const maintenance = maintenanceDeps(ctx.env, db, databaseUrl, ctx.log);
+    const maintenanceWorker = await startWorker({
+      db,
+      databaseUrl,
+      queues: { [BACKUP_QUEUE]: backupHandler(maintenance.backup), [DRILL_QUEUE]: drillHandler(maintenance.drill) },
+      pollMs: 60_000,
+      leaseMs: envInt(ctx.env, 'BACKUP_LEASE_MS', 3 * 3_600_000),
+      log: ctx.log,
+    });
+    const nightly = startNightly({
+      db,
+      times: { backupAt: envString(ctx.env, 'BACKUP_AT', '03:00'), drillAt: envString(ctx.env, 'DRILL_AT', '04:30') },
+      log: ctx.log,
+    });
+    // Repairs a Message left with threadId NULL by a crash between the file stage's commit and its
+    // post-commit assignThread call (PST-T-3.14, PST-REQ-078): once at start, then on an interval.
+    const threadSweepMs = envInt(ctx.env, 'THREAD_SWEEP_MS', 60_000);
+    const threadSweep = createThreadSweeper({ db, blobs: lazyBlobs, log: ctx.log, now: () => new Date() });
+    const runThreadSweep = (): void => {
+      threadSweep().catch((err: unknown) => {
+        ctx.log('thread-sweep-error', { error: err instanceof Error ? err.message : String(err) });
+      });
+    };
+    runThreadSweep();
+    const threadSweepTimer = setInterval(runThreadSweep, threadSweepMs);
+
+    // Health alerts through the D3 Auth relay (PST-T-4.7, PST-REQ-096, PST-REQ-097): tunnel,
+    // backlog, cert expiry, disk, blocklist, backup/drill and NTP skew, each alerting once on
+    // firing and once again on recovery — never through Postroom's own outbound queue.
+    const sendAlert = createAlertSender(
+      {
+        url: envString(ctx.env, 'MAIL_RELAY_URL', ''),
+        token: envString(ctx.env, 'MAIL_RELAY_TOKEN', ''),
+        to: envString(ctx.env, 'ALERT_TO', ''),
+      },
+      { log: ctx.log },
+    );
+    const { monitors, ntp } = buildMonitors({ db, env: ctx.env, backupsConfigured: maintenance.backup.config.s3 !== null });
+    const monitorRunner = createMonitorRunner({
+      db,
+      monitors,
+      sendAlert,
+      log: ctx.log,
+      checkTimeoutMs: envInt(ctx.env, 'MONITOR_CHECK_TIMEOUT_MS', 30_000),
+    });
+    const monitorIntervalMs = envInt(ctx.env, 'MONITOR_INTERVAL_MS', 60_000);
+    const runMonitors = (): void => {
+      monitorRunner.runOnce().catch((err: unknown) => {
+        ctx.log('monitor-run-error', { error: err instanceof Error ? err.message : String(err) });
+      });
+    };
+    runMonitors();
+    const monitorTimer = setInterval(runMonitors, monitorIntervalMs);
+
+    ctx.addHealth(async () => ({
+      inbound: await inboundHealth(db),
+      ...(await maintenanceHealth(db)),
+      monitors: monitorRunner.statuses(),
+      ntp: ntp === null ? ('not configured' as const) : (ntp.getStatus() ?? ('pending' as const)),
+    }));
+    ctx.log('inbound-worker', { leaseMs, blobRoot, backupsConfigured: maintenance.backup.config.s3 !== null, threadSweepMs, monitorIntervalMs });
     ctx.onShutdown(async () => {
+      clearInterval(threadSweepTimer);
+      clearInterval(monitorTimer);
+      nightly.stop();
+      await maintenanceWorker.stop();
       await worker.stop();
       await db.$disconnect();
     });

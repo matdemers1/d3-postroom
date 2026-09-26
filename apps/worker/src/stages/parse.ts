@@ -5,7 +5,19 @@
 import { Readable } from 'node:stream';
 import type { BlobStore } from '@postroom/blobstore';
 import { collectMessage, parseDate, parseMailboxes, parseMessageId, parseMessageIdList, parseMessage, type MessageSummary } from '@postroom/mime';
+import { htmlToText, truncateUtf8 } from '@postroom/search';
 import type { ParseResult, StageInput } from './types.js';
+
+/** The body text kept in the parse result for indexing (PST-T-3.13): the text/plain part, or the
+ * html part converted to text when there is no text/plain, capped at 256 KiB on a UTF-8 boundary
+ * so a huge message never bloats the pipeline marker JSON. Empty string when the message has
+ * neither. */
+const MAX_INDEXED_BODY_BYTES = 256 * 1024;
+
+function indexedBody(collected: MessageSummary): string {
+  const source = collected.text !== null ? collected.text.text : collected.html !== null ? htmlToText(collected.html.text) : '';
+  return truncateUtf8(source, MAX_INDEXED_BODY_BYTES);
+}
 
 /** Stream a blob through collectMessage. Nothing is buffered beyond collectMessage's own caps. */
 export async function collectBlob(blobs: BlobStore, sha256: string): Promise<MessageSummary> {
@@ -34,15 +46,18 @@ export function summarise(collected: MessageSummary): ParseResult {
   const sentAt = date === null ? null : parseDate(date);
   const inReplyTo = h.get('in-reply-to');
   const references = h.get('references');
+  const to = h.get('to');
   return {
     messageId: mid === null ? null : parseMessageId(mid),
     subject: subject === null ? null : subject.slice(0, 998),
     fromAddress: from === null ? null : (parseMailboxes(from)[0]?.address ?? null),
+    toAddress: to === null ? null : parseMailboxes(to).map((m) => m.address).join(', ') || null,
     sentAt: sentAt === null || Number.isNaN(sentAt.getTime()) ? null : sentAt.toISOString(),
     inReplyTo: inReplyTo === null ? [] : parseMessageIdList(inReplyTo),
     references: references === null ? [] : parseMessageIdList(references),
     hasText: collected.text !== null,
     hasHtml: collected.html !== null,
+    bodyText: indexedBody(collected),
     attachments: collected.attachments.map((a) => ({
       partId: a.partId,
       filename: a.filename,

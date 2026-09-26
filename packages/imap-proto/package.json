@@ -1,0 +1,23 @@
+{
+  "name": "@postroom/imap-proto",
+  "private": true,
+  "version": "0.0.0",
+  "description": "IMAP4rev1/rev2 wire protocol: tokenizer, command parser with literals and LITERAL-, response writer",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

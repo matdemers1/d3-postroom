@@ -2,10 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Alert, AuthLayout, Spinner, ThemeProvider } from '@d3cloud/ui';
 import { api, redirectFor, type AuthState } from './api';
+import { MailProvider } from './mail/MailContext';
+import { AdminDns } from './screens/AdminDns';
 import { AdminSessions } from './screens/AdminSessions';
 import { AppPasswords } from './screens/AppPasswords';
+import { ChangePassword } from './screens/ChangePassword';
 import { Mail } from './screens/Mail';
+import { Sessions } from './screens/Sessions';
 import { Setup } from './screens/Setup';
+import { SetupWizard } from './screens/SetupWizard';
 import { Shell } from './screens/Shell';
 import { SignIn } from './screens/SignIn';
 
@@ -53,10 +58,24 @@ function Gate() {
     <Routes>
       <Route path="/setup" element={<Setup onDone={refresh} />} />
       <Route path="/signin" element={<SignIn state={state} onSignedIn={refresh} />} />
-      <Route element={<Shell state={state} onSignedOut={refresh} />}>
-        <Route index element={<Mail />} />
+      <Route
+        element={
+          <MailProvider me={state.account?.address ?? null}>
+            <Shell state={state} onSignedOut={refresh} />
+          </MailProvider>
+        }
+      >
+        {/* One layout route for every mail URL, so moving between them never remounts the view. */}
+        <Route element={<Mail />}>
+          <Route index element={null} />
+          <Route path="/mail/*" element={null} />
+        </Route>
         <Route path="/app-passwords" element={<AppPasswords />} />
+        <Route path="/account/password" element={<ChangePassword />} />
+        <Route path="/account/sessions" element={<Sessions />} />
         <Route path="/admin/sessions" element={<AdminSessions />} />
+        <Route path="/admin/setup" element={<SetupWizard />} />
+        <Route path="/admin/dns" element={<AdminDns />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

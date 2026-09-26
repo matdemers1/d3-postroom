@@ -176,3 +176,36 @@ export function createCapsEnforcer(o: CapsOptions): EnforceCaps {
     throw new CapExceededError(CapReplies.capReached, label === null ? undefined : () => alert(label, credential.appPasswordId, reason));
   };
 }
+
+/**
+ * The webmail's cap (PST-T-3.11). A web session has no app password, so there is no credential to
+ * count against or to freeze; the webmail's own sends are counted per ACCOUNT instead
+ * (`submitted_via = 'webmail'`), against the same hourly/daily defaults, with the same
+ * advisory-lock-then-recount discipline as {@link createCapsEnforcer}. Over the cap the message is
+ * refused (`CapExceededError`, 452) and the operator alerted once the transaction has settled —
+ * but nothing is frozen, because there is no per-account freeze to set.
+ */
+export function createWebmailCapsEnforcer(o: CapsOptions): (tx: Prisma.TransactionClient, accountId: string, recipients: readonly string[], at: Date) => Promise<void> {
+  const log = o.log ?? ((): void => undefined);
+  return async (tx, accountId, recipients, at) => {
+    if (recipients.length === 0) return;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`caps:webmail:${accountId}`}, 0))`;
+    const { hourly, daily } = capsFor(null, o.hourlyDefault, o.dailyDefault);
+    const count = (since: Date): Promise<number> =>
+      tx.outboundRecipient.count({ where: { message: { accountId, submittedVia: 'webmail' }, createdAt: { gte: since } } });
+    const [hourCount, dayCount] = await Promise.all([count(new Date(at.getTime() - HOUR_MS)), count(new Date(at.getTime() - DAY_MS))]);
+    const overDaily = dayCount + recipients.length > daily;
+    const overHourly = hourCount + recipients.length > hourly;
+    if (!overDaily && !overHourly) return;
+    const reason = overDaily ? `daily recipient cap (${String(daily)}) exceeded` : `hourly recipient cap (${String(hourly)}) exceeded`;
+    log('webmail-cap-reached', { accountId, reason });
+    throw new CapExceededError(CapReplies.capReached, async () => {
+      const result = await o.sendAlert?.({
+        subject: 'Postroom: webmail recipient cap reached',
+        text: `Account ${accountId} reached its webmail recipient cap: ${reason}. The message was refused; nothing was frozen.`,
+        key: `cap-webmail:${accountId}`,
+      });
+      if (result !== undefined && !result.sent) log('alert-not-sent', { accountId, reason: result.reason });
+    });
+  };
+}

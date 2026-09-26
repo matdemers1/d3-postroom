@@ -25,6 +25,8 @@ export interface TotpChallenge {
 }
 
 export const SETUP_TTL_MS = 15 * 60 * 1000;
+/** Failed password sign-ins from one address, across all logins, before the delay starts. */
+export const IP_FREE_ATTEMPTS = 20;
 export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export const MAX_CODE_ATTEMPTS = 5;
 /** Step-up is fresh for five minutes (PST-REQ-008). */
@@ -42,6 +44,12 @@ export interface AuthRuntime {
   kek: Kek | null;
   domain: string;
   throttle: SignInThrottle;
+  /**
+   * Every login from one address, counted together, against spraying many accounts from one place
+   * (ASVS 5.0 6.1.1, 2.4.1): an unknown login still costs a decoy Argon2id hash. More free attempts
+   * than the per-login throttle, so a household behind one address is not slowed by one typo.
+   */
+  ipThrottle: SignInThrottle;
   oidc: OidcProvider;
   setups: BoundedMap<PendingSetup>;
   challenges: BoundedMap<TotpChallenge>;
@@ -123,6 +131,7 @@ export function runtimeFor(deps: ApiDeps): AuthRuntime {
     kek: loadKek(deps.config.kekBase64),
     domain: blank(deps.config.domain) ?? 'd3cloud.io',
     throttle: new SignInThrottle(),
+    ipThrottle: new SignInThrottle(IP_FREE_ATTEMPTS),
     oidc,
     setups: new BoundedMap(32),
     challenges: new BoundedMap(1_000),

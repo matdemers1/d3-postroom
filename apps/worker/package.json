@@ -14,15 +14,19 @@
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
   "dependencies": {
+    "@postroom/alerts": "workspace:*",
     "@postroom/daemon": "workspace:*",
     "@postroom/db": "workspace:*",
+    "@postroom/dnsbl": "workspace:*",
     "@postroom/queue": "workspace:*",
     "@postroom/mime": "workspace:*",
     "@postroom/blobstore": "workspace:*",
     "@postroom/crypto": "workspace:*",
     "@postroom/attachments": "workspace:*",
     "@postroom/dsn": "workspace:*",
-    "@postroom/audit": "workspace:*"
+    "@postroom/audit": "workspace:*",
+    "@postroom/search": "workspace:*",
+    "@postroom/threading": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

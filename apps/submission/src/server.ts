@@ -8,15 +8,11 @@
 //   PST-REQ-060  250 only after the signed blob is fsynced and its rows and jobs are committed.
 import { randomUUID } from 'node:crypto';
 import { createServer as createTcpServer, type Server as TcpServer, type Socket } from 'node:net';
-import { Readable, type Duplex } from 'node:stream';
+import type { Duplex, Readable } from 'node:stream';
 import { createServer as createTlsServer, type Server as TlsServer, type TLSSocket } from 'node:tls';
-import { HeaderTooLargeError, signMessage, splitMessage } from '@postroom/auth-checks';
-import { recordAudit } from '@postroom/audit';
-import { tmpDir, type BlobStore } from '@postroom/blobstore';
+import { createAuthThrottle, type AuthThrottle } from '@postroom/auth-throttle';
 import { verifyProtocolLogin } from '@postroom/credentials';
-import type { Kek } from '@postroom/crypto';
 import type { Db, Prisma } from '@postroom/db';
-import { enqueueOutbound } from '@postroom/delivery';
 import {
   SmtpDataRejectedError,
   createServerSession,
@@ -27,13 +23,27 @@ import {
   type ServerSession,
   type SmtpReply,
 } from '@postroom/smtp-proto';
-import { allowAllCaps, allowAllEnforcement, CapExceededError, type CheckCaps, type EnforceCaps } from './caps-seam.js';
+import { acceptSubmission, AcceptReplies, type SubmissionStorage } from './accept.js';
+import { allowAllCaps, allowAllEnforcement, type CheckCaps, type EnforceCaps } from './caps-seam.js';
 import { isCredentialFrozen } from './caps/index.js';
-import { loadSigningKeys } from './dkim.js';
-import { inspectHeaders, rewriteHeaders } from './headers.js';
 import { SASL_MECHANISMS, readCredentials } from './sasl.js';
-import { Spool } from './spool.js';
-import { AuthThrottle } from './throttle.js';
+
+// The submission path, shared with the webmail's POST /api/compose/send (PST-T-3.11): the API
+// imports these from '@postroom/submission' rather than re-implementing them.
+export {
+  acceptSubmission,
+  AcceptReplies,
+  sendableAddresses,
+  type AcceptDeps,
+  type AcceptedMessage,
+  type AcceptInput,
+  type AcceptOutcome,
+  type EnforceSubmitterCaps,
+  type Submitter,
+  type SubmissionStorage,
+} from './accept.js';
+export { CapExceededError, type SubmissionCredential } from './caps-seam.js';
+export { formatRfc5322Date, parseAddressList } from './headers.js';
 
 export const SubmissionReplies = {
   authRequired: reply(530, '5.7.0', 'Authentication required'),
@@ -43,12 +53,12 @@ export const SubmissionReplies = {
   authUnconfigured: reply(454, '4.7.0', 'Temporary authentication failure'),
   nullSender: reply(553, '5.7.1', 'The null sender is not permitted on submission'),
   senderNotOwned: reply(553, '5.7.1', 'Sender address is not yours'),
-  fromNotOwned: reply(553, '5.7.1', 'From header address is not yours'),
-  fromMissing: reply(553, '5.7.1', 'Message must have exactly one From header with your address'),
+  fromNotOwned: AcceptReplies.fromNotOwned,
+  fromMissing: AcceptReplies.fromMissing,
   recipientNotQualified: reply(550, '5.1.3', 'Recipient must be a full address'),
   recipientLiteral: reply(550, '5.1.2', 'Address-literal recipients are not accepted'),
-  headerTooLarge: reply(552, '5.3.4', 'Header block too large'),
-  dkimUnconfigured: reply(451, '4.3.5', 'DKIM keys not configured for the sender domain'),
+  headerTooLarge: AcceptReplies.headerTooLarge,
+  dkimUnconfigured: AcceptReplies.dkimUnconfigured,
   notAccepted: reply(451, '4.3.0', 'Local error, message not accepted'),
   /** PST-REQ-044: a frozen credential may still authenticate, but every MAIL is refused. */
   credentialFrozen: reply(452, '4.7.0', 'Credential frozen by rate cap; contact the operator'),
@@ -57,11 +67,6 @@ export const SubmissionReplies = {
 /** Test seam: runs inside the accepting transaction, after every write, before the commit. */
 export interface SubmissionFaults {
   readonly beforeCommit?: (tx: Prisma.TransactionClient) => Promise<void>;
-}
-
-export interface SubmissionStorage {
-  readonly blobs: BlobStore;
-  readonly kek: Kek;
 }
 
 export interface SubmissionOptions {
@@ -75,6 +80,7 @@ export interface SubmissionOptions {
   readonly storage: () => SubmissionStorage;
   /** PEM key + certificate. Null: 587 serves without STARTTLS, so AUTH (and so MAIL) is impossible. */
   readonly tls: { readonly key: string | Buffer; readonly cert: string | Buffer } | null;
+  /** PST-REQ-075: shared, audit-backed tarpit. Default: one per listener set, on `db`. */
   readonly throttle?: AuthThrottle;
   /** RCPT-time, best-effort (see caps-seam.ts). Not what makes the cap correct under concurrency. */
   readonly checkCaps?: CheckCaps;
@@ -95,18 +101,7 @@ interface Login {
   readonly addresses: ReadonlySet<string>;
 }
 
-const TX_OPTIONS = { maxWait: 30_000, timeout: 600_000 } as const;
-const DEFAULT_MAX_HEADER_BYTES = 1024 * 1024;
-
 const noLog = (): void => undefined;
-
-function sleep(ms: number): Promise<void> {
-  return ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function domainOf(address: string): string {
-  return address.slice(address.lastIndexOf('@') + 1).toLowerCase();
-}
 
 function errorText(err: unknown): string {
   return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -114,12 +109,16 @@ function errorText(err: unknown): string {
 
 /** Serve one SMTP submission connection. `secure` is true for implicit TLS (465). */
 export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: string | undefined, o: SubmissionOptions): ServerSession {
-  const throttle = o.throttle ?? new AuthThrottle();
+  const throttle = o.throttle ?? createAuthThrottle({ db: o.db });
   const checkCaps = o.checkCaps ?? allowAllCaps;
   const enforceCaps = o.enforceCaps ?? allowAllEnforcement;
   const log = o.log ?? noLog;
   const now = o.now ?? ((): Date => new Date());
   const ip = remoteAddress ?? 'unknown';
+  const hangup = new AbortController();
+  socket.once('close', () => {
+    hangup.abort();
+  });
   let login: Login | null = null;
 
   const owns = (address: string): boolean => login?.addresses.has(address.toLowerCase()) === true;
@@ -145,13 +144,17 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
       ...(o.tls === null ? {} : { upgradeTls: tlsUpgrader({ key: o.tls.key, cert: o.tls.cert }) }),
 
       onAuth: async (request, sasl, ctx): Promise<AuthResult> => {
-        if (throttle.isLocked(ip)) {
-          log('auth', { session: ctx.id, ip, mechanism: request.mechanism, ok: false, reason: 'locked' });
+        const creds = await readCredentials(request, sasl);
+        // PST-REQ-075: the tarpit runs before the credentials are evaluated, and every failure is an
+        // audit row (auth.failure, no secrets). Aborted when the client hangs up mid-delay.
+        const attempt = { protocol: 'submission', username: creds?.username ?? '', ip };
+        const gate = await throttle.before(attempt, hangup.signal);
+        if (gate.outcome !== 'proceed') {
+          log('auth', { session: ctx.id, ip, mechanism: request.mechanism, ok: false, reason: gate.outcome === 'refuse' ? 'locked' : 'disconnected' });
           return { ok: false, reply: SubmissionReplies.authLocked };
         }
-        const creds = await readCredentials(request, sasl);
         if (creds === null) {
-          await sleep(throttle.fail(ip));
+          await throttle.failure(attempt, 'malformed');
           log('auth', { session: ctx.id, ip, mechanism: request.mechanism, ok: false, reason: 'malformed' });
           return { ok: false, reply: SubmissionReplies.malformedCredentials };
         }
@@ -165,13 +168,13 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
           { pepper: o.pepper },
         );
         if (!result.ok) {
-          // One generic refusal for every reason (the reason goes to the log only). A frozen
+          // One generic refusal for every reason (the reason goes to the log and the audit row only). A frozen
           // credential is refused like the rest until PST-T-1.10 decides how held mail is reported.
-          await sleep(throttle.fail(ip));
+          await throttle.failure(attempt, result.reason);
           log('auth', { session: ctx.id, ip, mechanism: request.mechanism, username: creds.username, ok: false, reason: result.reason });
           return { ok: false, reply: SubmissionReplies.badCredentials };
         }
-        throttle.succeed(ip);
+        await throttle.success(attempt);
         login = {
           accountId: result.accountId,
           appPasswordId: result.appPasswordId,
@@ -254,124 +257,32 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
   }
 
   async function acceptMessage(body: Readable, env: Envelope): Promise<SmtpReply> {
-    // 1. The header block (bounded), and the sender check on it (PST-REQ-028).
-    let split;
-    try {
-      split = await splitMessage(body, { maxHeaderBytes: o.maxHeaderBytes ?? DEFAULT_MAX_HEADER_BYTES });
-    } catch (err) {
-      if (err instanceof HeaderTooLargeError) return SubmissionReplies.headerTooLarge;
-      throw err;
-    }
-    const headers = inspectHeaders(split.headerBlock);
-    if (!headers.ok) {
-      log('sender-refused', { session: env.sessionId, accountId: env.login.accountId, reason: headers.reason });
-      return SubmissionReplies.fromMissing;
-    }
-    if (!headers.from.every(owns)) {
-      log('sender-refused', { session: env.sessionId, accountId: env.login.accountId, reason: 'header-from' });
-      return SubmissionReplies.fromNotOwned;
-    }
-    const headerFrom = headers.from[0] ?? env.envelopeFrom;
-    const signingDomain = domainOf(headerFrom);
-
-    // 2. Keys before any work: never send unsigned (PST-REQ-038).
-    const storage = o.storage();
-    const keys = await loadSigningKeys(o.db, storage.kek, signingDomain, now());
-    if (keys === null) {
-      log('dkim-unconfigured', { session: env.sessionId, domain: signingDomain });
-      return SubmissionReplies.dkimUnconfigured;
-    }
-
-    // 3. Header fix-ups, then pass 1: the fixed message into the encrypted spool.
-    const fixed = rewriteHeaders(headers.fields, { domain: signingDomain, now: now() });
-    const spool = await Spool.create(tmpDir(storage.blobs.root));
-    try {
-      await spool.write(
-        (async function* message(): AsyncGenerator<Buffer> {
-          yield fixed.block;
-          yield Buffer.from('\r\n', 'latin1');
-          for await (const chunk of split.body) yield chunk;
-        })(),
-      );
-
-      // Pass 2: sign (one read of the spool; body hashed once for both keys).
-      const signatures = await signMessage(spool.open(), { domain: signingDomain, keys, now: now() });
-
-      const recipients = env.recipients.map((r) => r.address);
-      const credential = { accountId: env.login.accountId, appPasswordId: env.login.appPasswordId };
-
-      // Pass 3, inside the one accepting transaction: the authoritative cap check (PST-REQ-043/044
-      // — advisory-locked, recounted against whatever is actually persisted, so a concurrent
-      // submission for the same credential cannot both pass it), then signatures + spool → the
-      // final blob (fsynced before put() returns), the queue rows and jobs, the audit row. Commit,
-      // then 250.
-      try {
-        const accepted = await o.db.$transaction(async (dbTx) => {
-          await enforceCaps(dbTx, credential, recipients, now());
-          const blob = await storage.blobs.put(
-            Readable.from(
-              (async function* signed(): AsyncGenerator<Buffer> {
-                for (const s of signatures) yield Buffer.from(s, 'latin1');
-                for await (const chunk of spool.open()) yield chunk as Buffer;
-              })(),
-            ),
-            { tx: dbTx },
-          );
-          const queued = await enqueueOutbound(dbTx, {
-            accountId: env.login.accountId,
-            appPasswordId: env.login.appPasswordId,
-            envelopeFrom: env.envelopeFrom,
-            headerFrom,
-            messageId: fixed.messageId,
-            ...(headers.subject === undefined ? {} : { subject: headers.subject.slice(0, 998) }),
-            blobSha256: blob.sha256,
-            size: blob.size,
-            ...(env.dsnRet === undefined ? {} : { dsnRet: env.dsnRet }),
-            ...(env.dsnEnvid === undefined ? {} : { dsnEnvid: env.dsnEnvid }),
-            submittedVia: 'submission',
-            recipients: env.recipients,
-          });
-          await recordAudit(dbTx, {
-            actor: { kind: 'account', accountId: env.login.accountId },
-            action: 'submission.accept',
-            entityType: 'outbound_message',
-            entityId: queued.message.id,
-            before: null,
-            after: {
-              appPasswordId: env.login.appPasswordId,
-              envelopeFrom: env.envelopeFrom,
-              headerFrom,
-              messageId: fixed.messageId,
-              blobSha256: blob.sha256,
-              size: blob.size,
-              recipients: queued.recipients,
-              domains: queued.domains,
-              dkim: keys.map((k) => `${k.algorithm}:${k.selector}`),
-              addedMessageId: fixed.addedMessageId,
-              addedDate: fixed.addedDate,
-              strippedBcc: fixed.strippedBcc,
-            },
-            context: { requestId: randomUUID(), ip: remoteAddress ?? null },
-          });
-          await o.faults?.beforeCommit?.(dbTx);
-          return queued.message.id;
-        }, TX_OPTIONS);
-
-        log('accepted', { session: env.sessionId, accountId: env.login.accountId, outboundMessageId: accepted, recipients: recipients.length });
-        return reply(250, '2.0.0', `Queued as ${accepted}`);
-      } catch (err) {
-        if (err instanceof CapExceededError) {
-          log('caps-refused', { session: env.sessionId, accountId: env.login.accountId, stage: 'data' });
-          // Only after the transaction has rolled back: alerting is a network call and must not
-          // hold the advisory lock (or the row lock backing it) open.
-          await err.alert?.();
-          return err.reply;
-        }
-        throw err;
-      }
-    } finally {
-      await spool.dispose();
-    }
+    // The submission path itself is shared with the webmail (accept.ts, PST-T-3.11).
+    const credential = { accountId: env.login.accountId, appPasswordId: env.login.appPasswordId };
+    const outcome = await acceptSubmission(
+      body,
+      {
+        submitter: { accountId: env.login.accountId, appPasswordId: env.login.appPasswordId, addresses: env.login.addresses },
+        envelopeFrom: env.envelopeFrom,
+        recipients: env.recipients,
+        dsnRet: env.dsnRet,
+        dsnEnvid: env.dsnEnvid,
+        sessionId: env.sessionId,
+        submittedVia: 'submission',
+        enforceCaps: (tx, recipients, at) => enforceCaps(tx, credential, recipients, at),
+        auditContext: { requestId: randomUUID(), ip: remoteAddress ?? null },
+      },
+      {
+        db: o.db,
+        storage: o.storage,
+        now,
+        log,
+        ...(o.maxHeaderBytes === undefined ? {} : { maxHeaderBytes: o.maxHeaderBytes }),
+        ...(o.faults?.beforeCommit === undefined ? {} : { beforeCommit: o.faults.beforeCommit }),
+      },
+    );
+    if (outcome.ok) return reply(250, '2.0.0', `Queued as ${outcome.outboundId}`);
+    return outcome.reply;
   }
 }
 
@@ -384,7 +295,9 @@ export interface SubmissionListeners {
 }
 
 /** Create (not yet listening) the 587 and 465 servers. */
-export function createSubmissionListeners(o: SubmissionOptions): SubmissionListeners {
+export function createSubmissionListeners(options: SubmissionOptions): SubmissionListeners {
+  // One throttle for every session, so a success in one connection ends the streak for the next.
+  const o: SubmissionOptions = { ...options, throttle: options.throttle ?? createAuthThrottle({ db: options.db }) };
   const sockets = new Set<Socket | TLSSocket>();
   const track = (s: Socket | TLSSocket): void => {
     sockets.add(s);

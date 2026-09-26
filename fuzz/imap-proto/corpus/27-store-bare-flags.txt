@@ -1,0 +1,1 @@
+A004 STORE 1 -FLAGS \Seen \Flagged

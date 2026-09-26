@@ -4,6 +4,23 @@
   "version": "0.0.0",
   "description": "Authenticated submission on :465/:587",
   "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/server.ts",
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./dkim": {
+      "source": "./src/dkim.ts",
+      "types": "./dist/dkim.d.ts",
+      "default": "./dist/dkim.js"
+    },
+    "./caps": {
+      "source": "./src/caps/index.ts",
+      "types": "./dist/caps/index.d.ts",
+      "default": "./dist/caps/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
@@ -23,6 +40,7 @@
     "@postroom/crypto": "workspace:*",
     "@postroom/auth-checks": "workspace:*",
     "@postroom/audit": "workspace:*",
+    "@postroom/auth-throttle": "workspace:*",
     "@postroom/alerts": "workspace:*"
   },
   "devDependencies": {

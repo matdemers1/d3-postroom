@@ -1,0 +1,80 @@
+name: Nightly fuzz
+
+# Coverage-guided Jazzer.js fuzzing for every active parser (PST-T-4.2 / PST-REQ-088). CI's own
+# fuzz-smoke stage (ci.yml) already runs a short, seeded fast-check burst plus a replay of every
+# fixture on each push; this workflow runs each target for real, for longer, once a night. A crash
+# is uploaded as an artifact and reported as a GitHub issue — turning it into a fixture under
+# fuzz/<name>/fixtures is a human (or an agent) step, documented in docs/runbooks/fuzz-crasher.md.
+#
+# Every action is pinned to a commit SHA, never a tag — matching ci.yml.
+
+on:
+  schedule:
+    - cron: '17 7 * * *' # nightly, off the hour so it doesn't collide with other scheduled jobs
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: 'Seconds to fuzz each target'
+        required: false
+        default: '600'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [smtp-proto, mime, imap-proto, dns, proxy-protocol, auth-checks, attachments]
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - name: Fuzz ${{ matrix.target }}
+        id: fuzz
+        env:
+          FUZZ_SECONDS: ${{ github.event.inputs.seconds || '600' }}
+        run: node scripts/fuzz-nightly.mjs ${{ matrix.target }}
+      - name: Upload crash artifact
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: crash-${{ matrix.target }}
+          path: crash-*
+          if-no-files-found: ignore
+          retention-days: 90
+      - name: Open or update a tracking issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="Fuzz crasher: ${{ matrix.target }}"
+          body=$(cat <<EOF
+          Nightly fuzz found a crash in the \`${{ matrix.target }}\` target.
+
+          - Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - Download the \`crash-${{ matrix.target }}\` artifact from that run.
+
+          To fix (see docs/runbooks/fuzz-crasher.md):
+          1. Copy the crash file into \`fuzz/${{ matrix.target }}/fixtures/\`.
+          2. Add a failing unit test in \`packages/${{ matrix.target }}\` reproducing it.
+          3. Fix the parser.
+          4. \`node scripts/fuzz-replay.mjs\` must pass, then close this issue.
+          EOF
+          )
+          existing=$(gh issue list --repo "${{ github.repository }}" --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "$body"
+          else
+            gh issue create --repo "${{ github.repository }}" --title "$title" --body "$body"
+          fi

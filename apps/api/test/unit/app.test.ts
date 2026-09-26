@@ -1,4 +1,4 @@
-import request from 'supertest';
+import { request } from '../loopback.js';
 import { describe, expect, it } from 'vitest';
 import type { Db } from '@postroom/db';
 import { createApp } from '../../src/app.js';
@@ -28,8 +28,10 @@ describe('api app', () => {
 
   it('sends a strict CSP with no third-party origin', async () => {
     const app = createApp({ db: fakeDb([]), env: {}, config });
+    // Unknown /api paths sit behind the session gate, so an anonymous caller gets 401 — and the
+    // security headers go out on every response, including that one.
     const res = await request(app).get('/api/nothing');
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(401);
     const csp = String(res.headers['content-security-policy']);
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("frame-ancestors 'none'");

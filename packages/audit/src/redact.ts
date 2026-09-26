@@ -43,7 +43,9 @@ export function redact(value: unknown, key?: string): unknown {
     return undefined;
   }
   if (value instanceof Date) {
-    return value.toISOString();
+    // An invalid Date (new Date(NaN)) would make toISOString throw — and an audit write must never
+    // fail because of what it was asked to record.
+    return Number.isNaN(value.getTime()) ? 'Invalid Date' : value.toISOString();
   }
   if (isBufferLike(value)) {
     return `[bytes:${String(value.byteLength)}]`;

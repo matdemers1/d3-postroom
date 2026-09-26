@@ -20,8 +20,13 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { accept: 'application/json' };
+async function call<T>(
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
+  path: string,
+  body?: unknown,
+  extraHeaders: Record<string, string> = {},
+): Promise<T> {
+  const headers: Record<string, string> = { accept: 'application/json', ...extraHeaders };
   if (method !== 'GET') headers['x-postroom-csrf'] = '1';
   if (body !== undefined) headers['content-type'] = 'application/json';
   const res = await fetch(path, {
@@ -60,13 +65,386 @@ export const api = {
   signInTotp: (input: { challenge: string; code: string }) => call<{ next: 'done' }>('POST', '/api/auth/signin/totp', input),
   signOut: () => call<{ ok: true }>('POST', '/api/auth/signout'),
   stepUp: (code: string) => call<{ ok: true }>('POST', '/api/auth/step-up', { code }),
+  changePassword: (input: { currentPassword: string; newPassword: string; code: string; endOtherSessions?: boolean }) =>
+    call<{ ok: true; endedSessions: number }>('POST', '/api/auth/password', input),
+  sessions: () => call<{ sessions: AccountSession[] }>('GET', '/api/auth/sessions'),
+  endSession: (id: string) => call<{ ok: true }>('DELETE', `/api/auth/sessions/${encodeURIComponent(id)}`),
   adminSessions: () => call<{ sessions: AdminSession[] }>('GET', '/api/admin/sessions'),
   revokeSession: (id: string) => call<{ ok: true }>('DELETE', `/api/admin/sessions/${encodeURIComponent(id)}`),
   appPasswords: () => call<{ appPasswords: AppPassword[] }>('GET', '/api/app-passwords'),
   createAppPassword: (input: { label: string; scopes: AppPasswordScope[] }) =>
     call<AppPassword & { password: string }>('POST', '/api/app-passwords', input),
   revokeAppPassword: (id: string) => call<{ ok: true }>('DELETE', `/api/app-passwords/${encodeURIComponent(id)}`),
+
+  // --- Mail (PST-T-3.9's API) ---------------------------------------------------------------
+  mailboxes: () => call<{ mailboxes: Mailbox[] }>('GET', '/api/mailboxes'),
+  messages: (mailboxId: string, opts: { cursor?: string | null; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.cursor !== undefined && opts.cursor !== null) q.set('cursor', opts.cursor);
+    if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+    const qs = q.toString();
+    return call<MessagePage>('GET', `/api/mailboxes/${encodeURIComponent(mailboxId)}/messages${qs === '' ? '' : `?${qs}`}`);
+  },
+  message: (id: string) => call<MessageDetail>('GET', `/api/messages/${encodeURIComponent(id)}`),
+  messageBody: (id: string) => call<MessageBody>('GET', `/api/messages/${encodeURIComponent(id)}/body`),
+  /** A short-lived URL of the sanitised HTML on the usercontent origin (PST-T-3.12). 503 when that origin is not configured. */
+  renderMessage: (id: string, images: boolean) => call<RenderTicket>('GET', renderPath(id, images)),
+  /** Flags and/or a move. `modseq` is the row's current MODSEQ: the server answers 412 if it moved on. A move returns a NEW id. */
+  patchMessage: (id: string, modseq: string, patch: MessagePatch) =>
+    call<MessageDetail>('PATCH', `/api/messages/${encodeURIComponent(id)}`, patch, { 'if-match': `"${modseq}"` }),
+  thread: (id: string) => call<ThreadDetail>('GET', `/api/threads/${encodeURIComponent(id)}`),
+  search: (q: string, opts: { mailboxId?: string; cursor?: string | null } = {}) => {
+    const params = new URLSearchParams({ q });
+    if (opts.mailboxId !== undefined) params.set('mailboxId', opts.mailboxId);
+    if (opts.cursor !== undefined && opts.cursor !== null) params.set('cursor', opts.cursor);
+    return call<MessagePage>('GET', `/api/search?${params.toString()}`);
+  },
+
+  // --- Compose (PST-T-3.11) -------------------------------------------------------------------
+  /** Through the submission path; filed in Sent and threaded before it answers. */
+  send: (input: SendInput) => call<SendResult>('POST', '/api/compose/send', input),
+  createDraft: (input: DraftInput) => call<DraftSaved>('POST', '/api/compose/drafts', input),
+  /** Replaces the draft: the answer carries its NEW id. */
+  replaceDraft: (id: string, input: DraftInput) => call<DraftSaved>('PUT', `/api/compose/drafts/${encodeURIComponent(id)}`, input),
+  draft: (id: string) => call<SavedDraft>('GET', `/api/compose/drafts/${encodeURIComponent(id)}`),
+  drafts: (opts: { inReplyTo?: string } = {}) =>
+    call<{ drafts: SavedDraft[] }>('GET', `/api/compose/drafts${opts.inReplyTo === undefined ? '' : `?${new URLSearchParams({ inReplyTo: opts.inReplyTo }).toString()}`}`),
+  deleteDraft: (id: string) => call<null>('DELETE', `/api/compose/drafts/${encodeURIComponent(id)}`),
+
+  // --- Delivery timeline (PST-T-1.13's API) --------------------------------------------------
+  delivery: (outboundId: string) => call<DeliveryView>('GET', `/api/messages/${encodeURIComponent(outboundId)}/delivery`),
+
+  // --- Setup wizard and DNS checker (PST-T-4.8) ----------------------------------------------
+  dnsCheck: (domain?: string) =>
+    call<DnsReport>('GET', `/api/admin/dns${domain === undefined ? '' : `?${new URLSearchParams({ domain }).toString()}`}`),
+  wizard: () => call<WizardView>('GET', '/api/admin/setup-wizard'),
+  wizardDomain: (domain: string) => call<WizardView>('POST', '/api/admin/setup-wizard/domain', { domain }),
+  wizardDkim: () => call<WizardView>('POST', '/api/admin/setup-wizard/dkim'),
+  wizardDns: () => call<WizardView>('POST', '/api/admin/setup-wizard/dns'),
+  wizardMailbox: (localPart: string) => call<WizardView>('POST', '/api/admin/setup-wizard/mailbox', { localPart }),
+  wizardTest: (outboundId: string) => call<WizardView>('POST', '/api/admin/setup-wizard/test', { outboundId }),
+  wizardComplete: () => call<WizardView>('POST', '/api/admin/setup-wizard/complete'),
 };
+
+// --- Delivery timeline -------------------------------------------------------------------------
+
+export interface DeliveryAttempt {
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  transport: string;
+  mxHost: string | null;
+  mxIp: string | null;
+  localIp: string | null;
+  tls: { version: string | null; cipher: string | null; peer: string | null };
+  remote: { code: number | null; enhanced: string | null; text: string | null };
+  outcome: string;
+  error: string | null;
+}
+
+export type RecipientState = 'queued' | 'attempting' | 'deferred' | 'delivered' | 'bounced' | 'cancelled';
+
+export interface DeliveryRecipient {
+  id: string;
+  address: string;
+  state: RecipientState;
+  attempts: number;
+  nextAttemptAt: string;
+  lastCode: number | null;
+  lastText: string | null;
+  deliveredAt: string | null;
+  transport: string;
+  attemptsLog: DeliveryAttempt[];
+}
+
+export interface DeliveryView {
+  message: { id: string; subject: string | null; headerFrom: string; messageId: string | null; createdAt: string; size: number };
+  recipients: DeliveryRecipient[];
+}
+
+/** A recipient is settled once nothing more will happen to it without someone acting. */
+export const settled = (state: RecipientState): boolean => state === 'delivered' || state === 'bounced' || state === 'cancelled';
+
+export interface TimelineEvent {
+  at: string;
+  title: string;
+  detail: string | null;
+  tone: 'neutral' | 'attention' | 'danger';
+}
+
+/** One recipient's delivery as a list of events, oldest first: queued, each attempt, the outcome. Pure. */
+export function timelineOf(view: DeliveryView, recipient: DeliveryRecipient): TimelineEvent[] {
+  const events: TimelineEvent[] = [{ at: view.message.createdAt, title: 'Accepted and queued', detail: `DKIM-signed, ${String(view.message.size)} bytes`, tone: 'neutral' }];
+  for (const a of recipient.attemptsLog) {
+    const where = [a.mxHost, a.mxIp === null ? null : `(${a.mxIp})`].filter((x) => x !== null).join(' ');
+    const tls = a.tls.version === null ? 'no TLS' : `${a.tls.version}${a.tls.cipher === null ? '' : ` ${a.tls.cipher}`}`;
+    const reply = a.remote.code === null ? (a.error ?? null) : `${String(a.remote.code)}${a.remote.enhanced === null ? '' : ` ${a.remote.enhanced}`} ${a.remote.text ?? ''}`.trim();
+    const outcome = a.finishedAt === null ? 'in progress' : a.outcome;
+    events.push({
+      at: a.startedAt,
+      title: `Attempt via ${a.transport}${where === '' ? '' : ` to ${where}`}: ${outcome}`,
+      detail: [tls, reply].filter((x) => x !== null && x !== '').join(' · ') || null,
+      tone: a.outcome === 'delivered' ? 'neutral' : a.outcome === 'bounced' ? 'danger' : 'attention',
+    });
+  }
+  if (recipient.state === 'delivered') {
+    events.push({ at: recipient.deliveredAt ?? recipient.nextAttemptAt, title: `Delivered to ${recipient.address}`, detail: recipient.lastText, tone: 'neutral' });
+  } else if (recipient.state === 'bounced') {
+    events.push({ at: recipient.nextAttemptAt, title: `Bounced: ${recipient.address}`, detail: recipient.lastText, tone: 'danger' });
+  } else if (recipient.state === 'deferred') {
+    events.push({ at: recipient.nextAttemptAt, title: 'Deferred: next attempt scheduled', detail: recipient.lastText, tone: 'attention' });
+  } else if (recipient.state === 'queued' || recipient.state === 'attempting') {
+    events.push({ at: recipient.nextAttemptAt, title: recipient.state === 'queued' ? 'Waiting for the delivery daemon' : 'Delivering now', detail: null, tone: 'neutral' });
+  }
+  return events;
+}
+
+// --- DNS checker ------------------------------------------------------------------------------
+
+export type DnsStatus = 'pass' | 'fail' | 'missing' | 'pending' | 'unknown';
+
+export interface DnsCheckRow {
+  record: string;
+  name: string;
+  type: 'MX' | 'TXT' | 'PTR' | 'SRV' | 'CNAME';
+  expected: string | null;
+  afterGoLive: boolean;
+  note: string | null;
+  live: string[];
+  status: DnsStatus;
+  reason: string;
+}
+
+export interface DnsReport {
+  domain: string;
+  resolver: string;
+  checkedAt: string;
+  summary: Record<DnsStatus, number>;
+  rows: DnsCheckRow[];
+}
+
+export const DNS_STATUS: Record<DnsStatus, { label: string; tone: 'neutral' | 'attention' | 'danger' }> = {
+  pass: { label: 'Pass', tone: 'neutral' },
+  fail: { label: 'Fail', tone: 'danger' },
+  missing: { label: 'Missing', tone: 'danger' },
+  pending: { label: 'Pending', tone: 'neutral' },
+  unknown: { label: 'Unknown', tone: 'attention' },
+};
+
+/** "9 pass · 1 fail · 4 pending", leaving out zero counts. Pure. */
+export function dnsSummary(summary: Record<DnsStatus, number>): string {
+  const order: DnsStatus[] = ['pass', 'fail', 'missing', 'unknown', 'pending'];
+  const parts = order.filter((s) => summary[s] > 0).map((s) => `${String(summary[s])} ${DNS_STATUS[s].label.toLowerCase()}`);
+  return parts.length === 0 ? 'No records' : parts.join(' · ');
+}
+
+// --- Setup wizard -----------------------------------------------------------------------------
+
+export type WizardStep = 'domain' | 'dkim' | 'dns' | 'mailbox' | 'test' | 'done';
+
+export const WIZARD_STEPS: readonly { step: Exclude<WizardStep, 'done'>; label: string }[] = [
+  { step: 'domain', label: 'Domain' },
+  { step: 'dkim', label: 'DKIM keys' },
+  { step: 'dns', label: 'DNS records' },
+  { step: 'mailbox', label: 'Mailbox' },
+  { step: 'test', label: 'Test message' },
+];
+
+export interface WizardView {
+  step: WizardStep;
+  completed: boolean;
+  completedAt: string | null;
+  domain: string | null;
+  suggestedDomain: string;
+  dkim: { selector: string; algorithm: 'ed25519-sha256' | 'rsa-sha256'; dnsName: string; dnsRecord: string }[];
+  dnsAcknowledgedAt: string | null;
+  mailbox: string | null;
+  addresses: string[];
+  test: { outboundId: string; to: string[]; sentAt: string } | null;
+}
+
+/** Fired on window after any wizard step lands, so the nav's count follows without a reload. */
+export const WIZARD_CHANGED_EVENT = 'postroom:setup-wizard-changed';
+
+/** Steps of the wizard not yet done, for the nav's count. Pure. */
+export function wizardStepsLeft(view: WizardView): number {
+  if (view.completed) return 0;
+  const reached = view.step === 'done' ? WIZARD_STEPS.length : WIZARD_STEPS.findIndex((s) => s.step === view.step);
+  return WIZARD_STEPS.length - reached;
+}
+
+/** Whether a step can be opened: it is the furthest one reached, or before it. Pure. */
+export function wizardReachable(view: WizardView, step: WizardStep): boolean {
+  const order: WizardStep[] = ['domain', 'dkim', 'dns', 'mailbox', 'test', 'done'];
+  return order.indexOf(step) <= order.indexOf(view.step);
+}
+
+/** The render-ticket request: remote images only when the reader chose to load them (PST-REQ-082). */
+export const renderPath = (messageId: string, images: boolean): string =>
+  `/api/messages/${encodeURIComponent(messageId)}/render${images ? '?images=1' : ''}`;
+
+/** Where an attachment downloads from: always a download, never rendered on this origin. */
+export const attachmentUrl = (messageId: string, partId: string): string =>
+  `/api/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(partId)}`;
+export const rawMessageUrl = (messageId: string): string => `/api/messages/${encodeURIComponent(messageId)}/raw`;
+/** The SSE stream (PST-REQ-083). */
+export const EVENTS_URL = '/api/events';
+
+export type ComposeKind = 'new' | 'reply' | 'replyall' | 'forward';
+
+/** What the composer sends and saves. Address fields are entries ("Name <a@b>"), one per address. */
+export interface ComposeFields {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  text: string;
+  inReplyTo: string | null;
+  references: string[];
+  /** Forward: the message attached whole (message/rfc822). */
+  forwardOf: string | null;
+}
+
+export interface SendInput extends ComposeFields {
+  from: string;
+  /** The draft this send replaces; removed from Drafts with the send. */
+  draftId: string | null;
+}
+
+export interface SendResult {
+  messageId: string;
+  outboundId: string;
+  sentMessageId: string;
+  sentMailboxId: string;
+  threadId: string | null;
+}
+
+export interface DraftInput extends ComposeFields {
+  from?: string;
+  mode: ComposeKind | null;
+  sourceId: string | null;
+}
+
+export interface DraftSaved {
+  id: string;
+  mailboxId: string;
+  uid: number;
+  savedAt: string;
+}
+
+export interface SavedDraft extends ComposeFields {
+  id: string;
+  mailboxId: string;
+  from: string;
+  mode: ComposeKind | null;
+  sourceId: string | null;
+  savedAt: string;
+}
+
+export type SpecialUse = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'rejects';
+
+export interface Mailbox {
+  id: string;
+  name: string;
+  specialUse: SpecialUse | null;
+  uidvalidity: number;
+  uidnext: number;
+  /** A decimal string: MODSEQs outgrow a JSON number. */
+  highestModseq: string;
+  subscribed: boolean;
+  total: number;
+  unseen: number;
+}
+
+export interface MessageSummary {
+  id: string;
+  mailboxId: string;
+  uid: number;
+  modseq: string;
+  threadId: string | null;
+  subject: string | null;
+  /** The sender's address (denormalised at filing); the display name is in the body's headers. */
+  from: string | null;
+  date: string;
+  internalDate: string;
+  size: number;
+  flags: string[];
+  bucket: string | null;
+}
+
+export interface MessagePage {
+  messages: MessageSummary[];
+  nextCursor: string | null;
+}
+
+export interface MessageDetail extends MessageSummary {
+  messageIdHeader: string | null;
+  inReplyTo: string | null;
+  references: string[];
+  verdict: { bucket: string | null; reasons: string[]; auth: unknown } | null;
+}
+
+export interface MessageAttachment {
+  partId: string;
+  contentType: string;
+  filename: string | null;
+  disposition: string | null;
+  contentId: string | null;
+  size: number;
+  sha256: string;
+  inMessage: string | null;
+}
+
+export interface MessageBody {
+  id: string;
+  headers: { name: string; value: string }[];
+  text: string | null;
+  textTruncated: boolean;
+  /** Raw and UNSANITISED. Never put it in this document: PST-T-3.12 renders it on the usercontent origin. */
+  html: string | null;
+  htmlTruncated: boolean;
+  attachments: MessageAttachment[];
+  warnings: { code: string; message: string; partId: string | null }[];
+}
+
+/** Where a message's HTML is rendered: a capability URL on the usercontent origin, for a sandboxed frame. */
+export interface RenderTicket {
+  url: string;
+  expiresAt: string;
+  images: boolean;
+  /** Remote images in the message; above 0 with images false means they are blocked. */
+  remoteImages: number;
+}
+
+export interface MessagePatch {
+  flags?: { add?: string[]; remove?: string[] };
+  mailboxId?: string;
+}
+
+export interface ThreadDetail {
+  id: string;
+  subject: string | null;
+  messageCount: number;
+  lastMessageAt: string;
+  messages: MessageSummary[];
+}
+
+export interface MailboxChangedEvent {
+  mailboxId: string;
+  uidnext: number;
+  highestModseq: string;
+  unseen: number;
+  total: number;
+}
+
+export interface MessageNewEvent {
+  mailboxId: string;
+  messageId: string;
+  uid: number;
+  subject: string | null;
+  from: string | null;
+  date: string;
+}
 
 export type AppPasswordScope = 'imap' | 'smtp' | 'dav' | 'sieve';
 
@@ -83,6 +461,16 @@ export interface AppPassword {
   revokedAt: string | null;
   dailyRecipientCap: number | null;
   frozenAt: string | null;
+}
+
+/** One of the caller's own live sessions, as GET /api/auth/sessions lists it (PST-REQ-091). */
+export interface AccountSession {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  ip: string | null;
+  userAgent: string | null;
+  current: boolean;
 }
 
 export interface AdminSession {
@@ -107,7 +495,27 @@ export function redirectFor(state: AuthState, pathname: string): string | null {
   return null;
 }
 
-/** A human sentence for an API refusal on the sign-in and setup screens. */
+/** Password policy problem codes, in the order password-policy.ts reports them (PST-T-4.3). */
+type PasswordProblem = 'too_short' | 'too_long' | 'common' | 'context_word';
+
+const PASSWORD_PROBLEM_LABEL: Record<PasswordProblem, string> = {
+  too_short: 'must be at least 12 characters',
+  too_long: 'must be at most 1024 characters',
+  common: 'is one of the most common breached passwords',
+  context_word: "is built on Postroom's own name — choose something unrelated",
+};
+
+/** Which rule a refused password failed, from the `weak_password` response body's `problems`. */
+function describeWeakPassword(body: unknown): string {
+  const problems =
+    typeof body === 'object' && body !== null && Array.isArray((body as { problems?: unknown }).problems)
+      ? ((body as { problems: unknown[] }).problems.filter((p): p is PasswordProblem => typeof p === 'string' && p in PASSWORD_PROBLEM_LABEL))
+      : [];
+  if (problems.length === 0) return 'That password is too weak. Choose another.';
+  return `That password ${problems.map((p) => PASSWORD_PROBLEM_LABEL[p]).join('; ')}.`;
+}
+
+/** A human sentence for an API refusal on the sign-in, setup and account-security screens. */
 export function describeError(error: unknown): string {
   if (!(error instanceof ApiError)) return 'Postroom did not answer. Check your connection and try again.';
   switch (error.code) {
@@ -133,6 +541,12 @@ export function describeError(error: unknown): string {
       return 'Check the highlighted fields.';
     case 'auth_not_configured':
       return 'Sign-in is not configured on this server yet.';
+    case 'weak_password':
+      return describeWeakPassword(error.body);
+    case 'no_password':
+      return 'This account signs in with D3 Auth and has no password here to change.';
+    case 'step_up_required':
+      return 'That needs a fresh authentication code.';
     default:
       return 'Something went wrong. Try again.';
   }

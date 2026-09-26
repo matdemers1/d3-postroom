@@ -33,6 +33,8 @@ edge/*.wg.conf
 # The private calibration corpus is real mail. It is never committed (PST-REQ-108).
 # Only fixtures/golden (synthetic) is.
 corpus/
+# Fuzz seed corpora are synthetic protocol commands, not mail: tracked on purpose.
+!fuzz/*/corpus/
 fixtures/private/
 
 # Downloaded at test time only — no licence to redistribute, never sent into a live system.

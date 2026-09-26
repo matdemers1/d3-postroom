@@ -11,7 +11,9 @@
     "test": "vitest run --project unit --passWithNoTests",
     "start": "node dist/main.js",
     "dev": "node --conditions=source --import tsx --watch src/main.ts",
-    "test:integration": "vitest run --project integration --passWithNoTests"
+    "test:integration": "vitest run --project integration --passWithNoTests",
+    "openapi": "node --conditions=source --import tsx src/openapi/generate.ts",
+    "openapi:check": "node --conditions=source --import tsx src/openapi/generate.ts --check"
   },
   "dependencies": {
     "@d3cloudio/auth-client": "0.1.1",
@@ -26,12 +28,24 @@
     "zod": "^4.6.5",
     "@postroom/credentials": "workspace:*",
     "@postroom/delivery": "workspace:*",
-    "@postroom/queue": "workspace:*"
+    "@postroom/queue": "workspace:*",
+    "@postroom/search": "workspace:*",
+    "@postroom/threading": "workspace:*",
+    "@postroom/mime": "workspace:*",
+    "@postroom/blobstore": "workspace:*",
+    "pg": "^8.23.0",
+    "@postroom/dsn": "workspace:*",
+    "@postroom/submission": "workspace:*",
+    "@postroom/alerts": "workspace:*",
+    "@postroom/dns": "workspace:*",
+    "@postroom/auth-checks": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/supertest": "^7.2.1",
     "supertest": "^7.2.2",
-    "tsx": "^4.23.13"
+    "tsx": "^4.23.13",
+    "@types/pg": "^8.23.1",
+    "@postroom/auth-throttle": "workspace:*"
   }
 }

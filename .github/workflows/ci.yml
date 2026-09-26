@@ -38,6 +38,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm --filter @postroom/api openapi:check
 
   unit:
     needs: lint
