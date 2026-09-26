@@ -394,14 +394,33 @@ model DkimKey {
   /// PKCS#8 DER sealed with the KEK, aad = "dkim:<domain>:<selector>".
   sealedPrivate Bytes         @map("sealed_private")
   kekId         String        @map("kek_id")
+  /// When the key started signing. For a `pending` key: its creation time, overwritten at the switch.
   activeFrom    DateTime      @default(now()) @map("active_from") @db.Timestamptz(6)
   retiredAt     DateTime?     @map("retired_at") @db.Timestamptz(6)
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Rotation (PST-T-7.4, PST-REQ-125): only `active` signs, one per (domain, algorithm).
+  state         DkimKeyState  @default(active)
+  /// When our resolver first saw this key's TXT with the matching p= (the switch happened then).
+  dnsVerifiedAt DateTime?     @map("dns_verified_at") @db.Timestamptz(6)
+  /// A `retiring` key becomes `retired` no earlier than this (switch + 7 days).
+  retireAfter   DateTime?     @map("retire_after") @db.Timestamptz(6)
 
   domain Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
   @@unique([domainId, selector])
+  @@index([domainId, algorithm, state])
   @@map("dkim_key")
+}
+
+/// A DKIM key's place in rotation: pending (created, TXT not yet seen in DNS) → active (signing) →
+/// retiring (superseded, still published for 7 days) → retired (the TXT may be removed).
+enum DkimKeyState {
+  pending
+  active
+  retiring
+  retired
+
+  @@map("dkim_key_state")
 }
 
 /// The Postgres job queue every stage runs on (PST-T-1.5, PST-T-2.7): claimed with
