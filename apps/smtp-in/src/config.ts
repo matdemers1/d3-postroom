@@ -20,6 +20,10 @@ export interface SmtpInConfig {
   readonly maxErrors: number;
   readonly idleTimeoutMs: number;
   readonly dnsResolver: string;
+  /** Spamhaus DQS key (PST-REQ-063); when set, DNSBL zones are queried via `<key>.zen.dq.spamhaus.net`
+   * instead of the public `zen.spamhaus.org` zone. Either way the resolver must be our own — never
+   * a public one — which is checked regardless of this key. */
+  readonly spamhausDqsKey: string | undefined;
   readonly tlsCertFile: string | undefined;
   readonly tlsKeyFile: string | undefined;
 }
@@ -31,6 +35,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): SmtpInConfig {
     .filter((p) => p !== '');
   const cert = envString(env, 'TLS_CERT_FILE', '');
   const key = envString(env, 'TLS_KEY_FILE', '');
+  const dqsKey = envString(env, 'SPAMHAUS_DQS_KEY', '');
   return {
     port: envInt(env, 'SMTP_PORT', 25),
     host: envString(env, 'LISTEN_HOST', '0.0.0.0'),
@@ -44,6 +49,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): SmtpInConfig {
     maxErrors: envInt(env, 'SMTP_MAX_ERRORS', 10),
     idleTimeoutMs: envInt(env, 'SMTP_IDLE_TIMEOUT_MS', 300_000),
     dnsResolver: envString(env, 'DNS_RESOLVER', '127.0.0.1:53'),
+    spamhausDqsKey: dqsKey === '' ? undefined : dqsKey,
     tlsCertFile: cert === '' ? undefined : cert,
     tlsKeyFile: key === '' ? undefined : key,
   };

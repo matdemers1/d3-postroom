@@ -41,6 +41,7 @@ import {
   type InboundRecipient,
   type InboundStorage,
 } from './data.js';
+import type { DnsblVerdict } from './decide.js';
 import { checkGreylist, isPrivateClient, isSoftListed, type GreylistInput, type GreylistVerdict } from './greylist.js';
 import { buildReceived, receivedProtocol } from './headers.js';
 import { canonicalIp, type ReverseLookup } from './rdns.js';
@@ -66,6 +67,9 @@ export interface SmtpInOptions {
   readonly spfDns: SpfDns;
   readonly dkimDns: DkimDns;
   readonly reverseLookup: ReverseLookup;
+  /** The client IP's DNSBL verdict (PST-REQ-058), looked up once per session at connect, like
+   * `reverseLookup`. Without it, `verdicts.dnsbl` is undefined and decide.ts never rejects on it. */
+  readonly dnsblLookup?: (ip: string) => Promise<DnsblVerdict>;
   readonly acceptMessage?: AcceptMessage;
   /** Durable storage for DATA (PST-T-2.6). Without it (and without `acceptMessage`) DATA is 451. */
   readonly storage?: InboundStorage;
@@ -143,6 +147,7 @@ function errorMessage(err: unknown): string {
 class InboundConnection {
   session: ServerSession | null = null;
   private rdns: Promise<string | null> = Promise.resolve(null);
+  private dnsbl: Promise<DnsblVerdict | undefined> = Promise.resolve(undefined);
   private tx: TransactionState | null = null;
   private sessionRcpts = 0;
   readonly transactions: TransactionState['log'][] = [];
@@ -164,6 +169,12 @@ class InboundConnection {
           this.errors.push(`rdns: ${errorMessage(err)}`);
           return null;
         });
+        this.dnsbl = this.opts.dnsblLookup
+          ? this.opts.dnsblLookup(this.clientIp).catch((err: unknown) => {
+              this.errors.push(`dnsbl: ${errorMessage(err)}`);
+              return undefined;
+            })
+          : Promise.resolve(undefined);
         return undefined;
       },
       onMail: (from, params, ctx) => this.onMail(from, params, ctx),
@@ -273,7 +284,7 @@ class InboundConnection {
         receivedHeader,
       },
       verifier,
-      { spf: tx.spf, dkim: verifier.results() },
+      { spf: tx.spf, dkim: verifier.results(), dnsbl: await this.dnsbl },
     );
     tx.log.data = { code: r.code, ...(r.enhanced === undefined ? {} : { enhanced: r.enhanced }) };
     return r;
