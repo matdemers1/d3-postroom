@@ -41,6 +41,13 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/search',
         'GET /api/threads/{id}',
         'PATCH /api/messages/{id}',
+        // PST-T-3.11: the composer.
+        'POST /api/compose/send',
+        'GET /api/compose/drafts',
+        'POST /api/compose/drafts',
+        'GET /api/compose/drafts/{id}',
+        'PUT /api/compose/drafts/{id}',
+        'DELETE /api/compose/drafts/{id}',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit']);
