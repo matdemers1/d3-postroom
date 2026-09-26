@@ -47,6 +47,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   Attachment: S.Attachment,
   MessageBody: S.MessageBody,
   ThreadDetail: S.ThreadDetail,
+  SearchResponse: S.SearchResponse,
   MailboxChangedEvent: S.MailboxChangedEvent,
   MessageNewEvent: S.MessageNewEvent,
 };
@@ -158,9 +159,9 @@ export const ROUTES: RouteSpec[] = [
     path: '/api/search',
     operationId: 'search',
     tag: 'Search',
-    summary: 'Full-text search over the caller’s mail.',
+    summary: 'Full-text search over the caller’s mail (PST-REQ-080).',
     query: S.SearchQuery,
-    responses: { '200': { description: 'Matching messages.', schema: 'MessageList' }, ...COMMON, '501': err('Search is not built yet (PST-T-3.7).') },
+    responses: { '200': { description: 'Matching messages, best rank first.', schema: 'SearchResponse' }, ...COMMON, '404': err('mailboxId is not the caller’s.') },
   },
   {
     method: 'get',

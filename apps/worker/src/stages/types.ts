@@ -81,12 +81,18 @@ export interface ParseResult {
   readonly messageId: string | null;
   readonly subject: string | null;
   readonly fromAddress: string | null;
+  /** Every address in the To header, comma-joined; null when the header was missing or empty. */
+  readonly toAddress: string | null;
   /** ISO, or null when the Date header was missing or unparseable. */
   readonly sentAt: string | null;
   readonly inReplyTo: string[];
   readonly references: string[];
   readonly hasText: boolean;
   readonly hasHtml: boolean;
+  /** The text/plain part, or the html part as text when there is no text/plain (PST-T-3.13): what
+   * the file stage indexes into MessageSearch. Capped at 256 KiB on a UTF-8 boundary; '' when the
+   * message has neither part. */
+  readonly bodyText: string;
   readonly attachments: AttachmentBrief[];
   readonly warnings: number;
   readonly [key: string]: Json;

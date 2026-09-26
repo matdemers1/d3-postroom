@@ -10,6 +10,7 @@ import { pipeline } from 'node:stream/promises';
 import { audited, getAuditContext } from '@postroom/audit';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { collectMessage, decodeEncodedWords, parseMessage } from '@postroom/mime';
+import { parseQuery, searchMessages } from '@postroom/search';
 import { Router, type Request, type Response } from 'express';
 import type { z } from 'zod';
 import { currentSession, handle } from '../auth/middleware.js';
@@ -23,6 +24,8 @@ import {
   MessagePatch,
   SearchQuery,
   type MessageBodyJson,
+  type SearchResponseJson,
+  type SearchResultJson,
   type ThreadDetailJson,
 } from './schemas.js';
 import { detailJson, findOwnMessage, findOwnThread, listMailboxes, listMessages, ownMailbox, PreconditionFailed, summaryJson, updateMessage } from './store.js';
@@ -304,12 +307,41 @@ export function mailRoutes(deps: ApiDeps): Router {
 
   router.get(
     '/search',
-    handle((req, res) => {
-      if (parse(SearchQuery, req.query, res) === null) return Promise.resolve();
-      // @postroom/search's searchMessages() arrives with PST-T-3.7; until it is merged the route
-      // exists, validates, and says so plainly.
-      res.status(501).json({ error: 'not_implemented', message: 'search is not built yet (PST-T-3.7)' });
-      return Promise.resolve();
+    handle(async (req, res) => {
+      const query = parse(SearchQuery, req.query, res);
+      if (query === null) return;
+      const me = currentSession(req);
+      if (query.mailboxId !== undefined && (await ownMailbox(db, me.accountId, query.mailboxId)) === null) {
+        notFound(res);
+        return;
+      }
+      const { ast, warnings } = parseQuery(query.q);
+      const rows = await searchMessages(db, ast, {
+        accountId: me.accountId,
+        limit: query.limit + 1,
+        ...(query.mailboxId === undefined ? {} : { mailboxId: query.mailboxId }),
+        ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
+      });
+      const page = rows.slice(0, query.limit);
+      const froms = await db.message.findMany({ where: { id: { in: page.map((r) => r.messageId) } }, select: { id: true, fromAddress: true } });
+      const fromById = new Map(froms.map((m) => [m.id, m.fromAddress]));
+      const results: SearchResultJson[] = page.map((r) => ({
+        messageId: r.messageId,
+        mailboxId: r.mailboxId,
+        uid: r.uid,
+        subject: r.subject,
+        from: fromById.get(r.messageId) ?? null,
+        date: r.internalDate.toISOString(),
+        snippet: r.snippet,
+      }));
+      const last = page[page.length - 1];
+      const body: SearchResponseJson = {
+        results,
+        nextCursor: rows.length > query.limit && last !== undefined ? last.internalDate.toISOString() : null,
+        warnings,
+      };
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(body);
     }),
   );
 
