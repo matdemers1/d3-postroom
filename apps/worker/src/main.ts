@@ -1,13 +1,16 @@
 // The worker daemon: runs the inbound pipeline (PST-T-2.7) on the 'inbound' queue — verify, parse,
-// classify, sieve, file, notify — for every message smtp-in spooled. ACME, backups and the restore
-// drill join it in later phases.
+// classify, sieve, file, notify — for every message smtp-in spooled — and, on their own queues and
+// worker, the nightly backup and restore drill (PST-T-0.16, PST-T-0.17). ACME joins in a later phase.
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
 import { createDb } from '@postroom/db';
 import { envInt, envString, runDaemon } from '@postroom/daemon';
 import { startWorker } from '@postroom/queue';
+import { backupHandler, BACKUP_QUEUE } from './backup/job.js';
+import { startNightly } from './backup/schedule.js';
+import { maintenanceDeps } from './backup/wire.js';
 import { DAEMON } from './daemon.js';
-import { inboundHealth } from './health.js';
+import { inboundHealth, maintenanceHealth } from './health.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
 
 await runDaemon({
@@ -42,9 +45,27 @@ await runDaemon({
       leaseMs,
       log: ctx.log,
     });
-    ctx.addHealth(async () => ({ inbound: await inboundHealth(db) }));
-    ctx.log('inbound-worker', { leaseMs, blobRoot });
+    // Backups get their own worker, so a long dump never holds up inbound mail, and a
+    // lease longer than any backup, so a running one is not claimed a second time.
+    const maintenance = maintenanceDeps(ctx.env, db, databaseUrl, ctx.log);
+    const maintenanceWorker = await startWorker({
+      db,
+      databaseUrl,
+      queues: { [BACKUP_QUEUE]: backupHandler(maintenance.backup) },
+      pollMs: 60_000,
+      leaseMs: envInt(ctx.env, 'BACKUP_LEASE_MS', 3 * 3_600_000),
+      log: ctx.log,
+    });
+    const nightly = startNightly({
+      db,
+      times: { backupAt: envString(ctx.env, 'BACKUP_AT', '03:00'), drillAt: envString(ctx.env, 'DRILL_AT', '04:30') },
+      log: ctx.log,
+    });
+    ctx.addHealth(async () => ({ inbound: await inboundHealth(db), ...(await maintenanceHealth(db)) }));
+    ctx.log('inbound-worker', { leaseMs, blobRoot, backupsConfigured: maintenance.backup.config.s3 !== null });
     ctx.onShutdown(async () => {
+      nightly.stop();
+      await maintenanceWorker.stop();
       await worker.stop();
       await db.$disconnect();
     });
