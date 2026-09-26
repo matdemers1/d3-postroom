@@ -1,0 +1,1 @@
+A1 SEARCH OR (FROM "a" SUBJECT "b") (TO c HEADER "X-Foo" "" NOT (UID 1:* LARGER 100)) MODSEQ "/flags/\\draft" all 620162338

@@ -1,0 +1,3 @@
+A001 LOGIN {11+}
+FRED FOOBAR {7+}
+fat man

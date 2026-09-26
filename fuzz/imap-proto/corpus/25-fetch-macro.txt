@@ -1,0 +1,3 @@
+a FETCH 1:* ALL
+b FETCH 2 FULL
+c FETCH $ FAST
