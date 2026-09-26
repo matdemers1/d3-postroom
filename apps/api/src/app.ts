@@ -19,6 +19,7 @@ import { mdnRoutes } from './compose/index.js';
 import { contactsRoutes } from './contacts/index.js';
 import { templateRoutes } from './templates/index.js';
 import { invitesRoutes } from './invites/index.js';
+import { keyRoutes } from './keys/index.js';
 import { mailRoutes } from './mail/index.js';
 import { usercontentConfig, usercontentDispatch } from './usercontent/index.js';
 import { deliveryRoutes } from './delivery/index.js';
@@ -131,6 +132,8 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/contacts', requireSession(deps), contactsRoutes(deps));
   // PST-T-8.4: iMIP invitations. Same prefix as deliveryRoutes/unsubscribeRoutes above, disjoint paths (.../invite...).
   app.use('/api/messages', requireSession(deps), invitesRoutes(deps));
+  // PST-T-12.2: OpenPGP keys and S/MIME certificates (PST-REQ-161).
+  app.use('/api/keys', requireSession(deps), keyRoutes(deps));
   app.use('/api', requireSession(deps), mailRoutes(deps));
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not_found' });

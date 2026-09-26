@@ -482,6 +482,123 @@
         ],
         "additionalProperties": false
       },
+      "CryptoKey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pgp",
+              "smime"
+            ]
+          },
+          "owner": {
+            "type": "string",
+            "enum": [
+              "own",
+              "contact"
+            ],
+            "description": "own: the account’s key (signs, decrypts); contact: someone else’s public key (encrypts to, verifies)."
+          },
+          "address": {
+            "type": "string",
+            "description": "The lowercased address the key speaks for."
+          },
+          "fingerprint": {
+            "type": "string",
+            "description": "OpenPGP: the primary key’s v4 fingerprint, upper-case hex. S/MIME: SHA-256 of the certificate, lower-case hex."
+          },
+          "algorithm": {
+            "type": "string"
+          },
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "OpenPGP user IDs, or the certificate subject."
+          },
+          "hasPrivate": {
+            "type": "boolean",
+            "description": "A private half is stored, sealed under the KEK."
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "owner",
+          "address",
+          "fingerprint",
+          "algorithm",
+          "userIds",
+          "hasPrivate",
+          "expiresAt",
+          "revokedAt",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "CryptoKeyCreated": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/CryptoKey"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "CryptoKeyList": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CryptoKey"
+            }
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "additionalProperties": false
+      },
       "Draft": {
         "type": "object",
         "properties": {
@@ -1261,6 +1378,80 @@
           "you",
           "cancelled",
           "inCalendar"
+        ],
+        "additionalProperties": false
+      },
+      "KeyPublicExport": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pgp",
+              "smime"
+            ]
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "publicKey": {
+            "type": "string",
+            "description": "The armored OpenPGP public key (with any revocation), or the certificate chain in PEM."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "fingerprint",
+          "filename",
+          "publicKey"
+        ],
+        "additionalProperties": false
+      },
+      "KeySecretExport": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pgp",
+              "smime"
+            ]
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "protected": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "string",
+            "description": "The armored OpenPGP secret key, or the PKCS#8 private key followed by the certificate chain, in PEM."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "fingerprint",
+          "filename",
+          "protected",
+          "secret"
         ],
         "additionalProperties": false
       },
@@ -6801,6 +6992,28 @@
                     "type": "integer",
                     "minimum": 60,
                     "maximum": 7776000
+                  },
+                  "crypto": {
+                    "type": "object",
+                    "properties": {
+                      "sign": {
+                        "description": "PGP/MIME (RFC 3156) or S/MIME (RFC 8551) multipart/signed, with your own key for the From address.",
+                        "type": "string",
+                        "enum": [
+                          "pgp",
+                          "smime"
+                        ]
+                      },
+                      "encrypt": {
+                        "description": "PGP/MIME multipart/encrypted or S/MIME enveloped-data, to every recipient and to you. A recipient without a key is 409 recipient_keys_missing, never a plaintext send.",
+                        "type": "string",
+                        "enum": [
+                          "pgp",
+                          "smime"
+                        ]
+                      }
+                    },
+                    "description": "Sign then encrypt when both are set."
                   }
                 },
                 "required": [
@@ -8036,6 +8249,685 @@
           },
           "409": {
             "description": "The export is not finished yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/keys": {
+      "get": {
+        "operationId": "listKeys",
+        "tags": [
+          "Keys"
+        ],
+        "summary": "The caller’s OpenPGP keys and S/MIME certificates, own and contacts’ (PST-REQ-161).",
+        "responses": {
+          "200": {
+            "description": "Keys.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CryptoKeyList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/keys/{id}": {
+      "delete": {
+        "operationId": "deleteKey",
+        "tags": [
+          "Keys"
+        ],
+        "summary": "Remove a contact’s key. Own keys are revoked, never deleted.",
+        "description": "Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok: true.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a key of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An own key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/keys/{id}/export": {
+      "get": {
+        "operationId": "exportKey",
+        "tags": [
+          "Keys"
+        ],
+        "summary": "The public half: the armored OpenPGP key (with any revocation), or the PEM certificate chain.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The public key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyPublicExport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a key of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/keys/{id}/export-secret": {
+      "post": {
+        "operationId": "exportSecretKey",
+        "tags": [
+          "Keys"
+        ],
+        "summary": "The private half of an own key, optionally passphrase-protected.",
+        "description": "Needs a fresh step-up and x-postroom-csrf: 1. Audited.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "passphrase": {
+                    "description": "Protect the export: OpenPGP S2K (AES-256, iterated+salted SHA-256), or encrypted PKCS#8 (AES-256-CBC). Omit for an unprotected export.",
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 1024
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The secret key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeySecretExport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header, or step-up required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a key of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A contact’s key: there is no private half.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The private key could not be opened (no KEK).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/keys/{id}/revoke": {
+      "post": {
+        "operationId": "revokeKey",
+        "tags": [
+          "Keys"
+        ],
+        "summary": "Revoke a key. An own OpenPGP key also gets a 0x20 revocation signature, stored with its public key.",
+        "description": "Nothing the key signed is trusted afterwards, and nothing is encrypted to it. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "default": "none",
+                    "description": "For your own OpenPGP key, written into the 0x20 revocation signature (RFC 9580 §5.2.3.31).",
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "superseded",
+                      "compromised",
+                      "retired"
+                    ]
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "pattern": "^[^\\r\\n]*$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The revoked key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CryptoKeyCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a key of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/keys/generate": {
+      "post": {
+        "operationId": "generateKey",
+        "tags": [
+          "Keys"
+        ],
+        "summary": "Generate an own OpenPGP key: v4 Ed25519 primary + X25519 encryption subkey.",
+        "description": "The private half is sealed under the KEK. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 320,
+                    "pattern": "^[^\\s@<>]+@[^\\s@<>]+$",
+                    "description": "One of the caller’s own addresses: the user ID’s address."
+                  },
+                  "name": {
+                    "description": "The user ID’s name; default the account’s display name.",
+                    "type": "string",
+                    "maxLength": 200,
+                    "pattern": "^[^<>\\r\\n]*$"
+                  }
+                },
+                "required": [
+                  "address"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CryptoKeyCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header, or the address is not one of the caller’s.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/keys/import": {
+      "post": {
+        "operationId": "importKey",
+        "tags": [
+          "Keys"
+        ],
+        "summary": "Import an armored OpenPGP key or a PEM certificate: public → a contact’s key, with its secret half → your own.",
+        "description": "Exactly one primary key per block; the row’s fingerprint is the primary’s. A passphrase-protected secret key is unlocked with `passphrase` and stored sealed under the KEK. An own key must name one of the caller’s addresses. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "pgp"
+                      },
+                      "armored": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 524288,
+                        "description": "One ASCII-armored transferable key: a PUBLIC KEY BLOCK (a contact’s key) or a PRIVATE KEY BLOCK (your own)."
+                      },
+                      "passphrase": {
+                        "description": "Unlocks a passphrase-protected secret key; it is stored sealed under the KEK instead.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                      },
+                      "address": {
+                        "description": "Which of the key’s user-ID addresses the row speaks for (default: the first; for your own key, the first that is yours).",
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 320,
+                        "pattern": "^[^\\s@<>]+@[^\\s@<>]+$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "armored"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "smime"
+                      },
+                      "certificate": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 524288,
+                        "description": "PEM: the certificate first, then any intermediates."
+                      },
+                      "privateKey": {
+                        "description": "PEM PKCS#8 (optionally encrypted) private key: makes it your own certificate.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 524288
+                      },
+                      "passphrase": {
+                        "description": "For an encrypted PKCS#8 key.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                      },
+                      "address": {
+                        "description": "Which of the certificate’s rfc822Names the row speaks for.",
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 320,
+                        "pattern": "^[^\\s@<>]+@[^\\s@<>]+$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "certificate"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The imported key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CryptoKeyCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unreadable, more than one primary key, a wrong or missing passphrase, or an address that does not match.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The key is already stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set (for an own key).",
             "content": {
               "application/json": {
                 "schema": {

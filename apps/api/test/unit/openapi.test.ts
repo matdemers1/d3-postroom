@@ -111,6 +111,14 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/messages/{id}/invite',
         'POST /api/messages/{id}/invite/respond',
         'POST /api/messages/{id}/invite/remove',
+        // PST-T-12.2: OpenPGP keys and S/MIME certificates.
+        'GET /api/keys',
+        'POST /api/keys/generate',
+        'POST /api/keys/import',
+        'GET /api/keys/{id}/export',
+        'POST /api/keys/{id}/export-secret',
+        'POST /api/keys/{id}/revoke',
+        'DELETE /api/keys/{id}',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit']);

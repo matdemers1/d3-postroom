@@ -30,6 +30,7 @@ import type { ApiDeps } from '../deps.js';
 import { DEFAULT_BLOB_ROOT } from '../mail/index.js';
 import { updateMessage } from '../mail/store.js';
 import { renderMarkdownDocument } from './markdown.js';
+import { CryptoRefusal, protectMessage } from './crypto.js';
 import { buildMdn } from './mdn.js';
 import { bracketMsgId, buildOutgoingStream, buildTextMessage, parseRecipients, type OutgoingMessage } from './message.js';
 import {
@@ -176,6 +177,11 @@ export function composeRoutes(deps: ApiDeps): Router {
       res.status(error.status).json({ error: error.code, message: error.message });
       return true;
     }
+    // PST-T-12.2: a send that cannot be signed/encrypted as asked is refused, never sent in the clear.
+    if (error instanceof CryptoRefusal) {
+      res.status(error.status).json({ error: error.code, message: error.message, ...(error.recipients === null ? {} : { recipients: error.recipients }) });
+      return true;
+    }
     return false;
   };
 
@@ -245,12 +251,23 @@ export function composeRoutes(deps: ApiDeps): Router {
           sentAt: date,
           inReplyTo,
           references,
-          bodyText: body.text,
+          // An encrypted message's text is not kept in the clear beside its ciphertext (PST-T-12.2).
+          bodyText: body.crypto?.encrypt === undefined ? body.text : '',
         };
+
+        // PST-T-12.2 (PST-REQ-161): the composed message, signed and/or encrypted; null = as composed.
+        let protectedRaw: Buffer | null = null;
+        if (body.crypto !== undefined && (body.crypto.sign !== undefined || body.crypto.encrypt !== undefined)) {
+          const composed = buildOutgoingStream(message, original);
+          const chunks: Buffer[] = [];
+          for await (const c of composed) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c as Uint8Array));
+          protectedRaw = await protectMessage(db, rt.kek, Buffer.concat(chunks), { accountId: me.accountId, from: from.address, recipients: envelope, crypto: body.crypto, now: date });
+        }
+        const outgoing = (): Readable => (protectedRaw === null ? buildOutgoingStream(message, original) : Readable.from([protectedRaw]));
 
         if (hold !== null) {
           try {
-            await holdSend(req, res, { store, message, original, denorm, hold, envelope, forwardOf: body.forwardOf ?? null, draftId: body.draftId ?? null, remindAfterSeconds: body.remindAfterSeconds ?? null, now });
+            await holdSend(req, res, { store, message, original, denorm, hold, envelope, forwardOf: body.forwardOf ?? null, draftId: body.draftId ?? null, remindAfterSeconds: body.remindAfterSeconds ?? null, now, outgoing: outgoing() });
           } finally {
             original?.destroy();
           }
@@ -262,7 +279,7 @@ export function composeRoutes(deps: ApiDeps): Router {
         let reaped2: string[] = [];
         let reminderId: string | null = null;
         const outcome = await acceptSubmission(
-          buildOutgoingStream(message, original),
+          outgoing(),
           {
             submitter: { accountId: me.accountId, addresses },
             envelopeFrom: from.address,
@@ -368,6 +385,8 @@ export function composeRoutes(deps: ApiDeps): Router {
       draftId: string | null;
       remindAfterSeconds: number | null;
       now: Date;
+      /** The message exactly as it will be submitted (signed/encrypted when asked, PST-T-12.2). */
+      outgoing?: Readable;
     },
   ): Promise<void> => {
     const me = currentSession(req);
@@ -381,7 +400,7 @@ export function composeRoutes(deps: ApiDeps): Router {
       { kind: 'account', accountId: me.accountId },
       { action: hold.kind === 'undo' ? 'compose.hold' : 'compose.schedule', entityType: 'pending_send', context: getAuditContext(req) },
       async (tx) => {
-        const held = await store.blobs.put(buildOutgoingStream(message, input.original), { tx });
+        const held = await store.blobs.put(input.outgoing ?? buildOutgoingStream(message, input.original), { tx });
         const extra: [string, string][] = input.forwardOf === null ? [] : [[X_FORWARD, input.forwardOf]];
         const draftRaw = buildTextMessage({ ...message, includeBcc: true, extraHeaders: extra });
         const draftBlob = await store.blobs.put(draftRaw, { tx });
