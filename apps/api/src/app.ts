@@ -5,6 +5,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { auditContext, mutationAuditGuard } from '@postroom/audit';
 import { schemaRevision } from '@postroom/db';
 import { adminDevEnabled, adminDevRoutes } from './admin-dev/index.js';
+import { adminHealthRoutes } from './admin-health/index.js';
 import { adminJobRoutes } from './admin-jobs/index.js';
 import { serviceAccountRoutes } from './admin-service/index.js';
 import { appPasswordRoutes } from './app-passwords/index.js';
@@ -90,6 +91,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api', noStore, auditContext(), express.json({ limit: '1mb' }), mutationAuditGuard(deps.db), csrfGuard(deps));
   app.use('/api/auth', authRoutes(deps));
   if (adminDevEnabled(deps.env)) app.use('/api/admin/dev', requireAdmin(deps), adminDevRoutes(deps));
+  app.use('/api/admin/health', requireAdmin(deps), adminHealthRoutes(deps));
   app.use('/api/admin/jobs', requireAdmin(deps), adminJobRoutes(deps));
   app.use('/api/admin/service-accounts', requireAdmin(deps), serviceAccountRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));

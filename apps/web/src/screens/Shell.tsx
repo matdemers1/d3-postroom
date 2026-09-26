@@ -46,6 +46,24 @@ function KeyIcon() {
   );
 }
 
+function HeartbeatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M3 12h4l2-7 4 14 2-7h6" />
+    </svg>
+  );
+}
+
+function QueueIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <rect x="4" y="5" width="16" height="4" rx="1" />
+      <rect x="4" y="10" width="16" height="4" rx="1" />
+      <rect x="4" y="15" width="16" height="4" rx="1" />
+    </svg>
+  );
+}
+
 function LockIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -139,6 +157,12 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
                 current={location.pathname === '/admin/sessions'}
               >
                 <RouterLink to="/admin/sessions" />
+              </SideNavItem>
+              <SideNavItem asChild icon={<HeartbeatIcon />} label="Health" current={location.pathname === '/admin/health'}>
+                <RouterLink to="/admin/health" />
+              </SideNavItem>
+              <SideNavItem asChild icon={<QueueIcon />} label="Jobs" current={location.pathname === '/admin/jobs'}>
+                <RouterLink to="/admin/jobs" />
               </SideNavItem>
             </SideNavGroup>
           ) : null}

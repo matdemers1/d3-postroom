@@ -29,6 +29,10 @@ services:
       # POST /api/admin/dev/seed (admin-only, audited) files synthetic mail for e2e/tests/mail.spec.ts.
       # Never set anywhere else: without it the route is not mounted at all.
       POSTROOM_E2E_SEED: "1"
+      # The admin Health screen's daemon tiles (PST-T-7.6, PST-REQ-127). smtp-in/submission/imap/
+      # delivery share the wireguard sidecar's network namespace (docker-compose.yml), so their
+      # health ports are reached at that hostname; dav and worker keep their own.
+      DAEMON_HEALTH_URLS: "smtp-in=http://wireguard:9101/health,submission=http://wireguard:9102/health,imap=http://wireguard:9103/health,delivery=http://wireguard:9104/health,dav=http://dav:9105/health,worker=http://worker:9106/health"
   smtp-in: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9101" } }
   submission: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9102" } }
   imap: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9103" } }
