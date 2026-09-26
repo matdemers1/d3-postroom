@@ -162,9 +162,13 @@ model Account {
   sieveVacationReplies SieveVacationReply[]
 
   // PST-T-9.1: undo send / scheduled send, snoozed threads, remind-if-no-reply.
-  pendingSends    PendingSend[]
-  snoozedThreads  SnoozedThread[]
-  replyReminders  ReplyReminder[]
+  pendingSends   PendingSend[]
+  snoozedThreads SnoozedThread[]
+  replyReminders ReplyReminder[]
+
+  // PST-T-9.2: saved composer templates. PST-T-12.1/12.2: PGP and S/MIME keys.
+  templates  ComposeTemplate[]
+  cryptoKeys CryptoKey[]
 
   @@map("account")
 }
@@ -178,25 +182,25 @@ model Account {
 /// a known contact, so a directly-addressed message from them can reach Priority. Either or both may
 /// be set on the same row; at least one is expected to be non-null in practice.
 model SenderPin {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  accountId String   @map("account_id") @db.Uuid
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId         String    @map("account_id") @db.Uuid
   /// Lowercased, +tag-stripped (@postroom/classifier's normalizeAddress).
-  address   String
+  address           String
   /// priority | people | newsletters | updates | receipts | notifications | junk
-  bucket    String?
+  bucket            String?
   /// allow | block
-  screen    String?
+  screen            String?
   /// One-click unsubscribe (RFC 8058), PST-T-5.6, PST-REQ-110: when this sender was last asked to
   /// stop, and how it went. Null means never attempted.
-  unsubscribedAt     DateTime? @map("unsubscribed_at") @db.Timestamptz(6)
+  unsubscribedAt    DateTime? @map("unsubscribed_at") @db.Timestamptz(6)
   /// 'one-click' — mailto: links are shown but never auto-sent.
-  unsubscribeMethod  String?   @map("unsubscribe_method")
+  unsubscribeMethod String?   @map("unsubscribe_method")
   /// sent | failed
-  unsubscribeResult  String?   @map("unsubscribe_result")
+  unsubscribeResult String?   @map("unsubscribe_result")
   /// Why it failed, or the upstream status on success — short, for the sender profile.
-  unsubscribeDetail  String?   @map("unsubscribe_detail")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  unsubscribeDetail String?   @map("unsubscribe_detail")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -1207,4 +1211,84 @@ model ReplyReminder {
   @@index([state, dueAt])
   @@index([accountId, sentMessageId])
   @@map("reply_reminder")
+}
+
+// ─── Transcripts, templates, keys (wave 8 pre-flight) ────────────────────
+
+/// One SMTP session's transcript, compressed and kept forever (PST-T-6.3, PST-REQ-118). Credentials
+/// are redacted before the bytes are written (PST-REQ-117). `sessionId` is the daemon's own session
+/// id — an InboundSession id for smtp-in, a random id for submission.
+model SmtpTranscript {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// smtp-in | submission
+  daemon          String
+  sessionId       String    @map("session_id")
+  clientIp        String    @map("client_ip")
+  startedAt       DateTime  @map("started_at") @db.Timestamptz(6)
+  endedAt         DateTime? @map("ended_at") @db.Timestamptz(6)
+  lineCount       Int       @default(0) @map("line_count")
+  /// Uncompressed size after redaction.
+  rawBytes        Int       @default(0) @map("raw_bytes")
+  /// What is on disk: the compressed size, summed on Health.
+  compressedBytes Int       @default(0) @map("compressed_bytes")
+  /// gzip | br
+  compression     String
+  body            Bytes
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([daemon, sessionId])
+  @@index([startedAt])
+  @@index([clientIp, startedAt])
+  @@map("smtp_transcript")
+}
+
+/// A saved composer template with {{variables}} (PST-T-9.2, PST-REQ-144).
+model ComposeTemplate {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  /// What `;` matches on, unique per account.
+  shortcut  String
+  name      String
+  subject   String?
+  /// Markdown.
+  body      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, shortcut])
+  @@map("compose_template")
+}
+
+/// A PGP or S/MIME key (PST-T-12.1/12.2, PST-REQ-160/161). Own keys carry the private half sealed
+/// under the KEK (the same envelope as blobs); contacts' public keys have no private half.
+model CryptoKey {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId     String    @map("account_id") @db.Uuid
+  /// pgp | smime
+  kind          String
+  /// own | contact
+  owner         String
+  /// Lowercased address the key speaks for (a UID's email or the certificate's rfc822Name).
+  address       String
+  /// PGP v4/v6 fingerprint hex, or the certificate's SHA-256 hex.
+  fingerprint   String
+  algorithm     String
+  /// Armored public key, or the certificate in PEM.
+  publicKey     String    @map("public_key")
+  /// The private key, sealed: DEK-wrapped under the KEK. Null for contact keys.
+  sealedPrivate Bytes?    @map("sealed_private")
+  wrappedDek    Bytes?    @map("wrapped_dek")
+  kekId         String?   @map("kek_id")
+  nonce         Bytes?
+  expiresAt     DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, kind, fingerprint])
+  @@index([accountId, address])
+  @@map("crypto_key")
 }

@@ -83,12 +83,18 @@ importers:
       '@postroom/ical':
         specifier: workspace:*
         version: link:../../packages/ical
+      '@postroom/imip':
+        specifier: workspace:*
+        version: link:../../packages/imip
       '@postroom/managesieve':
         specifier: workspace:*
         version: link:../managesieve
       '@postroom/mime':
         specifier: workspace:*
         version: link:../../packages/mime
+      '@postroom/pgp':
+        specifier: workspace:*
+        version: link:../../packages/pgp
       '@postroom/phish':
         specifier: workspace:*
         version: link:../../packages/phish
@@ -669,7 +675,22 @@ importers:
 
   packages/imap-proto: {}
 
+  packages/imip:
+    dependencies:
+      '@postroom/ical':
+        specifier: workspace:*
+        version: link:../ical
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
+
   packages/mime: {}
+
+  packages/pgp:
+    dependencies:
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
 
   packages/phish:
     dependencies:
