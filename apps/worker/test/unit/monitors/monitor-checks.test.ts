@@ -135,6 +135,52 @@ describe('blocklist monitor (PST-REQ-097, PST-REQ-124)', () => {
     const monitor = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53' });
     expect(monitor?.minIntervalMs).toBe(6 * 3_600_000);
   });
+
+  it('a hanging zone times out and is reported as unknown for that zone alone, without blocking a listing found on a healthy zone', async () => {
+    const lookupA = vi.fn((name: string) => {
+      if (name.includes('b.barracudacentral.org')) return new Promise<string[]>(() => undefined); // never resolves
+      if (name.includes('spamcop.net')) return Promise.resolve(['127.0.0.2']); // listed
+      return Promise.resolve([]);
+    });
+    const monitor = createBlocklistMonitor({
+      ip: '203.0.113.9',
+      resolverServer: '10.0.0.1:53',
+      zoneKeys: ['spamhaus', 'barracuda', 'spamcop'],
+      zoneTimeoutMs: 20,
+      lookupA,
+    });
+    expect(monitor).not.toBeNull();
+    const result = await monitor?.check();
+    // The hung zone never blocks the others' results, and never masks the real listing.
+    expect(result?.ok).toBe(false);
+    expect(result?.detail).toMatch(/listed on SpamCop/);
+    expect(result?.detail).toMatch(/unknown: Barracuda/);
+  });
+
+  it('a hanging zone alone (nothing listed elsewhere) reports "unknown" for it and clean for the rest', async () => {
+    const lookupA = vi.fn((name: string) => {
+      if (name.includes('b.barracudacentral.org')) return new Promise<string[]>(() => undefined);
+      return Promise.resolve([]);
+    });
+    const monitor = createBlocklistMonitor({
+      ip: '203.0.113.9',
+      resolverServer: '10.0.0.1:53',
+      zoneKeys: ['spamhaus', 'barracuda'],
+      zoneTimeoutMs: 20,
+      lookupA,
+    });
+    const result = await monitor?.check();
+    expect(result?.ok).toBe(true);
+    expect(result?.detail).toMatch(/not listed on Spamhaus ZEN/);
+    expect(result?.detail).toMatch(/Barracuda: unknown/);
+  });
+
+  it('declares an inputKey covering the IP and the zone set, so a changed target is distinguishable', () => {
+    const a = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus'] });
+    const b = createBlocklistMonitor({ ip: '203.0.113.99', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus'] });
+    expect(a?.inputKey?.()).not.toBe(b?.inputKey?.());
+    expect(a?.inputKey?.()).toBe(a?.inputKey?.());
+  });
 });
 
 describe('ntp monitor (PST-REQ-100)', () => {

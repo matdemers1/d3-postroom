@@ -34,7 +34,7 @@ plus, separately, the NTP reading (PST-REQ-100):
 | `backlog` | outbound pending jobs + inbound unfiled messages exceed `BACKLOG_THRESHOLD`, or the oldest of either exceeds `BACKLOG_MAX_AGE_S` | `BACKLOG_THRESHOLD` (500), `BACKLOG_MAX_AGE_S` (3600) |
 | `cert-expiry` | any cert in `TLS_CERT_FILES` is within `CERT_WARN_DAYS` of `notAfter`, or cannot be read/parsed (PST-REQ-021) | `TLS_CERT_FILES` (comma list; `''` disables), `CERT_WARN_DAYS` (14) |
 | `disk` | `BLOB_ROOT` (and `PGDATA`, if set) is over `DISK_THRESHOLD_PCT` used | `DISK_THRESHOLD_PCT` (80), `PGDATA` (unset) |
-| `blocklist` | `EDGE_PUBLIC_IP` is listed on any of the major blocklists it checks (PST-REQ-124) | `EDGE_PUBLIC_IP` (`''` disables), `DNS_RESOLVER` (`127.0.0.1:53`), `SPAMHAUS_DQS_KEY`, `BLOCKLIST_ZONES`, `BLOCKLIST_INTERVAL_MS` (6h) |
+| `blocklist` | `EDGE_PUBLIC_IP` is listed on any of the major blocklists it checks (PST-REQ-124) | `EDGE_PUBLIC_IP` (`''` disables), `DNS_RESOLVER` (`127.0.0.1:53`), `SPAMHAUS_DQS_KEY`, `BLOCKLIST_ZONES`, `BLOCKLIST_INTERVAL_MS` (6h), `BLOCKLIST_ZONE_TIMEOUT_MS` (5s) |
 | `backup-drill` | the last backup or drill failed, or either is older than `BACKUP_MAX_AGE_S` — only once backups are configured (`BACKUP_BUCKET` set); an unconfigured install never fires this | `BACKUP_MAX_AGE_S` (36 h) |
 | `ntp` | SNTP offset from `NTP_SERVER` exceeds `NTP_SKEW_THRESHOLD_MS` (PST-REQ-100) | `NTP_SERVER` (unset/`''` **disables** — see Production values), `NTP_SKEW_THRESHOLD_MS` (2000) |
 
@@ -121,6 +121,12 @@ The lookup itself goes via Node's built-in `dns.Resolver` pointed at `DNS_RESOLV
 `@postroom/dns`'s hand-rolled `Resolver`, not a declared dependency of `@postroom/worker` — see this
 task's `needsOutside`). This is a health check, not a rejection path.
 
+**Per-zone timeout:** each zone is queried under its own budget (`BLOCKLIST_ZONE_TIMEOUT_MS`, default
+5s) — a zone that never answers is reported as that zone's own "unknown", never blocking the other
+zones' results and never masking a real listing found on a healthy one. If a zone times out and no
+other zone is listed, the clean zones' results still stand, reported alongside the timed-out one's
+"unknown" rather than being swallowed by it.
+
 **Cadence:** DNSBL operators rate-limit, and some ban a frequent querier, so `blocklist` sets a
 `minIntervalMs` (`BLOCKLIST_INTERVAL_MS`, default 6h) on the `Monitor` contract, honoured generically
 by the runner: between real queries, the runner reuses the monitor's last persisted result (from its
@@ -128,6 +134,15 @@ by the runner: between real queries, the runner reuses the monitor's last persis
 tick just like every other monitor. Because `checkedAt` is persisted, this holds across a worker
 restart too — a fresh process reading a recent `checkedAt` does not immediately re-query. Any other
 monitor can opt into the same generic minimum spacing by setting `minIntervalMs`.
+
+`minIntervalMs` only ever rate-limits the check itself — a still-undelivered alert for an
+already-detected transition (`pending`) is retried on every tick regardless, exactly as it is for
+every other monitor (PST-T-4.7's retry-until-delivered is unconditional).
+
+`blocklist` also declares an `inputKey()` — the IP plus the exact zone set — which the runner
+persists as `checkedInput` alongside `checkedAt`. `minIntervalMs` is honoured only while
+`checkedInput` still matches: a changed `EDGE_PUBLIC_IP` (or `BLOCKLIST_ZONES`) always forces an
+immediate re-check, rather than reusing a cached result computed for the previous target.
 
 ## NTP: a validated SNTP reply, not a trusted one
 
