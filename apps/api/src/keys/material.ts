@@ -18,6 +18,7 @@ import {
   PgpError,
   publicKeyBlock,
   rfc822Names,
+  secretMatchesPublic,
   unlockSecretKeyBlock,
   userIdAddress,
   type Certificate,
@@ -141,6 +142,9 @@ export function pgpRowFromArmored(armored: string, opts: { passphrase?: string |
   };
   if (!block.secret) return { ...common, owner: 'contact', address: chooseAddress(uidAddresses, opts.address, null), privatePlain: null };
   if (![key.primary, ...key.subkeys].some((m) => m.secretKey !== null)) throw new KeyError('unsupported_key', 'The secret key block carries no secret key Postroom can use (a smartcard stub, or an unsupported algorithm).');
+  // Every secret half must belong to its public half: node:crypto would otherwise sign with one key
+  // while the row advertises another, and every signature made with it would read BAD (PST-T-12.2).
+  if (![key.primary, ...key.subkeys].every(secretMatchesPublic)) throw new KeyError('key_mismatch', 'The secret key does not belong to the public key in this block.');
   return { ...common, owner: 'own', address: chooseAddress(uidAddresses, opts.address, opts.ownAddresses), privatePlain: encodeArmor('PGP PRIVATE KEY BLOCK', data) };
 }
 

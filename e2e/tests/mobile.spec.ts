@@ -361,7 +361,7 @@ test.describe('signed in', () => {
     await assertMobileFriendly(page, '/contacts/new');
   });
 
-  test('Account screens: app passwords, aliases, password, devices, import, device setup, rules, templates', async ({ page }) => {
+  test('Account screens: app passwords, aliases, password, devices, import, device setup, rules, templates, keys', async ({ page }) => {
     const t = tag();
 
     await api.post('/api/app-passwords', { headers: CSRF, data: { label: `Phone Mail ${t}`, scopes: ['imap', 'smtp'] } }).catch(() => undefined);
@@ -405,6 +405,15 @@ test.describe('signed in', () => {
     await page.goto('/account/templates');
     await expect(page.getByRole('heading', { name: 'Compose templates', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/account/templates');
+
+    // Keys (PST-T-12.2): one generated own key as the seeded data; a rerun against the same
+    // database may already have one, which is fine.
+    const state = (await (await api.get('/api/auth/state')).json()) as { account?: { address: string | null } };
+    const own = state.account?.address;
+    if (own !== null && own !== undefined) await api.post('/api/keys/generate', { headers: CSRF, data: { address: own } }).catch(() => undefined);
+    await page.goto('/account/keys');
+    await expect(page.getByRole('heading', { name: 'Keys', level: 1 })).toBeVisible();
+    await assertMobileFriendly(page, '/account/keys');
   });
 
   test('Admin: sessions, health, jobs, queue, deliverability, SMTP sessions', async ({ page }) => {

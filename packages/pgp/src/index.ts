@@ -4,7 +4,7 @@ export const PACKAGE = '@postroom/pgp';
 export { ArmorError, BerError, CmsError, DerError, NotDerError, PgpError, UnsupportedError } from './errors.js';
 export { crc24, decodeArmor, decodeArmors, encodeArmor, parseCleartext, radix64Decode, radix64Encode, type Armored, type ArmorType, type Cleartext } from './armor.js';
 export { encodePacket, readPackets, Tag, type Packet } from './packets.js';
-export { algorithmName, allMaterials, parseKeys, parsePublicKeyPacket, parseSecretKeyPacket, PublicKeyAlgorithm, userIdAddress, v4Fingerprint, type KeyMaterial, type KeySignature, type OpenPgpKey } from './keys.js';
+export { algorithmName, allMaterials, parseKeys, secretMatchesPublic, parsePublicKeyPacket, parseSecretKeyPacket, PublicKeyAlgorithm, userIdAddress, v4Fingerprint, type KeyMaterial, type KeySignature, type OpenPgpKey } from './keys.js';
 export { keySignatureData, keyState, revokedAt, type KeyState, type Revocation } from './validity.js';
 export { digestFor, hashName, isDocumentSignature, parseSignaturePacket, SignatureType, signatureTrailer, verifyDigest, type SignaturePacket, type Subpacket } from './signature.js';
 export { decryptMessage, ecdhKdf, type DecryptionKey, type PgpDecryptResult, type PkeskInfo } from './decrypt.js';

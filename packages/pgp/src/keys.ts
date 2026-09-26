@@ -8,7 +8,7 @@
 // with `v6-key`: their fingerprints are SHA-256 over a different framing, and nothing we receive
 // uses them yet.
 
-import { createHash, createPrivateKey, createPublicKey, type KeyObject } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, diffieHellman, generateKeyPairSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto';
 import { Reader, b64url, padStart } from './bytes.js';
 import { PgpError, UnsupportedError } from './errors.js';
 import { readMpi, readPackets, Tag, type Packet } from './packets.js';
@@ -416,4 +416,30 @@ export function userIdAddress(uid: string): string | null {
 /** Every key in the block, primary first, then subkeys. */
 export function allMaterials(key: OpenPgpKey): KeyMaterial[] {
   return [key.primary, ...key.subkeys];
+}
+
+/**
+ * Whether a key's secret half really belongs to its public half (PST-T-12.2). node:crypto builds a
+ * private KeyObject from the secret scalar and ignores a mismatched public point, so the pair is
+ * proven with a round trip instead: a sign/verify probe for signing algorithms, and an X25519
+ * agreement against a throwaway key for ECDH. True when there is no secret half to check.
+ */
+export function secretMatchesPublic(m: KeyMaterial): boolean {
+  if (m.secretKey === null) return true;
+  if (m.publicKey === null) return false;
+  const probe = randomBytes(32);
+  try {
+    const type = m.publicKey.asymmetricKeyType;
+    if (type === 'x25519' || type === 'x448') {
+      const other = type === 'x25519' ? generateKeyPairSync('x25519') : generateKeyPairSync('x448');
+      const a = diffieHellman({ privateKey: m.secretKey, publicKey: other.publicKey });
+      const b = diffieHellman({ privateKey: other.privateKey, publicKey: m.publicKey });
+      return a.equals(b);
+    }
+    const hash = type === 'ed25519' || type === 'ed448' ? null : 'sha256';
+    const sig = sign(hash, probe, m.secretKey);
+    return verify(hash, probe, m.publicKey, sig);
+  } catch {
+    return false;
+  }
 }

@@ -23,10 +23,13 @@ import {
   encodeArmor,
   encodeOid,
   encodeTlv,
+  encodePacket,
   generateKey,
   keyState,
   parseKeys,
   protectSecretKeyBlock,
+  readPackets,
+  Tag,
   type KnownKey,
 } from '@postroom/pgp';
 import { ensureDkimKeys } from '@postroom/submission/dkim';
@@ -225,6 +228,23 @@ describe.skipIf(!baseUrl)('Keys and composer crypto (PST-T-12.2, PST-REQ-161)', 
     const notMine = await importKey(me, { kind: 'pgp', armored: text('alice-ed25519.TEST-ONLY.sec.asc') });
     expect(notMine.status).toBe(400);
     expect(notMine.body).toMatchObject({ error: 'address_mismatch' });
+  });
+
+  it("import: a secret block whose secret material is another key's is refused (key_mismatch), and nothing is stored", async () => {
+    const me = await person();
+    const a = generateKey({ userId: `Me <${me.address}>` });
+    const b = generateKey({ userId: `Me <${me.address}>` });
+    const pa = readPackets(a.secretBinary);
+    const secA = pa.find((p) => p.tag === Tag.SecretKey);
+    const secB = readPackets(b.secretBinary).find((p) => p.tag === Tag.SecretKey);
+    if (secA === undefined || secB === undefined) throw new Error('no secret packet');
+    const pubLen = a.key.primary.body.length;
+    const spliced = Buffer.concat([secA.body.subarray(0, pubLen), secB.body.subarray(pubLen)]);
+    const armored = encodeArmor('PGP PRIVATE KEY BLOCK', Buffer.concat(pa.map((p) => encodePacket(p.tag, p === secA ? spliced : p.body))));
+    const res = await importKey(me, { kind: 'pgp', armored });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'key_mismatch' });
+    expect(await db.cryptoKey.count({ where: { accountId: me.id } })).toBe(0);
   });
 
   it('import S/MIME: a contact certificate (fingerprint = SHA-256 of the DER), and an own certificate + PKCS#8 key', async () => {
