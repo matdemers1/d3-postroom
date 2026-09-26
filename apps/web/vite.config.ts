@@ -5,6 +5,10 @@ export default defineConfig({
   plugins: [react()],
   base: '/',
   resolve: { conditions: ['source'] },
+  // Unit tests run in Node (SSR): workspace packages reached from them (a test imports packages/sieve,
+  // which imports @postroom/mime) must resolve their `source` export too, or CI — which tests before
+  // it builds — finds no dist. The same conditions as vitest.shared.ts.
+  ssr: { resolve: { conditions: ['source', 'node', 'default'], externalConditions: ['source'] } },
   build: { outDir: 'dist', manifest: true, sourcemap: false },
   server: {
     port: 5373,
