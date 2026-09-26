@@ -41,7 +41,10 @@ wrong, it just proves nothing about the index a real, multi-account deployment n
 `POST /api/admin/dev/seed` (the e2e stack's only mail-delivery door) accepts at most 50 messages a
 call, filed one at a time under a row lock: the right shape for a handful of fixtures, not 50,000.
 It then navigates to `/`, and asserts the first message row is visible within 1 second of
-`page.goto`.
+`page.goto`. The spec is **opt-in**: it is skipped unless `PERF_E2E=1` is set, because it fills the
+shared operator's INBOX (which would change what every other spec sees) and needs direct database
+access the CI stack does not expose. Run it on its own, after the rest of the suite, with
+`PERF_E2E=1 DATABASE_URL=… POSTROOM_URL=… pnpm --filter @postroom/e2e exec playwright test tests/perf.spec.ts --project=desktop`.
 
 No new index was needed. `message` already carries `@@unique([mailboxId, uid])` (the list query),
 and `@@index([mailboxId, receivedAt])` / `@@index([mailboxId, trashedAt])` (either works as the

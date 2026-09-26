@@ -17,6 +17,11 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 });
 const PERF_SEED_SCRIPT = fileURLToPath(new URL('../../scripts/perf-seed.mjs', import.meta.url));
 const COUNT = 50_000;
 
+// Opt-in: it seeds 50,000 messages into the operator's INBOX, which would change what every other
+// spec sees, and it needs direct database access the CI stack does not expose. Run it on its own
+// with PERF_E2E=1 and DATABASE_URL (docs/perf.md), after the rest of the suite.
+test.skip(process.env['PERF_E2E'] !== '1', 'performance run: set PERF_E2E=1 and DATABASE_URL (docs/perf.md)');
+
 let operator: Operator;
 let cookies: Awaited<ReturnType<typeof signInCookies>> = [];
 
