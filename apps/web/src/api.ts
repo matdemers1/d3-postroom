@@ -271,6 +271,10 @@ export interface RenderTicket {
   images: boolean;
   /** Remote images in the message; above 0 with images false means they are blocked. */
   remoteImages: number;
+  /** Known tracking pixels removed before rendering (PST-REQ-116); never loaded, even with images on. */
+  trackersBlocked: number;
+  /** Links whose tracking parameters were stripped or whose click-redirect wrapper was unwrapped. */
+  linksCleaned: number;
 }
 
 export interface MessagePatch {

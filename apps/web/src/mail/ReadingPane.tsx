@@ -16,6 +16,7 @@
 // and an HTML-only message says so.
 import { forwardRef, useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, Skeleton, Stack } from '@d3cloud/ui';
+import { trackersBlockedNote } from './trackers';
 import { api, ApiError, attachmentUrl, type MessageBody, type MessageDetail, type Phish, type RenderTicket } from '../api';
 import { byteSize, fullDate, header } from './format';
 import { PaperclipIcon, StarIcon } from './icons';
@@ -226,9 +227,15 @@ function HtmlFrame({ messageId, fallback, note: lead }: { messageId: string; fal
     );
   }
   const note = blockedImagesNote(state.ticket);
+  const trackers = trackersBlockedNote(state.ticket);
   return (
     <Stack gap="8">
       {lead}
+      {trackers !== null ? (
+        <Alert tone="info" title="Tracking removed" data-testid="trackers-blocked">
+          {trackers}. Postroom stripped these before showing the message, so the sender cannot see that you opened it.
+        </Alert>
+      ) : null}
       {note !== null ? (
         <Alert
           tone="info"
