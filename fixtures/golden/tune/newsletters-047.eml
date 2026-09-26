@@ -1,0 +1,13 @@
+From: The Long Read <digest@thelongread.example.org>
+Precedence: list
+List-Unsubscribe: <mailto:leave@thelongread.example.org>
+X-Mailgun-Variables: {}
+To: dana@d3cloud.io
+Subject: This month in review
+Date: Sun, 06 Sep 2026 18:53:18 +0000
+Message-ID: <golden-0087.20260926@thelongread.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=thelongread.example.org; dkim=pass header.d=thelongread.example.org; dmarc=pass header.from=thelongread.example.org
+
+This month in review
+
+Read online: https://thelongread.example.org/issues/7

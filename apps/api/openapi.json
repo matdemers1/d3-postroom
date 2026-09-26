@@ -70,6 +70,170 @@
         ],
         "additionalProperties": false
       },
+      "Draft": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "mailboxId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "inReplyTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forwardOf": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "reply",
+                  "replyall",
+                  "forward"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "savedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "mailboxId",
+          "from",
+          "to",
+          "cc",
+          "bcc",
+          "subject",
+          "text",
+          "inReplyTo",
+          "references",
+          "forwardOf",
+          "mode",
+          "sourceId",
+          "savedAt"
+        ],
+        "additionalProperties": false
+      },
+      "DraftList": {
+        "type": "object",
+        "properties": {
+          "drafts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Draft"
+            }
+          }
+        },
+        "required": [
+          "drafts"
+        ],
+        "additionalProperties": false
+      },
+      "DraftSaved": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The draft’s message id. A save replaces the draft, so this changes every save."
+          },
+          "mailboxId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "uid": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "savedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "mailboxId",
+          "uid",
+          "savedAt"
+        ],
+        "additionalProperties": false
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -558,6 +722,9 @@
             ],
             "description": "When the retention sweep expunges it from Trash; null outside Trash or when Trash keeps mail forever."
           },
+          "newSender": {
+            "type": "boolean"
+          },
           "messageIdHeader": {
             "type": [
               "string",
@@ -675,6 +842,7 @@
           "bucket",
           "trashedAt",
           "expiresAt",
+          "newSender",
           "messageIdHeader",
           "inReplyTo",
           "references",
@@ -850,6 +1018,9 @@
               }
             ],
             "description": "When the retention sweep expunges it from Trash; null outside Trash or when Trash keeps mail forever."
+          },
+          "newSender": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -866,7 +1037,8 @@
           "flags",
           "bucket",
           "trashedAt",
-          "expiresAt"
+          "expiresAt",
+          "newSender"
         ],
         "additionalProperties": false
       },
@@ -992,6 +1164,116 @@
         ],
         "additionalProperties": false
       },
+      "SendResponse": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "The Message-ID header of the sent message."
+          },
+          "outboundId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The outbound queue row."
+          },
+          "sentMessageId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The copy filed in Sent."
+          },
+          "sentMailboxId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "threadId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The thread the Sent copy joined (null only if threading failed; the sweep retries)."
+          }
+        },
+        "required": [
+          "messageId",
+          "outboundId",
+          "sentMessageId",
+          "sentMailboxId",
+          "threadId"
+        ],
+        "additionalProperties": false
+      },
+      "SenderPin": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "bucket": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "priority",
+                  "people",
+                  "newsletters",
+                  "updates",
+                  "receipts",
+                  "notifications",
+                  "junk"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "address",
+          "bucket"
+        ],
+        "additionalProperties": false
+      },
+      "SenderScreenResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "address": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "block"
+            ]
+          },
+          "clearedNewSender": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "ok",
+          "address",
+          "decision",
+          "clearedNewSender"
+        ],
+        "additionalProperties": false
+      },
       "ThreadDetail": {
         "type": "object",
         "properties": {
@@ -1047,6 +1329,865 @@
     }
   ],
   "paths": {
+    "/api/compose/drafts": {
+      "get": {
+        "operationId": "listDrafts",
+        "tags": [
+          "Compose"
+        ],
+        "summary": "The caller’s drafts, newest first (optionally only those answering one Message-ID).",
+        "parameters": [
+          {
+            "name": "inReplyTo",
+            "in": "query",
+            "required": false,
+            "description": "Only drafts answering this Message-ID.",
+            "schema": {
+              "description": "Only drafts answering this Message-ID.",
+              "type": "string",
+              "maxLength": 998,
+              "pattern": "^<?[\\x21-\\x3b\\x3d\\x3f-\\x7e]+>?$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Drafts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createDraft",
+        "tags": [
+          "Compose"
+        ],
+        "summary": "Save a new draft in the Drafts mailbox (\\Draft \\Seen).",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "description": "One of the caller’s own addresses; default the primary.",
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 320,
+                    "pattern": "^[^\\r\\n]*$"
+                  },
+                  "to": {
+                    "default": [],
+                    "description": "Address-field entries (\"Name <a@b>\" or a comma-separated list of them).",
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  },
+                  "cc": {
+                    "default": [],
+                    "description": "Address-field entries (\"Name <a@b>\" or a comma-separated list of them).",
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  },
+                  "bcc": {
+                    "default": [],
+                    "description": "Address-field entries (\"Name <a@b>\" or a comma-separated list of them).",
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  },
+                  "subject": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 998,
+                    "pattern": "^[^\\r\\n]*$"
+                  },
+                  "text": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "inReplyTo": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 998,
+                        "pattern": "^<?[\\x21-\\x3b\\x3d\\x3f-\\x7e]+>?$",
+                        "description": "A Message-ID, with or without angle brackets."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "references": {
+                    "default": [],
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^<?[\\x21-\\x3b\\x3d\\x3f-\\x7e]+>?$",
+                      "description": "A Message-ID, with or without angle brackets."
+                    }
+                  },
+                  "forwardOf": {
+                    "description": "Forward: the id of one of the caller’s messages, attached whole as message/rfc822.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mode": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "new",
+                          "reply",
+                          "replyall",
+                          "forward"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sourceId": {
+                    "description": "The message being answered or forwarded, for resuming the draft.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header, or From is not one of the caller’s addresses.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/compose/drafts/{id}": {
+      "delete": {
+        "operationId": "deleteDraft",
+        "tags": [
+          "Compose"
+        ],
+        "summary": "Discard a draft (expunged from Drafts).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a draft of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getDraft",
+        "tags": [
+          "Compose"
+        ],
+        "summary": "One draft, as the composer edits it.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Draft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a draft of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "replaceDraft",
+        "tags": [
+          "Compose"
+        ],
+        "summary": "Replace a draft: a new message is filed and the old one expunged, in one transaction.",
+        "description": "The response carries the NEW id; the old one is gone (IMAP clients see it vanish).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "description": "One of the caller’s own addresses; default the primary.",
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 320,
+                    "pattern": "^[^\\r\\n]*$"
+                  },
+                  "to": {
+                    "default": [],
+                    "description": "Address-field entries (\"Name <a@b>\" or a comma-separated list of them).",
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  },
+                  "cc": {
+                    "default": [],
+                    "description": "Address-field entries (\"Name <a@b>\" or a comma-separated list of them).",
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  },
+                  "bcc": {
+                    "default": [],
+                    "description": "Address-field entries (\"Name <a@b>\" or a comma-separated list of them).",
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  },
+                  "subject": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 998,
+                    "pattern": "^[^\\r\\n]*$"
+                  },
+                  "text": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "inReplyTo": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 998,
+                        "pattern": "^<?[\\x21-\\x3b\\x3d\\x3f-\\x7e]+>?$",
+                        "description": "A Message-ID, with or without angle brackets."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "references": {
+                    "default": [],
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^<?[\\x21-\\x3b\\x3d\\x3f-\\x7e]+>?$",
+                      "description": "A Message-ID, with or without angle brackets."
+                    }
+                  },
+                  "forwardOf": {
+                    "description": "Forward: the id of one of the caller’s messages, attached whole as message/rfc822.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mode": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "new",
+                          "reply",
+                          "replyall",
+                          "forward"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sourceId": {
+                    "description": "The message being answered or forwarded, for resuming the draft.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved under a new id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a draft of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/compose/send": {
+      "post": {
+        "operationId": "sendMessage",
+        "tags": [
+          "Compose"
+        ],
+        "summary": "Send a message through the submission path, and file it in Sent.",
+        "description": "Builds a strict-CRLF RFC 5322 message (text/plain UTF-8, encoded-words for non-ASCII headers; a forward attaches the original as message/rfc822) and runs it through the same submission path as SMTP on 587/465: From must be one of the caller’s addresses, it is DKIM-signed, the recipient cap is enforced, and it is queued and audited — then filed in Sent in the same transaction and threaded. A draftId is removed from Drafts in that transaction.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 320,
+                    "pattern": "^[^\\r\\n]*$",
+                    "description": "One of the caller’s own addresses."
+                  },
+                  "to": {
+                    "default": [],
+                    "description": "Address-field entries (\"Name <a@b>\" or a comma-separated list of them).",
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  },
+                  "cc": {
+                    "default": [],
+                    "description": "Address-field entries (\"Name <a@b>\" or a comma-separated list of them).",
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  },
+                  "bcc": {
+                    "default": [],
+                    "description": "Address-field entries (\"Name <a@b>\" or a comma-separated list of them).",
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  },
+                  "subject": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 998,
+                    "pattern": "^[^\\r\\n]*$"
+                  },
+                  "text": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "inReplyTo": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 998,
+                        "pattern": "^<?[\\x21-\\x3b\\x3d\\x3f-\\x7e]+>?$",
+                        "description": "A Message-ID, with or without angle brackets."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "references": {
+                    "default": [],
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 998,
+                      "pattern": "^<?[\\x21-\\x3b\\x3d\\x3f-\\x7e]+>?$",
+                      "description": "A Message-ID, with or without angle brackets."
+                    }
+                  },
+                  "forwardOf": {
+                    "description": "Forward: the id of one of the caller’s messages, attached whole as message/rfc822.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "draftId": {
+                    "description": "The draft this send replaces; it is removed from Drafts in the same transaction.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "from"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Queued and filed in Sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header, or From is not one of the caller’s addresses.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "forwardOf is not a message of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The header block is too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The recipient cap is reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No DKIM keys for the sender domain (never sent unsigned), or POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/events": {
       "get": {
         "operationId": "events",
@@ -2036,6 +3177,332 @@
           },
           "404": {
             "description": "mailboxId is not the caller’s.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/senders/{address}/pin": {
+      "delete": {
+        "operationId": "clearSenderPin",
+        "tags": [
+          "Senders"
+        ],
+        "summary": "Remove the bucket pin for this sender (a screen decision, if any, is unaffected).",
+        "description": "Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok: true.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getSenderPin",
+        "tags": [
+          "Senders"
+        ],
+        "summary": "The caller's pin for this sender address, if any (PST-REQ-105).",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pin (bucket is null when there is none).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SenderPin"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setSenderPin",
+        "tags": [
+          "Senders"
+        ],
+        "summary": "Pin this sender to a bucket — overrides the classifier for their mail (PST-REQ-105).",
+        "description": "A pin into Priority or People still requires the message to authenticate, exactly like the VIP rule. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "bucket": {
+                    "type": "string",
+                    "enum": [
+                      "priority",
+                      "people",
+                      "newsletters",
+                      "updates",
+                      "receipts",
+                      "notifications",
+                      "junk"
+                    ]
+                  }
+                },
+                "required": [
+                  "bucket"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The pin after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SenderPin"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/senders/{address}/screen": {
+      "post": {
+        "operationId": "screenSender",
+        "tags": [
+          "Senders"
+        ],
+        "summary": "Answer this sender's new-sender badge: Allow or Block (PST-REQ-106).",
+        "description": "Allow treats the sender as a known contact, so a directly-addressed message from them can reach Priority. Block routes their future mail to Junk. Either clears the $NewSender badge on their already-filed mail. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "block"
+                    ]
+                  }
+                },
+                "required": [
+                  "decision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The screen decision after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SenderScreenResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
             "content": {
               "application/json": {
                 "schema": {

@@ -244,6 +244,9 @@ export function usercontentApp(deps: ApiDeps, config: UsercontentConfig): Expres
           res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
           started = true;
         } else if (started && event.type === 'body') {
+          // Image bytes only (SERVED_PART_TYPES), on the sandboxed usercontent origin with nosniff and a
+          // no-script CSP; the body is binary image data, not markup.
+          // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
           if (!res.write(event.chunk)) await new Promise<void>((resolve) => { res.once('drain', resolve); res.once('close', resolve); });
         } else if (started && event.type === 'end-part') {
           break;
@@ -280,6 +283,9 @@ export function usercontentApp(deps: ApiDeps, config: UsercontentConfig): Expres
       res.setHeader('Content-Length', String(result.body.length));
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
       res.setHeader('Content-Disposition', 'inline');
+      // fetchImage only returns an allowlisted image/* type (proxy.ts); served with nosniff under the
+      // usercontent origin's no-script CSP.
+      // nosemgrep: semgrep.postroom.reflected-user-input
       res.end(result.body);
     }),
   );

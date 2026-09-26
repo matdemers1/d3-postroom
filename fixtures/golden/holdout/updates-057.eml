@@ -1,0 +1,12 @@
+From: HailWay <updates@hailway.example.net>
+To: sam@d3cloud.io
+Subject: Your driver is arriving now
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.04-10.0.0.1
+Date: Wed, 09 Sep 2026 01:50:04 +0000
+Message-ID: <golden-0123.20260926@hailway.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=hailway.example.net; dkim=pass header.d=hailway.example.net; dmarc=pass header.from=hailway.example.net
+
+Your driver is arriving now
+
+More detail: https://hailway.example.net/status/1003

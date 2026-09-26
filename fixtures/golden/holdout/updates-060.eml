@@ -1,0 +1,12 @@
+From: DashRoute <hello@dashroute.example.org>
+To: sam@d3cloud.io
+Subject: Out for delivery — arriving today
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.07-10.0.0.1
+Date: Wed, 09 Sep 2026 07:24:29 +0000
+Message-ID: <golden-0126.20260926@dashroute.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=dashroute.example.org; dkim=pass header.d=dashroute.example.org; dmarc=pass header.from=dashroute.example.org
+
+Out for delivery — arriving today
+
+More detail: https://dashroute.example.org/status/1006

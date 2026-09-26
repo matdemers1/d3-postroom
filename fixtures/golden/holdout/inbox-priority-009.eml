@@ -1,0 +1,13 @@
+From: Wren Kim <wren.kim@corp.example.org>
+To: sam@d3cloud.io
+Subject: Heads up before the review
+Date: Thu, 03 Sep 2026 11:54:20 +0000
+Message-ID: <golden-0029.20260926@corp.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=corp.example.org; dkim=pass header.d=corp.example.org; dmarc=pass header.from=corp.example.org
+
+Hi,
+
+Heads up before the review
+
+Best,
+Wren Kim

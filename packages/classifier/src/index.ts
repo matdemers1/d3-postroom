@@ -18,6 +18,9 @@ export {
   type Signals,
 } from './signals.js';
 
+// PST-T-5.9: sender-shape cues — organisation/transactional vs personal evidence for a From.
+export { senderShape, type SenderCategory, type SenderCue, type SenderShape, type SenderShapeInput } from './sender.js';
+
 export { decide, type Bucket, type Decision } from './decide.js';
 
 // PST-T-5.3: the sorting buckets, and per-account naive Bayes trained on moves from any client.
@@ -43,4 +46,5 @@ export {
   type BucketForInput,
   type FilingBucket,
   type FilingDecision,
+  type PinInput,
 } from './bucket-for.js';

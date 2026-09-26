@@ -5,10 +5,13 @@
 // stray `.eml` shows up outside the directories that are allowed to hold one today.
 //
 // Allow-list of `.eml` locations, produced by `git ls-files '*.eml'` on the day this was written
-// (PST-T-5.5): fixtures/golden/**, fuzz/*/corpus/**, fuzz/*/fixtures/** (mime's crasher fixtures
-// promoted from the fuzzer are `.eml`-shaped; the other fuzz targets' fixtures dirs are currently
-// empty but a mime-style crasher there is legitimate too). No other directory has ever held one —
-// a `.eml` anywhere else is either a mistake or a real message that should not be here.
+// (PST-T-5.5): fixtures/golden/{tune,holdout}/** (the two disjoint synthetic template pools — see
+// scripts/golden/generate.mjs and docs/runbooks/calibration.md), fuzz/*/corpus/**, fuzz/*/fixtures/**
+// (mime's crasher fixtures promoted from the fuzzer are `.eml`-shaped; the other fuzz targets'
+// fixtures dirs are currently empty but a mime-style crasher there is legitimate too). No other
+// directory has ever held one — a `.eml` anywhere else is either a mistake or a real message that
+// should not be here. Nothing should live directly under fixtures/golden/ except manifest-adjacent
+// JSON (thresholds.json) — a stray `.eml` there is caught too, on purpose.
 import { execFileSync } from 'node:child_process';
 
 const FORBIDDEN_DIR_PREFIXES = [
@@ -32,7 +35,7 @@ function isForbiddenCorpusPath(path) {
 }
 
 const EML_ALLOW_PATTERNS = [
-  /^fixtures\/golden\//,
+  /^fixtures\/golden\/(tune|holdout)\//,
   /^fuzz\/[^/]+\/corpus\//,
   /^fuzz\/[^/]+\/fixtures\//,
 ];
@@ -52,7 +55,7 @@ function main() {
       problems.push(`${path}: tracked under a corpus path that PST-REQ-108 requires stay local/gitignored`);
     }
     if (isForbiddenEml(path)) {
-      problems.push(`${path}: a tracked .eml outside fixtures/golden/, fuzz/*/corpus/ or fuzz/*/fixtures/`);
+      problems.push(`${path}: a tracked .eml outside fixtures/golden/{tune,holdout}/, fuzz/*/corpus/ or fuzz/*/fixtures/`);
     }
   }
 

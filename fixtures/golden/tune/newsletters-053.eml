@@ -1,0 +1,14 @@
+From: Founders Digest <newsletter@foundersdigest.example.com>
+List-Id: Founders Digest <bulk.foundersdigest.example.com>
+List-Unsubscribe: <https://foundersdigest.example.com/unsubscribe>, <mailto:unsubscribe@foundersdigest.example.com>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Precedence: bulk
+To: dana@d3cloud.io
+Subject: What we read this week
+Date: Mon, 07 Sep 2026 08:12:06 +0000
+Message-ID: <golden-0093.20260926@foundersdigest.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=foundersdigest.example.com; dkim=pass header.d=foundersdigest.example.com; dmarc=pass header.from=foundersdigest.example.com
+
+What we read this week
+
+Read online: https://foundersdigest.example.com/issues/13

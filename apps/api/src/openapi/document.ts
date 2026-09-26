@@ -10,6 +10,8 @@ import { z } from 'zod';
 import { SESSION_COOKIE } from '../auth/sessions.js';
 import * as S from '../mail/schemas.js';
 import * as E from '../export/schemas.js';
+import * as SP from '../senders/schemas.js';
+import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
 
 type Json = Record<string, unknown>;
 
@@ -23,7 +25,7 @@ export interface ResponseSpec {
 }
 
 export interface RouteSpec {
-  method: 'get' | 'post' | 'patch' | 'delete';
+  method: 'get' | 'post' | 'put' | 'patch' | 'delete';
   /** OpenAPI path, `{param}` style. */
   path: string;
   operationId: string;
@@ -53,6 +55,9 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   MailboxChangedEvent: S.MailboxChangedEvent,
   MessageNewEvent: S.MessageNewEvent,
   ExportStatus: E.ExportStatus,
+  SenderPin: SP.SenderPinView,
+  SenderScreenResult: SP.SenderScreenResult,
+  ...COMPOSE_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -238,6 +243,52 @@ export const ROUTES: RouteSpec[] = [
       '503': err('Events are not configured.'),
     },
   },
+  {
+    method: 'get',
+    path: '/api/senders/{address}/pin',
+    operationId: 'getSenderPin',
+    tag: 'Senders',
+    summary: 'The caller\'s pin for this sender address, if any (PST-REQ-105).',
+    params: SP.AddressParam,
+    responses: { '200': { description: 'The pin (bucket is null when there is none).', schema: 'SenderPin' }, ...COMMON },
+  },
+  {
+    method: 'put',
+    path: '/api/senders/{address}/pin',
+    operationId: 'setSenderPin',
+    tag: 'Senders',
+    summary: 'Pin this sender to a bucket — overrides the classifier for their mail (PST-REQ-105).',
+    description: 'A pin into Priority or People still requires the message to authenticate, exactly like the VIP rule. Audited. Needs x-postroom-csrf: 1.',
+    params: SP.AddressParam,
+    body: SP.SenderPinBody,
+    headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
+    responses: { '200': { description: 'The pin after the change.', schema: 'SenderPin' }, ...COMMON, '403': err('Missing CSRF header.') },
+  },
+  {
+    method: 'delete',
+    path: '/api/senders/{address}/pin',
+    operationId: 'clearSenderPin',
+    tag: 'Senders',
+    summary: 'Remove the bucket pin for this sender (a screen decision, if any, is unaffected).',
+    description: 'Audited. Needs x-postroom-csrf: 1.',
+    params: SP.AddressParam,
+    headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
+    responses: { '200': { description: 'ok: true.', content: { 'application/json': { schema: { type: 'object', properties: { ok: { const: true } } } } } }, ...COMMON, '403': err('Missing CSRF header.') },
+  },
+  {
+    method: 'post',
+    path: '/api/senders/{address}/screen',
+    operationId: 'screenSender',
+    tag: 'Senders',
+    summary: "Answer this sender's new-sender badge: Allow or Block (PST-REQ-106).",
+    description:
+      'Allow treats the sender as a known contact, so a directly-addressed message from them can reach Priority. Block routes their future mail to Junk. Either clears the $NewSender badge on their already-filed mail. Audited. Needs x-postroom-csrf: 1.',
+    params: SP.AddressParam,
+    body: SP.SenderScreenBody,
+    headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
+    responses: { '200': { description: 'The screen decision after the change.', schema: 'SenderScreenResult' }, ...COMMON, '403': err('Missing CSRF header.') },
+  },
+  ...COMPOSE_ROUTES,
 ];
 
 function strip(schema: Json): Json {

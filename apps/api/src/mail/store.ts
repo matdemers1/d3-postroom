@@ -66,7 +66,13 @@ export async function listMailboxes(db: Db, accountId: string): Promise<MailboxJ
     .sort((a, b) => rank(a.specialUse, a.name) - rank(b.specialUse, b.name) || a.name.localeCompare(b.name));
 }
 
-type MessageWithVerdict = Message & { verdict: Pick<MessageVerdict, 'bucket'> | null };
+type MessageWithVerdict = Message & { verdict: Pick<MessageVerdict, 'bucket' | 'scores'> | null };
+
+/** True when the classify stage marked this message with the new-sender badge (PST-REQ-106). */
+function newSenderOf(scores: MessageVerdict['scores'] | undefined): boolean {
+  if (typeof scores !== 'object' || scores === null || Array.isArray(scores)) return false;
+  return (scores as Record<string, unknown>)['newSender'] === 1;
+}
 
 // --- The Trash clock (PST-T-7.7, PST-REQ-129) ----------------------------------------------------
 //
@@ -118,6 +124,7 @@ export function summaryJson(m: MessageWithVerdict, trashDays: number | null = DE
     flags: m.flags,
     bucket: m.verdict?.bucket ?? null,
     ...trashClock(m, trashDays),
+    newSender: newSenderOf(m.verdict?.scores),
   };
 }
 
@@ -218,7 +225,7 @@ export async function listMessages(
     where: { mailboxId, ...(opts.cursor !== undefined ? { uid: { lt: opts.cursor } } : {}) },
     orderBy: { uid: 'desc' },
     take: opts.limit + 1,
-    include: { verdict: { select: { bucket: true } } },
+    include: { verdict: { select: { bucket: true, scores: true } } },
   });
   const page = rows.slice(0, opts.limit);
   const last = page[page.length - 1];
@@ -235,7 +242,7 @@ export async function findOwnThread(db: Db, accountId: string, id: string) {
   if (thread === null) return null;
   const messages = await db.message.findMany({
     where: { threadId: id, mailbox: { accountId } },
-    include: { verdict: { select: { bucket: true } } },
+    include: { verdict: { select: { bucket: true, scores: true } } },
   });
   messages.sort((a, b) => (a.sentAt ?? a.internalDate).getTime() - (b.sentAt ?? b.internalDate).getTime() || a.id.localeCompare(b.id));
   return { thread, messages };

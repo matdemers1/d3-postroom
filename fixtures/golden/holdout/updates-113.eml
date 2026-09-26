@@ -1,0 +1,10 @@
+From: Nimbus Storage <do-not-reply@nimbus.example.org>
+To: sam@d3cloud.io
+Subject: Your email address was updated
+Date: Thu, 17 Sep 2026 10:45:33 +0000
+Message-ID: <golden-0249.20260926@nimbus.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=nimbus.example.org; dkim=pass header.d=nimbus.example.org; dmarc=pass header.from=nimbus.example.org
+
+Your email address was updated
+
+Details: https://nimbus.example.org/m/2010

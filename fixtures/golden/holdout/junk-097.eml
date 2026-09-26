@@ -1,0 +1,10 @@
+From: InstantSavings Plus <deals@instantsavingsplus.example.org>
+To: sam@d3cloud.io
+Subject: Congratulations — you qualify
+Date: Sun, 13 Sep 2026 23:39:35 +0000
+Message-ID: <golden-0199.20260926@instantsavingsplus.example.org>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=instantsavingsplus.example.org; dkim=none header.d=instantsavingsplus.example.org; dmarc=none header.from=instantsavingsplus.example.org
+
+Congratulations — you qualify
+
+Click here: https://instantsavingsplus.example.org/claim

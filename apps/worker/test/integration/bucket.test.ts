@@ -136,7 +136,7 @@ describe.skipIf(baseUrl === undefined)('bucket filing (PST-T-5.1, PST-REQ-101, P
       message: message({ from: 'Carol <carol@example.net>', to: 'me@d3cloud.io', subject: 'hi there' }),
     });
     expect(stranger.copies[0]?.mailbox.name).toBe('INBOX');
-    expect(stranger.copies[0]?.flags).toEqual(['$People']);
+    expect(stranger.copies[0]?.flags).toEqual(['$NewSender', '$People']);
     expect(stranger.copies[0]?.verdict?.bucket).toBe('people');
   });
 
@@ -152,7 +152,7 @@ describe.skipIf(baseUrl === undefined)('bucket filing (PST-T-5.1, PST-REQ-101, P
     const mine = copies.find((c) => c.mailbox.accountId === meId);
     const yours = copies.find((c) => c.mailbox.accountId === youId);
     expect(mine).toMatchObject({ flags: ['$Priority'], mailbox: { name: 'INBOX' }, verdict: { bucket: 'priority' } });
-    expect(yours).toMatchObject({ flags: ['$People'], mailbox: { name: 'INBOX' }, verdict: { bucket: 'people' } });
+    expect(yours).toMatchObject({ flags: ['$NewSender', '$People'], mailbox: { name: 'INBOX' }, verdict: { bucket: 'people' } });
   });
 
   it('the reply graph also comes from the Sent mailbox', async () => {

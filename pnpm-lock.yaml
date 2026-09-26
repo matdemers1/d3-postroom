@@ -44,6 +44,9 @@ importers:
       '@d3cloudio/auth-client':
         specifier: 0.1.1
         version: 0.1.1(react@19.3.0)
+      '@postroom/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
       '@postroom/audit':
         specifier: workspace:*
         version: link:../../packages/audit
@@ -86,6 +89,9 @@ importers:
       '@postroom/search':
         specifier: workspace:*
         version: link:../../packages/search
+      '@postroom/submission':
+        specifier: workspace:*
+        version: link:../submission
       '@postroom/threading':
         specifier: workspace:*
         version: link:../../packages/threading
@@ -111,9 +117,6 @@ importers:
       '@postroom/auth-throttle':
         specifier: workspace:*
         version: link:../../packages/auth-throttle
-      '@postroom/submission':
-        specifier: workspace:*
-        version: link:../submission
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6

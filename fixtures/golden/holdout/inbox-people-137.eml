@@ -1,0 +1,13 @@
+From: Theo Marsh — Sales Engineering <theo@acmeworks.example.org>
+To: sam@d3cloud.io
+Subject: Your notes from the demo
+Date: Sat, 19 Sep 2026 09:07:10 +0000
+Message-ID: <golden-0280.20260926@acmeworks.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=acmeworks.example.org; dkim=pass header.d=acmeworks.example.org; dmarc=pass header.from=acmeworks.example.org
+
+Hi,
+
+Your notes from the demo
+
+Thanks,
+Theo Marsh — Sales Engineering

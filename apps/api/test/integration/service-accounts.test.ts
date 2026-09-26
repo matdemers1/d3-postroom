@@ -22,7 +22,7 @@ import { ensureDkimKeys } from '@postroom/submission/dkim';
 import { createCapsChecker, createCapsEnforcer } from '@postroom/submission/caps';
 import { createSubmissionListeners, type SubmissionListeners } from '@postroom/submission';
 import type { Express } from 'express';
-import request from 'supertest';
+import { request } from '../loopback.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { baseConfig, cookieHeader, cookiesOf, createAccount, PEPPER, randomLogin, TestClock, totpCode } from './helpers.js';

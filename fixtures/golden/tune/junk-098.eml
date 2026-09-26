@@ -1,0 +1,11 @@
+From: MegaSavings Now <deals@megasavingsnow.example.com>
+To: dana@d3cloud.io
+Subject: You’ve been selected for a reward
+Date: Sun, 13 Sep 2026 10:14:05 +0000
+Message-ID: <golden-0190.20260926@megasavingsnow.example.com>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=megasavingsnow.example.com; dkim=none header.d=megasavingsnow.example.com; dmarc=none header.from=megasavingsnow.example.com
+Precedence: junk
+
+You’ve been selected for a reward
+
+Click here: https://megasavingsnow.example.com/claim

@@ -1,0 +1,14 @@
+From: Trailhead Weekly <newsletter@trailhead.example.org>
+List-Id: Trailhead Weekly <bulk.trailhead.example.org>
+List-Unsubscribe: <https://trailhead.example.org/unsubscribe>, <mailto:unsubscribe@trailhead.example.org>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Precedence: bulk
+To: dana@d3cloud.io
+Subject: Three ideas worth stealing
+Date: Sun, 06 Sep 2026 16:06:23 +0000
+Message-ID: <golden-0085.20260926@trailhead.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=trailhead.example.org; dkim=pass header.d=trailhead.example.org; dmarc=pass header.from=trailhead.example.org
+
+Three ideas worth stealing
+
+Read online: https://trailhead.example.org/issues/5

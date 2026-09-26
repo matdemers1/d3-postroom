@@ -1,0 +1,12 @@
+From: Maria Silva <maria.silva@people.example.net>
+To: sam@d3cloud.io
+Subject: Urgent: Your name came up in conversation
+Date: Sat, 05 Sep 2026 10:37:09 +0000
+Message-ID: <golden-0063.20260926@people.example.net>
+Authentication-Results: mx.d3cloud.io; spf=fail smtp.mailfrom=people.example.net; dkim=fail header.d=people.example.net; dmarc=fail header.from=people.example.net
+
+Hello,
+
+Your name came up in conversation
+
+Maria Silva

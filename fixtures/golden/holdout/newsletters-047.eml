@@ -1,0 +1,13 @@
+From: The Sunday Post <editor@sundaypost.example.org>
+Precedence: list
+List-Unsubscribe: <mailto:leave@sundaypost.example.org>
+X-Mailgun-Variables: {}
+To: sam@d3cloud.io
+Subject: Small updates, worth a read
+Date: Mon, 07 Sep 2026 14:41:41 +0000
+Message-ID: <golden-0100.20260926@sundaypost.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=sundaypost.example.org; dkim=pass header.d=sundaypost.example.org; dmarc=pass header.from=sundaypost.example.org
+
+Small updates, worth a read
+
+Read online: https://sundaypost.example.org/issues/7

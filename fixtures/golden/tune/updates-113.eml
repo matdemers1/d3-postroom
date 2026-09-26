@@ -1,0 +1,10 @@
+From: Gridline Energy <hello@e.gridline.example.org>
+To: dana@d3cloud.io
+Subject: Changes to our terms of service
+Date: Tue, 15 Sep 2026 04:11:03 +0000
+Message-ID: <golden-0215.20260926@e.gridline.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=e.gridline.example.org; dkim=pass header.d=e.gridline.example.org; dmarc=pass header.from=e.gridline.example.org
+
+Changes to our terms of service
+
+Details: https://e.gridline.example.org/m/2010

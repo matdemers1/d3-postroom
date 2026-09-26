@@ -1,0 +1,10 @@
+From: Brightcup <receipts@brightcup.example.org>
+To: dana@d3cloud.io
+Subject: Your Brightcup receipt
+Date: Tue, 15 Sep 2026 07:42:38 +0000
+Message-ID: <golden-0218.20260926@brightcup.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=brightcup.example.org; dkim=pass header.d=brightcup.example.org; dmarc=pass header.from=brightcup.example.org
+
+Your Brightcup receipt
+
+Details: https://brightcup.example.org/m/2001

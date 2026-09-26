@@ -1,0 +1,11 @@
+From: Chatterframe <alerts@chatterframe.example.org>
+To: dana@d3cloud.io
+Subject: 3 people commented on your post
+List-Unsubscribe: <https://chatterframe.example.org/notifications/unsubscribe>
+Date: Fri, 11 Sep 2026 12:34:30 +0000
+Message-ID: <golden-0160.20260926@chatterframe.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=chatterframe.example.org; dkim=pass header.d=chatterframe.example.org; dmarc=pass header.from=chatterframe.example.org
+
+3 people commented on your post
+
+Open Chatterframe: https://chatterframe.example.org/open

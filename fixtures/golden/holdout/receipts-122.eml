@@ -1,0 +1,10 @@
+From: Pocketpay <transactions@pocketpay.example.com>
+To: sam@d3cloud.io
+Subject: You paid Mateo $18.50
+Date: Thu, 17 Sep 2026 18:42:27 +0000
+Message-ID: <golden-0258.20260926@pocketpay.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=pocketpay.example.com; dkim=pass header.d=pocketpay.example.com; dmarc=pass header.from=pocketpay.example.com
+
+You paid Mateo $18.50
+
+Details: https://pocketpay.example.com/m/2008

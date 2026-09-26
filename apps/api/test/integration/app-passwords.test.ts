@@ -6,7 +6,7 @@ import { verifyProtocolLogin } from '@postroom/credentials';
 import { AccountKind, AddressKind, seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import type { Express } from 'express';
-import request from 'supertest';
+import { request } from '../loopback.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { PEPPER, TestClock, baseConfig, cookieHeader, cookiesOf, createAccount, randomLogin, totpCode } from './helpers.js';

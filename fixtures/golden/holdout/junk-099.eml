@@ -1,0 +1,10 @@
+From: Lucky Winner Club <deals@luckywinner.example.org>
+To: sam@d3cloud.io
+Subject: Your reward is waiting
+Date: Mon, 14 Sep 2026 02:40:20 +0000
+Message-ID: <golden-0201.20260926@luckywinner.example.org>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=luckywinner.example.org; dkim=none header.d=luckywinner.example.org; dmarc=none header.from=luckywinner.example.org
+
+Your reward is waiting
+
+Click here: https://luckywinner.example.org/claim

@@ -1,4 +1,4 @@
-import request from 'supertest';
+import { request } from '../loopback.js';
 import { describe, expect, it } from 'vitest';
 import type { Db } from '@postroom/db';
 import { createApp } from '../../src/app.js';

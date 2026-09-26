@@ -1,0 +1,13 @@
+From: Omar Chen <omar.chen@example.com>
+To: dana@d3cloud.io
+Subject: One more thing before EOD
+Date: Wed, 02 Sep 2026 17:22:22 +0000
+Message-ID: <golden-0018.20260926@example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.com; dkim=pass header.d=example.com; dmarc=pass header.from=example.com
+
+Hi,
+
+One more thing before EOD
+
+Best,
+Omar Chen

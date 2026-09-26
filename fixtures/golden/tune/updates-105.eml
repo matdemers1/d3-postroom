@@ -1,0 +1,10 @@
+From: Northwind Air <itinerary@northwindair.example.net>
+To: dana@d3cloud.io
+Subject: Your flight itinerary has changed
+Date: Mon, 14 Sep 2026 12:20:43 +0000
+Message-ID: <golden-0207.20260926@northwindair.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=northwindair.example.net; dkim=pass header.d=northwindair.example.net; dmarc=pass header.from=northwindair.example.net
+
+Your flight itinerary has changed
+
+Details: https://northwindair.example.net/m/2002

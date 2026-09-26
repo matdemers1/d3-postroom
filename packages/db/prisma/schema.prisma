@@ -143,8 +143,37 @@ model Account {
 
   // PST-T-7.7: per-mailbox retention.
   retentionPolicies RetentionPolicy[]
+  // PST-T-5.4: sender pins and the new-sender screen (Allow/Block).
+  senderPins SenderPin[]
 
   @@map("account")
+}
+
+/// A sender pin (PST-REQ-105) and/or a new-sender screen decision (PST-REQ-106), per account and
+/// normalized sender address. `bucket` is set when the user pinned this sender to a bucket — it
+/// overrides the classifier entirely (@postroom/classifier's bucketFor consults it before rules and
+/// Bayes). `screen` is set from the new-sender badge's Allow/Block: `block` routes this sender's
+/// future mail to Junk (via the account's blocked-pins signal, same as a bucket pin of `junk`, but
+/// unauthenticated mail is not exempt — junking a spoofer is harmless); `allow` treats the sender as
+/// a known contact, so a directly-addressed message from them can reach Priority. Either or both may
+/// be set on the same row; at least one is expected to be non-null in practice.
+model SenderPin {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  /// Lowercased, +tag-stripped (@postroom/classifier's normalizeAddress).
+  address   String
+  /// priority | people | newsletters | updates | receipts | notifications | junk
+  bucket    String?
+  /// allow | block
+  screen    String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, address])
+  @@index([accountId])
+  @@map("sender_pin")
 }
 
 /// An external identity (D3 Auth OIDC) linked by (issuer, subject). Email is informational only.
