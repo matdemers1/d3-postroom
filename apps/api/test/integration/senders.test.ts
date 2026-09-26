@@ -4,7 +4,7 @@ import { missingAuditCount, waitForAuditGuard } from '@postroom/audit';
 import { seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import type { Express } from 'express';
-import request from 'supertest';
+import { request } from '../loopback.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { baseConfig, cookieHeader, cookiesOf, createAccount, randomLogin, totpCode, TestClock } from './helpers.js';

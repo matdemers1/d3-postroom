@@ -11,7 +11,7 @@ import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { createDeliveryWorker, OUTBOUND_QUEUE, type DeliveryResult, type Transport } from '@postroom/delivery';
 import { startWorker } from '@postroom/queue';
 import type { Express } from 'express';
-import request from 'supertest';
+import { request } from '../loopback.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { TestClock, baseConfig, cookieHeader, cookiesOf, createAccount, randomLogin, totpCode } from './helpers.js';

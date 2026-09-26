@@ -6,7 +6,8 @@ import { createServer, type Server } from 'node:http';
 import { InboundState, seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import type { Express } from 'express';
-import request from 'supertest';
+import type { Response } from 'supertest';
+import { request } from '../loopback.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { baseConfig, cookieHeader, cookiesOf, createAccount, randomLogin, TestClock, totpCode } from './helpers.js';
@@ -61,8 +62,8 @@ describe.skipIf(!baseUrl)('admin health (PST-T-7.6, PST-REQ-127)', () => {
     return { id, cookie: await signIn(login, totpSecret) };
   };
 
-  const tilesOf = (res: request.Response): Tile[] => (res.body as { tiles: Tile[] }).tiles;
-  const tile = (res: request.Response, id: string): Tile | undefined => tilesOf(res).find((t) => t.id === id);
+  const tilesOf = (res: Response): Tile[] => (res.body as { tiles: Tile[] }).tiles;
+  const tile = (res: Response, id: string): Tile | undefined => tilesOf(res).find((t) => t.id === id);
 
   const monitorRow = async (name: string, state: 'ok' | 'firing', detail: string): Promise<void> => {
     const key = `monitor:${name}`;
