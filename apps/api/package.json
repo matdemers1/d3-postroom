@@ -39,7 +39,8 @@
     "@postroom/phish": "workspace:*",
     "@postroom/trackers": "workspace:*",
     "@postroom/submission": "workspace:*",
-    "@postroom/alerts": "workspace:*"
+    "@postroom/alerts": "workspace:*",
+    "@postroom/managesieve": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

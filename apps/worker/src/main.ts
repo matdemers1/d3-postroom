@@ -43,7 +43,14 @@ await runDaemon({
       verify: (sha256) => getBlobs().verify(sha256),
       gc: (opts) => getBlobs().gc(opts),
     };
-    const pipeline = createInboundPipeline({ db, blobs: lazyBlobs, log: ctx.log });
+    // The KEK signs Sieve vacation replies (PST-T-9.5); loaded on first use, like the blob store.
+    const pipeline = createInboundPipeline({
+      db,
+      blobs: lazyBlobs,
+      log: ctx.log,
+      kek: () => loadKek({ env: ctx.env }),
+      vacationDailyCap: envInt(ctx.env, 'SIEVE_VACATION_DAILY_CAP', 200),
+    });
     const leaseMs = envInt(ctx.env, 'INBOUND_LEASE_MS', 300_000);
     const worker = await startWorker({
       db,
