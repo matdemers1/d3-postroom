@@ -67,13 +67,21 @@
     },
     {
       "name": "ical",
-      "status": "pending: packages/ical not built",
-      "package": "packages/ical"
+      "status": "active",
+      "package": "packages/ical",
+      "target": "fuzz/ical/target.mjs",
+      "corpus": "fuzz/ical/corpus",
+      "fixtures": "fuzz/ical/fixtures",
+      "note": "iCalendar parse + serializer round-trip, and recurrence expansion into a range (sorted, unique, in range, capped)"
     },
     {
       "name": "vcard",
-      "status": "pending: packages/vcard not built",
-      "package": "packages/vcard"
+      "status": "active",
+      "package": "packages/vcard",
+      "target": "fuzz/vcard/target.mjs",
+      "corpus": "fuzz/vcard/corpus",
+      "fixtures": "fuzz/vcard/fixtures",
+      "note": "vCard 4.0/3.0/2.1 parse + serializer round-trip, and the contact helpers (displayName, emailsOf, photoOf, …)"
     },
     {
       "name": "sieve",
