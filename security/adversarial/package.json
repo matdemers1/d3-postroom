@@ -1,0 +1,25 @@
+{
+  "name": "@postroom/adversarial",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The adversarial suite (PST-REQ-087): open relay, auth bypass, SMTP smuggling, STARTTLS injection, header injection, PROXY spoofing, blob path traversal and IMAP literal abuse, against the real daemons over real sockets",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/auth-checks": "workspace:*",
+    "@postroom/auth-throttle": "workspace:*",
+    "@postroom/blobstore": "workspace:*",
+    "@postroom/credentials": "workspace:*",
+    "@postroom/crypto": "workspace:*",
+    "@postroom/db": "workspace:*",
+    "@postroom/imap-proto": "workspace:*",
+    "@postroom/proxy-protocol": "workspace:*",
+    "@postroom/smtp-proto": "workspace:*"
+  },
+  "devDependencies": {}
+}
