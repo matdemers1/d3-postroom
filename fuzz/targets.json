@@ -77,8 +77,12 @@
     },
     {
       "name": "sieve",
-      "status": "pending: packages/sieve not built",
-      "package": "packages/sieve"
+      "status": "active",
+      "package": "packages/sieve",
+      "target": "fuzz/sieve/target.mjs",
+      "corpus": "fuzz/sieve/corpus",
+      "fixtures": "fuzz/sieve/fixtures",
+      "note": "Sieve lexer/parser/printer round trip, validator and interpreter (RFC 5228 + extensions)"
     },
     {
       "name": "dmarc-report",
