@@ -13,6 +13,7 @@ import * as E from '../export/schemas.js';
 import * as SP from '../senders/schemas.js';
 import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
 import { MOBILECONFIG_ROUTES } from '../mobileconfig/openapi.js';
+import { INSPECT_COMPONENTS, INSPECT_ROUTES } from '../mail/inspect.js';
 import { SIEVE_COMPONENTS, SIEVE_ROUTES } from '../sieve/openapi.js';
 import { CALENDAR_COMPONENTS, CALENDAR_ROUTES } from '../calendar/openapi.js';
 import { CONTACTS_COMPONENTS, CONTACTS_ROUTES } from '../contacts/openapi.js';
@@ -61,6 +62,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   ExportStatus: E.ExportStatus,
   SenderPin: SP.SenderPinView,
   SenderScreenResult: SP.SenderScreenResult,
+  ...INSPECT_COMPONENTS,
   ...COMPOSE_COMPONENTS,
   ...SIEVE_COMPONENTS,
   ...CALENDAR_COMPONENTS,
@@ -297,6 +299,7 @@ export const ROUTES: RouteSpec[] = [
   },
   ...COMPOSE_ROUTES,
   ...MOBILECONFIG_ROUTES,
+  ...INSPECT_ROUTES,
   ...SIEVE_ROUTES,
   ...CALENDAR_ROUTES,
   ...CONTACTS_ROUTES,

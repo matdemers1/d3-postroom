@@ -40,6 +40,8 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/messages/{id}/attachments/{partId}',
         'GET /api/messages/{id}/body',
         'GET /api/messages/{id}/raw',
+        // PST-T-6.1: the Inspect drawer.
+        'GET /api/messages/{id}/inspect',
         'GET /api/messages/{id}/render',
         'GET /api/search',
         'GET /api/senders/{address}/pin',

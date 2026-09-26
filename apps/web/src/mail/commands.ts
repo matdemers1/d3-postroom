@@ -5,7 +5,7 @@
 // and the fuzzy matcher are unit-tested without a browser.
 import type { Mailbox, MessageSummary } from '../api';
 import { mailboxLabel } from './format';
-import { SHORTCUTS, type MailAction } from './keys';
+import { requestInspect, SHORTCUTS, type MailAction } from './keys';
 import { mailPath } from './route';
 
 export interface Command {
@@ -59,7 +59,9 @@ export function buildCommands(ctx: CommandContext, isAdmin = true): Command[] {
       group: 'Action',
       keywords: s.keys,
       run: () => {
-        ctx.perform(s.action);
+        // The drawer listens for inspect requests itself (keys.ts), so it opens from here too.
+        if (s.action === 'inspect') requestInspect();
+        else ctx.perform(s.action);
       },
     });
   }

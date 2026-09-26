@@ -28,6 +28,7 @@ import { forwardRef, useCallback, useEffect, useState, type ReactNode } from 're
 import { Link as RouterLink } from 'react-router-dom';
 import { Alert, Badge, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, Skeleton, Stack } from '@d3cloud/ui';
 import { attemptRemoteText, attemptSummary, deferralReason, dsnFiledAt, isPending, matchingOutbound, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
+import { InspectDrawer } from './InspectDrawer';
 import { useMail } from './MailContext';
 import { collapsedSummary, isConversation, mightJoinThread, threadRows, toggleRow } from './thread';
 import { trackersBlockedNote } from './trackers';
@@ -136,6 +137,7 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
             <Button size="sm" variant="ghost" pressed={starred} icon={<StarIcon filled={starred} />} onClick={() => { onAction('star'); }}>
               Star
             </Button>
+            <InspectDrawer messageId={detail.id} />
           </Cluster>
         </div>
         {children}

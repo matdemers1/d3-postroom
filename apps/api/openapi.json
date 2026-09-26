@@ -1423,6 +1423,936 @@
         ],
         "additionalProperties": false
       },
+      "MessageInspect": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "auth": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "verdict",
+                  "inbound",
+                  "none"
+                ],
+                "description": "Where the verdicts came from: the filed message's verdict, the spool row, or nowhere (e.g. your own Sent copy)."
+              },
+              "spf": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "result": {
+                        "type": "string"
+                      },
+                      "domain": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "scope": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "mechanism": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "alignment": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "aligned": {
+                                "type": "boolean"
+                              },
+                              "mode": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "relaxed",
+                                      "strict"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "aligned",
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Alignment with the From domain as DMARC's evaluator stated it in its reasons; null when it did not say."
+                      },
+                      "reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "result",
+                      "domain",
+                      "scope",
+                      "mechanism",
+                      "alignment",
+                      "reasons"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "dkim": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "string"
+                    },
+                    "domain": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "selector": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "algorithm": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "testing": {
+                      "type": "boolean"
+                    },
+                    "alignment": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "aligned": {
+                              "type": "boolean"
+                            },
+                            "mode": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "relaxed",
+                                    "strict"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "aligned",
+                            "mode"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Alignment with the From domain as DMARC's evaluator stated it in its reasons; null when it did not say."
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "result",
+                    "domain",
+                    "selector",
+                    "algorithm",
+                    "testing",
+                    "alignment",
+                    "reasons"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "dmarc": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "result": {
+                        "type": "string"
+                      },
+                      "disposition": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fromDomain": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "policy": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "policySource": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "recordDomain": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "result",
+                      "disposition",
+                      "fromDomain",
+                      "policy",
+                      "policySource",
+                      "recordDomain",
+                      "reasons"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arc": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "result": {
+                        "type": "string"
+                      },
+                      "instances": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sealerDomains": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "result",
+                      "instances",
+                      "sealerDomains",
+                      "reasons"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arcOverride": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Why a trusted ARC sealer overrode a DMARC failure, when it did."
+              },
+              "dnsbl": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "listed": {
+                        "type": "boolean"
+                      },
+                      "zone": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "listed",
+                      "zone",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "authenticationResults": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Every Authentication-Results field in the message, top first (RFC 8601)."
+              }
+            },
+            "required": [
+              "source",
+              "spf",
+              "dkim",
+              "dmarc",
+              "arc",
+              "arcOverride",
+              "dnsbl",
+              "authenticationResults"
+            ],
+            "additionalProperties": false
+          },
+          "received": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "raw": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "fromRdns": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "fromIp": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "via": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "with": {
+                  "description": "The protocol (RFC 5321 §4.4, RFC 3848): ESMTPS means the hop was encrypted.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "for": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tls": {
+                  "type": "object",
+                  "properties": {
+                    "encrypted": {
+                      "type": "boolean"
+                    },
+                    "version": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "cipher": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "encrypted",
+                    "version",
+                    "cipher"
+                  ],
+                  "additionalProperties": false
+                },
+                "timestamp": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "delaySeconds": {
+                  "description": "Seconds since the previous (older) hop; null for the first or when either date is unreadable.",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "ours": {
+                  "type": "boolean",
+                  "description": "Written by this Postroom server."
+                }
+              },
+              "required": [
+                "raw",
+                "from",
+                "fromRdns",
+                "fromIp",
+                "by",
+                "via",
+                "with",
+                "id",
+                "for",
+                "tls",
+                "timestamp",
+                "delaySeconds",
+                "ours"
+              ],
+              "additionalProperties": false
+            },
+            "description": "The Received path, oldest hop first."
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "sessionId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "clientIp": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "proxied": {
+                    "type": "boolean"
+                  },
+                  "helo": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "rdns": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "tls": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "sessionStartedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "receivedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "envelopeFrom": {
+                    "type": "string"
+                  },
+                  "disposition": {
+                    "type": "string"
+                  },
+                  "dispositionReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "smtpReply": {
+                    "description": "The SMTP reply smtp-in actually sent at the end of DATA.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "decision": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string"
+                          },
+                          "rule": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reasons": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "rule",
+                          "reasons"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "sessionId",
+                  "clientIp",
+                  "proxied",
+                  "helo",
+                  "rdns",
+                  "tls",
+                  "sessionStartedAt",
+                  "receivedAt",
+                  "envelopeFrom",
+                  "disposition",
+                  "dispositionReason",
+                  "smtpReply",
+                  "decision"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What smtp-in recorded about the session that delivered it here; null for mail that did not arrive over SMTP."
+          },
+          "bucket": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "bucket": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "scores": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "description": "Every score stored with the decision (PST-REQ-103), by name."
+                  }
+                },
+                "required": [
+                  "bucket",
+                  "reasons",
+                  "scores"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spam": {
+            "type": "object",
+            "properties": {
+              "signals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                "description": "The rule classifier's signals (bulk, automated, human, transactional, …)."
+              },
+              "bayes": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "probabilities": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "bucket": {
+                              "type": "string"
+                            },
+                            "probability": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "bucket",
+                            "probability"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "trainingDocs": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "topTokens": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "probabilities",
+                      "trainingDocs",
+                      "topTokens",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "attachments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "partId": {
+                      "type": "string"
+                    },
+                    "filename": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "verdict": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "partId",
+                    "filename",
+                    "verdict",
+                    "kind",
+                    "reasons"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "signals",
+              "bayes",
+              "attachments"
+            ],
+            "additionalProperties": false
+          },
+          "trackers": {
+            "type": "object",
+            "properties": {
+              "html": {
+                "type": "boolean",
+                "description": "Whether the message has an HTML part at all."
+              },
+              "remoteImages": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "trackersBlocked": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "linksCleaned": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "html",
+              "remoteImages",
+              "trackersBlocked",
+              "linksCleaned"
+            ],
+            "additionalProperties": false
+          },
+          "mdn": {
+            "type": "object",
+            "properties": {
+              "requested": {
+                "type": "boolean"
+              },
+              "to": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "header": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "options": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "returnPath": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "returnPathMatches": {
+                "description": "RFC 8098 §2.1: a receipt to an address other than Return-Path needs the reader's say-so.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "sent": {
+                "type": "boolean",
+                "description": "Postroom never sends a receipt on its own; sending one is a separate, explicit step (PST-T-9.2)."
+              }
+            },
+            "required": [
+              "requested",
+              "to",
+              "header",
+              "options",
+              "returnPath",
+              "returnPathMatches",
+              "sent"
+            ],
+            "additionalProperties": false
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "raw": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "url",
+              "size"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "auth",
+          "received",
+          "receipt",
+          "bucket",
+          "spam",
+          "trackers",
+          "mdn",
+          "headers",
+          "raw"
+        ],
+        "additionalProperties": false
+      },
       "MessageList": {
         "type": "object",
         "properties": {
@@ -5837,6 +6767,80 @@
           },
           "404": {
             "description": "Not a message of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/inspect": {
+      "get": {
+        "operationId": "inspectMessage",
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Everything Postroom knows about one message, with its reasons (PST-REQ-114).",
+        "description": "Authentication verdicts with their evidence, the Received path with TLS per hop, the session that delivered it, why it is in its bucket, the spam-score breakdown, trackers removed, the read-receipt request, every header, and where the raw source downloads from. A read: nothing is stored and nothing is fetched from anywhere else.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The evidence.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageInspect"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a message of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set, so the message cannot be read back.",
             "content": {
               "application/json": {
                 "schema": {

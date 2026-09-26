@@ -18,7 +18,8 @@ export type MailAction =
   | 'search'
   | 'goInbox'
   | 'help'
-  | 'commandPalette';
+  | 'commandPalette'
+  | 'inspect';
 
 export interface Shortcut {
   keys: string;
@@ -39,6 +40,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { keys: 'f', action: 'forward', description: 'Forward' },
   { keys: 'c', action: 'compose', description: 'Compose' },
   { keys: 's', action: 'star', description: 'Star or unstar' },
+  { keys: 'i', action: 'inspect', description: 'Inspect the open message' },
   { keys: 'Shift + u', action: 'markUnread', description: 'Mark as unread' },
   { keys: '/', action: 'search', description: 'Search mail' },
   { keys: 'g then i', action: 'goInbox', description: 'Go to Inbox' },
@@ -58,6 +60,7 @@ const SINGLE: Readonly<Record<string, MailAction>> = {
   f: 'forward',
   c: 'compose',
   s: 'star',
+  i: 'inspect',
   U: 'markUnread',
   '/': 'search',
   '?': 'help',
@@ -107,4 +110,26 @@ export function describeTarget(target: EventTarget | null): { editable: boolean;
   const role = el.getAttribute('role');
   const activatable = tag === 'button' || tag === 'a' || tag === 'summary' || role === 'button' || role === 'link' || role === 'menuitem' || role === 'tab';
   return { editable, activatable };
+}
+
+// --- Inspect requests (PST-T-6.1) ------------------------------------------------------------------
+//
+// The Inspect drawer belongs to the open message in ReadingPane, while the key and the palette are
+// wired higher up. A tiny listener set joins them without threading a callback through MailView:
+// `i` and the palette's "Inspect the open message" call requestInspect(); the drawer of the message
+// that is open subscribes. Nothing open → nobody listening → nothing happens.
+
+type InspectListener = () => void;
+const inspectListeners = new Set<InspectListener>();
+
+export function requestInspect(): void {
+  for (const listener of [...inspectListeners]) listener();
+}
+
+/** Subscribes; returns the unsubscribe. */
+export function onInspectRequest(listener: InspectListener): () => void {
+  inspectListeners.add(listener);
+  return () => {
+    inspectListeners.delete(listener);
+  };
 }
