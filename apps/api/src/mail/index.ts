@@ -32,7 +32,7 @@ import {
   type SearchResultJson,
   type ThreadDetailJson,
 } from './schemas.js';
-import { detailJson, findOwnMessage, findOwnThread, listMailboxes, listMessages, messagePhish, ownMailbox, PreconditionFailed, summaryJson, updateMessage } from './store.js';
+import { detailJson, findOwnMessage, findOwnThread, listMailboxes, listMessages, messagePhish, ownMailbox, PreconditionFailed, summaryJson, trashRetentionDays, updateMessage } from './store.js';
 
 export const DEFAULT_BLOB_ROOT = '/var/lib/postroom/blobs';
 
@@ -134,7 +134,7 @@ export function mailRoutes(deps: ApiDeps): Router {
       const phish = await messagePhish(db, blobStoreOrNull(), currentSession(req).accountId, message);
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('ETag', etagOf(message.modseq));
-      res.json(detailJson(message, phish));
+      res.json(detailJson(message, phish, (await trashRetentionDays(db, [message.mailboxId])).get(message.mailboxId) ?? null));
     }),
   );
 
@@ -195,7 +195,7 @@ export function mailRoutes(deps: ApiDeps): Router {
       const phish = await messagePhish(db, blobStoreOrNull(), me.accountId, message);
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('ETag', etagOf(message.modseq));
-      res.json(detailJson(message, phish));
+      res.json(detailJson(message, phish, (await trashRetentionDays(db, [message.mailboxId])).get(message.mailboxId) ?? null));
     }),
   );
 
@@ -335,12 +335,16 @@ export function mailRoutes(deps: ApiDeps): Router {
         notFound(res);
         return;
       }
+      const days = await trashRetentionDays(
+        db,
+        found.messages.map((m) => m.mailboxId),
+      );
       const body: ThreadDetailJson = {
         id: found.thread.id,
         subject: found.thread.subject,
         messageCount: found.thread.messageCount,
         lastMessageAt: found.thread.lastMessageAt.toISOString(),
-        messages: found.messages.map(summaryJson),
+        messages: found.messages.map((m) => summaryJson(m, days.get(m.mailboxId) ?? null)),
       };
       res.setHeader('Cache-Control', 'no-store');
       res.json(body);

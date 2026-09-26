@@ -141,6 +141,9 @@ model Account {
   bayesTokens          BayesToken[]
   bayesBucketTotals    BayesBucketTotal[]
 
+  // PST-T-7.7: per-mailbox retention.
+  retentionPolicies RetentionPolicy[]
+
   @@map("account")
 }
 
@@ -287,11 +290,31 @@ model Mailbox {
   updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   account  Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  messages Message[]
-  expunged ExpungedMessage[]
+  messages        Message[]
+  expunged        ExpungedMessage[]
+  retentionPolicy RetentionPolicy?
 
   @@unique([accountId, name])
   @@map("mailbox")
+}
+
+/// How long a mailbox keeps a message (PST-T-7.7, PST-REQ-129). A row overrides the built-in default
+/// for the mailbox's special use (Junk 30 d, Trash 30 d, Rejects 14 d; every other mailbox: forever).
+/// `days` null keeps messages forever (turns a default off). Expiry never deletes outside Trash and
+/// Rejects: any other mailbox's expired messages MOVE to Trash, where the clock starts again.
+model RetentionPolicy {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  mailboxId String   @unique @map("mailbox_id") @db.Uuid
+  days      Int?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  mailbox Mailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("retention_policy")
 }
 
 /// One message in one mailbox. The raw RFC 5322 bytes live in the blob, never here.
@@ -318,6 +341,9 @@ model Message {
   inReplyTo        String?   @map("in_reply_to")
   references       String[]  @default([])
   threadId         String?   @map("thread_id") @db.Uuid
+  /// When the message entered a Trash mailbox — the visible clock of PST-REQ-129. Stamped by a
+  /// trigger on every insert into / move into Trash (any surface), cleared on a move out.
+  trashedAt        DateTime? @map("trashed_at") @db.Timestamptz(6)
 
   mailbox Mailbox         @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
   blob    Blob            @relation(fields: [blobSha256], references: [sha256], onDelete: Restrict)
@@ -332,6 +358,8 @@ model Message {
   @@index([messageIdHeader])
   @@index([mailboxId, modseq])
   @@index([blobSha256])
+  @@index([mailboxId, receivedAt])
+  @@index([mailboxId, trashedAt])
   @@map("message")
 }
 
@@ -568,6 +596,9 @@ model InboundMessage {
   smtpReply         String?      @map("smtp_reply")
   lastError         String?      @map("last_error")
   filedAt           DateTime?    @map("filed_at") @db.Timestamptz(6)
+  /// When this spool row's blob reference was released (PST-T-7.7): after every Message copy of the
+  /// blob is gone, so the last reference can go and the blob be crypto-shredded (PST-REQ-130).
+  blobReleasedAt    DateTime?    @map("blob_released_at") @db.Timestamptz(6)
 
   session  InboundSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   messages Message[]

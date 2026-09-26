@@ -97,6 +97,9 @@ export const MessageSummary = z.object({
   size: z.number().int(),
   flags: z.array(z.string()),
   bucket: z.string().nullable(),
+  /** PST-REQ-129's visible clock: when the message entered Trash; null outside Trash. */
+  trashedAt: Iso.nullable().describe('When the message entered Trash (the retention clock); null outside Trash.'),
+  expiresAt: Iso.nullable().describe('When the retention sweep expunges it from Trash; null outside Trash or when Trash keeps mail forever.'),
 });
 export const MessageList = z.object({
   messages: z.array(MessageSummary),

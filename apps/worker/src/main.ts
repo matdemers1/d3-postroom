@@ -17,6 +17,7 @@ import { buildMonitors, createMonitorRunner } from './monitors/index.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
 import { createThreadSweeper } from './sweep/thread-sweep.js';
 import { startTrainingLoop } from './training/index.js';
+import { startRetentionLoop } from './retention/index.js';
 
 await runDaemon({
   name: DAEMON,
@@ -82,6 +83,12 @@ await runDaemon({
     // client. Its own block and its own shutdown hook, so it merges beside the other registrations.
     const training = startTrainingLoop({ db, blobs: lazyBlobs, intervalMs: envInt(ctx.env, 'BAYES_TRAINING_MS', 5_000), log: ctx.log });
     ctx.onShutdown(() => training.stop());
+
+    // PST-T-7.7 (PST-REQ-129, PST-REQ-130): retention — Junk (and any mailbox with a policy) moves
+    // to Trash, Trash and Rejects expire, the last reference to a blob crypto-shreds it, and a gc
+    // pass removes files a crash left without a row. Its own block and its own shutdown hook.
+    const retention = startRetentionLoop({ db, blobs: lazyBlobs, intervalMs: envInt(ctx.env, 'RETENTION_SWEEP_MS', 3_600_000), log: ctx.log });
+    ctx.onShutdown(() => retention.stop());
 
 
     // Health alerts through the D3 Auth relay (PST-T-4.7, PST-REQ-096, PST-REQ-097): tunnel,
