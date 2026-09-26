@@ -156,6 +156,15 @@ export const api = {
   drafts: (opts: { inReplyTo?: string } = {}) =>
     call<{ drafts: SavedDraft[] }>('GET', `/api/compose/drafts${opts.inReplyTo === undefined ? '' : `?${new URLSearchParams({ inReplyTo: opts.inReplyTo }).toString()}`}`),
   deleteDraft: (id: string) => call<null>('DELETE', `/api/compose/drafts/${encodeURIComponent(id)}`),
+
+  // --- Held sends and snooze (PST-T-9.1) ------------------------------------------------------------
+  /** With undoSeconds > 0 or sendAt the answer is a held send (202), not a SendResult. */
+  sendOrHold: (input: SendInput) => call<SendResult | PendingSend>('POST', '/api/compose/send', input),
+  pendingSends: () => call<{ pending: PendingSend[] }>('GET', '/api/compose/pending'),
+  undoSend: (id: string) => call<PendingSend>('POST', `/api/compose/pending/${encodeURIComponent(id)}/undo`, {}),
+  reschedule: (id: string, sendAt: string) => call<PendingSend>('PATCH', `/api/compose/pending/${encodeURIComponent(id)}`, { sendAt }),
+  snoozeThread: (threadId: string, until: string) => call<Snooze>('POST', `/api/threads/${encodeURIComponent(threadId)}/snooze`, { until }),
+  unsnoozeThread: (threadId: string) => call<Snooze>('DELETE', `/api/threads/${encodeURIComponent(threadId)}/snooze`),
 };
 
 /** The render-ticket request: remote images only when the reader chose to load them (PST-REQ-082). */
@@ -188,6 +197,36 @@ export interface SendInput extends ComposeFields {
   from: string;
   /** The draft this send replaces; removed from Drafts with the send. */
   draftId: string | null;
+  /** Undo send: hold this many seconds (0–30) before queueing (PST-T-9.1). */
+  undoSeconds?: number;
+  /** Scheduled send: an ISO time in the future. */
+  sendAt?: string;
+  /** Remind if no reply after this many seconds. */
+  remindAfterSeconds?: number;
+}
+
+/** A held send: undo window or scheduled (PST-T-9.1). */
+export interface PendingSend {
+  id: string;
+  kind: 'undo' | 'scheduled';
+  state: 'held' | 'released' | 'cancelled' | 'failed';
+  releaseAt: string;
+  draftId: string | null;
+  subject: string;
+  to: string;
+  messageId: string;
+  remindAfterSeconds: number | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface Snooze {
+  id: string;
+  threadId: string;
+  until: string;
+  state: 'snoozed' | 'returned' | 'unsnoozed';
+  mailboxId: string;
+  messageIds: string[];
 }
 
 export interface SendResult {

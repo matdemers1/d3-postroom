@@ -161,6 +161,11 @@ model Account {
   sieveScripts         SieveScript[]
   sieveVacationReplies SieveVacationReply[]
 
+  // PST-T-9.1: undo send / scheduled send, snoozed threads, remind-if-no-reply.
+  pendingSends    PendingSend[]
+  snoozedThreads  SnoozedThread[]
+  replyReminders  ReplyReminder[]
+
   @@map("account")
 }
 
@@ -1086,4 +1091,98 @@ model TlsRptFailure {
 
   @@index([policyId])
   @@map("tlsrpt_failure")
+}
+
+// ─── PST-T-9.1: undo send, scheduled send, snooze, remind-if-no-reply ─────
+
+enum PendingSendState {
+  held
+  released
+  cancelled
+  failed
+
+  @@map("pending_send_state")
+}
+
+/// A composed message held back from the outbound queue until `releaseAt` (PST-REQ-140 undo send,
+/// PST-REQ-141 scheduled send). The worker releases it through the submission path exactly once:
+/// the held → released transition commits in the same transaction as the outbound queue rows. A
+/// copy stays in Drafts (`draftMessageId`) the whole time, so it is IMAP-visible and recoverable.
+model PendingSend {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId          String           @map("account_id") @db.Uuid
+  /// 'undo' (held for the undo window) or 'scheduled' (a chosen send time).
+  kind               String
+  state              PendingSendState @default(held)
+  releaseAt          DateTime         @map("release_at") @db.Timestamptz(6)
+  envelopeFrom       String           @map("envelope_from")
+  recipients         String[]
+  /// The message exactly as it will be submitted (no Bcc, no draft headers). This row holds one
+  /// reference on the blob until it is released or cancelled.
+  heldBlobSha256     String           @map("held_blob_sha256")
+  size               Int
+  /// The copy in Drafts (\Draft \Seen). Removing it from any client cancels the send.
+  draftMessageId     String?          @map("draft_message_id") @db.Uuid
+  messageIdHeader    String           @map("message_id_header")
+  subject            String           @default("")
+  toText             String           @default("") @map("to_text")
+  inReplyTo          String?          @map("in_reply_to")
+  references         String[]         @default([])
+  /// Remind-if-no-reply interval to arm once the message is actually sent (PST-REQ-143).
+  remindAfterSeconds Int?             @map("remind_after_seconds")
+  outboundId         String?          @map("outbound_id") @db.Uuid
+  sentMessageId      String?          @map("sent_message_id") @db.Uuid
+  /// Why it was cancelled or failed, in words (a refusal from the submission path, a removed draft).
+  reason             String?
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt         DateTime?        @map("finished_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([state, releaseAt])
+  @@index([accountId, state])
+  @@map("pending_send")
+}
+
+/// A thread snoozed out of INBOX until `until` (PST-REQ-142). The moved messages keep their row ids
+/// (re-homed like the retention sweep's move), so `messageIds` finds them again in Snoozed.
+model SnoozedThread {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId  String    @map("account_id") @db.Uuid
+  threadId   String    @map("thread_id") @db.Uuid
+  until      DateTime  @db.Timestamptz(6)
+  messageIds String[]  @map("message_ids") @db.Uuid
+  /// 'snoozed', then 'returned' (by the worker at `until`) or 'unsnoozed' (by hand).
+  state      String    @default("snoozed")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  returnedAt DateTime? @map("returned_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([state, until])
+  @@index([accountId, threadId])
+  @@map("snoozed_thread")
+}
+
+/// Remind-if-no-reply on a sent message (PST-REQ-143): at `dueAt`, if nobody else wrote in the
+/// thread after `sentAt`, the Sent message is resurfaced in INBOX as a local copy (same blob, one
+/// more reference, unread, \Flagged $Remind) — never a second delivery.
+model ReplyReminder {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId           String    @map("account_id") @db.Uuid
+  sentMessageId       String    @map("sent_message_id") @db.Uuid
+  messageIdHeader     String    @map("message_id_header")
+  sentAt              DateTime  @map("sent_at") @db.Timestamptz(6)
+  dueAt               DateTime  @map("due_at") @db.Timestamptz(6)
+  /// 'pending', then 'resurfaced', 'replied' or 'cancelled'.
+  state               String    @default("pending")
+  resurfacedMessageId String?   @map("resurfaced_message_id") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  checkedAt           DateTime? @map("checked_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([state, dueAt])
+  @@index([accountId, sentMessageId])
+  @@map("reply_reminder")
 }

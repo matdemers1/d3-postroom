@@ -158,3 +158,82 @@ export async function threadSentCopy(
     date: input.date,
   });
 }
+
+// --- PST-T-9.1: held sends and reminders ----------------------------------------------------------
+
+type PendingRow = {
+  id: string;
+  kind: string;
+  state: string;
+  releaseAt: Date;
+  draftMessageId: string | null;
+  subject: string;
+  toText: string;
+  messageIdHeader: string;
+  remindAfterSeconds: number | null;
+  reason: string | null;
+  createdAt: Date;
+};
+
+/** A pending_send row as the API answers it. */
+export function pendingJson(row: PendingRow) {
+  return {
+    id: row.id,
+    kind: row.kind === 'scheduled' ? ('scheduled' as const) : ('undo' as const),
+    state: row.state as 'held' | 'released' | 'cancelled' | 'failed',
+    releaseAt: row.releaseAt.toISOString(),
+    draftId: row.draftMessageId,
+    subject: row.subject,
+    to: row.toText,
+    messageId: row.messageIdHeader,
+    remindAfterSeconds: row.remindAfterSeconds,
+    reason: row.reason,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/**
+ * Cancel a held send (undo, a cancelled schedule, or its draft copy being replaced or discarded).
+ * The held → cancelled transition is conditional on `held`, so it serializes with the worker's
+ * release on the row lock: exactly one of them wins. The copy in Drafts is left where it is. Returns
+ * whether it was cancelled, and the held blob's sha when that was its last reference (reap it after
+ * the commit).
+ */
+export async function cancelHeld(
+  tx: Tx,
+  blobs: BlobStore,
+  input: { id: string; heldBlobSha256: string; reason: string; now: Date },
+): Promise<{ cancelled: boolean; reaped: string | null }> {
+  const n = await tx.pendingSend.updateMany({ where: { id: input.id, state: 'held' }, data: { state: 'cancelled', reason: input.reason, finishedAt: input.now } });
+  if (n.count === 0) return { cancelled: false, reaped: null };
+  const released = await blobs.release(input.heldBlobSha256, tx);
+  return { cancelled: true, reaped: released.refcount === 0 ? input.heldBlobSha256 : null };
+}
+
+/** Cancel whatever held send keeps `draftId` as its Drafts copy (the draft is being replaced or discarded). */
+export async function cancelHeldForDraft(tx: Tx, blobs: BlobStore, accountId: string, draftId: string, reason: string, now: Date): Promise<{ ids: string[]; reaped: string[] }> {
+  const rows = await tx.pendingSend.findMany({ where: { accountId, draftMessageId: draftId, state: 'held' }, select: { id: true, heldBlobSha256: true } });
+  const ids: string[] = [];
+  const reaped: string[] = [];
+  for (const r of rows) {
+    const c = await cancelHeld(tx, blobs, { id: r.id, heldBlobSha256: r.heldBlobSha256, reason, now });
+    if (c.cancelled) ids.push(r.id);
+    if (c.reaped !== null) reaped.push(c.reaped);
+  }
+  return { ids, reaped };
+}
+
+/** Arm remind-if-no-reply for a message just filed in Sent (PST-REQ-143); the worker checks it at dueAt. */
+export async function armReminder(tx: Tx, input: { accountId: string; sentMessageId: string; messageIdHeader: string; sentAt: Date; afterSeconds: number }): Promise<string> {
+  const row = await tx.replyReminder.create({
+    data: {
+      accountId: input.accountId,
+      sentMessageId: input.sentMessageId,
+      messageIdHeader: normalizeMsgId(input.messageIdHeader),
+      sentAt: input.sentAt,
+      dueAt: new Date(input.sentAt.getTime() + input.afterSeconds * 1000),
+    },
+    select: { id: true },
+  });
+  return row.id;
+}

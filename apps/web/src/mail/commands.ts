@@ -4,6 +4,7 @@
 // every mailbox, and navigation to the account/admin screens. Pure and DOM-free, so the registry
 // and the fuzzy matcher are unit-tested without a browser.
 import type { Mailbox, MessageSummary } from '../api';
+import { snoozeChoices } from './compose';
 import { mailboxLabel } from './format';
 import { requestInspect, SHORTCUTS, type MailAction } from './keys';
 import { mailPath } from './route';
@@ -24,6 +25,10 @@ export interface CommandContext {
   perform: (action: MailAction) => void;
   move: (message: MessageSummary, mailbox: Mailbox) => void;
   navigate: (path: string) => void;
+  /** PST-T-9.1: snooze the target's conversation until a time (absent: no snooze commands). */
+  snooze?: (message: MessageSummary, until: Date) => void;
+  /** The clock snooze choices are relative to (tests pin it). */
+  now?: () => Date;
 }
 
 interface AppScreen {
@@ -93,6 +98,22 @@ export function buildCommands(ctx: CommandContext, isAdmin = true): Command[] {
           },
         });
       }
+    }
+  }
+
+  // PST-T-9.1 (PST-REQ-142): "Snooze until …" for the conversation under the cursor.
+  if (ctx.snooze !== undefined && ctx.target !== null && ctx.target.threadId !== null) {
+    const { snooze, target } = ctx;
+    for (const choice of snoozeChoices(ctx.now?.() ?? new Date())) {
+      commands.push({
+        id: `snooze:${choice.label}`,
+        label: `Snooze until ${choice.label.toLowerCase()}`,
+        group: 'Action',
+        keywords: 'snooze later remind',
+        run: () => {
+          snooze(target, choice.until);
+        },
+      });
     }
   }
 

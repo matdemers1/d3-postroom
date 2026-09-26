@@ -65,6 +65,12 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/compose/drafts/{id}',
         'PUT /api/compose/drafts/{id}',
         'DELETE /api/compose/drafts/{id}',
+        // PST-T-9.1: held sends (undo / scheduled) and snooze.
+        'GET /api/compose/pending',
+        'POST /api/compose/pending/{id}/undo',
+        'PATCH /api/compose/pending/{id}',
+        'POST /api/threads/{id}/snooze',
+        'DELETE /api/threads/{id}/snooze',
         // PST-T-8.6: the signed .mobileconfig.
         'POST /api/mobileconfig',
         // PST-T-9.5: Sieve scripts for the rules builder.
