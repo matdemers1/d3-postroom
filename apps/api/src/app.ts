@@ -7,6 +7,7 @@ import { schemaRevision } from '@postroom/db';
 import { adminDevEnabled, adminDevRoutes } from './admin-dev/index.js';
 import { adminHealthRoutes } from './admin-health/index.js';
 import { adminJobRoutes } from './admin-jobs/index.js';
+import { adminQueueRoutes } from './admin-queue/index.js';
 import { serviceAccountRoutes } from './admin-service/index.js';
 import { appPasswordRoutes } from './app-passwords/index.js';
 import { autoconfigRoutes } from './autoconfig/index.js';
@@ -95,6 +96,7 @@ export function createApp(deps: ApiDeps): Express {
   if (adminDevEnabled(deps.env)) app.use('/api/admin/dev', requireAdmin(deps), adminDevRoutes(deps));
   app.use('/api/admin/health', requireAdmin(deps), adminHealthRoutes(deps));
   app.use('/api/admin/jobs', requireAdmin(deps), adminJobRoutes(deps));
+  app.use('/api/admin/queue', requireAdmin(deps), adminQueueRoutes(deps));
   app.use('/api/admin/service-accounts', requireAdmin(deps), serviceAccountRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
   app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));

@@ -82,6 +82,18 @@ export const api = {
   replayJob: (id: string) => call<{ ok: true }>('POST', `/api/admin/jobs/${encodeURIComponent(id)}/replay`),
   replayInbound: (inboundMessageId: string, fromStage: InboundStage) =>
     call<{ ok: true; jobId: string; fromStage: InboundStage }>('POST', `/api/admin/jobs/inbound/${encodeURIComponent(inboundMessageId)}/replay`, { fromStage }),
+  adminQueue: (opts: { domain?: string; state?: QueueStateFilter; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.domain !== undefined) q.set('domain', opts.domain);
+    if (opts.state !== undefined) q.set('state', opts.state);
+    if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+    const qs = q.toString();
+    return call<{ messages: AdminQueueMessage[]; sesConfigured: boolean }>('GET', `/api/admin/queue${qs === '' ? '' : `?${qs}`}`);
+  },
+  queueRetry: (scope: QueueScope) => call<{ ok: true; count: number }>('POST', `${queuePath(scope)}/retry`),
+  queueForceSes: (scope: QueueScope) => call<{ ok: true; count: number; transport: 'ses' }>('POST', `${queuePath(scope)}/force-ses`),
+  queueBounce: (scope: QueueScope) => call<{ ok: true; count: number }>('POST', `${queuePath(scope)}/bounce`),
+  queueDelete: (scope: QueueScope, reason: string) => call<{ ok: true; count: number }>('DELETE', queuePath(scope), { reason }),
   appPasswords: () => call<{ appPasswords: AppPassword[] }>('GET', '/api/app-passwords'),
   createAppPassword: (input: { label: string; scopes: AppPasswordScope[] }) =>
     call<AppPassword & { password: string }>('POST', '/api/app-passwords', input),
@@ -359,6 +371,41 @@ export interface HealthTile {
 /** Matches apps/api/src/admin-jobs/index.ts's STAGES. */
 export const INBOUND_STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify'] as const;
 export type InboundStage = (typeof INBOUND_STAGES)[number];
+
+/** Matches apps/api/src/admin-queue/index.ts's ListQuery. */
+export type QueueStateFilter = 'pending' | 'deferred' | 'held' | 'failed';
+
+export type QueueScope = { kind: 'recipient' | 'message'; id: string } | { kind: 'domain'; domain: string };
+
+export function queuePath(scope: QueueScope): string {
+  if (scope.kind === 'domain') return `/api/admin/queue/domains/${encodeURIComponent(scope.domain)}`;
+  return `/api/admin/queue/${scope.kind === 'recipient' ? 'recipients' : 'messages'}/${encodeURIComponent(scope.id)}`;
+}
+
+export interface AdminQueueRecipient {
+  id: string;
+  outboundMessageId: string;
+  address: string;
+  domain: string;
+  state: string;
+  transport: string;
+  attempts: number;
+  nextAttemptAt: string;
+  lastCode: number | null;
+  lastEnhanced: string | null;
+  lastText: string | null;
+  updatedAt: string;
+  lastAttempt: { startedAt: string; outcome: string; error: string | null } | null;
+}
+
+export interface AdminQueueMessage {
+  id: string;
+  subject: string | null;
+  headerFrom: string;
+  envelopeFrom: string;
+  createdAt: string;
+  recipients: AdminQueueRecipient[];
+}
 
 export interface AdminJob {
   id: string;
