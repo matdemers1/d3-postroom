@@ -25,9 +25,9 @@
 // places a file after seeing that no row exists.
 
 import { createHash, randomBytes } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { lstat, mkdir, open, readdir, rename, rm, unlink } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { constants as fsConstants, createWriteStream } from 'node:fs';
+import { lstat, mkdir, open, readdir, realpath, rename, rm, unlink } from 'node:fs/promises';
+import { dirname, join, sep } from 'node:path';
 import { pipeline as pipelineCb, Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
@@ -41,7 +41,7 @@ import {
   type Kek,
 } from '@postroom/crypto';
 import type { Db, Prisma } from '@postroom/db';
-import { BlobNotFoundError } from './errors.js';
+import { BlobNotFoundError, BlobStoreError } from './errors.js';
 import { assertBlobName, assertRoot, blobDir, blobPath, isBlobName, tmpDir } from './paths.js';
 
 /** Recorded in `blob.aead`: the stream format of @postroom/crypto (format byte 0x21). */
@@ -165,6 +165,16 @@ function toBuffer(chunk: unknown): Buffer {
   throw new TypeError('blob sources must yield bytes (Buffer or Uint8Array), not strings');
 }
 
+/** A file's bytes, refusing to follow a symlink at the final component (ELOOP). */
+async function* readNoFollow(path: string): AsyncGenerator<Buffer> {
+  const fh = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  try {
+    for await (const chunk of fh.createReadStream({ autoClose: false })) yield chunk as Buffer;
+  } finally {
+    await fh.close();
+  }
+}
+
 async function fsyncPath(path: string, flags = 'r'): Promise<void> {
   const fh = await open(path, flags);
   try {
@@ -205,6 +215,7 @@ export function createBlobStore(options: BlobStoreOptions): BlobStore {
   const placeFile = async (tmp: string, sha256: string): Promise<void> => {
     const dir = blobDir(root, sha256);
     const made = await mkdir(dir, { recursive: true, mode: 0o700 });
+    await assertInsideRoot(dir);
     await rename(tmp, join(dir, sha256));
     await fsyncPath(dir);
     if (made !== undefined) {
@@ -212,6 +223,28 @@ export function createBlobStore(options: BlobStoreOptions): BlobStore {
       await fsyncPath(dirname(dir));
       await fsyncPath(root);
     }
+  };
+
+  // Symlink escape (PST-T-4.1): a name is validated before it becomes a path, but a symlink planted
+  // in the tree (a shard directory, or a blob file) could still point the store outside its root.
+  // Every read, write and unlink first resolves the shard directory and checks it is under the real
+  // root, and the blob file itself is opened without following a final symlink.
+  let realRoot: Promise<string> | undefined;
+  const insideRoot = async (dir: string): Promise<boolean> => {
+    realRoot ??= realpath(root);
+    let real: string;
+    try {
+      real = await realpath(dir);
+    } catch (err) {
+      // Nothing there, so nothing to escape through; the caller's own ENOENT handling applies.
+      if (errnoCode(err) === 'ENOENT') return true;
+      throw err;
+    }
+    const base = await realRoot;
+    return real === base || real.startsWith(base + sep);
+  };
+  const assertInsideRoot = async (dir: string): Promise<void> => {
+    if (!(await insideRoot(dir))) throw new BlobStoreError('blob path escapes the store root');
   };
 
   const put = async (source: BlobSource, opts: PutOptions = {}): Promise<PutResult> => {
@@ -294,11 +327,12 @@ export function createBlobStore(options: BlobStoreOptions): BlobStore {
     const row = await loadRow(sha256);
     if (row.kekId !== kek.id) throw new DecryptError('blob is wrapped under a different KEK');
     const dek = unwrapDek(kek, row.wrappedDek, sha256);
+    await assertInsideRoot(blobDir(root, sha256));
     const decrypt = createDecryptStream(dek, BLOB_STREAM_AAD);
     dek.fill(0);
-    // pipeline() destroys `decrypt` with the error of either side, so a missing file or a failed
-    // tag reaches whoever reads the returned stream. Nothing else to do in the callback.
-    pipelineCb(createReadStream(blobPath(root, sha256)), decrypt, (_err) => undefined);
+    // pipeline() destroys `decrypt` with the error of either side, so a missing file, a symlinked
+    // file (O_NOFOLLOW: ELOOP) or a failed tag reaches whoever reads the returned stream.
+    pipelineCb(Readable.from(readNoFollow(blobPath(root, sha256))), decrypt, (_err) => undefined);
     return decrypt;
   };
 
@@ -321,6 +355,7 @@ export function createBlobStore(options: BlobStoreOptions): BlobStore {
   const reap = async (sha256: string): Promise<boolean> => {
     assertBlobName(sha256);
     const dir = blobDir(root, sha256);
+    await assertInsideRoot(dir);
     return db.$transaction(async (tx) => {
       await lockBlob(tx, sha256);
       const row = await tx.blob.findUnique({ where: { sha256 }, select: { sha256: true } });
@@ -375,7 +410,8 @@ export function createBlobStore(options: BlobStoreOptions): BlobStore {
       }
       return size === row.size && hash.digest('hex') === sha256;
     } catch (err) {
-      if (err instanceof DecryptError || err instanceof BlobNotFoundError || errnoCode(err) === 'ENOENT') {
+      // A symlinked file (ELOOP) or a shard that escapes the root (BlobStoreError) is not this blob.
+      if (err instanceof DecryptError || err instanceof BlobStoreError || errnoCode(err) === 'ENOENT' || errnoCode(err) === 'ELOOP') {
         return false;
       }
       throw err;
@@ -419,6 +455,8 @@ export function createBlobStore(options: BlobStoreOptions): BlobStore {
       for (const b of await listDir(join(root, a))) {
         if (!shard.test(b)) continue;
         const dir = join(root, a, b);
+        // Never follow a planted symlink out of the tree.
+        if (!(await insideRoot(dir))) continue;
         let removedHere = false;
         for (const name of await listDir(dir)) {
           if (!isBlobName(name) || !name.startsWith(a + b)) continue;

@@ -202,7 +202,7 @@ function parseMail(args: string): ParseResult {
         break;
       case 'AUTH': {
         const decoded = value === undefined ? null : decodeXtext(value);
-        if (decoded === null || decoded === '') return syntax('Invalid AUTH parameter');
+        if (decoded === null || decoded === '' || hasControl(decoded)) return syntax('Invalid AUTH parameter');
         params.auth = decoded;
         break;
       }
@@ -214,7 +214,7 @@ function parseMail(args: string): ParseResult {
       }
       case 'ENVID': {
         const decoded = value === undefined ? null : decodeXtext(value);
-        if (decoded === null || decoded === '' || decoded.length > 100) return syntax('Invalid ENVID');
+        if (decoded === null || decoded === '' || decoded.length > 100 || hasControl(decoded)) return syntax('Invalid ENVID');
         params.envid = decoded;
         break;
       }
@@ -229,6 +229,17 @@ function parseMail(args: string): ParseResult {
 }
 
 const NOTIFY_VALUES = new Set(['SUCCESS', 'FAILURE', 'DELAY']);
+
+/**
+ * True when a decoded xtext value holds a control character (PST-T-4.1, header injection). xtext
+ * can smuggle CR, LF or NUL as "+0D+0A" into ENVID, ORCPT or AUTH=, and those values are echoed
+ * into headers later (a DSN's Original-Envelope-Id, Original-Recipient). RFC 3461 §4 and RFC 4954
+ * §5 only ever mean printable US-ASCII there, so a control character is a syntax error on the wire.
+ */
+function hasControl(s: string): boolean {
+  // eslint-disable-next-line no-control-regex -- refusing control characters is the point
+  return /[\u0000-\u001f\u007f]/.test(s);
+}
 
 function parseRcpt(args: string, smtputf8: boolean): ParseResult {
   const p = pathArgs(args, 'TO:', 'forward');
@@ -256,7 +267,7 @@ function parseRcpt(args: string, smtputf8: boolean): ParseResult {
         if (value === undefined || semi <= 0) return syntax('Invalid ORCPT');
         const addrType = value.slice(0, semi);
         const address = decodeXtext(value.slice(semi + 1));
-        if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(addrType) || address === null || address === '') {
+        if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(addrType) || address === null || address === '' || hasControl(address)) {
           return syntax('Invalid ORCPT');
         }
         params.orcpt = { addrType, address };
