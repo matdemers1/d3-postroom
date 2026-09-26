@@ -29,6 +29,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import { Alert, Badge, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, Skeleton, Stack } from '@d3cloud/ui';
 import { attemptRemoteText, attemptSummary, deferralReason, deliveryPhase, dsnFiledAt, isPending, NO_DELIVERY_RECORD_TEXT, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
 import { InspectDrawer } from './InspectDrawer';
+import { InviteSection } from '../invites/InviteSection';
 import { useMail } from './MailContext';
 import { collapsedSummary, isConversation, mightJoinThread, threadRows, toggleRow } from './thread';
 import { trackersBlockedNote } from './trackers';
@@ -388,6 +389,7 @@ function MessageContent({
     <Stack gap="16">
       <MessageMeta detail={detail} body={body} />
       <PhishBanner phish={detail.phish} />
+      <InviteSection messageId={detail.id} />
       <MessageText body={body} status={bodyStatus} onRetry={onRetry} />
       <Attachments messageId={detail.id} body={body} />
       <DeliverySection messageId={detail.id} mailboxId={detail.mailboxId} />

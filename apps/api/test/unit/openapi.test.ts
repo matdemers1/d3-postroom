@@ -107,6 +107,10 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'POST /api/templates',
         'PUT /api/templates/{id}',
         'DELETE /api/templates/{id}',
+        // PST-T-8.4: iMIP invitations.
+        'GET /api/messages/{id}/invite',
+        'POST /api/messages/{id}/invite/respond',
+        'POST /api/messages/{id}/invite/remove',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit']);

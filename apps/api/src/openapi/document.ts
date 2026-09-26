@@ -19,6 +19,7 @@ import { SIEVE_COMPONENTS, SIEVE_ROUTES } from '../sieve/openapi.js';
 import { CALENDAR_COMPONENTS, CALENDAR_ROUTES } from '../calendar/openapi.js';
 import { CONTACTS_COMPONENTS, CONTACTS_ROUTES } from '../contacts/openapi.js';
 import { TEMPLATES_COMPONENTS, TEMPLATES_ROUTES } from '../templates/openapi.js';
+import { INVITES_COMPONENTS, INVITES_ROUTES } from '../invites/openapi.js';
 
 type Json = Record<string, unknown>;
 
@@ -74,6 +75,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   ...CALENDAR_COMPONENTS,
   ...CONTACTS_COMPONENTS,
   ...TEMPLATES_COMPONENTS,
+  ...INVITES_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -344,6 +346,7 @@ export const ROUTES: RouteSpec[] = [
   ...CALENDAR_ROUTES,
   ...CONTACTS_ROUTES,
   ...TEMPLATES_ROUTES,
+  ...INVITES_ROUTES,
 ];
 
 function strip(schema: Json): Json {

@@ -1065,6 +1065,205 @@
         ],
         "additionalProperties": false
       },
+      "InviteRemoveResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "removed"
+        ],
+        "additionalProperties": false
+      },
+      "InviteRespondResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "partstat": {
+            "type": "string",
+            "enum": [
+              "ACCEPTED",
+              "TENTATIVE",
+              "DECLINED"
+            ]
+          },
+          "calendarName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "partstat",
+          "calendarName"
+        ],
+        "additionalProperties": false
+      },
+      "InviteView": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "PUBLISH",
+              "REQUEST",
+              "REPLY",
+              "ADD",
+              "CANCEL",
+              "REFRESH",
+              "COUNTER",
+              "DECLINECOUNTER"
+            ]
+          },
+          "uid": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "number"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "allDay": {
+            "type": "boolean"
+          },
+          "start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "organizer": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "email",
+              "cn"
+            ],
+            "additionalProperties": false
+          },
+          "attendees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "cn": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "role": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "rsvp": {
+                  "type": "boolean"
+                },
+                "partstat": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email",
+                "cn",
+                "role",
+                "rsvp",
+                "partstat"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "recurrenceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "you": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "partstat": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email",
+                  "partstat"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "inCalendar": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "method",
+          "uid",
+          "sequence",
+          "summary",
+          "location",
+          "allDay",
+          "start",
+          "end",
+          "organizer",
+          "attendees",
+          "recurrenceId",
+          "you",
+          "cancelled",
+          "inCalendar"
+        ],
+        "additionalProperties": false
+      },
       "Mailbox": {
         "type": "object",
         "properties": {
@@ -8050,6 +8249,306 @@
           },
           "503": {
             "description": "POSTROOM_KEK is not set, so the message cannot be read back.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/invite": {
+      "get": {
+        "operationId": "getInvite",
+        "tags": [
+          "Invites"
+        ],
+        "summary": "The iMIP invitation carried by a message’s text/calendar part.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The parsed invite.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message of the caller, or it has no calendar part.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The calendar part could not be parsed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/invite/remove": {
+      "post": {
+        "operationId": "removeInviteFromCalendar",
+        "tags": [
+          "Invites"
+        ],
+        "summary": "Mark a CANCEL’s event STATUS:CANCELLED in the default calendar.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Marked (or nothing to mark).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteRemoveResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message of the caller, or it has no calendar part.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not a CANCEL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/invite/respond": {
+      "post": {
+        "operationId": "respondToInvite",
+        "tags": [
+          "Invites"
+        ],
+        "summary": "Accept, tentatively accept, or decline a REQUEST: sends an RFC 5546 REPLY to the organizer and updates the default calendar.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "partstat": {
+                    "type": "string",
+                    "enum": [
+                      "ACCEPTED",
+                      "TENTATIVE",
+                      "DECLINED"
+                    ]
+                  }
+                },
+                "required": [
+                  "partstat"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sent and saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteRespondResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header, or none of the caller’s addresses is an attendee.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message of the caller, or it has no calendar part.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not a REQUEST, no ORGANIZER, or the calendar object changed at the same time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Header block too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Recipient cap exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
             "content": {
               "application/json": {
                 "schema": {
