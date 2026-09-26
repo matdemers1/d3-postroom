@@ -1,0 +1,11 @@
+From: CryptoBoost <deals@cryptoboost.example.org>
+To: sam@d3cloud.io
+Subject: Limited time: 90% off everything
+Date: Mon, 14 Sep 2026 01:15:13 +0000
+Message-ID: <golden-0186.20260926@cryptoboost.example.org>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=cryptoboost.example.org; dkim=none header.d=cryptoboost.example.org; dmarc=none header.from=cryptoboost.example.org
+Precedence: junk
+
+Limited time: 90% off everything
+
+Click here: https://cryptoboost.example.org/claim

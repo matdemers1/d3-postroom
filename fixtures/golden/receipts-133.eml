@@ -1,0 +1,12 @@
+From: Fernwood Coffee <orders@fernwood.example.net>
+To: dana@d3cloud.io
+Subject: Payment received — thank you
+X-SG-EID: sg-eid-1002
+Feedback-ID: receipt:fernwood.example.net:sendgrid
+Date: Thu, 10 Sep 2026 12:40:55 +0000
+Message-ID: <golden-0133.20260926@fernwood.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=fernwood.example.net; dkim=pass header.d=fernwood.example.net; dmarc=pass header.from=fernwood.example.net
+
+Payment received — thank you
+
+Order total: $21.99

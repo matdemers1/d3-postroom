@@ -1,0 +1,12 @@
+From: Felix Doe <felix.doe@example.org>
+To: sam@d3cloud.io
+Subject: Following up
+Date: Wed, 02 Sep 2026 11:27:08 +0000
+Message-ID: <golden-0014.20260926@example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass header.from=example.org
+
+Hi,
+
+Following up
+
+Felix Doe

@@ -1,0 +1,12 @@
+From: Alex Novak <alex.novak@example.org>
+To: dana@d3cloud.io
+Subject: Introduction from the conference
+Date: Sat, 05 Sep 2026 20:08:15 +0000
+Message-ID: <golden-0062.20260926@example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass header.from=example.org
+
+Hello,
+
+Introduction from the conference
+
+Alex Novak

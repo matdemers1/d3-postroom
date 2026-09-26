@@ -1,0 +1,12 @@
+From: Ivy Novak <ivy.novak@example.net>
+To: sam@d3cloud.io
+Subject: Nice to e-meet you
+Date: Sun, 06 Sep 2026 08:27:54 +0000
+Message-ID: <golden-0071.20260926@example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.net; dkim=pass header.d=example.net; dmarc=pass header.from=example.net
+
+Hello,
+
+Nice to e-meet you
+
+Ivy Novak

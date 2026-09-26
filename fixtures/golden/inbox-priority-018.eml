@@ -1,0 +1,12 @@
+From: Theo Doe <theo.doe@example.net>
+To: sam@d3cloud.io
+Subject: Notes from our call
+Date: Wed, 02 Sep 2026 17:22:22 +0000
+Message-ID: <golden-0018.20260926@example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.net; dkim=pass header.d=example.net; dmarc=pass header.from=example.net
+
+Hi,
+
+Notes from our call
+
+Theo Doe

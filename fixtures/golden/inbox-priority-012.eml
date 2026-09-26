@@ -1,0 +1,12 @@
+From: Deshawn Doe <deshawn.doe@example.org>
+To: sam@d3cloud.io
+Subject: Quick question about Saturday
+Date: Wed, 02 Sep 2026 08:30:00 +0000
+Message-ID: <golden-0012.20260926@example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass header.from=example.org
+
+Hi,
+
+Quick question about Saturday
+
+Deshawn Doe

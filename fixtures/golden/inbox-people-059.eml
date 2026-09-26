@@ -1,0 +1,12 @@
+From: Wren Reyes <wren.reyes@example.com>
+To: sam@d3cloud.io
+Subject: Loved your talk
+Date: Sat, 05 Sep 2026 15:39:01 +0000
+Message-ID: <golden-0059.20260926@example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.com; dkim=pass header.d=example.com; dmarc=pass header.from=example.com
+
+Hello,
+
+Loved your talk
+
+Wren Reyes

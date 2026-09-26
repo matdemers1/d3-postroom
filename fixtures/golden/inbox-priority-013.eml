@@ -1,0 +1,12 @@
+From: Maria Doe <maria.doe@example.org>
+To: dana@d3cloud.io
+Subject: Notes from our call
+Date: Wed, 02 Sep 2026 08:41:29 +0000
+Message-ID: <golden-0013.20260926@example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass header.from=example.org
+
+Hi,
+
+Notes from our call
+
+Maria Doe

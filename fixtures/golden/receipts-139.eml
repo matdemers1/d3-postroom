@@ -1,0 +1,12 @@
+From: Northbend Market <orders@northbendmarket.example.com>
+To: dana@d3cloud.io
+Subject: Your receipt from Northbend Market
+X-SG-EID: sg-eid-1008
+Feedback-ID: receipt:northbendmarket.example.com:sendgrid
+Date: Thu, 10 Sep 2026 21:25:17 +0000
+Message-ID: <golden-0139.20260926@northbendmarket.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=northbendmarket.example.com; dkim=pass header.d=northbendmarket.example.com; dmarc=pass header.from=northbendmarket.example.com
+
+Your receipt from Northbend Market
+
+Order total: $27.99

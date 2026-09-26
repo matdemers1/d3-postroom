@@ -1,0 +1,13 @@
+From: Kitchen Table <newsletter@kitchentable.example.net>
+To: sam@d3cloud.io
+Subject: Issue #14
+List-Id: Kitchen Table <newsletter.kitchentable.example.net>
+List-Unsubscribe: <https://kitchentable.example.net/unsubscribe>
+Precedence: bulk
+Date: Mon, 07 Sep 2026 21:28:40 +0000
+Message-ID: <golden-0094.20260926@kitchentable.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=kitchentable.example.net; dkim=pass header.d=kitchentable.example.net; dmarc=pass header.from=kitchentable.example.net
+
+Issue #14
+
+Read online: https://kitchentable.example.net/issues/14

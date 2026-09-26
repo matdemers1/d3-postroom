@@ -1,0 +1,11 @@
+From: Pingset <notifications@pingset.example.net>
+To: sam@d3cloud.io
+Subject: Someone replied to you
+List-Unsubscribe: <https://pingset.example.net/notifications/unsubscribe>
+Date: Sun, 13 Sep 2026 12:10:16 +0000
+Message-ID: <golden-0178.20260926@pingset.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=pingset.example.net; dkim=pass header.d=pingset.example.net; dmarc=pass header.from=pingset.example.net
+
+Someone replied to you
+
+Open Pingset: https://pingset.example.net/open

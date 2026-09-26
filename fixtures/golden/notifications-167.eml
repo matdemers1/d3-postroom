@@ -1,0 +1,11 @@
+From: Loopcast <notifications@loopcast.example.com>
+To: dana@d3cloud.io
+Subject: New activity on your board
+List-Unsubscribe: <https://loopcast.example.com/notifications/unsubscribe>
+Date: Sat, 12 Sep 2026 19:46:36 +0000
+Message-ID: <golden-0167.20260926@loopcast.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=loopcast.example.com; dkim=pass header.d=loopcast.example.com; dmarc=pass header.from=loopcast.example.com
+
+New activity on your board
+
+Open Loopcast: https://loopcast.example.com/open

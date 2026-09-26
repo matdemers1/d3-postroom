@@ -1,0 +1,12 @@
+From: Jane Doe <jane.doe@example.com>
+To: dana@d3cloud.io
+Subject: Re: project timeline
+Date: Tue, 01 Sep 2026 13:38:37 +0000
+Message-ID: <golden-0001.20260926@example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.com; dkim=pass header.d=example.com; dmarc=pass header.from=example.com
+
+Hi,
+
+Re: project timeline
+
+Jane Doe
