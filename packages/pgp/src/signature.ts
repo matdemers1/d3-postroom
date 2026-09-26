@@ -43,7 +43,28 @@ const DIGEST_INFO: Record<string, string> = {
 export const SignatureType = {
   Binary: 0x00,
   Text: 0x01,
+  CertGeneric: 0x10,
+  CertPositive: 0x13,
+  SubkeyBinding: 0x18,
+  DirectKey: 0x1f,
+  KeyRevocation: 0x20,
+  SubkeyRevocation: 0x28,
 } as const;
+
+/**
+ * RFC 9580 §5.2.1: only 0x00 (binary document) and 0x01 (canonical text document) say "the signer
+ * signed this data". Every other type — a certification (0x10–0x13) over key || user ID above all —
+ * is a statement about a key, and must never be read as a signature over a message: its hashed
+ * bytes can be replayed as a message body by anyone who has the public key.
+ */
+export function isDocumentSignature(sig: Pick<SignaturePacket, 'type'>): boolean {
+  return sig.type === SignatureType.Binary || sig.type === SignatureType.Text;
+}
+
+/** `unsupported:signature-type-0x13`'s reason part. */
+export function signatureTypeReason(type: number): string {
+  return `signature-type-0x${type.toString(16).padStart(2, '0')}`;
+}
 
 export interface Subpacket {
   type: number;
@@ -61,7 +82,12 @@ export interface SignaturePacket {
   hashed: Subpacket[];
   unhashed: Subpacket[];
   created: Date | null;
+  /** Signature expiration time (subpacket 3): seconds after `created`; 0 or null = never. */
   expiresSeconds: number | null;
+  /** Key expiration time (subpacket 9, on self-signatures): seconds after the key's creation; 0 or null = never. */
+  keyExpiresSeconds: number | null;
+  /** Reason for revocation code (subpacket 29), on a revocation signature. */
+  revocationReason: number | null;
   issuerKeyId: string | null;
   issuerFingerprint: string | null;
   left16: Buffer;
@@ -126,11 +152,15 @@ export function parseSignaturePacket(body: Buffer): SignaturePacket {
   }
   let created: Date | null = null;
   let expiresSeconds: number | null = null;
+  let keyExpiresSeconds: number | null = null;
+  let revocationReason: number | null = null;
   let issuerKeyId: string | null = null;
   let issuerFingerprint: string | null = null;
   for (const s of hashed) {
     if (s.type === 2 && s.body.length === 4) created = new Date(s.body.readUInt32BE(0) * 1000);
     else if (s.type === 3 && s.body.length === 4) expiresSeconds = s.body.readUInt32BE(0);
+    else if (s.type === 9 && s.body.length === 4) keyExpiresSeconds = s.body.readUInt32BE(0);
+    else if (s.type === 29 && s.body.length >= 1) revocationReason = s.body[0] ?? 0;
     else if (s.type === 33 && s.body.length >= 21) issuerFingerprint = s.body.subarray(1).toString('hex').toUpperCase();
     else if (s.type === 16 && s.body.length === 8) issuerKeyId = s.body.toString('hex').toUpperCase();
     else if (s.critical && !KNOWN_CRITICAL.has(s.type)) throw new UnsupportedError(`critical-subpacket-${String(s.type)}`);
@@ -141,11 +171,11 @@ export function parseSignaturePacket(body: Buffer): SignaturePacket {
     else if (s.type === 33 && s.body.length >= 21) issuerFingerprint ??= s.body.subarray(1).toString('hex').toUpperCase();
   }
   if (issuerKeyId === null && issuerFingerprint !== null && issuerFingerprint.length === 40) issuerKeyId = issuerFingerprint.slice(24);
-  return { version, type, publicKeyAlgorithm, hashAlgorithm, hashedPrefix, hashed, unhashed, created, expiresSeconds, issuerKeyId, issuerFingerprint, left16, values };
+  return { version, type, publicKeyAlgorithm, hashAlgorithm, hashedPrefix, hashed, unhashed, created, expiresSeconds, keyExpiresSeconds, revocationReason, issuerKeyId, issuerFingerprint, left16, values };
 }
 
 /** Subpackets whose meaning we honour, so a critical one is not a reason to refuse. */
-const KNOWN_CRITICAL = new Set([2, 3, 16, 27, 33, 11, 21, 22, 30, 23, 25, 20]);
+const KNOWN_CRITICAL = new Set([2, 3, 9, 16, 27, 29, 33, 11, 21, 22, 30, 23, 25, 20]);
 
 /** RFC 9580 §5.2.4: hashedPrefix || 0x04 0xFF || four-octet length of hashedPrefix. */
 export function signatureTrailer(sig: SignaturePacket): Buffer {
@@ -166,12 +196,20 @@ export function digestFor(sig: SignaturePacket, data: Uint8Array): Buffer {
   return finishDigest(createHash(hashName(sig.hashAlgorithm)).update(data), sig);
 }
 
+export interface VerifyOptions {
+  /**
+   * Accept SHA-1. Only for signatures ABOUT a key (self-certifications, bindings, revocations),
+   * which older keys made with SHA-1; a document signature never is (RFC 9580 §9.5).
+   */
+  allowSha1ForKeySignatures?: boolean;
+}
+
 /**
  * True when `sig` is a valid signature by `key` over the data that produced `digest`. Throws
  * UnsupportedError for combinations that cannot be checked here.
  */
-export function verifyDigest(sig: SignaturePacket, digest: Buffer, key: KeyMaterial): boolean {
-  if (sig.hashAlgorithm === 2) throw new UnsupportedError('sha1-signature', 'SHA-1 document signatures are not accepted (RFC 9580 §9.5)');
+export function verifyDigest(sig: SignaturePacket, digest: Buffer, key: KeyMaterial, opts: VerifyOptions = {}): boolean {
+  if (sig.hashAlgorithm === 2 && opts.allowSha1ForKeySignatures !== true) throw new UnsupportedError('sha1-signature', 'SHA-1 document signatures are not accepted (RFC 9580 §9.5)');
   if (key.publicKey === null) throw new UnsupportedError(key.unsupported ?? 'key-unusable');
   if (sig.left16.length !== 2 || sig.left16[0] !== digest[0] || sig.left16[1] !== digest[1]) return false;
   const pk = key.publicKey;

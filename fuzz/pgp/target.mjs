@@ -3,7 +3,7 @@
 // The same bytes go through every hand-written format reader in the package: OpenPGP packet
 // framing (old/new format, partial lengths), transferable keys, v4 signature packets, the whole
 // decrypt path with no keys (PKESK and SEIPD framing), ASCII armor and the cleartext framework,
-// the DER/BER reader, and the CMS ContentInfo / SignedData / EnvelopedData / certificate readers.
+// the strict DER reader, and the CMS ContentInfo / SignedData / EnvelopedData / certificate readers.
 // The invariant: each fails only with the package's own error types (PgpError and its subclasses,
 // DerError, CmsError) and decryptMessage never throws at all. A crasher becomes a fixture under
 // fuzz/pgp/fixtures before the parser is fixed — see docs/runbooks/fuzz-crasher.md.
@@ -51,7 +51,13 @@ export function exercise(bytes) {
     const ci = pgp.parseContentInfo(buf);
     pgp.parseEnvelopedData(ci.content);
   });
-  own(() => pgp.parseCertificate(buf));
+  // A certificate as the drawer reports it: chainOf renders every link's validity window, which
+  // once threw RangeError on a certificate node:crypto parsed but whose dates it could not print
+  // (fixtures/crash-cert-invalid-validity.der).
+  own(() => {
+    const cert = pgp.parseCertificate(buf);
+    pgp.chainOf(cert, [cert]);
+  });
   const text = buf.toString('latin1');
   own(() => pgp.decodeArmors(text));
   own(() => pgp.parseCleartext(text));

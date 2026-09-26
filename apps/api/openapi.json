@@ -2658,7 +2658,7 @@
                 "properties": {
                   "status": {
                     "type": "string",
-                    "description": "'verified-known-key' (valid, and the key is one of this account's own or contact keys) | 'valid-signature-unknown-key' (valid, but the key or certificate came only with the message) | 'bad-signature' | 'not-signed' | 'unsupported:<reason>'."
+                    "description": "'verified-known-key' (valid, and the key is one of this account's own or contact keys) | 'valid-signature-unknown-key' (valid, but the key or certificate came only with the message) | 'bad-signature' | 'not-signed' | 'unsupported:<reason>'. A signature that verifies is still unsupported, never verified, when it is not a document signature ('unsupported:signature-type-0xNN'), its key is revoked or expired ('key-revoked', 'key-expired'), it expired or is dated in the future ('signature-expired', 'signature-from-future'), or — S/MIME — it uses SHA-1 ('weak-hash-sha1'), its certificate was outside its validity window ('certificate-expired') or is not for e-mail ('certificate-not-for-email'), or its encoding is not DER ('ber-encoding', 'signed-attributes-not-der')."
                   },
                   "format": {
                     "anyOf": [

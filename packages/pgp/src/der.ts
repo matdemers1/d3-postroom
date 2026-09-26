@@ -1,10 +1,11 @@
-// A DER/BER TLV reader (ITU-T X.690) for CMS and certificates, plus a DER writer used by the
-// round-trip property and the fuzz target. BER's indefinite length is accepted on constructed
-// values because real S/MIME (Outlook, streaming OpenSSL) sends it; everything else is strict:
-// a length past the input, an indefinite length on a primitive, a tag number too large, or nesting
-// past the depth cap is a DerError — the only error this module throws.
+// A strict DER TLV reader (ITU-T X.690 §10) for CMS and certificates, plus a DER writer used by the
+// round-trip property, the fuzz target, and the re-encoding of signed attributes (a SET OF sorted
+// per X.690 §11.6). Only definite lengths in their shortest form are read: BER's indefinite length
+// and a padded long-form length are NotDerError, so what is verified is exactly one encoding. A
+// length past the input, a tag number too large, or nesting past the depth cap is a DerError — the
+// only error type this module throws (NotDerError is a DerError).
 
-import { DerError } from './errors.js';
+import { DerError, NotDerError } from './errors.js';
 
 export const TagClass = { Universal: 0, Application: 1, Context: 2, Private: 3 } as const;
 
@@ -30,10 +31,9 @@ export interface Tlv {
   /** Offset of the identifier octet in the buffer read from. */
   offset: number;
   headerLength: number;
-  indefinite: boolean;
-  /** The contents octets (for an indefinite length: up to, not including, the end-of-contents). */
+  /** The contents octets. */
   content: Buffer;
-  /** The whole encoding: identifier, length, contents (and end-of-contents). */
+  /** The whole encoding: identifier, length, contents. */
   raw: Buffer;
 }
 
@@ -65,29 +65,21 @@ export function readTlv(buf: Buffer, offset = 0, depth = 0): Tlv {
     if (tag < 0x1f) throw new DerError('non-minimal tag number');
   }
   const l0 = at(p++);
-  let length = -1;
+  let length: number;
   if (l0 < 0x80) length = l0;
-  else if (l0 === 0x80) {
-    if (!constructed) throw new DerError('indefinite length on a primitive');
-  } else {
+  else if (l0 === 0x80) throw new NotDerError('indefinite length (BER, not DER)');
+  else {
     const n = l0 & 0x7f;
     if (n > 4 || l0 === 0xff) throw new DerError('length too long');
     length = 0;
     for (let i = 0; i < n; i++) length = length * 256 + at(p++);
+    // X.690 §10.1: the definite form, in the fewest octets — so a long form below 128, or one
+    // with a leading zero octet, is BER.
+    if (length < 0x80 || (n > 1 && buf[p - n] === 0)) throw new NotDerError('length not in its shortest form (BER, not DER)');
   }
   const headerLength = p - offset;
-  if (length >= 0) {
-    if (p + length > buf.length) throw new DerError('length past end of input');
-    return { tagClass, constructed, tag, offset, headerLength, indefinite: false, content: buf.subarray(p, p + length), raw: buf.subarray(offset, p + length) };
-  }
-  // Indefinite: children until the end-of-contents octets 00 00.
-  let q = p;
-  for (;;) {
-    if (at(q) === 0 && at(q + 1) === 0) break;
-    const child = readTlv(buf, q, depth + 1);
-    q += child.raw.length;
-  }
-  return { tagClass, constructed, tag, offset, headerLength, indefinite: true, content: buf.subarray(p, q), raw: buf.subarray(offset, q + 2) };
+  if (p + length > buf.length) throw new DerError('length past end of input');
+  return { tagClass, constructed, tag, offset, headerLength, content: buf.subarray(p, p + length), raw: buf.subarray(offset, p + length) };
 }
 
 /** Every TLV in `buf`, back to back, covering it exactly. */
@@ -202,3 +194,20 @@ export function encodeTlv(tagClass: number, constructed: boolean, tag: number, c
 }
 
 export const seq = (...items: Uint8Array[]): Buffer => encodeTlv(0, true, UTag.Sequence, Buffer.concat(items));
+
+/**
+ * X.690 §11.6: a DER SET OF, its elements' encodings sorted as octet strings, the shorter one
+ * padded at its end with zero octets. `tag` lets the caller write it under another identifier.
+ */
+export function derSetOf(elements: readonly Uint8Array[], tagClass: number = TagClass.Universal, tag: number = UTag.Set): Buffer {
+  const sorted = [...elements].sort((a, b) => {
+    const n = Math.max(a.length, b.length);
+    for (let i = 0; i < n; i++) {
+      const x = a[i] ?? 0;
+      const y = b[i] ?? 0;
+      if (x !== y) return x - y;
+    }
+    return 0;
+  });
+  return encodeTlv(tagClass, true, tag, Buffer.concat(sorted));
+}

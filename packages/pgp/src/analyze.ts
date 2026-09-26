@@ -15,6 +15,14 @@
 // most 'valid-signature-unknown-key' — a key attached to the message is never trusted on its own.
 // For S/MIME the certificate chain is reported as presented, verified only up to what the message
 // carried; no claim is made against any system trust store.
+//
+// A mathematically valid signature is still not 'verified-known-key' when it is not a document
+// signature (RFC 9580 §5.2.1: only types 0x00 and 0x01), when its key was revoked or expired at
+// signing time, when it has itself expired or claims to be from the future, or — S/MIME — when it
+// uses SHA-1, or its certificate was outside its validity window or is not for e-mail. Each of
+// those is an `unsupported:<reason>` naming it, so the drawer never says "verified" for them.
+//
+// analyzeMessage is total: any failure, including a bug here, is a status with a reason.
 
 import { createHash, createPrivateKey, type KeyObject } from 'node:crypto';
 import { createTransferDecoder, normalizeEncoding, parseContentType, parseHeaderBlock, parseMailboxes, type HeaderList } from '@postroom/mime';
@@ -24,7 +32,8 @@ import { decryptMessage, type DecryptionKey, type InnerSignature, type PgpDecryp
 import { ArmorError, CmsError, DerError, PgpError, UnsupportedError } from './errors.js';
 import { allMaterials, parseKeys, userIdAddress, type KeyMaterial, type OpenPgpKey } from './keys.js';
 import { readPackets, Tag } from './packets.js';
-import { digestFor, finishDigest, hashName, parseSignaturePacket, verifyDigest, type SignaturePacket } from './signature.js';
+import { digestFor, finishDigest, hashName, isDocumentSignature, parseSignaturePacket, signatureTypeReason, verifyDigest, type SignaturePacket } from './signature.js';
+import { keyState, revokedAt } from './validity.js';
 import { CollectSink, HashSink, splitLines, walkMultipart, type ByteSource, type Line } from './stream.js';
 
 export type SignatureStatus = 'verified-known-key' | 'valid-signature-unknown-key' | 'bad-signature' | 'not-signed' | `unsupported:${string}`;
@@ -41,6 +50,14 @@ export interface KnownKey {
   publicKey: string;
   /** Opens the private key (armored/binary OpenPGP secret key, or PKCS#8 PEM/DER) only when a message names this key. */
   openPrivate?: (() => Promise<Uint8Array | string | null>) | undefined;
+  /**
+   * CryptoKey.revokedAt: once set, no signature by the key is trusted — at or after it, or before
+   * it, since a row carries no reason for revocation and a compromised key can backdate — and the
+   * key opens nothing.
+   */
+  revokedAt?: Date | null | undefined;
+  /** CryptoKey.expiresAt: a signature made at or after it is not trusted. */
+  expiresAt?: Date | null | undefined;
 }
 
 export interface SignerReport {
@@ -102,7 +119,12 @@ export interface AnalyzeOptions {
   maxInlineBytes?: number;
   /** Cap on the top-level header block (default 256 KiB). */
   maxHeaderBytes?: number;
+  /** The time signatures are judged against (default: now). */
+  now?: Date;
 }
+
+/** How far in the future a signature's creation time may be before it is refused (clock skew). */
+const FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 const NOT_SIGNED: SignatureReport = { status: 'not-signed', format: null, reasons: [], signer: null, certificates: [], chain: null };
 const NOT_ENCRYPTED: EncryptionReport = { status: 'not-encrypted', format: null, reasons: [], recipients: [], cipher: null, integrity: null, openedWithKeyId: null, plaintextBytes: null };
@@ -149,7 +171,8 @@ function reasonOf(err: unknown): string {
   if (err instanceof CmsError && err.reason.startsWith('unsupported-')) return err.reason.slice('unsupported-'.length);
   if (err instanceof ArmorError || err instanceof PgpError || err instanceof CmsError) return `malformed-${err.reason.replace(/^malformed-/, '')}`;
   if (err instanceof DerError) return 'malformed-der';
-  throw err;
+  // Not a parser's own error: a bug here, never the input's fault. Still a status, never a throw.
+  return 'internal-error';
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -199,10 +222,23 @@ function checkPgpSignatures(
   attached: readonly OpenPgpKey[],
   from: string | null,
   format: SignatureReport['format'],
+  now: Date,
 ): SignatureReport {
   if (sigs.length === 0) return { ...NOT_SIGNED, status: 'unsupported:no-signature-packet', format, reasons: ['the signature part holds no signature packet'] };
   let firstUnresolved: SignatureReport | null = null;
   for (const sig of sigs) {
+    if (!isDocumentSignature(sig)) {
+      // A certification, binding or revocation replayed as a message signature: its hashed bytes
+      // (key || user ID) can be sent as a body by anyone holding the public key. Never checked.
+      firstUnresolved ??= {
+        ...NOT_SIGNED,
+        status: `unsupported:${signatureTypeReason(sig.type)}`,
+        format,
+        reasons: [`signature type 0x${sig.type.toString(16).padStart(2, '0')} is a statement about a key, not a signature over a message (RFC 9580 §5.2.1: only 0x00 and 0x01 are)`],
+        signer: signerOf(sig, null, from, null, 'none'),
+      };
+      continue;
+    }
     const reasons: string[] = [];
     let source: SignerReport['keySource'] = 'none';
     let known: KnownKey | null = null;
@@ -240,6 +276,8 @@ function checkPgpSignatures(
         return { ...NOT_SIGNED, status: 'bad-signature', format, reasons, signer };
       }
       reasons.push(`valid ${found.material.algorithmName} signature (${signer.hash ?? 'hash'}) by ${found.material.fingerprint}`);
+      const invalid = pgpValidity(sig, found, known, now);
+      if (invalid !== null) return { ...NOT_SIGNED, status: `unsupported:${invalid.reason}`, format, reasons: [...reasons, invalid.text], signer };
       if (source === 'account') {
         reasons.push(`the key is one of this account's ${known?.owner === 'own' ? 'own keys' : 'contact keys'}`);
         return { ...NOT_SIGNED, status: 'verified-known-key', format, reasons, signer };
@@ -251,6 +289,38 @@ function checkPgpSignatures(
     }
   }
   return firstUnresolved ?? { ...NOT_SIGNED, format };
+}
+
+/** Why a signature that verifies is still not to be trusted: key revoked or expired when it was made, or the signature itself out of date. */
+function pgpValidity(sig: SignaturePacket, found: { key: OpenPgpKey; material: KeyMaterial }, known: KnownKey | null, now: Date): { reason: string; text: string } | null {
+  const at = sig.created;
+  if (at === null) return { reason: 'signature-no-creation-time', text: 'the signature carries no creation time in its hashed area (RFC 9580 §5.2.3.11 requires one)' };
+  const markedRevoked = known?.revokedAt ?? null;
+  const markedExpires = known?.expiresAt ?? null;
+  // A row marked revoked carries no reason, so it is read as a hard revocation: a stolen key can
+  // backdate a signature past any revocation time.
+  if (markedRevoked !== null) {
+    return { reason: 'key-revoked', text: `this account marked the key revoked at ${markedRevoked.toISOString()}; nothing it signed is trusted` };
+  }
+  const state = keyState(found.key, found.material);
+  const rev = revokedAt(state, at);
+  if (rev !== null) {
+    const what = rev.of === 'primary' ? 'the key' : 'the signing subkey';
+    const when = rev.hard ? `with ${rev.reason === 2 ? 'reason "key compromised"' : 'no reason given'}, which withdraws every signature it made` : `at ${rev.at?.toISOString() ?? 'an unknown time'}, before the signature was made`;
+    return { reason: 'key-revoked', text: `${what} carries a revocation signature${rev.verified ? '' : ' (which could not be verified, and is honoured anyway)'} ${when}` };
+  }
+  if (markedExpires !== null && markedExpires.getTime() <= at.getTime()) {
+    return { reason: 'key-expired', text: `the key expired at ${markedExpires.toISOString()} (this account's record), before the signature was made (${at.toISOString()})` };
+  }
+  if (state.expiresAt !== null && state.expiresAt.getTime() <= at.getTime()) {
+    return { reason: 'key-expired', text: `the key expired at ${state.expiresAt.toISOString()} (its self-signature says so), before the signature was made (${at.toISOString()})` };
+  }
+  if (at.getTime() > now.getTime() + FUTURE_SKEW_MS) return { reason: 'signature-from-future', text: `the signature claims to have been made at ${at.toISOString()}, in the future` };
+  if (sig.expiresSeconds !== null && sig.expiresSeconds > 0) {
+    const until = new Date(at.getTime() + sig.expiresSeconds * 1000);
+    if (until.getTime() <= now.getTime()) return { reason: 'signature-expired', text: `the signature expired at ${until.toISOString()}` };
+  }
+  return null;
 }
 
 function signaturesIn(data: Buffer): SignaturePacket[] {
@@ -274,7 +344,39 @@ function attachedKeys(armored: readonly string[]): OpenPgpKey[] {
 // ---------------------------------------------------------------------------------------------
 // S/MIME signatures
 
-function checkSmime(sd: SignedData, digestOf: (hash: string) => Buffer | null, ring: Keyring, from: string | null, format: 'smime' | 'smime-opaque'): SignatureReport {
+function checkSmime(sd: SignedData, digestOf: (hash: string) => Buffer | null, ring: Keyring, from: string | null, format: 'smime' | 'smime-opaque', now: Date): SignatureReport {
+  try {
+    return checkSmimeSigner(sd, digestOf, ring, from, format, now);
+  } catch (err) {
+    return { ...NOT_SIGNED, status: `unsupported:${reasonOf(err)}`, format, reasons: [describe(err)] };
+  }
+}
+
+const EMAIL_EKUS = new Set<string>([Oids.emailProtection, Oids.anyExtendedKeyUsage]);
+
+/** Why a certificate whose signature verifies is still not to be trusted for this message. */
+function smimeValidity(cert: Certificate, known: KnownKey | null, at: Date): { reason: string; text: string } | null {
+  const markedRevoked = known?.revokedAt ?? null;
+  const markedExpires = known?.expiresAt ?? null;
+  if (markedRevoked !== null) {
+    return { reason: 'key-revoked', text: `this account marked the certificate revoked at ${markedRevoked.toISOString()}; nothing it signed is trusted` };
+  }
+  if (markedExpires !== null && markedExpires.getTime() <= at.getTime()) {
+    return { reason: 'key-expired', text: `the certificate expired at ${markedExpires.toISOString()} (this account's record), before the message was signed (${at.toISOString()})` };
+  }
+  if (at.getTime() < cert.notBefore.getTime() || at.getTime() > cert.notAfter.getTime()) {
+    return { reason: 'certificate-expired', text: `the signer's certificate is valid ${cert.notBefore.toISOString()} to ${cert.notAfter.toISOString()}, and the message was signed at ${at.toISOString()}, outside it` };
+  }
+  if (cert.keyUsage !== null && !cert.keyUsage.digitalSignature && !cert.keyUsage.nonRepudiation) {
+    return { reason: 'certificate-not-for-email', text: 'the signer\'s certificate key usage allows neither digitalSignature nor nonRepudiation (RFC 8550 §4.4.2)' };
+  }
+  if (cert.extKeyUsage !== null && !cert.extKeyUsage.some((o) => EMAIL_EKUS.has(o))) {
+    return { reason: 'certificate-not-for-email', text: 'the signer\'s certificate extended key usage does not include emailProtection (RFC 8550 §4.4.4)' };
+  }
+  return null;
+}
+
+function checkSmimeSigner(sd: SignedData, digestOf: (hash: string) => Buffer | null, ring: Keyring, from: string | null, format: 'smime' | 'smime-opaque', now: Date): SignatureReport {
   const si = sd.signers[0];
   if (si === undefined) return { ...NOT_SIGNED, status: 'unsupported:no-signer-info', format, reasons: ['the SignedData has no SignerInfo'] };
   const cert = sd.certificates.find((c) => matchesId(c, si.sid)) ?? ring.smime.find((s) => matchesId(s.cert, si.sid))?.cert;
@@ -283,11 +385,11 @@ function checkSmime(sd: SignedData, digestOf: (hash: string) => Buffer | null, r
   const names = rfc822Names(cert);
   const known = ring.smime.find((s) => s.cert.fingerprint === cert.fingerprint)?.known ?? null;
   const signer: SignerReport = {
-    keyId: cert.x509.serialNumber,
+    keyId: cert.serialHex,
     fingerprint: cert.fingerprint,
-    algorithm: cert.x509.publicKey.asymmetricKeyType ?? null,
+    algorithm: cert.publicKey.asymmetricKeyType ?? null,
     hash: DIGEST_NAMES[si.digestAlgorithm] ?? si.digestAlgorithm,
-    userIds: [cert.x509.subject.replace(/\n/g, ', ')],
+    userIds: [cert.subject],
     addresses: names,
     fromMatches: from === null || names.length === 0 ? null : names.includes(from),
     createdAt: null,
@@ -303,6 +405,8 @@ function checkSmime(sd: SignedData, digestOf: (hash: string) => Buffer | null, r
     signer.createdAt = check.signingTime?.toISOString() ?? null;
     if (!check.valid) return { ...base, status: 'bad-signature', reasons: check.reasons };
     const reasons = [...check.reasons, `certificate chain: ${chain.reason}`];
+    const invalid = smimeValidity(cert, known, check.signingTime ?? now);
+    if (invalid !== null) return { ...base, status: `unsupported:${invalid.reason}`, reasons: [...reasons, invalid.text] };
     if (known !== null) return { ...base, status: 'verified-known-key', reasons: [...reasons, `the certificate is one of this account's ${known.owner === 'own' ? 'own certificates' : 'contact certificates'}`] };
     return { ...base, status: 'valid-signature-unknown-key', reasons: [...reasons, 'the certificate came only with the message and is not one of this account\'s keys'] };
   } catch (err) {
@@ -317,7 +421,12 @@ const DIGEST_NAMES: Record<string, string> = { '1.3.14.3.2.26': 'sha1', '2.16.84
 
 async function openPrivate(k: KnownKey): Promise<Uint8Array | string | null> {
   if (k.openPrivate === undefined) return null;
-  return k.openPrivate();
+  try {
+    return await k.openPrivate();
+  } catch {
+    // A key that will not open (KEK missing, row tampered) opens nothing; it does not end the analysis.
+    return null;
+  }
 }
 
 async function pgpDecryptionKeys(data: Buffer, ring: Keyring): Promise<{ keys: DecryptionKey[]; unavailable: string[] }> {
@@ -331,7 +440,8 @@ async function pgpDecryptionKeys(data: Buffer, ring: Keyring): Promise<{ keys: D
   const unavailable: string[] = [];
   const opened = new Set<string>();
   for (const e of ring.pgp) {
-    if (e.known.owner !== 'own' || opened.has(e.known.id)) continue;
+    // A key this account revoked opens nothing (as before revoked rows were loaded at all).
+    if (e.known.owner !== 'own' || (e.known.revokedAt ?? null) !== null || opened.has(e.known.id)) continue;
     if (!wildcard && !allMaterials(e.key).some((m) => wanted.has(m.keyId))) continue;
     opened.add(e.known.id);
     const secret = await openPrivate(e.known);
@@ -400,7 +510,7 @@ async function decryptSmime(env: ReturnType<typeof parseEnvelopedData>, ring: Ke
   const keys = [];
   let unavailable = false;
   for (const s of ring.smime) {
-    if (s.known.owner !== 'own' || !env.recipients.some((r) => matchesId(s.cert, r.rid))) continue;
+    if (s.known.owner !== 'own' || (s.known.revokedAt ?? null) !== null || !env.recipients.some((r) => matchesId(s.cert, r.rid))) continue;
     const secret = await openPrivate(s.known);
     if (secret === null) {
       unavailable = true;
@@ -476,15 +586,20 @@ function fromAddress(headers: HeaderList): string | null {
   return a === undefined || a === '' ? null : a.toLowerCase();
 }
 
-/** Analyse one message (or a decrypted MIME entity). Never throws for malformed input. */
+/** Analyse one message (or a decrypted MIME entity). Never throws: every failure is a status with a reason. */
 export async function analyzeMessage(source: ByteSource, keys: readonly KnownKey[], opts: AnalyzeOptions = {}): Promise<CryptoReport> {
-  return analyze(source, buildKeyring(keys), opts, 0, null);
+  try {
+    return await analyze(source, buildKeyring(keys), opts, 0, null);
+  } catch (err) {
+    return { signature: { ...NOT_SIGNED, status: 'unsupported:internal-error', reasons: [describe(err)] }, encryption: NOT_ENCRYPTED };
+  }
 }
 
 async function analyze(source: ByteSource, ring: Keyring, opts: AnalyzeOptions, depth: number, outerFrom: string | null): Promise<CryptoReport> {
   const maxEnc = opts.maxEncryptedBytes ?? 64 * 1024 * 1024;
   const maxSig = opts.maxSignatureBytes ?? 1024 * 1024;
   const maxInline = opts.maxInlineBytes ?? 4 * 1024 * 1024;
+  const now = opts.now ?? new Date();
   const lines = splitLines(source)[Symbol.asyncIterator]();
   let phase: 'signature' | 'encryption' = 'signature';
   try {
@@ -511,16 +626,19 @@ async function analyze(source: ByteSource, ring: Keyring, opts: AnalyzeOptions, 
         const armored = decodeArmor(body.toString('latin1'));
         if (armored?.type !== 'PGP SIGNATURE') return { signature: { ...NOT_SIGNED, status: 'unsupported:malformed-signature-part', format, reasons: ['the signature part holds no PGP SIGNATURE block'] }, encryption: NOT_ENCRYPTED };
         const sigs = signaturesIn(armored.data);
+        // The signed part was hashed as canonical CRLF text (stream.ts), which is what both a
+        // binary (0x00) and a canonical-text (0x01) signature cover here (RFC 3156 §5); trailing
+        // whitespace is stripped only by the cleartext framework (RFC 9580 §7.2), not in MIME.
         const digestOf = (s: SignaturePacket): Buffer | null => {
           const h = hash.copy(hashName(s.hashAlgorithm));
           return h === null ? null : finishDigest(h, s);
         };
-        return { signature: checkPgpSignatures(sigs, digestOf, ring, attachedKeys(hash.armoredKeys), from, format), encryption: NOT_ENCRYPTED };
+        return { signature: checkPgpSignatures(sigs, digestOf, ring, attachedKeys(hash.armoredKeys), from, format, now), encryption: NOT_ENCRYPTED };
       }
       const ci = parseContentInfo(body);
       if (ci.contentType !== Oids.signedData) return { signature: { ...NOT_SIGNED, status: 'unsupported:malformed-pkcs7-signature', format, reasons: ['the signature part is not CMS SignedData'] }, encryption: NOT_ENCRYPTED };
       const sd = parseSignedData(ci.content);
-      return { signature: checkSmime(sd, (h) => hash.copy(h)?.digest() ?? null, ring, from, 'smime'), encryption: NOT_ENCRYPTED };
+      return { signature: checkSmime(sd, (h) => hash.copy(h)?.digest() ?? null, ring, from, 'smime', now), encryption: NOT_ENCRYPTED };
     }
 
     if (ct.mimeType === 'multipart/encrypted' && boundary !== undefined) {
@@ -548,7 +666,7 @@ async function analyze(source: ByteSource, ring: Keyring, opts: AnalyzeOptions, 
         const sd = parseSignedData(ci.content);
         const content = sd.eContent;
         if (content === null) return { signature: { ...NOT_SIGNED, status: 'unsupported:opaque-signed-without-content', format: 'smime-opaque', reasons: ['signed-data without encapsulated content'] }, encryption: NOT_ENCRYPTED };
-        return { signature: checkSmime(sd, (h) => createHash(h).update(content).digest(), ring, from, 'smime-opaque'), encryption: NOT_ENCRYPTED };
+        return { signature: checkSmime(sd, (h) => createHash(h).update(content).digest(), ring, from, 'smime-opaque', now), encryption: NOT_ENCRYPTED };
       }
       return { signature: { ...NOT_SIGNED, status: `unsupported:cms-content-${ci.contentType}` }, encryption: NOT_ENCRYPTED };
     }
@@ -561,7 +679,9 @@ async function analyze(source: ByteSource, ring: Keyring, opts: AnalyzeOptions, 
         const clear = parseCleartext(text);
         if (clear === null) return { signature: NOT_SIGNED, encryption: NOT_ENCRYPTED };
         const sigs = signaturesIn(clear.signature.data);
-        return { signature: checkPgpSignatures(sigs, (s) => digestFor(s, clear.signedText), ring, [], from, 'pgp-inline'), encryption: NOT_ENCRYPTED };
+        // signedText is already canonical: CRLF line ends, trailing spaces and tabs stripped, dash-
+        // escapes removed (RFC 9580 §7.2) — the same bytes for a 0x01 or a 0x00 signature.
+        return { signature: checkPgpSignatures(sigs, (s) => digestFor(s, clear.signedText), ring, [], from, 'pgp-inline', now), encryption: NOT_ENCRYPTED };
       }
       if (text.includes('-----BEGIN PGP MESSAGE-----')) {
         const armored = decodeArmor(text.slice(text.indexOf('-----BEGIN PGP MESSAGE-----')));
@@ -584,7 +704,7 @@ async function afterDecryption(d: Decrypted, ring: Keyring, opts: AnalyzeOptions
   if (d.inner.length > 0) {
     const sigs = d.inner.map((s) => s.signature);
     const byPacket = new Map(d.inner.map((s) => [s.signature, s.data]));
-    signature = checkPgpSignatures(sigs, (s) => digestFor(s, byPacket.get(s) ?? Buffer.alloc(0)), ring, [], from, 'pgp-encrypted');
+    signature = checkPgpSignatures(sigs, (s) => digestFor(s, byPacket.get(s) ?? Buffer.alloc(0)), ring, [], from, 'pgp-encrypted', opts.now ?? new Date());
   } else if (mimeInside && d.plaintext !== null && depth < 2) {
     signature = (await analyze([d.plaintext], ring, opts, depth + 1, from)).signature;
   }

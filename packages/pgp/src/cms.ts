@@ -5,8 +5,8 @@
 // rfc822Names come from node:crypto's X509Certificate, as do every signature check and cipher.
 
 import { constants, createDecipheriv, createHash, privateDecrypt, publicDecrypt, timingSafeEqual, verify as cryptoVerify, X509Certificate, type KeyObject } from 'node:crypto';
-import { CmsError, DerError } from './errors.js';
-import { children, expect, isContext, isUniversal, octets, oidOf, readTlv, UTag, type Tlv } from './der.js';
+import { CmsError, DerError, NotDerError } from './errors.js';
+import { children, derSetOf, expect, isContext, isUniversal, octets, oidOf, readTlv, UTag, type Tlv } from './der.js';
 import { rsaPkcs1Decrypt } from './rsa.js';
 
 export const Oids = {
@@ -21,6 +21,10 @@ export const Oids = {
   rsaesOaep: '1.2.840.113549.1.1.7',
   rsassaPss: '1.2.840.113549.1.1.10',
   subjectKeyIdentifier: '2.5.29.14',
+  keyUsage: '2.5.29.15',
+  extKeyUsage: '2.5.29.37',
+  anyExtendedKeyUsage: '2.5.29.37.0',
+  emailProtection: '1.3.6.1.5.5.7.3.4',
 } as const;
 
 export const DIGEST_OIDS: Record<string, string> = {
@@ -60,12 +64,26 @@ const DIGEST_INFO: Record<string, string> = {
   sha512: '3051300d060960864801650304020305000440',
 };
 
+/** A DER reader failure as a CmsError: BER is named (unsupported), anything else is malformed. */
+function asCmsError(err: unknown): unknown {
+  if (err instanceof NotDerError) return new CmsError('unsupported-ber-encoding', `${err.message}: only DER is read`);
+  if (err instanceof DerError) return new CmsError('malformed-der', err.message);
+  return err;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Certificates
 
 export interface Certificate {
   der: Buffer;
   x509: X509Certificate;
+  /** The subject public key, decoded once at parse time. */
+  publicKey: KeyObject;
+  /** Subject and issuer as one line, the serial as hex, and the subjectAltName as node:crypto renders them. */
+  subject: string;
+  issuer: string;
+  serialHex: string;
+  subjectAltName: string;
   /** The issuer Name, as encoded. */
   issuerRaw: Buffer;
   /** The serial number INTEGER contents. */
@@ -73,6 +91,13 @@ export interface Certificate {
   subjectKeyId: Buffer | null;
   /** SHA-256 over the DER, lower-case hex: what a CryptoKey row stores as the fingerprint. */
   fingerprint: string;
+  /** The validity window (RFC 5280 §4.1.2.5), read from the DER here. */
+  notBefore: Date;
+  notAfter: Date;
+  /** RFC 5280 §4.2.1.3: the two bits an S/MIME signer needs; null when the extension is absent. */
+  keyUsage: { digitalSignature: boolean; nonRepudiation: boolean } | null;
+  /** RFC 5280 §4.2.1.12: the purposes as OIDs; null when the extension is absent. */
+  extKeyUsage: string[] | null;
 }
 
 export function parseCertificate(der: Buffer): Certificate {
@@ -83,26 +108,52 @@ export function parseCertificate(der: Buffer): Certificate {
   if (fields[0] !== undefined && isContext(fields[0], 0)) i++;
   const serial = expect(fields[i], UTag.Integer, 'serialNumber').content;
   const issuerRaw = expect(fields[i + 2], UTag.Sequence, 'issuer').raw;
+  const [nb, na] = children(expect(fields[i + 3], UTag.Sequence, 'validity'));
+  const notBefore = readTime(nb);
+  const notAfter = readTime(na);
+  if (notBefore === null || notAfter === null) throw new CmsError('malformed-certificate', 'the certificate validity is not a UTCTime or GeneralizedTime in Z form');
   let subjectKeyId: Buffer | null = null;
+  let keyUsage: Certificate['keyUsage'] = null;
+  let extKeyUsage: string[] | null = null;
   for (const f of fields.slice(i + 6)) {
     if (!isContext(f, 3)) continue;
     const [exts] = children(f);
     for (const ext of children(expect(exts, UTag.Sequence, 'Extensions'))) {
       const parts = children(ext);
-      if (oidOf(parts[0], 'extnID') !== Oids.subjectKeyIdentifier) continue;
+      const id = oidOf(parts[0], 'extnID');
       const value = parts[parts.length - 1];
       if (value === undefined) continue;
-      const inner = readTlv(expect(value, UTag.OctetString, 'extnValue').content);
-      subjectKeyId = expect(inner, UTag.OctetString, 'SubjectKeyIdentifier').content;
+      if (id === Oids.subjectKeyIdentifier) {
+        const inner = readTlv(expect(value, UTag.OctetString, 'extnValue').content);
+        subjectKeyId = expect(inner, UTag.OctetString, 'SubjectKeyIdentifier').content;
+      } else if (id === Oids.keyUsage) {
+        const bits = expect(readTlv(expect(value, UTag.OctetString, 'extnValue').content), UTag.BitString, 'KeyUsage').content;
+        const first = bits[1] ?? 0;
+        keyUsage = { digitalSignature: (first & 0x80) !== 0, nonRepudiation: (first & 0x40) !== 0 };
+      } else if (id === Oids.extKeyUsage) {
+        extKeyUsage = children(expect(readTlv(expect(value, UTag.OctetString, 'extnValue').content), UTag.Sequence, 'ExtKeyUsageSyntax')).map((o) => oidOf(o, 'KeyPurposeId'));
+      }
     }
   }
   let x509: X509Certificate;
+  let publicKey: KeyObject;
+  let subject: string;
+  let issuer: string;
+  let serialHex: string;
+  let subjectAltName: string;
   try {
     x509 = new X509Certificate(der);
+    // node:crypto decodes some fields lazily, and a getter that throws later would escape as a
+    // non-package error. Touch every one read anywhere here, now, while a failure is ours to name.
+    publicKey = x509.publicKey;
+    subject = x509.subject.replace(/\n/g, ', ');
+    issuer = x509.issuer.replace(/\n/g, ', ');
+    serialHex = x509.serialNumber;
+    subjectAltName = x509.subjectAltName ?? '';
   } catch {
     throw new CmsError('certificate-unreadable');
   }
-  return { der: Buffer.from(cert.raw), x509, issuerRaw, serial, subjectKeyId, fingerprint: createHash('sha256').update(cert.raw).digest('hex') };
+  return { der: Buffer.from(cert.raw), x509, publicKey, subject, issuer, serialHex, subjectAltName, issuerRaw, serial, subjectKeyId, fingerprint: createHash('sha256').update(cert.raw).digest('hex'), notBefore, notAfter, keyUsage, extKeyUsage };
 }
 
 /** Certificates from PEM text (every CERTIFICATE block, in order). */
@@ -115,7 +166,7 @@ export function certificatesFromPem(pem: string): Certificate[] {
 
 /** The rfc822Name entries of the subjectAltName, lowercased (X509Certificate renders them as `email:…`). */
 export function rfc822Names(cert: Certificate): string[] {
-  const san = cert.x509.subjectAltName ?? '';
+  const san = cert.subjectAltName;
   const out: string[] = [];
   for (const part of san.split(/,\s*/)) if (part.startsWith('email:')) out.push(part.slice(6).toLowerCase());
   return out;
@@ -159,7 +210,7 @@ export function parseContentInfo(der: Buffer): ContentInfo {
     if (content === undefined) throw new CmsError('content-info-no-content');
     return { contentType, content };
   } catch (err) {
-    if (err instanceof DerError) throw new CmsError('malformed-der', err.message);
+    throw asCmsError(err);
     throw err;
   }
 }
@@ -208,7 +259,7 @@ export function parseSignedData(t: Tlv): SignedData {
     const signers = children(expect(f[k], UTag.Set, 'signerInfos')).map(parseSignerInfo);
     return { eContentType, eContent, certificates, signers };
   } catch (err) {
-    if (err instanceof DerError) throw new CmsError('malformed-der', err.message);
+    throw asCmsError(err);
     throw err;
   }
 }
@@ -248,18 +299,22 @@ export function digestName(oid: string): string {
   return n;
 }
 
+/** UTCTime or GeneralizedTime in the Z form RFC 5280 §4.1.2.5 requires; null for anything else, including a field out of range. */
 function readTime(t: Tlv | undefined): Date | null {
   if (t === undefined) return null;
   const s = t.content.toString('latin1');
   let m: RegExpExecArray | null;
+  let year: number;
   if (isUniversal(t, UTag.UtcTime) && (m = /^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(s)) !== null) {
     const yy = Number(m[1]);
-    return new Date(Date.UTC(yy < 50 ? 2000 + yy : 1900 + yy, Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6])));
-  }
-  if (isUniversal(t, UTag.GeneralizedTime) && (m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(s)) !== null) {
-    return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6])));
-  }
-  return null;
+    year = yy < 50 ? 2000 + yy : 1900 + yy;
+  } else if (isUniversal(t, UTag.GeneralizedTime) && (m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(s)) !== null) {
+    year = Number(m[1]);
+  } else return null;
+  const [mo, d, h, mi, sec] = [Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6])];
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || sec > 59) return null;
+  const date = new Date(Date.UTC(year, mo - 1, d, h, mi, sec));
+  return Number.isNaN(date.getTime()) || date.getUTCDate() !== d ? null : date;
 }
 
 /**
@@ -273,7 +328,9 @@ export function verifySigner(si: SignerInfo, cert: Certificate, eContentType: st
   const algo = SIGNATURE_OIDS[si.signatureAlgorithm];
   if (si.signatureAlgorithm === Oids.rsassaPss) throw new CmsError('unsupported-rsassa-pss');
   if (algo === undefined) throw new CmsError(`unsupported-signature-algorithm-${si.signatureAlgorithm}`);
-  const key = cert.x509.publicKey;
+  // Refused as OpenPGP refuses it (RFC 9580 §9.5); RFC 8551 §2.1 makes SHA-1 receive-only legacy.
+  if (hash === 'sha1' || algo.hash === 'sha1') throw new CmsError('unsupported-weak-hash-sha1', 'SHA-1 signatures are not accepted');
+  const key = cert.publicKey;
   let signingTime: Date | null = null;
   if (si.signedAttrs !== null) {
     const md = si.attributes.get(Oids.messageDigestAttr);
@@ -285,9 +342,13 @@ export function verifySigner(si: SignerInfo, cert: Certificate, eContentType: st
     }
     if (oidOf(ct[0]) !== eContentType) return { valid: false, reasons: ['contentType attribute does not match the encapsulated content type'], signingTime, hash };
     signingTime = readTime(si.attributes.get(Oids.signingTimeAttr)?.[0]);
-    // The signature is over the DER of the attributes with the [0] IMPLICIT tag replaced by SET.
-    const set = Buffer.from(si.signedAttrs.raw);
-    set[0] = 0x31;
+    // RFC 5652 §5.4: the signature is over the DER encoding of the attributes as a SET OF, not
+    // the [0] IMPLICIT bytes as they arrived. Re-encode (sorted per X.690 §11.6) and require the
+    // bytes received to be exactly that, so there is one encoding and it is the one checked.
+    const set = derSetOf(children(si.signedAttrs).map((a) => a.raw));
+    const retagged = Buffer.from(si.signedAttrs.raw);
+    retagged[0] = 0x31;
+    if (!set.equals(retagged)) throw new CmsError('unsupported-signed-attributes-not-der', 'the signed attributes are not in DER order (X.690 §11.6), so the bytes signed are ambiguous');
     const ok = verifyWith(algo, algo.hash ?? hash, set, key, si.signature);
     reasons.push(ok ? `signature over the signed attributes verifies with the signer's certificate (${hash})` : 'signature over the signed attributes does not verify');
     return { valid: ok, reasons, signingTime, hash };
@@ -346,12 +407,12 @@ export interface Chain {
 
 function link(c: Certificate, verified: boolean, selfSigned: boolean): ChainLink {
   return {
-    subject: c.x509.subject.replace(/\n/g, ', '),
-    issuer: c.x509.issuer.replace(/\n/g, ', '),
+    subject: c.subject,
+    issuer: c.issuer,
     fingerprint: c.fingerprint,
-    serial: c.x509.serialNumber,
-    notBefore: new Date(c.x509.validFrom).toISOString(),
-    notAfter: new Date(c.x509.validTo).toISOString(),
+    serial: c.serialHex,
+    notBefore: c.notBefore.toISOString(),
+    notAfter: c.notAfter.toISOString(),
     rfc822Names: rfc822Names(c),
     selfSigned,
     signatureVerified: verified,
@@ -367,14 +428,14 @@ export function chainOf(leaf: Certificate, presented: readonly Certificate[]): C
   for (let depth = 0; depth < 10; depth++) {
     seen.add(current.fingerprint);
     const cur = current;
-    const selfIssued = cur.x509.checkIssued(cur.x509);
+    const selfIssued = issuedBy(cur, cur);
     if (selfIssued) {
       const ok = safeVerify(cur, cur);
       links.push(link(cur, ok, true));
       if (!ok) verified = false;
       return { links, verified, endsAtSelfSigned: ok, reason: ok ? 'verifies up to a self-signed root that the message itself carried (not a system trust anchor)' : 'the self-signed certificate does not verify' };
     }
-    const issuer = presented.find((c) => !seen.has(c.fingerprint) && cur.x509.checkIssued(c.x509));
+    const issuer = presented.find((c) => !seen.has(c.fingerprint) && issuedBy(cur, c));
     if (issuer === undefined) {
       links.push(link(cur, false, false));
       return { links, verified, endsAtSelfSigned: false, reason: links.length === 1 ? 'the issuer of the signing certificate was not included' : 'verifies up to the embedded intermediates; the root was not included' };
@@ -383,17 +444,25 @@ export function chainOf(leaf: Certificate, presented: readonly Certificate[]): C
     links.push(link(cur, ok, false));
     if (!ok) {
       verified = false;
-      links.push(link(issuer, false, issuer.x509.checkIssued(issuer.x509)));
-      return { links, verified, endsAtSelfSigned: false, reason: `the certificate for ${cur.x509.subject.replace(/\n/g, ', ')} is not signed by the issuer presented` };
+      links.push(link(issuer, false, issuedBy(issuer, issuer)));
+      return { links, verified, endsAtSelfSigned: false, reason: `the certificate for ${cur.subject} is not signed by the issuer presented` };
     }
     current = issuer;
   }
   return { links, verified: false, endsAtSelfSigned: false, reason: 'chain too long' };
 }
 
+function issuedBy(c: Certificate, by: Certificate): boolean {
+  try {
+    return c.x509.checkIssued(by.x509);
+  } catch {
+    return false;
+  }
+}
+
 function safeVerify(c: Certificate, by: Certificate): boolean {
   try {
-    return c.x509.verify(by.x509.publicKey);
+    return c.x509.verify(by.publicKey);
   } catch {
     return false;
   }
@@ -444,7 +513,7 @@ export function parseEnvelopedData(t: Tlv): EnvelopedData {
     const encryptedContent = ec !== undefined && isContext(ec, 0) ? (ec.constructed ? octets(ec) : ec.content) : null;
     return { recipients, otherRecipients, contentEncryptionAlgorithm, iv, encryptedContent };
   } catch (err) {
-    if (err instanceof DerError) throw new CmsError('malformed-der', err.message);
+    throw asCmsError(err);
     throw err;
   }
 }

@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { InspectCrypto, InspectCryptoSigner, MessageInspect } from '../../src/api';
 import { INSPECT_SECTIONS, InspectSections } from '../../src/mail/InspectDrawer';
-import { cryptoView, decryptionTone, formatFingerprint, humanReason, signatureTone } from '../../src/mail/inspect-crypto';
+import { cryptoView, decryptionTone, formatFingerprint, humanReason, signatureReasonSentence, signatureTone } from '../../src/mail/inspect-crypto';
 
 vi.mock('@d3cloud/ui', () => {
   const box = (tag: string) => (props: { children?: ReactNode; title?: ReactNode }) => createElement(tag, null, props.title ?? null, props.children);
@@ -85,6 +85,41 @@ describe('cryptoView', () => {
     expect(cryptoView({ ...PGP_VERIFIED, signature: { ...PGP_VERIFIED.signature, status: 'bad-signature' } }).signature.headline).toContain('changed after it was signed');
     expect(cryptoView({ ...PGP_VERIFIED, encryption: { ...NOT_ENCRYPTED, status: 'no-key' } }).encryption.headline).toContain('not to any key of yours');
     expect(formatFingerprint('ab:cd:ef:01:23')).toBe('ABCD EF01 23');
+  });
+
+  it('reads every reason a valid-looking signature is refused as plain English, never as verified', () => {
+    const reasons = [
+      'unsupported:signature-type-0x13',
+      'unsupported:key-revoked',
+      'unsupported:key-expired',
+      'unsupported:signature-expired',
+      'unsupported:signature-from-future',
+      'unsupported:signature-no-creation-time',
+      'unsupported:weak-hash-sha1',
+      'unsupported:certificate-expired',
+      'unsupported:certificate-not-for-email',
+      'unsupported:ber-encoding',
+      'unsupported:signed-attributes-not-der',
+      'unsupported:malformed-certificate',
+      'unsupported:internal-error',
+    ];
+    for (const status of reasons) {
+      const sentence = signatureReasonSentence(status);
+      expect(sentence, status).not.toBeNull();
+      const v = cryptoView({ ...PGP_VERIFIED, signature: { ...PGP_VERIFIED.signature, status } });
+      expect(v.signature.headline).toBe(sentence);
+      // No kebab-case leaks into the sentence, and nothing reads as verified.
+      expect(v.signature.headline).not.toMatch(/[a-z]+-[a-z]+-[a-z]+/);
+      expect(v.signature.headline.toLowerCase()).not.toContain('verified');
+      expect(v.signature.tone).not.toBe('neutral');
+    }
+    expect(signatureReasonSentence('unsupported:signature-type-0x13')).toContain('signs a key, not a message');
+    expect(signatureTone('unsupported:signature-type-0x13')).toBe('danger');
+    expect(signatureTone('unsupported:key-revoked')).toBe('danger');
+    expect(signatureTone('unsupported:key-expired')).toBe('attention');
+    // A reason without its own sentence still reads, from its name.
+    expect(cryptoView({ ...PGP_VERIFIED, signature: { ...PGP_VERIFIED.signature, status: 'unsupported:ecdsa' } }).signature.headline).toBe('The signature could not be checked: ecdsa.');
+    expect(cryptoView({ ...PGP_VERIFIED, encryption: { ...NOT_ENCRYPTED, status: 'failed:malformed-message' } }).encryption.headline).toContain('more than one literal data packet');
   });
 
   it('says so when the server sent no crypto section', () => {

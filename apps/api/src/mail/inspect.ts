@@ -160,7 +160,7 @@ export const InspectMdn = z.object({
 const SignatureStatus = z
   .string()
   .describe(
-    "'verified-known-key' (valid, and the key is one of this account's own or contact keys) | 'valid-signature-unknown-key' (valid, but the key or certificate came only with the message) | 'bad-signature' | 'not-signed' | 'unsupported:<reason>'.",
+    "'verified-known-key' (valid, and the key is one of this account's own or contact keys) | 'valid-signature-unknown-key' (valid, but the key or certificate came only with the message) | 'bad-signature' | 'not-signed' | 'unsupported:<reason>'. A signature that verifies is still unsupported, never verified, when it is not a document signature ('unsupported:signature-type-0xNN'), its key is revoked or expired ('key-revoked', 'key-expired'), it expired or is dated in the future ('signature-expired', 'signature-from-future'), or — S/MIME — it uses SHA-1 ('weak-hash-sha1'), its certificate was outside its validity window ('certificate-expired') or is not for e-mail ('certificate-not-for-email'), or its encoding is not DER ('ber-encoding', 'signed-attributes-not-der').",
   );
 const DecryptionStatus = z.string().describe("'decrypted' | 'no-key' | 'not-encrypted' | 'failed:<reason>'.");
 
@@ -617,9 +617,10 @@ export async function inspectCrypto(db: Db, blobs: BlobStore, message: Message, 
   if (mailbox === null) return cryptoUnavailable('no-mailbox');
   const keys = await loadAccountKeys(db, mailbox.accountId, opts.kek ?? null);
   try {
+    // analyzeMessage never throws; this catches the blob store failing to hand the message over.
     return cryptoSection(await analyzeMessage(await blobs.get(message.blobSha256), keys));
-  } catch (err) {
-    return cryptoUnavailable(`analysis-failed:${err instanceof Error ? err.name : 'error'}`);
+  } catch {
+    return cryptoUnavailable('analysis-failed');
   }
 }
 
