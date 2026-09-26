@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest';
 import type { Db } from '@postroom/db';
 import {
   attachTranscriptTap,
-  AuthRedactor,
   decompressTranscript,
   parseTranscriptText,
   TranscriptRecorder,
@@ -16,7 +15,7 @@ import {
 const fakeDb = {} as unknown as Db;
 
 function recorder(): TranscriptRecorder {
-  return new TranscriptRecorder({
+  const r = new TranscriptRecorder({
     daemon: 'smtp-in',
     sessionId: 'sess-1',
     clientIp: '203.0.113.9',
@@ -24,6 +23,9 @@ function recorder(): TranscriptRecorder {
     publishLive: false,
     now: () => new Date('2026-09-26T00:00:00.000Z'),
   });
+  // Every real session starts with the greeting, which answers no client line.
+  r.recordOutgoingRaw(Buffer.from('220 mx.d3cloud.io ESMTP Postroom\r\n'));
+  return r;
 }
 
 function feed(r: TranscriptRecorder, dir: 'C' | 'S', line: string): void {
@@ -31,31 +33,6 @@ function feed(r: TranscriptRecorder, dir: 'C' | 'S', line: string): void {
   if (dir === 'C') r.recordIncomingRaw(buf);
   else r.recordOutgoingRaw(buf);
 }
-
-describe('AuthRedactor (PST-REQ-117)', () => {
-  it('redacts AUTH PLAIN with an initial response, keeping the mechanism', () => {
-    const r = new AuthRedactor();
-    expect(r.redactIncoming('AUTH PLAIN AGFsaWNlAHN1cGVyc2VjcmV0')).toBe('AUTH PLAIN [redacted]');
-  });
-
-  it('redacts AUTH PLAIN without an initial response via the 334 continuation', () => {
-    const r = new AuthRedactor();
-    expect(r.redactIncoming('AUTH PLAIN')).toBe('AUTH PLAIN');
-    r.observeOutgoing('334 ');
-    expect(r.redactIncoming('AGFsaWNlAHN1cGVyc2VjcmV0')).toBe('[redacted]');
-    // The exchange is over: a later, unrelated line is not redacted.
-    expect(r.redactIncoming('QUIT')).toBe('QUIT');
-  });
-
-  it('redacts both rounds of AUTH LOGIN (username, then password)', () => {
-    const r = new AuthRedactor();
-    expect(r.redactIncoming('AUTH LOGIN')).toBe('AUTH LOGIN');
-    r.observeOutgoing('334 VXNlcm5hbWU6');
-    expect(r.redactIncoming('YWxpY2U=')).toBe('[redacted]');
-    r.observeOutgoing('334 UGFzc3dvcmQ6');
-    expect(r.redactIncoming('c3VwZXJzZWNyZXQ=')).toBe('[redacted]');
-  });
-});
 
 describe('TranscriptRecorder (PST-T-6.3)', () => {
   it('never stores or would publish the password, for AUTH PLAIN with an initial response', () => {
@@ -122,7 +99,7 @@ describe('TranscriptRecorder (PST-T-6.3)', () => {
     const r = recorder();
     r.recordIncomingRaw(Buffer.from('EHL'));
     r.recordIncomingRaw(Buffer.from('O client.example\r\n'));
-    const [entry] = parseTranscriptText(r.snapshotText());
+    const [entry] = parseTranscriptText(r.snapshotText()).filter((e) => e.dir === 'C');
     expect(entry).toMatchObject({ dir: 'C', line: 'EHLO client.example' });
   });
 });

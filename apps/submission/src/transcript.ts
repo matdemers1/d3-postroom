@@ -34,28 +34,95 @@ export const SMTP_LIVE_CHANNEL = 'smtp_live';
 
 const SYSTEM_ACTOR: Actor = { kind: 'system', label: 'smtp-transcript' };
 
+const AUTH_COMMAND = /^AUTH(?:[ \t]|$)/i;
+const SASL_MECHANISM = /^[A-Za-z0-9_-]{1,40}$/;
+/** The last line of a reply: a code followed by a space, or a bare code. `250-` lines are not. */
+const FINAL_REPLY_LINE = /^(\d{3})(?: |$)/;
+
+/** What an AUTH command line is stored as: the verb, the mechanism if it looks like one, never more. */
+function summarizeAuthCommand(line: string): string {
+  const parts = line.trim().split(/[ \t]+/);
+  const mechanism = parts[1];
+  if (mechanism === undefined) return 'AUTH';
+  const shown = SASL_MECHANISM.test(mechanism) ? mechanism : '[redacted]';
+  return parts.length > 2 ? `AUTH ${shown} [redacted]` : `AUTH ${shown}`;
+}
+
 /**
- * Redacts AUTH command lines and the SASL continuation lines that follow a `334` challenge
- * (PST-REQ-117). Mechanism names are kept; everything that could be (or lead to) a credential is
- * not. Purely line-based, so it works the same whether the mechanism sent an initial response or
- * not, and for every round of a multi-step exchange like AUTH LOGIN.
+ * Redacts AUTH command lines and every client line of the SASL exchange that follows (PST-REQ-117).
+ * Mechanism names are kept; everything that could be (or lead to) a credential is not.
+ *
+ * The exchange starts on the client's AUTH line itself — not on the server's `334` — so a client
+ * that pipelines `AUTH PLAIN\r\n<base64>\r\n` in one read, or whose chunks arrive in any order
+ * relative to the replies, is redacted all the same. From the AUTH line on, every client line is
+ * `[redacted]` (a lone `*` cancel is shown as `*`) until the server's final, non-334 reply *to a
+ * line of the exchange* has been observed.
+ *
+ * Replies are matched to client lines by count: every client line (command or SASL continuation)
+ * is answered by exactly one final reply line, the greeting answers nothing, and DATA's body
+ * (`noteBody()`) is one more line answered by the post-body reply. A reply to a command sent before
+ * the AUTH therefore never ends the exchange, however late it is observed. Every way the count can
+ * be wrong in practice (lines the server discards unanswered, a body that never gets its reply)
+ * counts too many client lines, which only keeps redaction on for longer: it fails closed. A line
+ * that arrives before the exchange's end has been observed is redacted even if it turns out to be
+ * the next command — also closed.
  */
 export class AuthRedactor {
-  private expectContinuation = false;
+  /** Client lines (and bodies) seen so far; the next one gets this index. */
+  private linesSeen = 0;
+  /** Final replies matched to client lines so far; the next one answers this index. */
+  private repliesSeen = 0;
+  private greetingPending: boolean;
+  /** Index of the AUTH line whose exchange is in progress, or null when none is. */
+  private authFrom: number | null = null;
+  /** AUTH command lines that arrived (and were redacted) while an exchange was in progress. */
+  private queuedAuth: number[] = [];
+
+  /** `expectGreeting`: the server's first reply is its greeting, which answers no client line. */
+  constructor(options: { readonly expectGreeting?: boolean } = {}) {
+    this.greetingPending = options.expectGreeting ?? true;
+  }
+
+  /** Whether client lines are currently being redacted. */
+  get authInProgress(): boolean {
+    return this.authFrom !== null;
+  }
 
   redactIncoming(line: string): string {
-    if (this.expectContinuation) {
-      this.expectContinuation = false;
-      return '[redacted]';
+    const index = this.linesSeen++;
+    const isAuth = AUTH_COMMAND.test(line);
+    if (this.authFrom !== null) {
+      if (isAuth) this.queuedAuth.push(index);
+      return line === '*' ? '*' : '[redacted]';
     }
-    const m = /^AUTH\s+(\S+)(?:\s+(\S+))?\s*$/i.exec(line);
-    if (m) return m[2] === undefined ? `AUTH ${m[1]}` : `AUTH ${m[1]} [redacted]`;
+    if (isAuth) {
+      this.authFrom = index;
+      return summarizeAuthCommand(line);
+    }
     return line;
   }
 
-  /** Called for every outgoing line: a `334` reply means the next incoming line is a continuation. */
+  /** A client "line" that is never recorded but is answered: DATA's message body. */
+  noteBody(): void {
+    this.linesSeen++;
+  }
+
+  /** Called for every outgoing line, in order. Only final reply lines move the state. */
   observeOutgoing(line: string): void {
-    this.expectContinuation = /^334(?:[ -]|$)/.test(line);
+    const m = FINAL_REPLY_LINE.exec(line);
+    if (m === null) return;
+    if (this.greetingPending) {
+      this.greetingPending = false;
+      return;
+    }
+    // A reply with no client line outstanding (an unsolicited 421, say) answers nothing.
+    if (this.repliesSeen >= this.linesSeen) return;
+    const answered = this.repliesSeen++;
+    if (this.authFrom === null || answered < this.authFrom) return;
+    if (m[1] === '334') return;
+    // The exchange is over. A later AUTH that arrived meanwhile (redacted) starts the next one.
+    this.queuedAuth = this.queuedAuth.filter((i) => i > answered);
+    this.authFrom = this.queuedAuth.shift() ?? null;
   }
 }
 
@@ -121,7 +188,9 @@ export class TranscriptRecorder {
 
   /** Call exactly when the DATA hook fires, before any body octet is read. */
   beginBody(): void {
+    if (this.inBody) return;
     this.inBody = true;
+    this.redactor.noteBody();
   }
 
   /** Call once the body stream has ended (or been destroyed), with the bytes actually seen. */
