@@ -623,7 +623,7 @@ export function describeError(error: unknown): string {
     case 'login_taken':
       return 'That login is already an address here. Choose another.';
     case 'invalid_request':
-      return 'Check the highlighted fields.';
+      return 'The server refused part of the form. Check each field and try again.';
     case 'auth_not_configured':
       return 'Sign-in is not configured on this server yet.';
     case 'weak_password':
