@@ -1,0 +1,10 @@
+From: Slotly <reminders@slotly.example.com>
+To: sam@d3cloud.io
+Subject: Reminder: standup in 10 minutes
+Date: Fri, 18 Sep 2026 03:24:27 +0000
+Message-ID: <golden-0263.20260926@slotly.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=slotly.example.com; dkim=pass header.d=slotly.example.com; dmarc=pass header.from=slotly.example.com
+
+Reminder: standup in 10 minutes
+
+Details: https://slotly.example.com/m/2002

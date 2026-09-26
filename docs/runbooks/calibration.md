@@ -110,6 +110,29 @@ screen**, to make a failing PR pass. If the replay is failing, either the classi
 it, verify against `tune`, then re-check holdout) or the holdout set itself needs a reviewed
 regeneration (rare, and reviewed like any other change to what CI gates on).
 
+### Header-less transactional mail (PST-T-5.9)
+
+Until PST-T-5.9 every transactional fixture carried a bulk or automation header (List-Unsubscribe,
+Auto-Submitted, an ESP fingerprint, Feedback-ID), and that hid a real gap: the rule pass read any
+sender with a display name as human unless one of those headers said otherwise, so
+`PagerDuty <alerts@pagerduty.com>` with plain headers was filed into INBOX. An out-of-sample probe
+written by a different agent scored updates 1/10, receipts 1/10 and notifications 5/10.
+
+The fix is `packages/classifier/src/sender.ts`: sender-shape cues weighed before the human
+short-circuit — a role/transactional local-part vocabulary (tokenised on separators, digits dropped,
+run-together words split), known notification/commerce domains, organisation display names (equal to
+a domain label, or carrying organisation words or marks with no personal name in front), sending
+subdomains and transactional subjects — against personal evidence ("First Last", a local part built
+from the display name). Membership (reply graph, contacts, VIP pin) always wins for a real
+correspondent; bulk and noreply never become human. Every cue that fires is in the reasons.
+
+The generator gained section H (header-less transactional senders with friendly display names, >= 10
+per bucket per split) and section I (humans with role-ish titles, a colleague replying `Re:` about an
+invoice, and known correspondents with role addresses), disjoint between splits. Holdout was
+regenerated in that change and `thresholds.json` re-recorded from it after one run: updates and
+notifications 95.8% precision and recall (one message each way between them), every other bucket
+100%. Tune is 100%. The failing holdout message was not inspected.
+
 ## `bucketFor()` is already wired (PST-T-5.1)
 
 `scripts/golden/lib.mjs`'s `classifyForGolden` is the single, clearly marked place this harness

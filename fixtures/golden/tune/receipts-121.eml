@@ -1,0 +1,10 @@
+From: Copperpot Kitchen <order-confirm@copperpot.example.com>
+To: dana@d3cloud.io
+Subject: We got your order
+Date: Tue, 15 Sep 2026 16:47:30 +0000
+Message-ID: <golden-0223.20260926@copperpot.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=copperpot.example.com; dkim=pass header.d=copperpot.example.com; dmarc=pass header.from=copperpot.example.com
+
+We got your order
+
+Details: https://copperpot.example.com/m/2006

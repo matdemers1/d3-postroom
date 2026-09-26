@@ -1,0 +1,14 @@
+From: Grace Haddad, Security Engineer <ghaddad@example.org>
+To: dana@d3cloud.io
+Subject: Re: pentest scope
+Date: Sat, 19 Sep 2026 00:02:35 +0000
+Message-ID: <golden-0275.20260926@example.org>
+In-Reply-To: <thread-275@d3cloud.io>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass header.from=example.org
+
+Hi,
+
+Re: pentest scope
+
+Thanks,
+Grace Haddad, Security Engineer

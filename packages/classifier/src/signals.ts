@@ -9,7 +9,8 @@
 // dot-in-local-part rule is deliberately NOT applied (two Gmail addresses that differ only by dots
 // are treated as different addresses here).
 
-import { parseMailboxes } from '@postroom/mime';
+import { decodeEncodedWords, parseMailboxes } from '@postroom/mime';
+import { automatedLocalWord, describeCues, senderShape, type SenderShape } from './sender.js';
 
 /** The minimal shape a header field needs to have; `@postroom/mime`'s `HeaderField` satisfies it. */
 export interface HeaderLike {
@@ -87,6 +88,8 @@ export interface Signals {
   readonly bulk: Signal;
   readonly automated: Signal;
   readonly human: Signal;
+  /** Sender-shape evidence (PST-T-5.9): does the From look like an organisation's system? */
+  readonly transactional: Signal & { readonly shape: SenderShape };
   readonly directness: DirectnessSignal;
   readonly membership: MembershipSignals;
   readonly threadReply: Signal;
@@ -135,26 +138,6 @@ function addressOf(value: string | null): string | null {
   const spec = lt >= 0 && gt > lt ? trimmed.slice(lt + 1, gt) : trimmed;
   return spec.length === 0 ? null : spec;
 }
-
-const ROLE_LOCAL_PARTS = new Set([
-  'info',
-  'support',
-  'sales',
-  'admin',
-  'administrator',
-  'billing',
-  'contact',
-  'help',
-  'abuse',
-  'postmaster',
-  'webmaster',
-  'marketing',
-  'careers',
-  'jobs',
-  'press',
-  'hello',
-  'team',
-]);
 
 const AUTOMATED_LOCAL_PART = /(^|[._-])(no-?reply|donotreply|notifications?)($|[._-])/i;
 
@@ -221,18 +204,38 @@ function detectAutomated(fromAddress: string | null): Signal {
   if (AUTOMATED_LOCAL_PART.test(local)) {
     return { value: true, reason: `From local part "${local}" looks automated (noreply-style)` };
   }
+  const word = automatedLocalWord(local);
+  if (word !== null) return { value: true, reason: `From local part "${local}" looks automated (noreply-style: "${word}")` };
   return { value: false, reason: 'From local part does not look automated' };
 }
 
-function detectHuman(bulk: Signal, automated: Signal, fromAddress: string | null, displayName: string): Signal {
+function detectTransactional(fromAddress: string | null, displayName: string, subject: string, threadReply: boolean): Signal & { shape: SenderShape } {
+  const shape = senderShape({ address: fromAddress === null ? '' : normalizeAddress(fromAddress), displayName, subject, threadReply });
+  const summary = `transactional ${shape.transactionalScore} [${describeCues(shape.cues, 'transactional')}] vs personal ${shape.personalScore} [${describeCues(shape.cues, 'personal')}]`;
+  if (shape.transactional) return { value: true, shape, reason: `sender looks transactional: ${summary}` };
+  return { value: false, shape, reason: `sender does not look transactional: ${summary}` };
+}
+
+/** Human unless bulk, automated, or transactional sender-shape evidence outweighs personal evidence
+ * (PST-T-5.9). A known correspondent — reply graph, contacts or a VIP pin — stays human whatever
+ * their address looks like (billing@ a supplier you write to is still that supplier's person); only
+ * bulk and noreply-style senders are never human, known or not. */
+function detectHuman(bulk: Signal, automated: Signal, transactional: Signal & { shape: SenderShape }, membership: MembershipSignals, fromAddress: string | null, displayName: string): Signal {
   if (bulk.value) return { value: false, reason: 'bulk mail is not a human sender' };
   if (automated.value) return { value: false, reason: 'automated sender is not human' };
   if (fromAddress === null) return { value: false, reason: 'no From address to inspect' };
-  const { local } = localAndDomain(normalizeAddress(fromAddress));
-  const isRole = ROLE_LOCAL_PARTS.has(local);
-  if (displayName.trim() !== '') return { value: true, reason: `has a personal display name ("${displayName.trim()}")` };
-  if (!isRole) return { value: true, reason: 'not a role address and not bulk or automated' };
-  return { value: false, reason: `role address "${local}" with no display name` };
+  const member = membership.replyGraph.value ? 'reply graph' : membership.contact.value ? 'contacts' : membership.vip.value ? 'VIP pins' : null;
+  if (transactional.value) {
+    if (member !== null) return { value: true, reason: `known correspondent (${member}) overrides transactional sender cues: ${transactional.reason}` };
+    return { value: false, reason: `not a human sender — ${transactional.reason}` };
+  }
+  const name = displayName.trim();
+  const shape = transactional.shape;
+  if (shape.transactionalScore > 0) {
+    return { value: true, reason: `human sender${name !== '' ? ` ("${name}")` : ''}: personal evidence holds — ${transactional.reason.replace(/^sender does not look transactional: /, '')}` };
+  }
+  if (name !== '') return { value: true, reason: `has a personal display name ("${name}") and no transactional sender cues` };
+  return { value: true, reason: 'not a role address and not bulk or automated' };
 }
 
 function detectDirectness(headers: readonly HeaderLike[], accountAddresses: Set<string>): DirectnessSignal {
@@ -255,6 +258,16 @@ function membershipSignal(label: string, fromAddress: string | null, set: Set<st
   const normalized = normalizeAddress(fromAddress);
   if (set.has(normalized)) return { value: true, reason: `sender in ${label}` };
   return { value: false, reason: `sender not in ${label}` };
+}
+
+function subjectOf(headers: readonly HeaderLike[]): string {
+  const raw = headerGet(headers, 'subject');
+  if (raw === null) return '';
+  try {
+    return decodeEncodedWords(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function detectThreadReply(headers: readonly HeaderLike[]): Signal {
@@ -284,7 +297,6 @@ export function extractSignals(input: SignalInput): Signals {
 
   const bulk = detectBulk(headers, fromAddress);
   const automated = detectAutomated(fromAddress);
-  const human = detectHuman(bulk, automated, fromAddress, fromDisplayName);
 
   const accountAddresses = normalizedSet(account.addresses);
   const directness = detectDirectness(headers, accountAddresses);
@@ -299,12 +311,16 @@ export function extractSignals(input: SignalInput): Signals {
   const threadReply = detectThreadReply(headers);
   const authenticated = detectAuthenticated(input.authVerdicts);
 
+  const transactional = detectTransactional(fromAddress, fromDisplayName, subjectOf(headers), threadReply.value);
+  const human = detectHuman(bulk, automated, transactional, membership, fromAddress, fromDisplayName);
+
   return {
     fromAddress,
     fromDisplayName,
     bulk,
     automated,
     human,
+    transactional,
     directness,
     membership,
     threadReply,

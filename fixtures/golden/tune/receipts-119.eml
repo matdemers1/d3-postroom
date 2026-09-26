@@ -1,0 +1,10 @@
+From: Glide Pay <payment-confirmation@glidepay.example.org>
+To: dana@d3cloud.io
+Subject: You sent $42.00 to Ana
+Date: Tue, 15 Sep 2026 12:07:29 +0000
+Message-ID: <golden-0221.20260926@glidepay.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=glidepay.example.org; dkim=pass header.d=glidepay.example.org; dmarc=pass header.from=glidepay.example.org
+
+You sent $42.00 to Ana
+
+Details: https://glidepay.example.org/m/2004

@@ -1,0 +1,10 @@
+From: RoadRunner Rides <trips@roadrunner.example.org>
+To: dana@d3cloud.io
+Subject: Your driver is on the way
+Date: Mon, 14 Sep 2026 22:32:43 +0000
+Message-ID: <golden-0212.20260926@roadrunner.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=roadrunner.example.org; dkim=pass header.d=roadrunner.example.org; dmarc=pass header.from=roadrunner.example.org
+
+Your driver is on the way
+
+Details: https://roadrunner.example.org/m/2007

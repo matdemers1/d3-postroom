@@ -1,0 +1,13 @@
+From: Jane Chen (Support Lead) <jane.chen@helpdeskco.example.com>
+To: dana@d3cloud.io
+Subject: Quick question about your setup
+Date: Fri, 18 Sep 2026 20:05:31 +0000
+Message-ID: <golden-0272.20260926@helpdeskco.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=helpdeskco.example.com; dkim=pass header.d=helpdeskco.example.com; dmarc=pass header.from=helpdeskco.example.com
+
+Hi,
+
+Quick question about your setup
+
+Thanks,
+Jane Chen (Support Lead)

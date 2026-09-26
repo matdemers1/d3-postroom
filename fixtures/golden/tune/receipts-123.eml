@@ -1,0 +1,10 @@
+From: Fieldstone Books <store@mail.fieldstone.example.net>
+To: dana@d3cloud.io
+Subject: Your purchase from Fieldstone
+Date: Tue, 15 Sep 2026 20:34:25 +0000
+Message-ID: <golden-0225.20260926@mail.fieldstone.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=mail.fieldstone.example.net; dkim=pass header.d=mail.fieldstone.example.net; dmarc=pass header.from=mail.fieldstone.example.net
+
+Your purchase from Fieldstone
+
+Details: https://mail.fieldstone.example.net/m/2008

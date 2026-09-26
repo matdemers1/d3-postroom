@@ -1,0 +1,10 @@
+From: Riverbend Dental <frontdesk@riverbend.example.net>
+To: sam@d3cloud.io
+Subject: Payment confirmation for your visit
+Date: Thu, 17 Sep 2026 20:19:46 +0000
+Message-ID: <golden-0259.20260926@riverbend.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=riverbend.example.net; dkim=pass header.d=riverbend.example.net; dmarc=pass header.from=riverbend.example.net
+
+Payment confirmation for your visit
+
+Details: https://riverbend.example.net/m/2009

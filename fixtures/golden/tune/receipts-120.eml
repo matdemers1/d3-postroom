@@ -1,0 +1,10 @@
+From: StreamBox <accounts@streambox.example.net>
+To: dana@d3cloud.io
+Subject: Your monthly payment was processed
+Date: Tue, 15 Sep 2026 14:21:23 +0000
+Message-ID: <golden-0222.20260926@streambox.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=streambox.example.net; dkim=pass header.d=streambox.example.net; dmarc=pass header.from=streambox.example.net
+
+Your monthly payment was processed
+
+Details: https://streambox.example.net/m/2005

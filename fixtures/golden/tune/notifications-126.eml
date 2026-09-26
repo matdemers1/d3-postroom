@@ -1,0 +1,10 @@
+From: Taskboard <notify@taskboard.example.com>
+To: dana@d3cloud.io
+Subject: Ana assigned you a card
+Date: Wed, 16 Sep 2026 00:35:12 +0000
+Message-ID: <golden-0228.20260926@taskboard.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=taskboard.example.com; dkim=pass header.d=taskboard.example.com; dmarc=pass header.from=taskboard.example.com
+
+Ana assigned you a card
+
+Details: https://taskboard.example.com/m/2000

@@ -1,0 +1,10 @@
+From: Sparrow Cloud <invoicing@sparrow.example.net>
+To: sam@d3cloud.io
+Subject: Your invoice for October
+Date: Thu, 17 Sep 2026 17:06:49 +0000
+Message-ID: <golden-0256.20260926@sparrow.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=sparrow.example.net; dkim=pass header.d=sparrow.example.net; dmarc=pass header.from=sparrow.example.net
+
+Your invoice for October
+
+Details: https://sparrow.example.net/m/2006

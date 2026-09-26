@@ -617,10 +617,9 @@ for (const split of ['tune', 'holdout']) {
     const account = { addresses: [owner], replyGraph: [], contacts: [], pins: { vip: [], blocked: [] } };
     const useSystemHeader = i % 5 === 0;
     const headers = [{ name: 'From', value: `${brand.name} <${brand.local}@${brand.domain}>` }, { name: 'To', value: owner }, { name: 'Subject', value: subject }];
-    // Every notification-system message is bulk/automated in the real world too (GitHub's own
-    // notification mail carries List-Id/List-Unsubscribe alongside X-GitHub-Reason) — without a
-    // bulk marker a message with only a display name and no other signal reads as an ordinary
-    // human sender to the rule pass, and never reaches the notifications heuristic at all.
+    // Many notification systems mark their mail as bulk (GitHub's own notification mail carries
+    // List-Id/List-Unsubscribe alongside X-GitHub-Reason); section H below covers the ones that do
+    // not, with no bulk or automation header at all (PST-T-5.9).
     headers.push({ name: 'List-Unsubscribe', value: `<https://${brand.domain}/notifications/unsubscribe>` });
     if (useSystemHeader) headers.push({ name: pick(NOTIFIER_SYSTEM_HEADERS, i), value: 'mention' });
     headers.push(
@@ -717,6 +716,193 @@ for (const split of ['tune', 'holdout']) {
       body: `${subject}\n\nClick here: https://${brand.domain}/claim`,
     });
   }
+}
+
+// =================================================================================================
+// H. Header-less transactional mail (PST-T-5.9). Every transactional fixture above carries a bulk or
+// automation marker (List-Unsubscribe, Auto-Submitted, an ESP fingerprint, Feedback-ID) — and that
+// hid a real gap: a transactional sender with a friendly display name and NONE of those headers was
+// read as a human and filed into INBOX. Plenty of real receipts, account notices and app
+// notifications arrive exactly like that. These entries carry only From/To/Subject/Date/Message-ID
+// and Authentication-Results, so the only evidence is the sender's address, domain, display name
+// and subject — the sender-shape cues in packages/classifier/src/sender.ts.
+//
+// Pools are disjoint between splits (different brands, domains, local parts where the vocabulary
+// allows, and subject wording). >= 10 per bucket per split.
+// =================================================================================================
+const PLAIN_TRANSACTIONAL = {
+  tune: {
+    updates: [
+      ['Harbor Bank', 'harborbank.example.com', 'security', 'A new device signed in to your account'],
+      ['Trackly', 'trackly.example.org', 'tracking-updates', 'Your parcel is out for delivery'],
+      ['Northwind Air', 'northwindair.example.net', 'itinerary', 'Your flight itinerary has changed'],
+      ['CloudDrive', 'mail.clouddrive.example.com', 'account', 'Your storage is almost full'],
+      ['Pinecone Pharmacy', 'pineconepharmacy.example.org', 'rx-updates', 'Your prescription is ready for pickup'],
+      ['Lumen Utilities', 'lumen.example.net', 'myaccount', 'Your statement is ready'],
+      ['Keystone ID', 'keystoneid.example.com', 'verify2', 'Confirm this sign-in code'],
+      ['RoadRunner Rides', 'roadrunner.example.org', 'trips', 'Your driver is on the way'],
+      ['Beacon Health', 'notify.beaconhealth.example.net', 'appointments', 'Your appointment is confirmed'],
+      ['Tollway Pass', 'tollwaypass.example.com', 'customer.service', 'Low balance on your toll account'],
+      ['Gridline Energy', 'e.gridline.example.org', 'hello', 'Changes to our terms of service'],
+      ['Parcel Point', 'parcelpoint.example.net', 'no_reply2', 'Your package was delivered'],
+    ],
+    receipts: [
+      ['Oakridge Outfitters', 'oakridge.example.com', 'orders', 'Thanks for your order!'],
+      ['Brightcup', 'brightcup.example.org', 'receipts', 'Your Brightcup receipt'],
+      ['Loomworks', 'shop.loomworks.example.net', 'hello', 'Order #4417 is confirmed'],
+      ['TaskHive', 'taskhive.example.com', 'billing', 'Invoice INV-2291 for September'],
+      ['Glide Pay', 'glidepay.example.org', 'payment-confirmation', 'You sent $42.00 to Ana'],
+      ['StreamBox', 'streambox.example.net', 'accounts', 'Your monthly payment was processed'],
+      ['Copperpot Kitchen', 'copperpot.example.com', 'order-confirm', 'We got your order'],
+      ['Parkside Garage', 'parkside.example.org', 'invoices', 'Parking receipt for Sep 12'],
+      ['Fieldstone Books', 'mail.fieldstone.example.net', 'store', 'Your purchase from Fieldstone'],
+      ['Vectorly', 'vectorly.example.com', 'billing+us', 'Payment received for your Pro plan'],
+      ['Sprout Grocery', 'sprout.example.org', 'care', 'Your order total and receipt'],
+    ],
+    notifications: [
+      ['Taskboard', 'taskboard.example.com', 'notify', 'Ana assigned you a card'],
+      ['Codeharbor', 'codeharbor.example.org', 'bot', 'Build #812 failed on main'],
+      ['Meetspace', 'meetspace.example.net', 'calendar', 'Invitation: Design sync @ Thu 10am'],
+      ['Uptimer', 'alerts.uptimer.example.com', 'monitor', '[DOWN] api.example.com is not responding'],
+      ['Chirp', 'chirp.example.org', 'messages', 'You have a new direct message'],
+      ['Docshare', 'docshare.example.net', 'comments', 'Leo commented on "Q3 plan"'],
+      ['Tickety', 'tickety.example.com', 'support-notifications', 'Ticket #3321 was updated'],
+      ['Forumly', 'forumly.example.org', 'community', 'New reply to your post'],
+      ['Pagewatch', 'pagewatch.example.net', 'alerts', 'Incident opened: checkout errors'],
+      ['Wikihive', 'wikihive.example.com', 'hello', 'Mia mentioned you on a page'],
+      ['Snapdeploy', 'snapdeploy.example.org', 'deploys', 'Deployment to production succeeded'],
+    ],
+  },
+  holdout: {
+    updates: [
+      ['Summit Credit Union', 'summitcu.example.net', 'security-notice', 'Unusual sign-in attempt blocked'],
+      ['Wayfare Logistics', 'wayfare.example.org', 'shipping_updates', 'Your shipment is delayed'],
+      ['Orbit Mobile', 'orbitmobile.example.com', 'myaccount', 'Your password was changed'],
+      ['Bluejay Travel', 'mail.bluejay.example.net', 'reservations', 'Your booking is confirmed'],
+      ['Maple Clinic', 'mapleclinic.example.org', 'appointments', 'Your visit is scheduled for Monday'],
+      ['Quickship', 'quickship.example.com', 'delivery-status', 'Arriving today by 8pm'],
+      ['Ledgerly', 'ledgerly.example.net', 'accounts', 'Action needed: verify your identity'],
+      ['Transit Card', 'transitcard.example.org', 'service', 'Your card will expire soon'],
+      ['Openhome', 'email.openhome.example.com', 'info', 'Important changes to our privacy policy'],
+      ['Hopper Rides', 'hopper.example.net', 'rider-support', 'Your trip is starting'],
+      ['Nimbus Storage', 'nimbus.example.org', 'do-not-reply', 'Your email address was updated'],
+    ],
+    receipts: [
+      ['Kettle & Crumb', 'kettlecrumb.example.net', 'orderdesk', 'Order confirmation — thank you'],
+      ['Parcelwise Store', 'parcelwise.example.org', 'sales', 'Your purchase is complete'],
+      ['Hearth Home', 'hearthhome.example.com', 'receipt', 'Receipt #88213'],
+      ['Tidewater Water Co', 'tidewater.example.net', 'billpay', 'Thanks — we received your payment'],
+      ['Flicker Films', 'flicker.example.org', 'subscriptions', 'Your membership has renewed'],
+      ['Tandem Tools', 'email.tandem.example.com', 'orders-us', 'Order 55190 placed'],
+      ['Sparrow Cloud', 'sparrow.example.net', 'invoicing', 'Your invoice for October'],
+      ['Greenleaf Market', 'greenleaf.example.org', 'hello', 'Your Greenleaf order receipt'],
+      ['Pocketpay', 'pocketpay.example.com', 'transactions', 'You paid Mateo $18.50'],
+      ['Riverbend Dental', 'riverbend.example.net', 'frontdesk', 'Payment confirmation for your visit'],
+      ['Quill & Ink', 'quillink.example.org', 'shop', 'Refund issued for order 7731'],
+    ],
+    notifications: [
+      ['Kanbanly', 'kanbanly.example.net', 'activity', 'A card you follow was moved'],
+      ['Gitgrove', 'gitgrove.example.org', 'ci-bot', 'Pipeline passed for feature/login'],
+      ['Slotly', 'slotly.example.com', 'reminders', 'Reminder: standup in 10 minutes'],
+      ['Beaconwatch', 'beaconwatch.example.net', 'oncall', 'Alert triggered: disk usage 91%'],
+      ['Huddle Chat', 'huddle.example.org', 'no.reply', 'Kai sent you a message'],
+      ['Notewell', 'notewell.example.com', 'updates', 'Priya shared a document with you'],
+      ['Surveyor', 'mail.surveyor.example.net', 'team', 'You have 3 new responses'],
+      ['Eventful', 'eventful.example.org', 'invites', 'You’re invited: Friday demo'],
+      ['Helpline Desk', 'helpline.example.com', 'support', 'Your request #5521 has a new comment'],
+      ['Streamline CI', 'streamline.example.net', 'builds', 'Nightly build completed with warnings'],
+      ['Pollster', 'pollster.example.org', 'mentions', 'Someone mentioned you in a comment'],
+    ],
+  },
+};
+
+for (const split of ['tune', 'holdout']) {
+  const owner = OWNERS[split][0];
+  for (const bucket of ['updates', 'receipts', 'notifications']) {
+    PLAIN_TRANSACTIONAL[split][bucket].forEach(([name, domain, local, subject], i) => {
+      const from = `${local}@${domain}`;
+      addEntry(split, {
+        prefix: bucket,
+        expectedFinalBucket: bucket,
+        tags: [bucket.replace(/s$/, ''), 'no-bulk-headers', 'friendly-display-name'],
+        owner,
+        account: { addresses: [owner], replyGraph: [], contacts: [], pins: { vip: [], blocked: [] } },
+        authVerdicts: AUTH_PASS,
+        envelopeFrom: from,
+        headers: [
+          { name: 'From', value: `${name} <${from}>` },
+          { name: 'To', value: owner },
+          { name: 'Subject', value: subject },
+          { name: 'Date', value: nextDate(split) },
+          { name: 'Message-ID', value: nextMessageId(domain) },
+          { name: 'Authentication-Results', value: authResultsHeader(domain, AUTH_PASS) },
+        ],
+        body: `${subject}\n\nDetails: https://${domain}/m/${2000 + i}`,
+      });
+    });
+  }
+}
+
+// =================================================================================================
+// I. Humans who look a little like transactional senders (PST-T-5.9) — the other side of H, so the
+// sender-shape cues cannot win by calling everything with a role word non-human:
+//   · a job title or team in the display name after a personal name,
+//   · a colleague at a company domain replying "Re: …" about an invoice or an order,
+//   · a known correspondent (reply graph / contact) whose address is a role address — membership
+//     always wins for a real correspondent.
+// =================================================================================================
+const ROLEISH_HUMANS = {
+  tune: [
+    // [display, address, subject, expected, membership, extra]
+    ['Jane Chen (Support Lead)', 'jane.chen@helpdeskco.example.com', 'Quick question about your setup', 'inbox-people', null, null],
+    ['Marco Rossi | Billing', 'marco@ledgerfirm.example.org', 'Invoice question for you', 'inbox-people', null, null],
+    ['Lena Novak – Customer Success', 'lena@example.com', 'Great chatting today', 'inbox-people', null, null],
+    ['Grace Haddad, Security Engineer', 'ghaddad@example.org', 'Re: pentest scope', 'inbox-people', null, 'reply'],
+    ['Yuki Tanaka', 'yuki.tanaka@vendorco.example.com', 'Re: your order from last week', 'inbox-people', null, 'reply'],
+    ['Finance Team', 'billing@partnerco.example.com', 'Re: invoice 2291', 'inbox-priority', 'replyGraph', 'reply'],
+    ['Omar Patel', 'orders@smallbakery.example.org', 'Your cake order', 'inbox-priority', 'contacts', null],
+  ],
+  holdout: [
+    ['Nadia Okafor (Accounts Payable)', 'nadia.okafor@cedarfirm.example.net', 'Following up on the proposal', 'inbox-people', null, null],
+    ['Theo Marsh — Sales Engineering', 'theo@acmeworks.example.org', 'Your notes from the demo', 'inbox-people', null, null],
+    ['Wren Blake, Operations', 'wblake@example.net', 'Loose ends before Friday', 'inbox-people', null, null],
+    ['Felix Lund', 'felix.lund@shipyardco.example.com', 'Re: delivery schedule for the build', 'inbox-people', null, 'reply'],
+    ['Rosa Ortiz', 'rosa@studio.example.net', 'Re: receipt for the workshop', 'inbox-people', null, 'reply'],
+    ['Accounts Desk', 'accounts@landlordco.example.org', 'Re: lease renewal', 'inbox-priority', 'replyGraph', 'reply'],
+    ['Kian Silva', 'support@kiansilva.example.net', 'Your laptop is fixed', 'inbox-priority', 'contacts', null],
+  ],
+};
+
+for (const split of ['tune', 'holdout']) {
+  const owner = OWNERS[split][0];
+  ROLEISH_HUMANS[split].forEach(([display, from, subject, expected, membership, extra]) => {
+    const domain = from.split('@')[1];
+    const headers = [
+      { name: 'From', value: `${display} <${from}>` },
+      { name: 'To', value: owner },
+      { name: 'Subject', value: subject },
+      { name: 'Date', value: nextDate(split) },
+      { name: 'Message-ID', value: nextMessageId(domain) },
+    ];
+    if (extra === 'reply') headers.push({ name: 'In-Reply-To', value: `<thread-${msgIdCounter}@d3cloud.io>` });
+    headers.push({ name: 'Authentication-Results', value: authResultsHeader(domain, AUTH_PASS) });
+    addEntry(split, {
+      prefix: expected,
+      expectedFinalBucket: expected,
+      tags: ['roleish-human', membership ?? 'first-time', ...(extra === 'reply' ? ['thread-reply'] : [])],
+      owner,
+      account: {
+        addresses: [owner],
+        replyGraph: membership === 'replyGraph' ? [from] : [],
+        contacts: membership === 'contacts' ? [from] : [],
+        pins: { vip: [], blocked: [] },
+      },
+      authVerdicts: AUTH_PASS,
+      envelopeFrom: from,
+      headers,
+      body: `Hi,\n\n${subject}\n\nThanks,\n${display}`,
+    });
+  });
 }
 
 // =================================================================================================
