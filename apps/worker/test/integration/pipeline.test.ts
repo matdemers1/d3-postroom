@@ -81,10 +81,10 @@ describe.skipIf(baseUrl === undefined)('inbound pipeline (PST-T-2.7, PST-T-2.11)
     expect(copies).toHaveLength(1);
     const [copy] = copies;
     expect(copy?.mailbox).toMatchObject({ accountId: operatorId, name: 'INBOX', specialUse: 'inbox' });
-    expect(copy).toMatchObject({ subject: 'Plain one', fromAddress: 'alice@example.org', blobSha256: sha256, flags: [] });
+    expect(copy).toMatchObject({ subject: 'Plain one', fromAddress: 'alice@example.org', blobSha256: sha256, flags: ['$People'] });
     expect(copy?.messageIdHeader).toMatch(/@example\.org$/);
     expect(copy?.sentAt?.toISOString()).toBe('2026-09-25T12:00:00.000Z');
-    expect(copy?.verdict?.bucket).toBe('inbox');
+    expect(copy?.verdict?.bucket).toBe('people');
     expect(copy?.verdict?.auth).toMatchObject({ spf: { result: 'pass' }, dmarc: { result: 'pass' } });
     expect(copy?.verdict?.reasons).toEqual(
       expect.arrayContaining(['delivered to matt@d3cloud.io', 'no sieve script (Sieve arrives in PST-P-6)', 'filed to INBOX']),
@@ -120,7 +120,7 @@ describe.skipIf(baseUrl === undefined)('inbound pipeline (PST-T-2.7, PST-T-2.11)
     const copies = await copiesOf(id);
     expect(copies).toHaveLength(1);
     expect(copies[0]?.mailbox).toMatchObject({ accountId: youId, name: 'INBOX' });
-    expect(copies[0]?.flags).toEqual(['$Postroom.tag.github']);
+    expect(copies[0]?.flags).toEqual(['$People', '$Postroom.tag.github']);
     expect(copies[0]?.verdict?.reasons).toEqual(
       expect.arrayContaining([
         'delivered to you@d3cloud.io via plus address you+github@d3cloud.io',
@@ -134,8 +134,8 @@ describe.skipIf(baseUrl === undefined)('inbound pipeline (PST-T-2.7, PST-T-2.11)
     await worker.drain();
     const copies = await copiesOf(id);
     expect(copies).toHaveLength(2);
-    expect(copies.find((c) => c.mailbox.accountId === youId)?.flags).toEqual(['$Postroom.tag.github']);
-    expect(copies.find((c) => c.mailbox.accountId === otherId)?.flags).toEqual([]);
+    expect(copies.find((c) => c.mailbox.accountId === youId)?.flags).toEqual(['$People', '$Postroom.tag.github']);
+    expect(copies.find((c) => c.mailbox.accountId === otherId)?.flags).toEqual(['$People']);
     expect(await refcount(sha256)).toBe(3);
   });
 

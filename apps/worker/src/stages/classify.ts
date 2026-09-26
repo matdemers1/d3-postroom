@@ -1,8 +1,22 @@
-// Stage 3, classify — a stub until the classifier lands (PST-P-4). It decides only Inbox or Junk:
+// Stage 3, classify (PST-T-5.1, PST-REQ-101, PST-REQ-103). The junk rules come first and win:
 //
 //   · smtp-in's disposition was `quarantine` (DMARC p=quarantine, …) → junk;
-//   · the dangerous-attachment policy (PST-REQ-065) quarantines an attachment → junk;
-//   · otherwise → inbox.
+//   · the dangerous-attachment policy (PST-REQ-065) quarantines an attachment → junk.
+//
+// Otherwise each recipient ACCOUNT gets its own decision from @postroom/classifier — its own
+// addresses, reply graph and Bayes model — via `bucketFor`: Priority or People (INBOX, keyword
+// $Priority/$People), or one of Newsletters, Updates, Receipts, Notifications (or Junk, when the
+// account's Bayes model learned it).
+//
+// Account context:
+//   · addresses: the account's own addresses (primary, masked, service), the aliases that reach it,
+//     and the addresses this message was delivered to it at;
+//   · reply graph: has this account sent to the sender — an OutboundRecipient row of the account's,
+//     or a message in its Sent mailbox addressed to them — before this message was received;
+//   · contacts: empty until CardDAV lands (PST-P-9); pins: none until PST-T-5.4.
+// Everything read is bounded by this message's receivedAt, so a replay reaches the same rule
+// decision. (The Bayes model can have learned more by a replay; a replay of classify after the file
+// stage ran changes nothing anyway, because the file stage finds its copies and files nothing new.)
 //
 // Every outcome carries its reasons (PST-ADR-007), and nothing is ever dropped: the worst this
 // stage can do is put a message in Junk, where its reasons say why.
@@ -12,9 +26,13 @@
 // receivedAt, so a replay reaches the same answer it reached the first time.
 import { attachmentPolicy } from '@postroom/attachments';
 import type { BlobStore } from '@postroom/blobstore';
+import { bucketFor, extractSignals, normalizeAddress, tokenize, type AuthVerdicts, type HeaderLike } from '@postroom/classifier';
 import { SpecialUse, type Db } from '@postroom/db';
+import { blobHeaderReader } from '../training/headers.js';
+import { loadBayesModel } from '../training/model.js';
+import { parseRecipients } from './file.js';
 import { collectBlob, openBlobPart } from './parse.js';
-import type { AttachmentFindingJson, Bucket, ClassifyResult, ParseResult, StageInput, VerifyResult } from './types.js';
+import type { AccountDecision, AttachmentFindingJson, ClassifyResult, ParseResult, SpooledRecipient, StageInput, VerifyResult } from './types.js';
 
 function authSummary(verdicts: unknown): string | null {
   if (typeof verdicts !== 'object' || verdicts === null) return null;
@@ -41,19 +59,63 @@ export async function senderHasHistory(db: Db, input: { inboundMessageId: string
   return prior !== null;
 }
 
+/** The account's own addresses: the ones it owns, the aliases that reach it, and the ones this message reached it at. */
+export async function accountAddresses(db: Db, accountId: string, recipients: readonly SpooledRecipient[]): Promise<string[]> {
+  const out = new Set<string>();
+  const owned = await db.address.findMany({
+    where: { OR: [{ accountId }, { targets: { some: { accountId } } }] },
+    select: { localPart: true, domain: { select: { name: true } } },
+  });
+  for (const a of owned) out.add(`${a.localPart}@${a.domain.name}`);
+  for (const r of recipients) {
+    if (!r.accountIds.includes(accountId)) continue;
+    out.add(r.address);
+    out.add(r.rcpt);
+  }
+  return [...out].sort();
+}
+
+/** Whether this account wrote to `address` before `before`: an outbound recipient row, or a Sent copy addressed to it. */
+export async function inReplyGraph(db: Db, input: { accountId: string; address: string | null; before: Date }): Promise<boolean> {
+  if (input.address === null || input.address === '') return false;
+  const exact = input.address.trim().toLowerCase();
+  const normalized = normalizeAddress(input.address);
+  const outbound = await db.$queryRaw<{ ok: number }[]>`
+    SELECT 1 AS ok FROM outbound_recipient r
+    JOIN outbound_message m ON m.id = r.outbound_message_id
+    WHERE m.account_id = ${input.accountId}::uuid AND m.created_at < ${input.before}
+      AND lower(r.address) IN (${exact}, ${normalized})
+    LIMIT 1`;
+  if (outbound.length > 0) return true;
+  const sent = await db.$queryRaw<{ ok: number }[]>`
+    SELECT 1 AS ok FROM message msg
+    JOIN mailbox mb ON mb.id = msg.mailbox_id
+    JOIN message_search s ON s.message_id = msg.id
+    WHERE mb.account_id = ${input.accountId}::uuid AND mb.special_use = 'sent'::special_use
+      AND msg.internal_date < ${input.before}
+      AND (position(${exact} in lower(s.to_text)) > 0 OR position(${normalized} in lower(s.to_text)) > 0)
+    LIMIT 1`;
+  return sent.length > 0;
+}
+
+function authVerdicts(verdicts: unknown): AuthVerdicts {
+  if (typeof verdicts !== 'object' || verdicts === null) return {};
+  return verdicts;
+}
+
 export async function classifyStage(
   input: StageInput,
   deps: { db: Db; blobs: BlobStore },
   prior: { verify: VerifyResult; parse: ParseResult; accountIds: readonly string[] },
 ): Promise<ClassifyResult> {
   const reasons: string[] = [];
-  let bucket: Bucket = 'inbox';
+  let junk = false;
 
   const auth = authSummary(input.inbound.verdicts);
   if (auth !== null) reasons.push(auth);
 
   if (prior.verify.disposition === 'quarantine') {
-    bucket = 'junk';
+    junk = true;
     reasons.push(`junk: smtp-in quarantined it${input.inbound.dispositionReason === null ? '' : ` (${input.inbound.dispositionReason})`}`);
   }
 
@@ -79,11 +141,47 @@ export async function classifyStage(
       reasons.push(`junk: attachment ${f.filename ?? `part ${f.partId}`} quarantined (${f.reasons.join('; ')})`);
     }
     if (attachmentQuarantine) {
-      bucket = 'junk';
+      junk = true;
       reasons.push(`attachment policy: sender ${history ? 'has' : 'has no'} prior history with the recipient`);
     }
   }
 
-  if (bucket === 'inbox') reasons.push('inbox: no junk signal (classifier stub; PST-P-4 replaces it)');
-  return { bucket, senderHasHistory: history, attachmentQuarantine, attachments: findings, reasons };
+  const accountIds = [...new Set(prior.accountIds)].sort();
+  const accounts: Record<string, AccountDecision> = {};
+  if (junk) {
+    for (const accountId of accountIds) {
+      accounts[accountId] = { bucket: 'junk', mailbox: 'Junk', keyword: null, reasons: [...reasons, 'junk: a junk rule wins over sorting'], scores: { 'bucket:junk': 1 } };
+    }
+    return { bucket: 'junk', accounts, senderHasHistory: history, attachmentQuarantine, attachments: findings, reasons };
+  }
+
+  const headers: HeaderLike[] = await blobHeaderReader(deps.blobs)(input.inbound.blobSha256);
+  const tokens = tokenize({ subject: prior.parse.subject, from: prior.parse.fromAddress, bodyText: prior.parse.bodyText, headers });
+  const recipients = parseRecipients(input.inbound.recipients);
+  const envelopeFrom = input.inbound.envelopeFrom === '' ? null : input.inbound.envelopeFrom;
+  const authVerdictsOf = authVerdicts(input.inbound.verdicts);
+  for (const accountId of accountIds) {
+    const addresses = await accountAddresses(deps.db, accountId, recipients);
+    const signalsWith = (replyGraph: readonly string[]) =>
+      extractSignals({
+        headers,
+        envelopeFrom,
+        authVerdicts: authVerdictsOf,
+        account: {
+          addresses,
+          replyGraph,
+          contacts: [], // CardDAV contacts arrive in PST-P-9.
+          pins: { vip: [], blocked: [] }, // Pins arrive in PST-T-5.4.
+        },
+      });
+    let signals = signalsWith([]);
+    const sender = signals.fromAddress;
+    if (sender !== null && (await inReplyGraph(deps.db, { accountId, address: sender, before: input.inbound.receivedAt }))) {
+      signals = signalsWith([sender]);
+    }
+    const model = await loadBayesModel(deps.db, accountId, tokens);
+    const d = bucketFor({ signals, headers, subject: prior.parse.subject }, { model, tokens });
+    accounts[accountId] = { bucket: d.bucket, mailbox: d.folder, keyword: d.keyword, reasons: [...reasons, ...d.reasons], scores: d.scores };
+  }
+  return { bucket: 'sorted', accounts, senderHasHistory: history, attachmentQuarantine, attachments: findings, reasons };
 }
