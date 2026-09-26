@@ -387,6 +387,32 @@ describe.skipIf(!baseUrl)('iMIP invitations (PST-T-8.4)', () => {
     expect(await expandStored()).toEqual(AFTER_ONE.map((i) => ({ ...i, status: 'CANCELLED' })));
   });
 
+  it('THISANDFUTURE: a mid-series cut cancels that occurrence and every later one; a cut at the first occurrence cancels the series', async () => {
+    const me = await person();
+    const expandFor = async (uid: string) => {
+      const calendar = await defaultCalendar(me.id);
+      const [resource] = await store.getResources(calendar.id, [`${uid}.ics`]);
+      if (resource === undefined) throw new Error('event not filed');
+      const { instances } = expandCalendar(parseICalendar(resource.data), { start: new Date('2026-10-01T00:00:00Z'), end: new Date('2026-11-15T00:00:00Z') });
+      return instances.filter((i) => (getProperty(i.component, 'STATUS')?.value ?? 'CONFIRMED') !== 'CANCELLED').map((i) => new Date(i.start).toISOString());
+    };
+
+    const mid = `evt-${randomUUID()}@google.com`;
+    const req1 = await file(me, inviteMessage(me.address, mid, 'REQUEST', { rrule: 'FREQ=WEEKLY;COUNT=4', sequence: 1 }));
+    expect((await post(me, `/api/messages/${req1}/invite/respond`, { partstat: 'ACCEPTED' })).status).toBe(200);
+    const cut = await file(me, inviteMessage(me.address, mid, 'CANCEL', { recurrenceId: '1019T140000', range: 'THISANDFUTURE', sequence: 2 }), GENUINE);
+    expect((await post(me, `/api/messages/${cut}/invite/remove`)).status).toBe(200);
+    expect(await expandFor(mid)).toEqual(['2026-10-05T18:00:00.000Z', '2026-10-12T18:00:00.000Z']);
+
+    const first = `evt-${randomUUID()}@google.com`;
+    const req2 = await file(me, inviteMessage(me.address, first, 'REQUEST', { rrule: 'FREQ=WEEKLY;COUNT=4', sequence: 1 }));
+    expect((await post(me, `/api/messages/${req2}/invite/respond`, { partstat: 'ACCEPTED' })).status).toBe(200);
+    const all = await file(me, inviteMessage(me.address, first, 'CANCEL', { recurrenceId: '1005T140000', range: 'THISANDFUTURE', sequence: 2 }), GENUINE);
+    expect((await post(me, `/api/messages/${all}/invite/remove`)).status).toBe(200);
+    expect(await expandFor(first)).toEqual([]);
+    expect(InviteView.parse((await get(me, `/api/messages/${req2}/invite`)).body).inCalendar).toBe(true);
+  });
+
   it('a message that is not the caller’s own answers 404, never leaking whether it exists', async () => {
     const me = await person();
     const other = await person();

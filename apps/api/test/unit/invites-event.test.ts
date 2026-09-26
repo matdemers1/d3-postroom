@@ -193,3 +193,26 @@ describe('withCancelled', () => {
     expect(nyStatus(out)).toEqual(['CONFIRMED', 'CANCELLED']);
   });
 });
+
+describe('withCancelled: THISANDFUTURE edges (PST-T-8.9)', () => {
+  const range = (value: string) => ({ value, params: { RANGE: ['THISANDFUTURE'] } });
+  const live = (c: Component): string[] =>
+    expandCalendar(parseICalendar(serializeICalendar(c)), { start: new Date('2026-09-01T00:00:00Z'), end: new Date('2026-12-31T00:00:00Z') })
+      .instances.filter((i) => (i.component.properties.find((p) => p.name === 'STATUS')?.value ?? 'CONFIRMED') !== 'CANCELLED')
+      .map((i) => new Date(i.start).toISOString());
+
+  it('from the first occurrence cancels the whole series, master included', () => {
+    const out = withCancelled(cal(), range('20260907T150000Z'));
+    expect(isCancelled(out)).toBe(true);
+    expect(status(out).every((s) => s === 'CANCELLED')).toBe(true);
+    expect(live(out)).toEqual([]);
+  });
+
+  it('removes RDATE occurrences at or after the cut, keeping earlier ones', () => {
+    const withRdates = parseICalendar(SERIES.replace('RRULE:FREQ=WEEKLY;COUNT=4', 'RRULE:FREQ=WEEKLY;COUNT=4\r\nRDATE:20260910T150000Z,20261015T150000Z'));
+    const out = withCancelled(withRdates, range('20260914T150000Z'));
+    const starts = live(out);
+    expect(starts).toContain('2026-09-10T15:00:00.000Z');
+    expect(starts.filter((s) => s >= '2026-09-14')).toEqual([]);
+  });
+});

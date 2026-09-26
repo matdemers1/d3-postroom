@@ -81,6 +81,32 @@ function untilBefore(instant: ICalDateValue, masterAllDay: boolean, resolver: Ti
 }
 
 /** `master`'s RRULE(s), each truncated with `until` in place of any COUNT/UNTIL it already had. */
+/**
+ * The master with every RDATE value at or after `cut` removed (a THISANDFUTURE cancel covers
+ * RDATE-produced instances too, not only the RRULE's). PERIOD values are judged by their start;
+ * an RDATE left with no values is dropped. A value that cannot be read is kept — never guessed.
+ */
+function dropRdatesFrom(c: Component, cut: number, resolver: TimeZoneResolver): Component {
+  const properties: Property[] = [];
+  for (const p of c.properties) {
+    if (p.name !== 'RDATE') {
+      properties.push(p);
+      continue;
+    }
+    const period = (p.params.VALUE?.[0] ?? '').toUpperCase() === 'PERIOD';
+    const kept = p.value.split(',').filter((v) => {
+      const start = period ? (v.split('/')[0] ?? v) : v;
+      try {
+        return instantOf(parseRecurrenceValue(start.trim(), period ? { ...p.params, VALUE: ['DATE-TIME'] } : p.params), resolver) < cut;
+      } catch {
+        return true;
+      }
+    });
+    if (kept.length > 0) properties.push({ ...p, value: kept.join(',') });
+  }
+  return { ...c, properties };
+}
+
 function truncateRrules(c: Component, until: ICalDateValue): Component {
   const properties = c.properties.map((p): Property => {
     if (p.name !== 'RRULE') return p;
@@ -129,12 +155,18 @@ export function withCancelled(calendar: Component, recurrenceId: { value: string
   const masterDtstart = main === undefined ? undefined : getProperty(main, 'DTSTART');
   const masterAllDay = masterDtstart !== undefined && propertyDate(masterDtstart).type === 'date';
 
+  // THISANDFUTURE from the first occurrence (or earlier) is the whole series (RFC 5546 §3.2.5):
+  // truncating the RRULE could never remove DTSTART's own instance, which RFC 5545 always includes.
+  if (isRange && masterDtstart !== undefined && wantedInstant <= instantOf(propertyDate(masterDtstart), resolver)) {
+    return withCancelled(calendar, null);
+  }
+
   return {
     ...base,
     components: calendar.components.map((c) => {
       if (isSchedulable(c.name) && cancelled(c)) return cancel(c);
       if (c !== main) return c;
-      if (isRange) return truncateRrules(c, untilBefore(wanted, masterAllDay, resolver));
+      if (isRange) return dropRdatesFrom(truncateRrules(c, untilBefore(wanted, masterAllDay, resolver)), wantedInstant, resolver);
       if (hasExactOverride) return c;
       return { ...c, properties: [...c.properties, { name: 'EXDATE', params: shapeParams(recurrenceId.params), value: formatValue(wanted) }] };
     }),
