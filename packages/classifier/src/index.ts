@@ -43,4 +43,5 @@ export {
   type BucketForInput,
   type FilingBucket,
   type FilingDecision,
+  type PinInput,
 } from './bucket-for.js';

@@ -93,6 +93,8 @@ export const MessageSummary = z.object({
   size: z.number().int(),
   flags: z.array(z.string()),
   bucket: z.string().nullable(),
+  /** A first-time human sender's message (PST-T-5.4, PST-REQ-106): the new-sender badge, Allow/Block. */
+  newSender: z.boolean(),
 });
 export const MessageList = z.object({
   messages: z.array(MessageSummary),
