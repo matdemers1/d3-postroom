@@ -13,13 +13,13 @@ import type { KeyObject } from 'node:crypto';
 import { publicKeyFromDnsRecord, verifyLocal } from '@postroom/auth-checks';
 import { createBlobStore, tmpDir, type BlobStore } from '@postroom/blobstore';
 import { createAppPassword, hashAppPassword, revokeAppPassword } from '@postroom/credentials';
+import { createAuthThrottle } from '@postroom/auth-throttle';
 import { generateKek, type Kek } from '@postroom/crypto';
 import { AddressKind, seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ensureDkimKeys } from '../../src/dkim.js';
 import { createSubmissionListeners, type SubmissionListeners } from '../../src/server.js';
-import { AuthThrottle } from '../../src/throttle.js';
 import { SmtpTestClient, b64 } from './client.js';
 
 const exec = promisify(execFile);
@@ -79,7 +79,7 @@ describe.skipIf(baseUrl === undefined)('submission daemon (PST-T-1.2)', () => {
       pepper: PEPPER,
       storage: () => ({ blobs, kek }),
       tls: { key: await readFile(join(dir, 'key.pem')), cert: await readFile(join(dir, 'cert.pem')) },
-      throttle: new AuthThrottle({ baseDelayMs: 0, maxDelayMs: 0, lockoutFailures: 1000 }),
+      throttle: createAuthThrottle({ db, sleep: () => Promise.resolve(), sourceCeiling: 1000 }),
       log: (event, fields = {}) => logs.push({ event, fields }),
       faults: {
         beforeCommit: () => {
@@ -241,6 +241,22 @@ describe.skipIf(baseUrl === undefined)('submission daemon (PST-T-1.2)', () => {
     expect(serialized).not.toContain(WEB_PASSWORD);
     expect(serialized).not.toContain(acct.appPassword);
     expect(logs.some((l) => l.event === 'auth' && l.fields['reason'] === 'revoked')).toBe(true);
+  });
+
+  it('PST-REQ-075: an AUTH failure is an auth.failure audit row through the shared throttle, with no password', async () => {
+    const acct = await makeAccount();
+    const c = await over465();
+    expect(await authPlain(c, acct.address, WEB_PASSWORD)).toMatchObject({ code: 535, enhanced: '5.7.8' });
+    c.close();
+    const rows = await db.auditEvent.findMany({ where: { action: 'auth.failure', entityId: acct.address.toLowerCase() } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actorKind: 'anonymous',
+      entityType: 'credential',
+      ip: '127.0.0.1',
+      after: { protocol: 'submission', username: acct.address.toLowerCase(), reason: 'bad_password' },
+    });
+    expect(JSON.stringify(rows)).not.toContain(WEB_PASSWORD);
   });
 
   it('spoofed MAIL FROM someone@gmail.com → 553; <> → 553', async () => {

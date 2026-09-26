@@ -218,6 +218,9 @@ importers:
       '@postroom/auth-checks':
         specifier: workspace:*
         version: link:../../packages/auth-checks
+      '@postroom/auth-throttle':
+        specifier: workspace:*
+        version: link:../../packages/auth-throttle
       '@postroom/blobstore':
         specifier: workspace:*
         version: link:../../packages/blobstore

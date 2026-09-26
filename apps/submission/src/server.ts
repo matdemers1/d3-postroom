@@ -12,6 +12,7 @@ import { Readable, type Duplex } from 'node:stream';
 import { createServer as createTlsServer, type Server as TlsServer, type TLSSocket } from 'node:tls';
 import { HeaderTooLargeError, signMessage, splitMessage } from '@postroom/auth-checks';
 import { recordAudit } from '@postroom/audit';
+import { createAuthThrottle, type AuthThrottle } from '@postroom/auth-throttle';
 import { tmpDir, type BlobStore } from '@postroom/blobstore';
 import { verifyProtocolLogin } from '@postroom/credentials';
 import type { Kek } from '@postroom/crypto';
@@ -33,7 +34,6 @@ import { loadSigningKeys } from './dkim.js';
 import { inspectHeaders, rewriteHeaders } from './headers.js';
 import { SASL_MECHANISMS, readCredentials } from './sasl.js';
 import { Spool } from './spool.js';
-import { AuthThrottle } from './throttle.js';
 
 export const SubmissionReplies = {
   authRequired: reply(530, '5.7.0', 'Authentication required'),
@@ -75,6 +75,7 @@ export interface SubmissionOptions {
   readonly storage: () => SubmissionStorage;
   /** PEM key + certificate. Null: 587 serves without STARTTLS, so AUTH (and so MAIL) is impossible. */
   readonly tls: { readonly key: string | Buffer; readonly cert: string | Buffer } | null;
+  /** PST-REQ-075: shared, audit-backed tarpit. Default: one per listener set, on `db`. */
   readonly throttle?: AuthThrottle;
   /** RCPT-time, best-effort (see caps-seam.ts). Not what makes the cap correct under concurrency. */
   readonly checkCaps?: CheckCaps;
@@ -100,10 +101,6 @@ const DEFAULT_MAX_HEADER_BYTES = 1024 * 1024;
 
 const noLog = (): void => undefined;
 
-function sleep(ms: number): Promise<void> {
-  return ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function domainOf(address: string): string {
   return address.slice(address.lastIndexOf('@') + 1).toLowerCase();
 }
@@ -114,12 +111,16 @@ function errorText(err: unknown): string {
 
 /** Serve one SMTP submission connection. `secure` is true for implicit TLS (465). */
 export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: string | undefined, o: SubmissionOptions): ServerSession {
-  const throttle = o.throttle ?? new AuthThrottle();
+  const throttle = o.throttle ?? createAuthThrottle({ db: o.db });
   const checkCaps = o.checkCaps ?? allowAllCaps;
   const enforceCaps = o.enforceCaps ?? allowAllEnforcement;
   const log = o.log ?? noLog;
   const now = o.now ?? ((): Date => new Date());
   const ip = remoteAddress ?? 'unknown';
+  const hangup = new AbortController();
+  socket.once('close', () => {
+    hangup.abort();
+  });
   let login: Login | null = null;
 
   const owns = (address: string): boolean => login?.addresses.has(address.toLowerCase()) === true;
@@ -145,13 +146,17 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
       ...(o.tls === null ? {} : { upgradeTls: tlsUpgrader({ key: o.tls.key, cert: o.tls.cert }) }),
 
       onAuth: async (request, sasl, ctx): Promise<AuthResult> => {
-        if (throttle.isLocked(ip)) {
-          log('auth', { session: ctx.id, ip, mechanism: request.mechanism, ok: false, reason: 'locked' });
+        const creds = await readCredentials(request, sasl);
+        // PST-REQ-075: the tarpit runs before the credentials are evaluated, and every failure is an
+        // audit row (auth.failure, no secrets). Aborted when the client hangs up mid-delay.
+        const attempt = { protocol: 'submission', username: creds?.username ?? '', ip };
+        const gate = await throttle.before(attempt, hangup.signal);
+        if (gate.outcome !== 'proceed') {
+          log('auth', { session: ctx.id, ip, mechanism: request.mechanism, ok: false, reason: gate.outcome === 'refuse' ? 'locked' : 'disconnected' });
           return { ok: false, reply: SubmissionReplies.authLocked };
         }
-        const creds = await readCredentials(request, sasl);
         if (creds === null) {
-          await sleep(throttle.fail(ip));
+          await throttle.failure(attempt, 'malformed');
           log('auth', { session: ctx.id, ip, mechanism: request.mechanism, ok: false, reason: 'malformed' });
           return { ok: false, reply: SubmissionReplies.malformedCredentials };
         }
@@ -165,13 +170,13 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
           { pepper: o.pepper },
         );
         if (!result.ok) {
-          // One generic refusal for every reason (the reason goes to the log only). A frozen
+          // One generic refusal for every reason (the reason goes to the log and the audit row only). A frozen
           // credential is refused like the rest until PST-T-1.10 decides how held mail is reported.
-          await sleep(throttle.fail(ip));
+          await throttle.failure(attempt, result.reason);
           log('auth', { session: ctx.id, ip, mechanism: request.mechanism, username: creds.username, ok: false, reason: result.reason });
           return { ok: false, reply: SubmissionReplies.badCredentials };
         }
-        throttle.succeed(ip);
+        await throttle.success(attempt);
         login = {
           accountId: result.accountId,
           appPasswordId: result.appPasswordId,
@@ -384,7 +389,9 @@ export interface SubmissionListeners {
 }
 
 /** Create (not yet listening) the 587 and 465 servers. */
-export function createSubmissionListeners(o: SubmissionOptions): SubmissionListeners {
+export function createSubmissionListeners(options: SubmissionOptions): SubmissionListeners {
+  // One throttle for every session, so a success in one connection ends the streak for the next.
+  const o: SubmissionOptions = { ...options, throttle: options.throttle ?? createAuthThrottle({ db: options.db }) };
   const sockets = new Set<Socket | TLSSocket>();
   const track = (s: Socket | TLSSocket): void => {
     sockets.add(s);

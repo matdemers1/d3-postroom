@@ -11,6 +11,7 @@ import { promisify } from 'node:util';
 import { createAlertSender, type AlertMessage, type AlertResult } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { createAppPassword, hashAppPassword } from '@postroom/credentials';
+import { createAuthThrottle } from '@postroom/auth-throttle';
 import { generateKek, type Kek } from '@postroom/crypto';
 import { AddressKind, seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
@@ -18,7 +19,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCapsChecker, createCapsEnforcer } from '../../src/caps/index.js';
 import { ensureDkimKeys } from '../../src/dkim.js';
 import { createSubmissionListeners, type SubmissionListeners } from '../../src/server.js';
-import { AuthThrottle } from '../../src/throttle.js';
 import { SmtpTestClient, b64 } from './client.js';
 
 const exec = promisify(execFile);
@@ -90,7 +90,7 @@ describe.skipIf(baseUrl === undefined)('per-credential recipient caps (PST-T-1.1
       pepper: PEPPER,
       storage: () => ({ blobs, kek }),
       tls: { key: await readFile(join(dir, 'key.pem')), cert: await readFile(join(dir, 'cert.pem')) },
-      throttle: new AuthThrottle({ baseDelayMs: 0, maxDelayMs: 0, lockoutFailures: 1000 }),
+      throttle: createAuthThrottle({ db, sleep: () => Promise.resolve(), sourceCeiling: 1000 }),
       checkCaps,
       enforceCaps,
     });
