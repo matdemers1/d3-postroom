@@ -71,6 +71,17 @@ export const api = {
   endSession: (id: string) => call<{ ok: true }>('DELETE', `/api/auth/sessions/${encodeURIComponent(id)}`),
   adminSessions: () => call<{ sessions: AdminSession[] }>('GET', '/api/admin/sessions'),
   revokeSession: (id: string) => call<{ ok: true }>('DELETE', `/api/admin/sessions/${encodeURIComponent(id)}`),
+  adminHealth: () => call<{ tiles: HealthTile[] }>('GET', '/api/admin/health'),
+  adminJobs: (opts: { status?: string; queue?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.status !== undefined) q.set('status', opts.status);
+    if (opts.queue !== undefined) q.set('queue', opts.queue);
+    const qs = q.toString();
+    return call<{ jobs: AdminJob[] }>('GET', `/api/admin/jobs${qs === '' ? '' : `?${qs}`}`);
+  },
+  replayJob: (id: string) => call<{ ok: true }>('POST', `/api/admin/jobs/${encodeURIComponent(id)}/replay`),
+  replayInbound: (inboundMessageId: string, fromStage: InboundStage) =>
+    call<{ ok: true; jobId: string; fromStage: InboundStage }>('POST', `/api/admin/jobs/inbound/${encodeURIComponent(inboundMessageId)}/replay`, { fromStage }),
   appPasswords: () => call<{ appPasswords: AppPassword[] }>('GET', '/api/app-passwords'),
   createAppPassword: (input: { label: string; scopes: AppPasswordScope[] }) =>
     call<AppPassword & { password: string }>('POST', '/api/app-passwords', input),
@@ -254,6 +265,33 @@ export interface AdminSession {
   ip: string | null;
   userAgent: string | null;
   current: boolean;
+}
+
+export type HealthTileState = 'ok' | 'warn' | 'down' | 'unknown';
+
+export interface HealthTile {
+  id: string;
+  label: string;
+  state: HealthTileState;
+  detail: string;
+  since: string | null;
+}
+
+/** Matches apps/api/src/admin-jobs/index.ts's STAGES. */
+export const INBOUND_STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify'] as const;
+export type InboundStage = (typeof INBOUND_STAGES)[number];
+
+export interface AdminJob {
+  id: string;
+  queue: string;
+  status: string;
+  payload: unknown;
+  attempts: number;
+  maxAttempts: number;
+  runAt: string;
+  lastError: string | null;
+  createdAt: string;
+  finishedAt: string | null;
 }
 
 /** Where a path must go for this auth state, or null to render it. Pure, so it is unit-tested. */

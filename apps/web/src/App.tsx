@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { Alert, AuthLayout, Spinner, ThemeProvider } from '@d3cloud/ui';
 import { api, redirectFor, type AuthState } from './api';
 import { MailProvider } from './mail/MailContext';
+import { AdminHealth } from './screens/AdminHealth';
+import { AdminJobs } from './screens/AdminJobs';
 import { AdminSessions } from './screens/AdminSessions';
 import { AppPasswords } from './screens/AppPasswords';
 import { ChangePassword } from './screens/ChangePassword';
@@ -72,6 +74,8 @@ function Gate() {
         <Route path="/account/password" element={<ChangePassword />} />
         <Route path="/account/sessions" element={<Sessions />} />
         <Route path="/admin/sessions" element={<AdminSessions />} />
+        <Route path="/admin/health" element={<AdminHealth />} />
+        <Route path="/admin/jobs" element={<AdminJobs />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

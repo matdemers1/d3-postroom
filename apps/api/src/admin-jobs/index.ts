@@ -57,6 +57,56 @@ export function adminJobRoutes(deps: ApiDeps): Router {
   const { db } = rt;
   const router = Router();
 
+  // POST /api/admin/jobs/dev-seed-failure — e2e only (POSTROOM_E2E_SEED=1, same gate as
+  // admin-dev/index.ts's seed route): spools a message whose file stage never ran and a matching
+  // dead 'inbound' job, so e2e/tests/admin-health.spec.ts has something real to replay from the
+  // Jobs screen without a live SMTP path or worker in the loop.
+  router.post(
+    '/dev-seed-failure',
+    handle(async (req, res) => {
+      if (deps.env['POSTROOM_E2E_SEED'] !== '1') {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      const me = currentSession(req);
+      const seeded = await audited(
+        db,
+        { kind: 'account', accountId: me.accountId },
+        { action: 'admin.dev.seed-failure', entityType: 'inbound_message', context: getAuditContext(req) },
+        async (tx) => {
+          const sha256 = randomUUID().replace(/-/g, '').padEnd(64, '0');
+          await tx.blob.upsert({
+            where: { sha256 },
+            create: { sha256, size: 1, wrappedDek: new Uint8Array(1), kekId: 'k', aead: 'x', nonce: new Uint8Array(1) },
+            update: {},
+          });
+          const inbound = await tx.inboundMessage.create({
+            data: {
+              envelopeFrom: 'sender@example.org',
+              recipients: [],
+              blobSha256: sha256,
+              size: 1,
+              state: InboundState.failed,
+              lastError: 'Error: simulated file-stage failure (dev-seed-failure)',
+            },
+          });
+          const job = await tx.job.create({
+            data: {
+              queue: INBOUND_QUEUE,
+              payload: { inboundMessageId: inbound.id },
+              status: JobStatus.dead,
+              attempts: 5,
+              maxAttempts: 5,
+              lastError: 'Error: simulated file-stage failure (dev-seed-failure)',
+            },
+          });
+          return { entityId: inbound.id, before: null, after: { jobId: job.id }, result: { inboundMessageId: inbound.id, jobId: job.id } };
+        },
+      );
+      res.status(201).json(seeded);
+    }),
+  );
+
   router.get(
     '/',
     handle(async (req, res) => {

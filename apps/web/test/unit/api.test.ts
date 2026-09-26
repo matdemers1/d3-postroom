@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, describeError, redirectFor, type AuthState } from '../../src/api';
+import { ApiError, INBOUND_STAGES, describeError, redirectFor, type AuthState } from '../../src/api';
 
 const base: AuthState = { setupRequired: false, oidcConfigured: false, oidcAvailable: false, signedIn: false };
 const signedIn = (isAdmin: boolean): AuthState => ({
@@ -31,6 +31,19 @@ describe('redirectFor', () => {
   it('keeps non-admins out of admin screens (PST-REQ-007)', () => {
     expect(redirectFor(signedIn(false), '/admin/sessions')).toBe('/');
     expect(redirectFor(signedIn(true), '/admin/sessions')).toBeNull();
+  });
+
+  it('keeps non-admins out of Health and Jobs too (PST-REQ-127, PST-REQ-128)', () => {
+    expect(redirectFor(signedIn(false), '/admin/health')).toBe('/');
+    expect(redirectFor(signedIn(false), '/admin/jobs')).toBe('/');
+    expect(redirectFor(signedIn(true), '/admin/health')).toBeNull();
+    expect(redirectFor(signedIn(true), '/admin/jobs')).toBeNull();
+  });
+});
+
+describe('INBOUND_STAGES', () => {
+  it('matches the pipeline order the replay endpoint accepts (apps/api/src/admin-jobs/index.ts)', () => {
+    expect(INBOUND_STAGES).toEqual(['verify', 'parse', 'classify', 'sieve', 'file', 'notify']);
   });
 });
 
