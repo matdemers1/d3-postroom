@@ -4,6 +4,9 @@
 // Keys are created by an explicit step (`ensureDkimKeys`, run by the CLI or a boot/admin step),
 // never on first send: a key nobody has published in DNS would sign mail that then fails DKIM
 // everywhere. Submission refuses with 451 while a domain has no keys rather than send unsigned.
+//
+// Rotation (PST-T-7.4, PST-REQ-125) lives in dkim-rotation.ts. Only a key in state `active` signs;
+// a `pending` key waits for its TXT to be seen in DNS, a `retiring` one stays published for 7 days.
 import {
   dnsRecordFor,
   generateDkimKeys,
@@ -21,14 +24,21 @@ import { DkimAlgorithm as DbAlgorithm, normalizeDomain, type Db } from '@postroo
 /** Signing order: Ed25519 first, then RSA (both always). */
 export const DKIM_ALGORITHMS: readonly DkimAlgorithm[] = ['ed25519-sha256', 'rsa-sha256'];
 
-const TO_DB: Record<DkimAlgorithm, DbAlgorithm> = {
+export const TO_DB: Record<DkimAlgorithm, DbAlgorithm> = {
   'ed25519-sha256': DbAlgorithm.ed25519_sha256,
   'rsa-sha256': DbAlgorithm.rsa_sha256,
 };
-const FROM_DB: Record<DbAlgorithm, DkimAlgorithm> = {
+export const FROM_DB: Record<DbAlgorithm, DkimAlgorithm> = {
   [DbAlgorithm.ed25519_sha256]: 'ed25519-sha256',
   [DbAlgorithm.rsa_sha256]: 'rsa-sha256',
 };
+
+/**
+ * The dkim_key_state enum's values (the generated enum is not re-exported by @postroom/db).
+ * pending → active → retiring → retired; only `active` signs.
+ */
+export const KEY_STATE = { pending: 'pending', active: 'active', retiring: 'retiring', retired: 'retired' } as const;
+export type KeyState = (typeof KEY_STATE)[keyof typeof KEY_STATE];
 
 const SYSTEM: Actor = { kind: 'system', label: 'dkim-keys' };
 
@@ -47,6 +57,21 @@ export interface DkimKeyInfo {
   readonly created: boolean;
 }
 
+/**
+ * A dated selector for a key created at `now` (`pr<yyyy><mm>e` / `pr<yyyy><mm>r`, see selectorFor),
+ * with a counter appended — `pr202612e2`, `pr202612e3` — when that selector is already taken on the
+ * domain (a second key made in the same month). A selector is never reused: its TXT may still be
+ * cached, or still verifying mail signed under the earlier key.
+ */
+export function datedSelector(now: Date, algorithm: DkimAlgorithm, taken: ReadonlySet<string>): string {
+  const base = selectorFor(now, algorithm);
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${base}${String(n)}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 export class UnknownDomainError extends Error {
   override readonly name = 'UnknownDomainError';
   constructor(readonly domain: string) {
@@ -62,10 +87,10 @@ interface KeyRow {
   readonly sealedPrivate: Uint8Array;
 }
 
-/** The live key per algorithm for a domain: not retired, active from before `now`, newest first. */
+/** The signing key per algorithm for a domain: state `active`, active from before `now`, newest first. */
 async function activeKeys(db: Db, domainId: string, now: Date): Promise<Map<DkimAlgorithm, KeyRow>> {
   const rows = await db.dkimKey.findMany({
-    where: { domainId, retiredAt: null, activeFrom: { lte: now } },
+    where: { domainId, state: KEY_STATE.active, retiredAt: null, activeFrom: { lte: now } },
     orderBy: { activeFrom: 'desc' },
     select: { id: true, selector: true, algorithm: true, dnsRecord: true, sealedPrivate: true },
   });
@@ -110,19 +135,20 @@ export async function ensureDkimKeys(
     }
     pairs ??= generateDkimKeys();
     const pair = algorithm === 'rsa-sha256' ? pairs.rsa : pairs.ed25519;
-    const selector = selectorFor(now, algorithm);
     const dnsRecord = dnsRecordFor(algorithm, pair.publicKey);
-    const sealed = sealDkimKey(kek, pair.privateKey, dkimAad(name, selector));
     const select = { id: true, selector: true, algorithm: true, dnsRecord: true, sealedPrivate: true } as const;
     const result = await db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`postroom-dkim:${name}`}, 0))`;
       // Someone else created one while we generated: keep theirs and write nothing.
       const raced = await tx.dkimKey.findFirst({
-        where: { domainId: domain.id, algorithm: TO_DB[algorithm], retiredAt: null, activeFrom: { lte: now } },
+        where: { domainId: domain.id, algorithm: TO_DB[algorithm], state: KEY_STATE.active, retiredAt: null, activeFrom: { lte: now } },
         orderBy: { activeFrom: 'desc' },
         select,
       });
       if (raced !== null) return { row: raced, created: false };
+      const taken = await tx.dkimKey.findMany({ where: { domainId: domain.id }, select: { selector: true } });
+      const selector = datedSelector(now, algorithm, new Set(taken.map((t) => t.selector)));
+      const sealed = sealDkimKey(kek, pair.privateKey, dkimAad(name, selector));
       const row = await tx.dkimKey.create({
         data: {
           domainId: domain.id,
@@ -132,6 +158,7 @@ export async function ensureDkimKeys(
           sealedPrivate: new Uint8Array(sealed),
           kekId: kek.id,
           activeFrom: now,
+          state: KEY_STATE.active,
         },
         select,
       });
