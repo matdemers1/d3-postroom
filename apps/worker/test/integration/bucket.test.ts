@@ -80,11 +80,10 @@ describe.skipIf(baseUrl === undefined)('bucket filing (PST-T-5.1, PST-REQ-101, P
     blobs = createBlobStore({ root: blobRoot, db, kek: generateKek() });
     worker = await startWorker({ db, databaseUrl: t.url, queues: { [INBOUND_QUEUE]: createInboundPipeline({ db, blobs }).handle }, manual: true });
 
-    // `me` wrote to bob@example.org earlier (the reply graph, from the outbound queue).
-    const sent = await db.outboundMessage.create({
-      data: { accountId: meId, envelopeFrom: 'me@d3cloud.io', headerFrom: 'me@d3cloud.io', blobSha256: 'f'.repeat(64), size: 1, submittedVia: 'submission', createdAt: new Date(Date.now() - 60_000) },
+    // `me` wrote to bob@example.org earlier (the reply graph, PST-T-5.8's correspondent table).
+    await db.correspondent.create({
+      data: { accountId: meId, address: 'bob@example.org', firstWrittenAt: new Date(Date.now() - 60_000), lastWrittenAt: new Date(Date.now() - 60_000), count: 1 },
     });
-    await db.outboundRecipient.create({ data: { outboundMessageId: sent.id, address: 'bob@example.org', domain: 'example.org' } });
   }, 120_000);
 
   afterAll(async () => {
@@ -155,13 +154,10 @@ describe.skipIf(baseUrl === undefined)('bucket filing (PST-T-5.1, PST-REQ-101, P
     expect(yours).toMatchObject({ flags: ['$NewSender', '$People'], mailbox: { name: 'INBOX' }, verdict: { bucket: 'people' } });
   });
 
-  it('the reply graph also comes from the Sent mailbox', async () => {
-    const sentBox = await db.mailbox.findFirstOrThrow({ where: { accountId: youId, specialUse: 'sent' } });
-    const blob = await blobs.put(message({ from: 'you@d3cloud.io', to: 'Dave <dave@example.com>', subject: 'ping' }));
-    const m = await db.message.create({
-      data: { mailboxId: sentBox.id, uid: sentBox.uidnext, modseq: 1n, blobSha256: blob.sha256, size: blob.size, internalDate: new Date(Date.now() - 60_000) },
+  it('the reply graph also comes from a correspondent row filed by an IMAP Sent APPEND (PST-T-5.8)', async () => {
+    await db.correspondent.create({
+      data: { accountId: youId, address: 'dave@example.com', firstWrittenAt: new Date(Date.now() - 60_000), lastWrittenAt: new Date(Date.now() - 60_000), count: 1 },
     });
-    await db.messageSearch.create({ data: { messageId: m.id, accountId: youId, toText: 'Dave <dave@example.com>' } });
     const { copies } = await deliver({
       recipients: [rcpt('you', youId)],
       envelopeFrom: 'dave@example.com',

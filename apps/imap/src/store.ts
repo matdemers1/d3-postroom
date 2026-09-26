@@ -91,6 +91,8 @@ export interface Denormalised {
   readonly sentAt: Date | null;
   readonly inReplyTo: string | null;
   readonly references: string[];
+  /** To/Cc addresses (lowercased local@domain), for the reply-graph harvest on a \Sent APPEND (PST-T-5.8). */
+  readonly recipientAddresses: string[];
 }
 
 /** The same columns smtp-in and the worker fill at filing time, from a message's top-level headers. */
@@ -101,7 +103,14 @@ export function denormalise(headers: HeaderList): Denormalised {
   const date = headers.get('date');
   const irt = headers.get('in-reply-to');
   const refs = headers.get('references');
+  const to = headers.get('to');
+  const cc = headers.get('cc');
   const sent = date === null ? null : parseDate(date);
+  const recipients = new Set<string>();
+  for (const field of [to, cc]) {
+    if (field === null) continue;
+    for (const m of parseMailboxes(field)) if (m.address !== '') recipients.add(m.address.toLowerCase());
+  }
   return {
     messageIdHeader: mid === null ? null : parseMessageId(mid),
     subject: subject === null ? null : subject.slice(0, 998),
@@ -109,6 +118,7 @@ export function denormalise(headers: HeaderList): Denormalised {
     sentAt: sent === null || Number.isNaN(sent.getTime()) ? null : sent,
     inReplyTo: irt === null ? null : (parseMessageIdList(irt)[0] ?? null),
     references: refs === null ? [] : parseMessageIdList(refs).slice(0, 100),
+    recipientAddresses: [...recipients],
   };
 }
 
@@ -490,8 +500,8 @@ export class MailStore {
     input: { sha256: string; size: number; flags: readonly string[]; internalDate: Date; denorm: Denormalised | null },
   ): Promise<{ uid: number; uidvalidity: number }> {
     return this.db.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ name: string; uidvalidity: number }[]>`
-        SELECT name, uidvalidity FROM mailbox WHERE id = ${mailboxId}::uuid AND account_id = ${accountId}::uuid FOR UPDATE`;
+      const rows = await tx.$queryRaw<{ name: string; uidvalidity: number; special_use: SpecialUse | null }[]>`
+        SELECT name, uidvalidity, special_use FROM mailbox WHERE id = ${mailboxId}::uuid AND account_id = ${accountId}::uuid FOR UPDATE`;
       const mb = rows[0];
       if (mb === undefined) throw new MailboxGoneError();
       const filed = await fileLocalMessage(tx, {
@@ -502,7 +512,15 @@ export class MailStore {
         internalDate: input.internalDate,
         flags: normalizeFlags(input.flags),
       });
-      if (input.denorm !== null) await tx.message.update({ where: { id: filed.id }, data: { ...input.denorm } });
+      if (input.denorm !== null) {
+        const { recipientAddresses, ...denormColumns } = input.denorm;
+        await tx.message.update({ where: { id: filed.id }, data: { ...denormColumns } });
+        // A client filing its own Sent copy (PST-T-5.8): harvest To/Cc into the reply graph too, the
+        // same table acceptSubmission maintains for messages sent through Postroom itself.
+        if (mb.special_use === 'sent' && recipientAddresses.length > 0) {
+          await harvestSentRecipients(tx, accountId, recipientAddresses, input.internalDate);
+        }
+      }
       await notifyMailbox(tx, mailboxId);
       return { uid: filed.uid, uidvalidity: mb.uidvalidity };
     }, TX_OPTIONS);
@@ -733,6 +751,38 @@ async function lockBlob(tx: Tx, sha256: string): Promise<void> {
  */
 async function notifyMailbox(tx: Tx, mailboxId: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_notify(${MAILBOX_CHANNEL}, ${mailboxId})`;
+}
+
+/**
+ * Lowercase, strip a `+tag` from the local part, and strip a trailing dot from the domain — the same
+ * normalization @postroom/classifier's `normalizeAddress` applies (kept local to avoid a new
+ * workspace dependency; PST-T-5.8, PST-REQ-102).
+ */
+function normalizeCorrespondentAddress(address: string): string {
+  const trimmed = address.trim().toLowerCase();
+  const at = trimmed.lastIndexOf('@');
+  if (at < 0) return trimmed;
+  let local = trimmed.slice(0, at);
+  const plus = local.indexOf('+');
+  if (plus >= 0) local = local.slice(0, plus);
+  const domain = trimmed.slice(at + 1).replace(/\.+$/, '');
+  return `${local}@${domain}`;
+}
+
+/**
+ * A client filing its own copy into \Sent (rather than sending through acceptSubmission) still
+ * counts as writing to its To/Cc addresses (PST-T-5.8, PST-REQ-102): upsert the correspondent table
+ * the same way, in the same transaction as the APPEND.
+ */
+async function harvestSentRecipients(tx: Tx, accountId: string, addresses: readonly string[], sentAt: Date): Promise<void> {
+  const normalized = new Set(addresses.map(normalizeCorrespondentAddress).filter((a) => a !== ''));
+  for (const address of normalized) {
+    await tx.correspondent.upsert({
+      where: { accountId_address: { accountId, address } },
+      create: { accountId, address, firstWrittenAt: sentAt, lastWrittenAt: sentAt, count: 1 },
+      update: { lastWrittenAt: sentAt, count: { increment: 1 } },
+    });
+  }
 }
 
 /**
