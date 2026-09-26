@@ -35,7 +35,9 @@
     "@postroom/blobstore": "workspace:*",
     "pg": "^8.23.0",
     "@postroom/dsn": "workspace:*",
-    "@postroom/classifier": "workspace:*"
+    "@postroom/classifier": "workspace:*",
+    "@postroom/submission": "workspace:*",
+    "@postroom/alerts": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
@@ -43,7 +45,6 @@
     "supertest": "^7.2.2",
     "tsx": "^4.23.13",
     "@types/pg": "^8.23.1",
-    "@postroom/submission": "workspace:*",
     "@postroom/auth-throttle": "workspace:*"
   }
 }

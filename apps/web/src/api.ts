@@ -21,7 +21,7 @@ export class ApiError extends Error {
 }
 
 async function call<T>(
-  method: 'GET' | 'POST' | 'DELETE' | 'PATCH',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
   path: string,
   body?: unknown,
   extraHeaders: Record<string, string> = {},
@@ -99,6 +99,17 @@ export const api = {
     if (opts.cursor !== undefined && opts.cursor !== null) params.set('cursor', opts.cursor);
     return call<MessagePage>('GET', `/api/search?${params.toString()}`);
   },
+
+  // --- Compose (PST-T-3.11) -------------------------------------------------------------------
+  /** Through the submission path; filed in Sent and threaded before it answers. */
+  send: (input: SendInput) => call<SendResult>('POST', '/api/compose/send', input),
+  createDraft: (input: DraftInput) => call<DraftSaved>('POST', '/api/compose/drafts', input),
+  /** Replaces the draft: the answer carries its NEW id. */
+  replaceDraft: (id: string, input: DraftInput) => call<DraftSaved>('PUT', `/api/compose/drafts/${encodeURIComponent(id)}`, input),
+  draft: (id: string) => call<SavedDraft>('GET', `/api/compose/drafts/${encodeURIComponent(id)}`),
+  drafts: (opts: { inReplyTo?: string } = {}) =>
+    call<{ drafts: SavedDraft[] }>('GET', `/api/compose/drafts${opts.inReplyTo === undefined ? '' : `?${new URLSearchParams({ inReplyTo: opts.inReplyTo }).toString()}`}`),
+  deleteDraft: (id: string) => call<null>('DELETE', `/api/compose/drafts/${encodeURIComponent(id)}`),
 };
 
 /** The render-ticket request: remote images only when the reader chose to load them (PST-REQ-082). */
@@ -111,6 +122,57 @@ export const attachmentUrl = (messageId: string, partId: string): string =>
 export const rawMessageUrl = (messageId: string): string => `/api/messages/${encodeURIComponent(messageId)}/raw`;
 /** The SSE stream (PST-REQ-083). */
 export const EVENTS_URL = '/api/events';
+
+export type ComposeKind = 'new' | 'reply' | 'replyall' | 'forward';
+
+/** What the composer sends and saves. Address fields are entries ("Name <a@b>"), one per address. */
+export interface ComposeFields {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  text: string;
+  inReplyTo: string | null;
+  references: string[];
+  /** Forward: the message attached whole (message/rfc822). */
+  forwardOf: string | null;
+}
+
+export interface SendInput extends ComposeFields {
+  from: string;
+  /** The draft this send replaces; removed from Drafts with the send. */
+  draftId: string | null;
+}
+
+export interface SendResult {
+  messageId: string;
+  outboundId: string;
+  sentMessageId: string;
+  sentMailboxId: string;
+  threadId: string | null;
+}
+
+export interface DraftInput extends ComposeFields {
+  from?: string;
+  mode: ComposeKind | null;
+  sourceId: string | null;
+}
+
+export interface DraftSaved {
+  id: string;
+  mailboxId: string;
+  uid: number;
+  savedAt: string;
+}
+
+export interface SavedDraft extends ComposeFields {
+  id: string;
+  mailboxId: string;
+  from: string;
+  mode: ComposeKind | null;
+  sourceId: string | null;
+  savedAt: string;
+}
 
 export type SpecialUse = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'rejects';
 

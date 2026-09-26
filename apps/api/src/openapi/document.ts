@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { SESSION_COOKIE } from '../auth/sessions.js';
 import * as S from '../mail/schemas.js';
 import * as SP from '../senders/schemas.js';
+import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
 
 type Json = Record<string, unknown>;
 
@@ -54,6 +55,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   MessageNewEvent: S.MessageNewEvent,
   SenderPin: SP.SenderPinView,
   SenderScreenResult: SP.SenderScreenResult,
+  ...COMPOSE_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -243,6 +245,7 @@ export const ROUTES: RouteSpec[] = [
     headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
     responses: { '200': { description: 'The screen decision after the change.', schema: 'SenderScreenResult' }, ...COMMON, '403': err('Missing CSRF header.') },
   },
+  ...COMPOSE_ROUTES,
 ];
 
 function strip(schema: Json): Json {
