@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { attachmentPolicy, type OpenPart } from '../../src/policy.js';
 import { inspectAttachment } from '../../src/inspect.js';
 import { PACKAGE } from '../../src/index.js';
+import { readEntryBytes, readZipEntries } from '../../src/zip.js';
 import {
   benignZip,
   buildOleWithStorage,
+  corruptZipCentralDirectoryOffset,
   doubleExtensionFilename,
   elfExecutable,
   isoImage,
@@ -24,6 +26,9 @@ import {
   rtlOverrideFilename,
   sevenZipSignature,
   shellScript,
+  zipBomb,
+  zipNestedBeyondDepthLimit,
+  zipWithExecutableTwoLevelsDeep,
   zipWithNestedArchiveAndExecutable,
 } from './fixtures.js';
 
@@ -263,3 +268,111 @@ describe('robustness', () => {
     expect(() => inspectAttachment({ filename: null, contentType: 'application/octet-stream', bytes: Buffer.alloc(0), size: 0 })).not.toThrow();
   });
 });
+
+// Regressions for the three defects the verifier found in the first pass of PST-T-2.10: recursion
+// into nested ZIP entries, a malformed/corrupted central directory never falling through to
+// "benign", and an unbounded decompression (zip-bomb) allocation.
+describe('regression: nested-ZIP evasion, malformed central directory, zip bombs', () => {
+  it('finds an executable two levels deep inside nested ZIPs, and always quarantines it even for a sender with history', async () => {
+    const bytes = zipWithExecutableTwoLevelsDeep();
+    const direct = inspectAttachment({ filename: 'bundle.zip', contentType: 'application/zip', bytes, size: bytes.length });
+    expect(direct.verdict).toBe('quarantine');
+    expect(direct.reasons.some((r) => r.includes('executable') && r.includes('payload.exe'))).toBe(true);
+
+    const collected = {
+      attachments: [
+        { partId: '1.1', contentType: 'application/zip', filename: 'bundle.zip', disposition: 'attachment', contentId: null, encoding: 'base64', charset: null, size: bytes.length, sha256: 'x', firstBytes: bytes.subarray(0, 512), inMessage: null },
+      ],
+    };
+    const openPart: OpenPart = () => Readable.from([bytes]);
+    const result = await attachmentPolicy(collected, { senderHasHistory: true, openPart });
+    expect(result.quarantine).toBe(true);
+    expect(result.findings[0]?.verdict).toBe('quarantine');
+    expect(result.findings[0]?.kind).toBe('archive-executable');
+  });
+
+  it('reports a nested archive past the recursion depth limit as uninspectable rather than silently passing it', () => {
+    const bytes = zipNestedBeyondDepthLimit(4); // outer + 4 levels: deeper than MAX_DEPTH (3)
+    const result = inspectAttachment({ filename: 'deep.zip', contentType: 'application/zip', bytes, size: bytes.length });
+    expect(result.verdict).toBe('quarantine');
+    expect(result.reasons.some((r) => r.includes('maximum inspection depth'))).toBe(true);
+  });
+
+  it('never returns benign for a ZIP with a corrupted/out-of-range central directory offset, even when it truly contains a macro', () => {
+    const good = ooxmlWithMacro();
+    const corrupted = corruptZipCentralDirectoryOffset(good);
+    const result = inspectAttachment({ filename: 'report.docx', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', bytes: corrupted, size: corrupted.length });
+    expect(result.kind).not.toBe('benign');
+    expect(result.verdict).toBe('quarantine');
+    expect(result.reasons.some((r) => r.includes('central directory') && (r.includes('corrupt') || r.includes('missing')))).toBe(true);
+    // The fallback local-header scan should still have recovered the real macro entry.
+    expect(result.reasons.some((r) => r.includes('vbaProject.bin'))).toBe(true);
+  });
+
+  it('quarantines a malformed archive even for a sender with history (a broken container is itself suspicious)', async () => {
+    const corrupted = corruptZipCentralDirectoryOffset(benignZip());
+    const collected = {
+      attachments: [
+        { partId: '1.1', contentType: 'application/zip', filename: 'weird.zip', disposition: 'attachment', contentId: null, encoding: 'base64', charset: null, size: corrupted.length, sha256: 'x', firstBytes: corrupted.subarray(0, 512), inMessage: null },
+      ],
+    };
+    const openPart: OpenPart = () => Readable.from([corrupted]);
+    const result = await attachmentPolicy(collected, { senderHasHistory: true, openPart });
+    expect(result.quarantine).toBe(true);
+    expect(result.findings[0]?.kind).toBe('malformed-archive');
+  });
+
+  it('a corrupted EOCD offset is recognised even when a fresh, well-formed ZIP has zero entries recoverable by the fallback scan', () => {
+    // A trivial ZIP skeleton with its EOCD offset corrupted: still "malformed", never "benign".
+    const empty = corruptZipCentralDirectoryOffset(emptyZip());
+    const result = inspectAttachment({ filename: 'empty.zip', contentType: 'application/zip', bytes: empty, size: empty.length });
+    expect(result.kind).toBe('malformed-archive');
+    expect(result.verdict).toBe('quarantine');
+  });
+
+  it('readZipEntries recovers the real entries via local-header fallback when the central directory is corrupted', () => {
+    const good = ooxmlWithMacro();
+    const corrupted = corruptZipCentralDirectoryOffset(good);
+    const listing = readZipEntries(corrupted);
+    expect(listing).not.toBeNull();
+    expect(listing?.malformed).toBe(true);
+    expect(listing?.entries.some((e) => e.name.endsWith('vbaProject.bin'))).toBe(true);
+  });
+
+  it('readEntryBytes never allocates far beyond the cap for a deflate stream that expands to 500 MB', () => {
+    const zip = zipBomb(500 * 1024 * 1024);
+    const listing = readZipEntries(zip);
+    expect(listing).not.toBeNull();
+    const entry = listing?.entries[0];
+    expect(entry).toBeDefined();
+    if (entry === undefined) throw new Error('unreachable');
+
+    const cap = 64 * 1024;
+    const before = process.memoryUsage().rss;
+    const result = readEntryBytes(zip, entry, cap);
+    const after = process.memoryUsage().rss;
+
+    expect(result).not.toBeNull();
+    expect(result?.bytes.length).toBeLessThanOrEqual(cap);
+    expect(result?.truncated).toBe(true);
+    // The bug this regresses: inflateRawSync(compressed) with no limit raised RSS by ~1 GB to
+    // return 32 bytes. Bounded streaming inflate should stay well under that.
+    expect(after - before).toBeLessThan(64 * 1024 * 1024);
+  });
+
+  it('inspectAttachment flags a genuinely bomb-like declared compression ratio without hanging or ballooning memory', () => {
+    const zip = zipBomb(64 * 1024 * 1024); // still a huge, real expansion ratio, kept smaller so the full pipeline test stays fast
+    const before = process.memoryUsage().rss;
+    const result = inspectAttachment({ filename: 'bomb.zip', contentType: 'application/zip', bytes: zip, size: zip.length });
+    const after = process.memoryUsage().rss;
+    expect(result.verdict).toBe('quarantine');
+    expect(result.reasons.some((r) => r.includes('compression ratio') || r.includes('decompression bomb'))).toBe(true);
+    expect(after - before).toBeLessThan(64 * 1024 * 1024);
+  });
+});
+
+function emptyZip(): Buffer {
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  return Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(26), eocd]);
+}

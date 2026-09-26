@@ -73,7 +73,11 @@ function collectFindings(input: InspectInput, findings: Finding[]): void {
     }
   }
 
-  const zip = inspectZip(bytes);
+  // A truncated buffer (the real attachment exceeded the inspection cap, so `bytes` is only its
+  // first sniffing bytes) can never contain a trustworthy end-of-central-directory record; running
+  // the ZIP walker on it would misreport an incomplete-by-design read as a malformed archive. The
+  // "exceeds the inspection cap" finding below already covers this case.
+  const zip = truncated === true ? null : inspectZip(bytes);
   if (zip !== null) {
     if (zip.macroEntry !== null) {
       findings.push({
@@ -97,6 +101,34 @@ function collectFindings(input: InspectInput, findings: Finding[]): void {
         kind: 'archive-executable',
         reason: `contains an executable ("${zip.executableEntry}") inside the archive`,
         severity: 'always',
+      });
+    }
+    if (zip.malformed) {
+      findings.push({
+        kind: 'malformed-archive',
+        reason: 'the ZIP central directory is missing, corrupt, or points out of range; the archive was scanned as an untrusted, malformed container',
+        severity: 'always',
+      });
+    }
+    if (zip.suspiciousRatioEntry !== null) {
+      findings.push({
+        kind: 'suspicious-compression-ratio',
+        reason: `entry ("${zip.suspiciousRatioEntry}") declares a compression ratio or uncompressed size consistent with a decompression bomb`,
+        severity: 'no-history',
+      });
+    }
+    if (zip.depthExceededEntry !== null) {
+      findings.push({
+        kind: 'uninspectable-archive',
+        reason: `nested archive ("${zip.depthExceededEntry}") exceeds the maximum inspection depth and was not inspected further`,
+        severity: 'no-history',
+      });
+    }
+    if (zip.truncatedEntry !== null) {
+      findings.push({
+        kind: 'uninspectable-archive',
+        reason: `nested archive ("${zip.truncatedEntry}") exceeds the inspection budget and could not be fully verified`,
+        severity: 'no-history',
       });
     }
   }
