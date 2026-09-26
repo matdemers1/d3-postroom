@@ -106,16 +106,17 @@ function decode(input: string | Uint8Array, maxBytes: number): string {
 const PREDEFINED: Readonly<Record<string, string>> = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" };
 
 interface Scope {
-  /** prefix → URI; '' is the default namespace. */
-  readonly bindings: Map<string, string>;
-  readonly parent: Scope | null;
+  /**
+   * Every prefix in scope → URI, flattened ('' is the default namespace). An element that declares
+   * nothing shares its parent's Scope object; one that declares copies the parent's map once. So a
+   * lookup is one Map.get, never a walk up the ancestors — a walk made deep documents quadratic.
+   */
+  readonly bindings: ReadonlyMap<string, string>;
 }
 
 function lookup(scope: Scope | null, prefix: string): string | undefined {
-  for (let s = scope; s !== null; s = s.parent) {
-    const uri = s.bindings.get(prefix);
-    if (uri !== undefined) return uri;
-  }
+  const uri = scope?.bindings.get(prefix);
+  if (uri !== undefined) return uri;
   if (prefix === 'xml') return NS.XML;
   if (prefix === '') return '';
   return undefined;
@@ -313,7 +314,7 @@ class Parser {
         bindings.set(prefix, a.value);
       }
     }
-    const scope: Scope = { bindings, parent: parentScope };
+    const scope: Scope = bindings.size === 0 && parentScope !== null ? parentScope : { bindings: new Map([...(parentScope?.bindings ?? []), ...bindings]) };
     const resolve = (name: string, isAttribute: boolean): { ns: string; local: string } => {
       const colon = name.indexOf(':');
       if (colon < 0) return { ns: isAttribute ? '' : (lookup(scope, '') ?? ''), local: name };
