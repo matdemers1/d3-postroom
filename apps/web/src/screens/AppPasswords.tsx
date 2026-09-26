@@ -19,6 +19,7 @@ import {
   type TableColumn,
 } from '@d3cloud/ui';
 import { api, describeError, type AppPassword, type AppPasswordScope } from '../api';
+import { relativeTime } from './app-passwords-format';
 
 const SCOPES: { scope: AppPasswordScope; label: string }[] = [
   { scope: 'imap', label: 'Read mail (IMAP)' },
@@ -135,7 +136,7 @@ export function AppPasswords() {
     {
       key: 'lastUsedAt',
       header: 'Last used',
-      cell: (p) => (p.lastUsedAt === null ? 'Never' : `${when(p.lastUsedAt)}${p.lastUsedIp === null ? '' : ` from ${p.lastUsedIp}`}`),
+      cell: (p) => (p.lastUsedAt === null ? 'Never' : `${relativeTime(p.lastUsedAt)}${p.lastUsedIp === null ? '' : ` from ${p.lastUsedIp}`}`),
     },
     {
       key: 'actions',
