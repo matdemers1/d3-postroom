@@ -1,5 +1,6 @@
 import '@d3cloud/ui/tokens.css';
 import '@d3cloud/ui/base.css';
+import './styles/mobile-targets.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';

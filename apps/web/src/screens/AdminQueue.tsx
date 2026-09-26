@@ -153,7 +153,7 @@ export function AdminQueue() {
       key: 'timeline',
       header: 'Timeline',
       cell: (r) => (
-        <a href={`/api/messages/${r.outboundMessageId}/delivery`} target="_blank" rel="noreferrer">
+        <a className="pr-tbl-link" href={`/api/messages/${r.outboundMessageId}/delivery`} target="_blank" rel="noreferrer">
           View
         </a>
       ),
