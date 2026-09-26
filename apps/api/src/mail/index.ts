@@ -19,6 +19,7 @@ import { sanitizeHtml } from '../usercontent/sanitize.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 import { hubFor, streamEvents } from './events.js';
+import { inspectMessage } from './inspect.js';
 import {
   AttachmentParams,
   IdParams,
@@ -244,6 +245,20 @@ export function mailRoutes(deps: ApiDeps): Router {
       };
       res.setHeader('Cache-Control', 'private, no-store');
       res.json(body);
+    }),
+  );
+
+  // The Inspect drawer's evidence (PST-T-6.1, PST-REQ-114): verdicts, Received path, bucket, spam
+  // breakdown, trackers, MDN request, headers. A read — nothing stored, nothing fetched elsewhere.
+  router.get(
+    '/messages/:id/inspect',
+    handle(async (req, res) => {
+      const message = await ownMessage(req, res);
+      if (message === null) return;
+      const store = blobStore(res);
+      if (store === null) return;
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json(await inspectMessage(db, store, message));
     }),
   );
 

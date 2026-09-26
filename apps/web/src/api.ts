@@ -114,6 +114,8 @@ export const api = {
   messageBody: (id: string) => call<MessageBody>('GET', `/api/messages/${encodeURIComponent(id)}/body`),
   /** A short-lived URL of the sanitised HTML on the usercontent origin (PST-T-3.12). 503 when that origin is not configured. */
   renderMessage: (id: string, images: boolean) => call<RenderTicket>('GET', renderPath(id, images)),
+  /** Everything Postroom knows about one message, with its reasons — the Inspect drawer (PST-T-6.1, PST-REQ-114). */
+  inspectMessage: (id: string) => call<MessageInspect>('GET', `/api/messages/${encodeURIComponent(id)}/inspect`),
   /** Flags and/or a move. `modseq` is the row's current MODSEQ: the server answers 412 if it moved on. A move returns a NEW id. */
   patchMessage: (id: string, modseq: string, patch: MessagePatch) =>
     call<MessageDetail>('PATCH', `/api/messages/${encodeURIComponent(id)}`, patch, { 'if-match': `"${modseq}"` }),
@@ -304,6 +306,77 @@ export interface RenderTicket {
   trackersBlocked: number;
   /** Links whose tracking parameters were stripped or whose click-redirect wrapper was unwrapped. */
   linksCleaned: number;
+}
+
+/** Matches apps/api/src/mail/inspect.ts's MessageInspect (PST-T-6.1, PST-REQ-114). */
+export interface InspectAlignment {
+  aligned: boolean;
+  mode: 'relaxed' | 'strict' | null;
+}
+
+export interface InspectAuth {
+  source: 'verdict' | 'inbound' | 'none';
+  spf: { result: string; domain: string | null; scope: string | null; mechanism: string | null; alignment: InspectAlignment | null; reasons: string[] } | null;
+  dkim: { result: string; domain: string | null; selector: string | null; algorithm: string | null; testing: boolean; alignment: InspectAlignment | null; reasons: string[] }[];
+  dmarc: { result: string; disposition: string | null; fromDomain: string | null; policy: string | null; policySource: string | null; recordDomain: string | null; reasons: string[] } | null;
+  arc: { result: string; instances: number | null; sealerDomains: string[]; reasons: string[] } | null;
+  arcOverride: string[] | null;
+  dnsbl: { listed: boolean; zone: string | null; reason: string | null } | null;
+  authenticationResults: string[];
+}
+
+export interface ReceivedHop {
+  raw: string;
+  from: string | null;
+  fromRdns: string | null;
+  fromIp: string | null;
+  by: string | null;
+  via: string | null;
+  with: string | null;
+  id: string | null;
+  for: string | null;
+  tls: { encrypted: boolean; version: string | null; cipher: string | null };
+  timestamp: string | null;
+  delaySeconds: number | null;
+  ours: boolean;
+}
+
+export interface InboundReceipt {
+  sessionId: string | null;
+  clientIp: string | null;
+  proxied: boolean;
+  helo: string | null;
+  rdns: string | null;
+  tls: string | null;
+  sessionStartedAt: string | null;
+  receivedAt: string;
+  envelopeFrom: string;
+  disposition: string;
+  dispositionReason: string | null;
+  smtpReply: string | null;
+  decision: { action: string; rule: string | null; reasons: string[] } | null;
+}
+
+export interface InspectScore {
+  name: string;
+  value: number;
+}
+
+export interface MessageInspect {
+  id: string;
+  auth: InspectAuth;
+  received: ReceivedHop[];
+  receipt: InboundReceipt | null;
+  bucket: { bucket: string | null; reasons: string[]; scores: InspectScore[] } | null;
+  spam: {
+    signals: InspectScore[];
+    bayes: { probabilities: { bucket: string; probability: number }[]; trainingDocs: number | null; topTokens: string[]; reason: string | null } | null;
+    attachments: { partId: string; filename: string | null; verdict: string; kind: string | null; reasons: string[] }[];
+  };
+  trackers: { html: boolean; remoteImages: number; trackersBlocked: number; linksCleaned: number };
+  mdn: { requested: boolean; to: string[]; header: string | null; options: string | null; returnPath: string | null; returnPathMatches: boolean | null; sent: boolean };
+  headers: { name: string; value: string }[];
+  raw: { url: string; size: number };
 }
 
 export interface MessagePatch {
