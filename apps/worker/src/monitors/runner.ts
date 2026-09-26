@@ -16,6 +16,12 @@
 // `runOnce` refuses to start a second pass while one is already in flight, and each monitor's
 // `check()` is raced against a hard timeout — a hung check must not hang every monitor behind it,
 // or every future tick (PST-T-4.7 fix #3).
+//
+// A monitor's `minIntervalMs` (PST-T-7.3) is honoured against its persisted `checkedAt`: while less
+// than `minIntervalMs` has elapsed since the last actual `check()`, the runner reuses the last
+// persisted result instead of calling `check()` again — no alert re-evaluation, no query. Because
+// `checkedAt` is persisted (not in-memory), this holds across a worker restart too: a fresh runner
+// reading a recent `checkedAt` does not immediately re-query on its first tick.
 import { randomUUID } from 'node:crypto';
 import type { Db, Prisma } from '@postroom/db';
 import type { SendAlert } from '@postroom/alerts';
@@ -49,6 +55,10 @@ interface PersistedMonitorState {
   readonly since: string;
   readonly detail: string;
   readonly alert: AlertDeliveryStatus;
+  /** When `check()` was last actually invoked (not merely when this row was last written) — the
+   * basis for a monitor's `minIntervalMs` (PST-T-7.3). Optional so state persisted before this field
+   * existed still deserializes: absent means "never observed, always due". */
+  readonly checkedAt?: string;
   /** An in-flight transition whose alert has not yet been delivered; retried each tick until it is,
    * or until the underlying condition reverts before ever being reported. */
   readonly pending?: PendingTransition;
@@ -136,8 +146,31 @@ export function createMonitorRunner(opts: MonitorRunnerOptions): MonitorRunner {
   }
 
   async function runOne(monitor: Monitor): Promise<void> {
+    // A monitor with no minIntervalMs (every other monitor) keeps the original order exactly —
+    // check() first, its persisted state read after — so its timing is unchanged (e.g. the
+    // overlapping-tick guard below observes check() invoked promptly, not after an extra db
+    // round trip). Only a minIntervalMs monitor needs its persisted `checkedAt` up front, to decide
+    // whether to call check() at all.
+    let prior = monitor.minIntervalMs === undefined ? null : await readState(opts.db, monitor.name);
+
+    if (monitor.minIntervalMs !== undefined && prior?.checkedAt !== undefined) {
+      const elapsedMs = now().getTime() - Date.parse(prior.checkedAt);
+      if (elapsedMs < monitor.minIntervalMs) {
+        // Not due yet: reuse the last persisted result rather than calling check() again. This
+        // holds across a restart too, since `checkedAt` is read from the database, not memory.
+        current.set(monitor.name, {
+          name: monitor.name,
+          ok: prior.state === 'ok',
+          detail: prior.detail,
+          since: prior.since,
+          alert: prior.alert,
+        });
+        return;
+      }
+    }
+
     const result = await runCheck(monitor, checkTimeoutMs);
-    const prior = await readState(opts.db, monitor.name);
+    if (prior === null) prior = await readState(opts.db, monitor.name);
     const priorState = prior?.state ?? 'ok';
     const target: 'ok' | 'firing' = result.ok ? 'ok' : 'firing';
     const nowIso = now().toISOString();
@@ -145,10 +178,15 @@ export function createMonitorRunner(opts: MonitorRunnerOptions): MonitorRunner {
     if (target === priorState) {
       // The confirmed state already matches. If an earlier, different-direction transition is
       // still pending delivery, the condition reverted before anyone was ever told — drop it
-      // silently rather than deliver a stale alert.
-      if (prior?.pending !== undefined) {
-        await writeState(opts.db, monitor.name, { state: priorState, since: prior.since, detail: prior.detail, alert: prior.alert });
-      }
+      // silently rather than deliver a stale alert. Either way, record `checkedAt` so a
+      // `minIntervalMs` monitor's next-due time advances from this actual check, not a skipped one.
+      await writeState(opts.db, monitor.name, {
+        state: priorState,
+        since: prior?.since ?? nowIso,
+        detail: prior?.detail ?? result.detail,
+        alert: prior?.alert ?? 'delivered',
+        checkedAt: nowIso,
+      });
       current.set(monitor.name, {
         name: monitor.name,
         ok: result.ok,
@@ -168,7 +206,7 @@ export function createMonitorRunner(opts: MonitorRunnerOptions): MonitorRunner {
 
     if (isDelivered(sent) || unconfigured) {
       const alert: AlertDeliveryStatus = unconfigured ? 'not delivered: relay unconfigured' : 'delivered';
-      await writeState(opts.db, monitor.name, { state: target, since: nowIso, detail: result.detail, alert });
+      await writeState(opts.db, monitor.name, { state: target, since: nowIso, detail: result.detail, alert, checkedAt: nowIso });
       log(target === 'firing' ? 'monitor-firing' : 'monitor-recovered', { name: monitor.name, detail: result.detail, alert });
       current.set(monitor.name, { name: monitor.name, ok: result.ok, detail: result.detail, since: nowIso, alert });
       return;
@@ -183,6 +221,7 @@ export function createMonitorRunner(opts: MonitorRunnerOptions): MonitorRunner {
       since: prior?.since ?? nowIso,
       detail: prior?.detail ?? result.detail,
       alert: prior?.alert ?? 'delivered',
+      checkedAt: nowIso,
       pending: nextPending,
     });
     log('monitor-alert-retry', { name: monitor.name, target, reason });

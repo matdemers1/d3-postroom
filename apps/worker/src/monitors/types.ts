@@ -11,4 +11,10 @@ export interface MonitorCheckResult {
 export interface Monitor {
   readonly name: string;
   check(): Promise<MonitorCheckResult>;
+  /** A minimum spacing between calls to `check()`, honoured by the runner via the monitor's
+   * persisted `checkedAt` (PST-T-7.3) — for a check whose target rate-limits or bans a frequent
+   * querier (a DNSBL zone). Between checks the runner reuses the last persisted result rather than
+   * calling `check()` again, so a worker restart never triggers an immediate re-query storm. Omit
+   * (or leave undefined) for "run on every tick", the default for every other monitor. */
+  readonly minIntervalMs?: number | undefined;
 }

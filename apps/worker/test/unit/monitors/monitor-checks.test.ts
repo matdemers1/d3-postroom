@@ -80,30 +80,60 @@ describe('disk monitor (PST-REQ-097)', () => {
   });
 });
 
-describe('blocklist monitor (PST-REQ-097)', () => {
+describe('blocklist monitor (PST-REQ-097, PST-REQ-124)', () => {
   it('is disabled with no edge IP configured', () => {
     expect(createBlocklistMonitor({ ip: '', resolverServer: '127.0.0.1:53' })).toBeNull();
   });
 
   it('fires when the DNSBL lookup returns a reject-worthy code, clears when not listed', async () => {
     const lookupA = vi.fn().mockResolvedValueOnce(['127.0.0.4']).mockResolvedValueOnce([]);
-    const monitor = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', lookupA });
+    const monitor = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus'], lookupA });
     expect(monitor).not.toBeNull();
     const firing = await monitor?.check();
     expect(firing).toMatchObject({ ok: false });
-    expect(firing?.detail).toMatch(/listed on zen\.spamhaus\.org: XBL/);
+    expect(firing?.detail).toMatch(/listed on Spamhaus ZEN: Spamhaus ZEN \(XBL; delist at https:\/\/check\.spamhaus\.org\/\)/);
     const clear = await monitor?.check();
     expect(clear).toMatchObject({ ok: true });
   });
 
   it('treats a Spamhaus signalling code as unknown, not a listing', async () => {
     const lookupA = vi.fn().mockResolvedValue(['127.255.255.254']);
-    const monitor = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', lookupA });
-    expect((await monitor?.check())?.ok).toBe(true);
+    const monitor = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus'], lookupA });
+    const result = await monitor?.check();
+    expect(result?.ok).toBe(true);
+    expect(result?.detail).toMatch(/unknown \(query error\)/);
   });
 
   it('never reports a DQS key in the zone name', () => {
     expect(publicBlocklistZone('secretkey.zen.dq.spamhaus.net')).toBe('zen.spamhaus.org');
+  });
+
+  it('checks every major blocklist by default, naming only the one that lists the IP', async () => {
+    const lookupA = vi.fn((name: string) => Promise.resolve(name.includes('b.barracudacentral.org') ? ['127.0.0.2'] : []));
+    const monitor = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', lookupA });
+    expect(monitor).not.toBeNull();
+    const firing = await monitor?.check();
+    expect(firing?.ok).toBe(false);
+    expect(firing?.detail).toMatch(/listed on Barracuda: Barracuda \(listed; delist at https:\/\/www\.barracudacentral\.org\/rbl\/removal-request\)/);
+    expect(firing?.detail).not.toMatch(/SpamCop|UCEPROTECT|PSBL|Mailspike|Spamhaus/);
+    // Six zones queried, one lookup call each.
+    expect(lookupA).toHaveBeenCalledTimes(6);
+  });
+
+  it('reports a zone query error as unknown, not a listing, without masking a real listing elsewhere', async () => {
+    const lookupA = vi.fn((name: string) => {
+      if (name.includes('zen.spamhaus.org')) return Promise.resolve(['127.255.255.255']); // rate limited
+      return Promise.resolve([]);
+    });
+    const monitor = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus', 'barracuda'], lookupA });
+    const result = await monitor?.check();
+    expect(result?.ok).toBe(true);
+    expect(result?.detail).toMatch(/not listed on/);
+  });
+
+  it('defaults to a 6-hour minInterval, so the runner checks it at most every 6 hours', () => {
+    const monitor = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53' });
+    expect(monitor?.minIntervalMs).toBe(6 * 3_600_000);
   });
 });
 
