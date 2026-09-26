@@ -604,6 +604,38 @@
         ],
         "additionalProperties": false
       },
+      "RenderTicket": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The sanitised message on the usercontent origin: frame it with sandbox (no allow-scripts, no allow-same-origin). A capability; expires at expiresAt."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "images": {
+            "type": "boolean",
+            "description": "Whether remote images load (through the proxy) in this render."
+          },
+          "remoteImages": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Remote images in the message. Above 0 with images false means some are blocked."
+          }
+        },
+        "required": [
+          "url",
+          "expiresAt",
+          "images",
+          "remoteImages"
+        ],
+        "additionalProperties": false
+      },
       "SearchResponse": {
         "type": "object",
         "properties": {
@@ -1321,6 +1353,95 @@
           },
           "404": {
             "description": "Not a message of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/render": {
+      "get": {
+        "operationId": "renderMessage",
+        "tags": [
+          "Messages"
+        ],
+        "summary": "A short-lived URL of the sanitised HTML on the usercontent origin (PST-REQ-081).",
+        "description": "The usercontent origin has no session cookie, so this mints a capability for one message of the caller, under the caller's session, valid for 15 minutes. Remote images stay blocked unless images=1, and then load only through the image proxy (PST-REQ-082). Frame the URL with sandbox and no allow-scripts/allow-same-origin.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "images",
+            "in": "query",
+            "required": false,
+            "description": "1 = the reader chose to load remote images, through the image proxy (PST-REQ-082).",
+            "schema": {
+              "default": "0",
+              "description": "1 = the reader chose to load remote images, through the image proxy (PST-REQ-082).",
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The render ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderTicket"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a message of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "USERCONTENT_ORIGIN (or POSTROOM_KEK) is not set.",
             "content": {
               "application/json": {
                 "schema": {
