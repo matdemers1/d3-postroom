@@ -35,7 +35,8 @@
     "@postroom/blobstore": "workspace:*",
     "pg": "^8.23.0",
     "@postroom/dsn": "workspace:*",
-    "@postroom/classifier": "workspace:*"
+    "@postroom/classifier": "workspace:*",
+    "@postroom/phish": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

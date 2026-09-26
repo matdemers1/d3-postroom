@@ -32,7 +32,7 @@ import {
   type SearchResultJson,
   type ThreadDetailJson,
 } from './schemas.js';
-import { detailJson, findOwnMessage, findOwnThread, listMailboxes, listMessages, ownMailbox, PreconditionFailed, summaryJson, updateMessage } from './store.js';
+import { detailJson, findOwnMessage, findOwnThread, listMailboxes, listMessages, messagePhish, ownMailbox, PreconditionFailed, summaryJson, updateMessage } from './store.js';
 
 export const DEFAULT_BLOB_ROOT = '/var/lib/postroom/blobs';
 
@@ -81,6 +81,14 @@ export function mailRoutes(deps: ApiDeps): Router {
     blobs = createBlobStore({ root: root === '' ? DEFAULT_BLOB_ROOT : root, db, kek: rt.kek });
     return blobs;
   };
+  /** Same store, but null (never a 503) when it is not configured — the phish check degrades to "nothing to show" instead of failing the whole detail response. */
+  const blobStoreOrNull = (): BlobStore | null => {
+    if (blobs !== null) return blobs;
+    if (rt.kek === null) return null;
+    const root = deps.env['BLOB_ROOT']?.trim() ?? '';
+    blobs = createBlobStore({ root: root === '' ? DEFAULT_BLOB_ROOT : root, db, kek: rt.kek });
+    return blobs;
+  };
 
   const ownMessage = async (req: Request, res: Response) => {
     const params = parse(IdParams, req.params, res);
@@ -123,9 +131,10 @@ export function mailRoutes(deps: ApiDeps): Router {
     handle(async (req, res) => {
       const message = await ownMessage(req, res);
       if (message === null) return;
+      const phish = await messagePhish(db, blobStoreOrNull(), currentSession(req).accountId, message);
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('ETag', etagOf(message.modseq));
-      res.json(detailJson(message));
+      res.json(detailJson(message, phish));
     }),
   );
 
@@ -183,9 +192,10 @@ export function mailRoutes(deps: ApiDeps): Router {
         notFound(res);
         return;
       }
+      const phish = await messagePhish(db, blobStoreOrNull(), me.accountId, message);
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('ETag', etagOf(message.modseq));
-      res.json(detailJson(message));
+      res.json(detailJson(message, phish));
     }),
   );
 

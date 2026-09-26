@@ -103,6 +103,13 @@ export const MessageList = z.object({
   nextCursor: z.string().nullable(),
 });
 
+export const PhishWarning = z.object({
+  kind: z.enum(['display-name-spoofing', 'lookalike-domain', 'punycode-domain', 'first-time-brand-sender', 'auth-failure', 'link-mismatch']),
+  severity: z.enum(['low', 'medium', 'high']),
+  reason: z.string(),
+});
+export const Phish = z.object({ warnings: z.array(PhishWarning) });
+
 export const MessageDetail = MessageSummary.extend({
   messageIdHeader: z.string().nullable(),
   inReplyTo: z.string().nullable(),
@@ -114,6 +121,9 @@ export const MessageDetail = MessageSummary.extend({
       auth: z.unknown(),
     })
     .nullable(),
+  /** Phishing/lookalike warnings (PST-REQ-120), each with a stated reason. Null when there is
+   * nothing to check yet (no stored auth verdict, e.g. this account's own Sent copy). */
+  phish: Phish.nullable(),
 });
 
 export const Attachment = z.object({
@@ -189,6 +199,7 @@ export const MessageNewEvent = z.object({
 
 export type MailboxJson = z.infer<typeof Mailbox>;
 export type MessageSummaryJson = z.infer<typeof MessageSummary>;
+export type PhishJson = z.infer<typeof Phish>;
 export type MessageDetailJson = z.infer<typeof MessageDetail>;
 export type MessageBodyJson = z.infer<typeof MessageBody>;
 export type RenderTicketJson = z.infer<typeof RenderTicket>;
