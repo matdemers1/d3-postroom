@@ -22,6 +22,15 @@
 // persisted result instead of calling `check()` again — no alert re-evaluation, no query. Because
 // `checkedAt` is persisted (not in-memory), this holds across a worker restart too: a fresh runner
 // reading a recent `checkedAt` does not immediately re-query on its first tick.
+//
+// `minIntervalMs` only ever rate-limits the *check*: a still-undelivered alert for an
+// already-detected transition (`pending`) is retried on every tick regardless, never held back by
+// the check's own cadence — PST-T-4.7's retry-until-delivered is unconditional.
+//
+// A monitor's `inputKey()` (PST-T-7.3), when supplied, is persisted alongside `checkedAt` as
+// `checkedInput`. `minIntervalMs` is only honoured while `checkedInput` still matches — a changed
+// target (e.g. a changed EDGE_PUBLIC_IP) is always due immediately, never held back by a cached
+// result computed for the previous target.
 import { randomUUID } from 'node:crypto';
 import type { Db, Prisma } from '@postroom/db';
 import type { SendAlert } from '@postroom/alerts';
@@ -59,6 +68,10 @@ interface PersistedMonitorState {
    * basis for a monitor's `minIntervalMs` (PST-T-7.3). Optional so state persisted before this field
    * existed still deserializes: absent means "never observed, always due". */
   readonly checkedAt?: string;
+  /** The `inputKey()` a monitor's `check()` was actually run against, when it declares one
+   * (PST-T-7.3). A mismatch against the monitor's current `inputKey()` means the target changed —
+   * always due immediately regardless of `checkedAt`. */
+  readonly checkedInput?: string;
   /** An in-flight transition whose alert has not yet been delivered; retried each tick until it is,
    * or until the underlying condition reverts before ever being reported. */
   readonly pending?: PendingTransition;
@@ -145,6 +158,48 @@ export function createMonitorRunner(opts: MonitorRunnerOptions): MonitorRunner {
       : { subject: `[Postroom] RESOLVED: ${monitorName}`, text: `${monitorName} recovered — ${detail}` };
   }
 
+  /** Retry a still-undelivered alert for an already-detected transition, without calling check()
+   * again — used when a monitor's `minIntervalMs` says the check itself is not due yet, but a
+   * pending transition from an earlier tick has still not been delivered (PST-T-4.7's
+   * retry-until-delivered is unconditional; only the check's own cadence is rate-limited). */
+  async function retryPendingAlert(monitor: Monitor, prior: PersistedMonitorState, pending: PendingTransition): Promise<void> {
+    const nowIso = now().toISOString();
+    const { subject, text } = alertMessage(monitor.name, pending.target, pending.detail);
+    const sent = await opts.sendAlert({ subject, text, key: pending.episodeKey });
+    const unconfigured = sent.reason === 'relay unconfigured';
+    const carriedFields = {
+      ...(prior.checkedAt !== undefined ? { checkedAt: prior.checkedAt } : {}),
+      ...(prior.checkedInput !== undefined ? { checkedInput: prior.checkedInput } : {}),
+    };
+
+    if (isDelivered(sent) || unconfigured) {
+      const alert: AlertDeliveryStatus = unconfigured ? 'not delivered: relay unconfigured' : 'delivered';
+      await writeState(opts.db, monitor.name, { state: pending.target, since: nowIso, detail: pending.detail, alert, ...carriedFields });
+      log(pending.target === 'firing' ? 'monitor-firing' : 'monitor-recovered', { name: monitor.name, detail: pending.detail, alert });
+      current.set(monitor.name, { name: monitor.name, ok: pending.target === 'ok', detail: pending.detail, since: nowIso, alert });
+      return;
+    }
+
+    const reason = sent.reason ?? 'unknown';
+    const nextPending: PendingTransition = { ...pending, reason };
+    await writeState(opts.db, monitor.name, {
+      state: prior.state,
+      since: prior.since,
+      detail: prior.detail,
+      alert: prior.alert,
+      ...carriedFields,
+      pending: nextPending,
+    });
+    log('monitor-alert-retry', { name: monitor.name, target: pending.target, reason });
+    current.set(monitor.name, {
+      name: monitor.name,
+      ok: prior.state === 'ok',
+      detail: prior.detail,
+      since: prior.since,
+      alert: `not delivered: ${reason}`,
+    });
+  }
+
   async function runOne(monitor: Monitor): Promise<void> {
     // A monitor with no minIntervalMs (every other monitor) keeps the original order exactly —
     // check() first, its persisted state read after — so its timing is unchanged (e.g. the
@@ -152,12 +207,22 @@ export function createMonitorRunner(opts: MonitorRunnerOptions): MonitorRunner {
     // round trip). Only a minIntervalMs monitor needs its persisted `checkedAt` up front, to decide
     // whether to call check() at all.
     let prior = monitor.minIntervalMs === undefined ? null : await readState(opts.db, monitor.name);
+    const inputKey = monitor.inputKey?.();
+    // A declared inputKey mismatch against what was actually last checked means the target changed
+    // (e.g. EDGE_PUBLIC_IP) — always due immediately, regardless of checkedAt (PST-T-7.3).
+    const inputMatches = inputKey === undefined || prior?.checkedInput === undefined || prior.checkedInput === inputKey;
 
-    if (monitor.minIntervalMs !== undefined && prior?.checkedAt !== undefined) {
+    if (monitor.minIntervalMs !== undefined && prior?.checkedAt !== undefined && inputMatches) {
       const elapsedMs = now().getTime() - Date.parse(prior.checkedAt);
       if (elapsedMs < monitor.minIntervalMs) {
-        // Not due yet: reuse the last persisted result rather than calling check() again. This
-        // holds across a restart too, since `checkedAt` is read from the database, not memory.
+        // Not due yet for a fresh check — but a still-undelivered alert from an earlier tick is
+        // retried regardless (PST-T-4.7 fix #1 is unconditional; only the check itself is rate-limited).
+        if (prior.pending !== undefined) {
+          await retryPendingAlert(monitor, prior, prior.pending);
+          return;
+        }
+        // Reuse the last persisted result rather than calling check() again. This holds across a
+        // restart too, since `checkedAt` is read from the database, not memory.
         current.set(monitor.name, {
           name: monitor.name,
           ok: prior.state === 'ok',
@@ -174,6 +239,9 @@ export function createMonitorRunner(opts: MonitorRunnerOptions): MonitorRunner {
     const priorState = prior?.state ?? 'ok';
     const target: 'ok' | 'firing' = result.ok ? 'ok' : 'firing';
     const nowIso = now().toISOString();
+    // Every write below records what this actual check examined, so a later tick's minIntervalMs
+    // decision can tell a changed target apart from an unchanged one (PST-T-7.3).
+    const checkedInputField = inputKey === undefined ? {} : { checkedInput: inputKey };
 
     if (target === priorState) {
       // The confirmed state already matches. If an earlier, different-direction transition is
@@ -186,6 +254,7 @@ export function createMonitorRunner(opts: MonitorRunnerOptions): MonitorRunner {
         detail: prior?.detail ?? result.detail,
         alert: prior?.alert ?? 'delivered',
         checkedAt: nowIso,
+        ...checkedInputField,
       });
       current.set(monitor.name, {
         name: monitor.name,
@@ -206,7 +275,7 @@ export function createMonitorRunner(opts: MonitorRunnerOptions): MonitorRunner {
 
     if (isDelivered(sent) || unconfigured) {
       const alert: AlertDeliveryStatus = unconfigured ? 'not delivered: relay unconfigured' : 'delivered';
-      await writeState(opts.db, monitor.name, { state: target, since: nowIso, detail: result.detail, alert, checkedAt: nowIso });
+      await writeState(opts.db, monitor.name, { state: target, since: nowIso, detail: result.detail, alert, checkedAt: nowIso, ...checkedInputField });
       log(target === 'firing' ? 'monitor-firing' : 'monitor-recovered', { name: monitor.name, detail: result.detail, alert });
       current.set(monitor.name, { name: monitor.name, ok: result.ok, detail: result.detail, since: nowIso, alert });
       return;
@@ -222,6 +291,7 @@ export function createMonitorRunner(opts: MonitorRunnerOptions): MonitorRunner {
       detail: prior?.detail ?? result.detail,
       alert: prior?.alert ?? 'delivered',
       checkedAt: nowIso,
+      ...checkedInputField,
       pending: nextPending,
     });
     log('monitor-alert-retry', { name: monitor.name, target, reason });

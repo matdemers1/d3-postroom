@@ -15,6 +15,13 @@
 // Cadence (PST-REQ-124, "every 6 hours"): DNSBL operators rate-limit, and some ban frequent
 // queriers, so this monitor sets `minIntervalMs` (default BLOCKLIST_INTERVAL_MS, 6h) rather than
 // running on every 60s tick — the runner (runner.ts) honours it against the persisted `checkedAt`.
+// It also declares `inputKey()` (the IP plus the exact zone set), so a changed EDGE_PUBLIC_IP or
+// BLOCKLIST_ZONES always forces an immediate re-check instead of reusing a cached result computed
+// for the previous target (PST-T-7.3).
+//
+// Each zone is queried with its own timeout (BLOCKLIST_ZONE_TIMEOUT_MS, default 5s): a hung/dead
+// zone is reported as an "unknown" result for that zone alone — it never blocks the other zones'
+// results, and never masks a real listing found on a healthy zone.
 //
 // Set EDGE_PUBLIC_IP to '' to disable this monitor.
 import dns from 'node:dns';
@@ -141,6 +148,9 @@ export interface BlocklistMonitorOptions {
   readonly dqsKey?: string | undefined;
   /** Minimum spacing between real DNSBL queries, honoured by the runner (PST-REQ-124: every 6h). */
   readonly minIntervalMs?: number | undefined;
+  /** Wall-clock budget for a single zone's lookup; a zone that does not answer within this is
+   * reported as that zone's own "unknown" result, never blocking or masking the others. */
+  readonly zoneTimeoutMs?: number | undefined;
   /** Injectable for tests: resolves `name`'s A records against `server`, or `[]` when there is none. */
   readonly lookupA?: ((name: string, server: string) => Promise<string[]>) | undefined;
 }
@@ -164,6 +174,7 @@ async function resolveA(name: string, server: string): Promise<string[]> {
 }
 
 const DEFAULT_MIN_INTERVAL_MS = 6 * 3_600_000;
+const DEFAULT_ZONE_TIMEOUT_MS = 5_000;
 
 interface ZoneOutcome {
   readonly zone: BlocklistZoneDefinition;
@@ -172,14 +183,40 @@ interface ZoneOutcome {
   readonly errorLabel?: string;
 }
 
+/** A per-zone timeout: a zone that never answers must not hang the whole check, or masquerade as
+ * "not listed" — it is reported as that zone's own error, distinct from the others. */
+function withZoneTimeout<T>(promise: Promise<T>, timeoutMs: number, zoneName: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${zoneName} lookup timed out after ${String(timeoutMs)}ms`));
+    }, timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
 async function checkZone(
   zone: BlocklistZoneDefinition,
   ip: string,
   lookup: (name: string, server: string) => Promise<string[]>,
   resolverServer: string,
+  zoneTimeoutMs: number,
 ): Promise<ZoneOutcome> {
   const name = dnsblQueryName(ip, zone.host);
-  const codes = await lookup(name, resolverServer);
+  let codes: string[];
+  try {
+    codes = await withZoneTimeout(lookup(name, resolverServer), zoneTimeoutMs, zone.name);
+  } catch (err) {
+    return { zone, listed: false, errorLabel: err instanceof Error ? err.message : String(err) };
+  }
   for (const code of codes) {
     const entry = zone.codes[code];
     if (entry?.isError === true) return { zone, listed: false, errorLabel: entry.label };
@@ -195,38 +232,47 @@ export function createBlocklistMonitor(opts: BlocklistMonitorOptions): Monitor |
   const zones = keys.map((k) => registry[k]).filter((z): z is BlocklistZoneDefinition => z !== undefined);
   const lookup = opts.lookupA ?? resolveA;
   const minIntervalMs = opts.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;
+  const zoneTimeoutMs = opts.zoneTimeoutMs ?? DEFAULT_ZONE_TIMEOUT_MS;
+  // What this monitor actually checks — the IP and the exact zone hosts — so the runner can force
+  // an immediate re-check the moment either one changes, instead of trusting a stale cached result
+  // computed for a different target (PST-T-7.3).
+  const inputKey = (): string => JSON.stringify({ ip: opts.ip, zones: zones.map((z) => z.host) });
 
   return {
     name: 'blocklist',
     minIntervalMs,
+    inputKey,
     check: async () => {
-      const outcomes = await Promise.all(
-        zones.map((zone) =>
-          checkZone(zone, opts.ip, lookup, opts.resolverServer).catch(
-            (err: unknown): ZoneOutcome => ({ zone, listed: false, errorLabel: err instanceof Error ? err.message : String(err) }),
-          ),
-        ),
-      );
+      const outcomes = await Promise.all(zones.map((zone) => checkZone(zone, opts.ip, lookup, opts.resolverServer, zoneTimeoutMs)));
       const listedOn = outcomes.filter((o) => o.listed);
       const erroredOn = outcomes.filter((o) => o.errorLabel !== undefined);
+      const cleanZoneNames = outcomes.filter((o) => !o.listed && o.errorLabel === undefined).map((o) => o.zone.name);
 
       if (listedOn.length > 0) {
         const names = listedOn.map((o) => o.zone.name).join(', ');
         const detailParts = listedOn.map(
           (o) => `${o.zone.name} (${o.codeLabel ?? 'listed'}; delist at ${o.zone.delistingUrl})`,
         );
+        const errorNote = erroredOn.length > 0 ? `; unknown: ${erroredOn.map((o) => o.zone.name).join(', ')}` : '';
         return {
           ok: false,
-          detail: `${opts.ip} listed on ${names}: ${detailParts.join('; ')}`,
+          detail: `${opts.ip} listed on ${names}: ${detailParts.join('; ')}${errorNote}`,
           value: { listed: true, zones: listedOn.map((o) => publicBlocklistZone(o.zone.host)) },
         };
       }
 
       // Every zone we asked came back as a query problem (rate limit, malformed query, public
-      // resolver): never treat that as a listing, but never call it clean either — "unknown".
+      // resolver, a timeout): never treat that as a listing, but never call it clean either.
       if (erroredOn.length > 0 && erroredOn.length === outcomes.length) {
         const parts = erroredOn.map((o) => `${o.zone.name}: ${o.errorLabel ?? 'unknown'}`).join('; ');
         return { ok: true, detail: `dnsbl check unknown (query error): ${parts}` };
+      }
+
+      // Some (but not all) zones errored: the healthy zones' clean results still stand, reported
+      // alongside — not masked by — the erroring zone(s)' own "unknown".
+      if (erroredOn.length > 0) {
+        const parts = erroredOn.map((o) => `${o.zone.name}: unknown (${o.errorLabel ?? 'query error'})`).join('; ');
+        return { ok: true, detail: `${opts.ip} not listed on ${cleanZoneNames.join(', ')}; ${parts}` };
       }
 
       return { ok: true, detail: `${opts.ip} not listed on ${zones.map((z) => z.name).join(', ')}` };
