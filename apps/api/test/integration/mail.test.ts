@@ -349,9 +349,9 @@ describe.skipIf(!baseUrl)('mail API (PST-T-3.9)', () => {
     expect(ThreadDetail.parse(res.body).messages.map((x) => x.id)).toEqual([a.id, b.id]);
   });
 
-  it('search answers 501 until @postroom/search lands (PST-T-3.7)', async () => {
+  it('search validates the query and answers 200 now that @postroom/search is wired (PST-T-3.13)', async () => {
     const me = await person();
-    expect((await request(app).get('/api/search?q=hello').set('cookie', me.cookie)).status).toBe(501);
+    expect((await request(app).get('/api/search?q=hello').set('cookie', me.cookie)).status).toBe(200);
     expect((await request(app).get('/api/search').set('cookie', me.cookie)).status).toBe(400);
   });
 

@@ -23,6 +23,8 @@
 // account-id order.
 import { SpecialUse, type Prisma } from '@postroom/db';
 import { fileLocalMessage } from '@postroom/dsn';
+import { indexMessage } from '@postroom/search';
+import { assignThread } from '@postroom/threading';
 import { markStage } from './state.js';
 import type {
   Bucket,
@@ -167,7 +169,7 @@ export async function fileStage(
     sentAt: prior.parse.sentAt === null ? null : new Date(prior.parse.sentAt),
   };
 
-  return deps.db.$transaction(async (tx) => {
+  const result = await deps.db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'postroom-inbound:' + inbound.id}, 0))`;
     // The blob store's own lock: no release() can drop the row between our check and our increment.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'postroom-blob:' + inbound.blobSha256}, 0))`;
@@ -204,6 +206,16 @@ export async function fileStage(
         flags: plan.keywords,
       });
       await tx.message.update({ where: { id: filed.id }, data: { inboundMessageId: inbound.id, ...denorm } });
+      await indexMessage(tx, {
+        messageId: filed.id,
+        accountId: plan.accountId,
+        ...(prior.parse.subject === null ? {} : { subject: prior.parse.subject }),
+        ...(prior.parse.fromAddress === null ? {} : { from: prior.parse.fromAddress }),
+        ...(prior.parse.toAddress === null ? {} : { to: prior.parse.toAddress }),
+        bodyText: prior.parse.bodyText,
+        attachmentNames: prior.parse.attachments.map((a) => a.filename).filter((f): f is string => f !== null),
+        hasAttachment: prior.parse.attachments.length > 0,
+      });
       await tx.messageVerdict.create({
         data: {
           messageId: filed.id,
@@ -226,4 +238,29 @@ export async function fileStage(
     await tx.inboundMessage.update({ where: { id: inbound.id }, data: { filedAt: inbound.filedAt ?? now } });
     return result;
   }, TX_OPTIONS);
+
+  // Thread every copy this run created, after the filing transaction has committed (PST-REQ-078,
+  // PST-T-3.13). assignThread runs in its own transaction under a per-account advisory lock; a copy
+  // found already filed (created: false, a replay or a resumed crash) was threaded the run it was
+  // created, so it is left alone here — and a created copy that already carries a threadId (should
+  // not happen, but the check makes this loop itself replay-safe) is skipped too.
+  const date = prior.parse.sentAt === null ? inbound.receivedAt : new Date(prior.parse.sentAt);
+  for (const copy of result.copies) {
+    if (!copy.created) continue;
+    const current = await deps.db.message.findUnique({ where: { id: copy.messageId }, select: { threadId: true } });
+    if (current?.threadId !== null && current?.threadId !== undefined) continue;
+    await assignThread(deps.db, {
+      accountId: copy.accountId,
+      messageId: copy.messageId,
+      ...(prior.parse.messageId === null ? {} : { messageIdHeader: prior.parse.messageId }),
+      ...(prior.parse.inReplyTo[0] === undefined ? {} : { inReplyTo: prior.parse.inReplyTo[0] }),
+      references: prior.parse.references,
+      subject: prior.parse.subject ?? '',
+      from: prior.parse.fromAddress ?? '',
+      to: prior.parse.toAddress ?? '',
+      date,
+    });
+  }
+
+  return result;
 }

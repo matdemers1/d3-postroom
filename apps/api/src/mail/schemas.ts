@@ -134,6 +134,21 @@ export const MessageBody = z.object({
   warnings: z.array(z.object({ code: z.string(), message: z.string(), partId: z.string().nullable() })),
 });
 
+export const SearchResult = z.object({
+  messageId: Uuid,
+  mailboxId: Uuid,
+  uid: z.number().int(),
+  subject: z.string().nullable(),
+  from: z.string().nullable(),
+  date: Iso,
+  snippet: z.string(),
+});
+export const SearchResponse = z.object({
+  results: z.array(SearchResult),
+  nextCursor: z.string().nullable(),
+  warnings: z.array(z.string()),
+});
+
 export const ThreadDetail = z.object({
   id: Uuid,
   subject: z.string().nullable(),
@@ -165,6 +180,8 @@ export type MailboxJson = z.infer<typeof Mailbox>;
 export type MessageSummaryJson = z.infer<typeof MessageSummary>;
 export type MessageDetailJson = z.infer<typeof MessageDetail>;
 export type MessageBodyJson = z.infer<typeof MessageBody>;
+export type SearchResultJson = z.infer<typeof SearchResult>;
+export type SearchResponseJson = z.infer<typeof SearchResponse>;
 export type ThreadDetailJson = z.infer<typeof ThreadDetail>;
 export type MailboxChangedJson = z.infer<typeof MailboxChangedEvent>;
 export type MessageNewJson = z.infer<typeof MessageNewEvent>;
