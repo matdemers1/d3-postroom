@@ -153,7 +153,16 @@ function buildKeyring(keys: readonly KnownKey[]): Keyring {
   for (const k of keys) {
     try {
       if (k.kind === 'pgp') {
-        for (const a of decodeArmors(k.publicKey)) if (a.type === 'PGP PUBLIC KEY BLOCK') for (const key of parseKeys(a.data)) ring.pgp.push({ known: k, key });
+        // A row speaks for one key: the one whose primary fingerprint it records. Any other primary
+        // key in the same block (a second tag-6 packet appended to it) is never trusted under it.
+        const want = normaliseFingerprint(k.fingerprint);
+        for (const a of decodeArmors(k.publicKey)) {
+          if (a.type !== 'PGP PUBLIC KEY BLOCK') continue;
+          for (const key of parseKeys(a.data)) {
+            if (normaliseFingerprint(key.primary.fingerprint) === want) ring.pgp.push({ known: k, key });
+            else ring.problems.push(`key ${k.fingerprint}: ignored a second primary key ${key.primary.fingerprint} in the same block`);
+          }
+        }
       } else {
         const [cert] = certificatesFromPem(k.publicKey);
         if (cert !== undefined) ring.smime.push({ known: k, cert });
@@ -164,6 +173,8 @@ function buildKeyring(keys: readonly KnownKey[]): Keyring {
   }
   return ring;
 }
+
+const normaliseFingerprint = (fp: string): string => fp.replace(/[\s:]/g, '').toUpperCase();
 
 function describe(err: unknown): string {
   if (err instanceof PgpError || err instanceof CmsError) return err.reason;

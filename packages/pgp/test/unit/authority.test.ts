@@ -111,6 +111,19 @@ describe('(1) an unbound subkey never speaks for the key it was appended to', ()
   });
 });
 
+describe('(1b) a row speaks for one primary key only', () => {
+  it("mallory's whole key appended to dave's stored block is not trusted under dave's row", async () => {
+    const d = decodeArmor(text('dave-ed25519.pub.asc'));
+    const m = decodeArmor(text('mallory-ed25519.pub.asc'));
+    if (d === null || m === null) throw new Error('no armor');
+    const twoKeys = encodeArmor('PGP PUBLIC KEY BLOCK', Buffer.concat([d.data, m.data]));
+    expect(keysOf(twoKeys)).toHaveLength(2);
+    const r = await analyzeMessage([fixture('pgp-mime-signed-mallory-as-dave.eml')], [{ ...daveRow(), publicKey: twoKeys }]);
+    expect(r.signature.status).not.toBe('verified-known-key');
+    expect(r.signature.signer?.knownKeyId ?? null).toBeNull();
+  });
+});
+
 describe('(2) a bound subkey without key flag 0x02 cannot verify a signature', () => {
   const bobSecret = keysOf(text('bob-rsa3072.TEST-ONLY.sec.asc'))[0];
   const encSubkey = bobSecret?.subkeys[0];
