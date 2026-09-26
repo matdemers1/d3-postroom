@@ -111,3 +111,17 @@ describe('errors and caching (ASVS 14.3.2, 16.3.4, 16.5.1)', () => {
     expect(res.headers['cache-control']).toBe('no-store');
   });
 });
+
+describe('per-address throttle (ASVS 6.1.1, 2.4.1)', () => {
+  it('lets twenty failures from one address through, then doubles', async () => {
+    const { SignInThrottle } = await import('./throttle.js');
+    const { IP_FREE_ATTEMPTS } = await import('./runtime.js');
+    const t = new SignInThrottle(IP_FREE_ATTEMPTS);
+    for (let i = 0; i < 19; i++) t.recordFailure('*', '1.2.3.4', 1000);
+    expect(t.retryAfter('*', '1.2.3.4', 1000)).toBe(0);
+    t.recordFailure('*', '1.2.3.4', 1000);
+    expect(t.retryAfter('*', '1.2.3.4', 1000)).toBe(1000);
+    t.recordFailure('*', '1.2.3.4', 1000);
+    expect(t.retryAfter('*', '1.2.3.4', 1000)).toBe(2000);
+  });
+});

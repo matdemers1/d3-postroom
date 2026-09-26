@@ -24,6 +24,9 @@ export function delayFor(failures: number): number {
 export class SignInThrottle {
   private readonly entries = new Map<string, Entry>();
 
+  /** `freeAttempts` failures pass before the doubling delay starts (FREE_ATTEMPTS by default). */
+  constructor(private readonly freeAttempts: number = FREE_ATTEMPTS) {}
+
   private static key(login: string, ip: string): string {
     return `${login.trim().toLowerCase()}\u0000${ip}`;
   }
@@ -44,7 +47,8 @@ export class SignInThrottle {
       const oldest = this.entries.keys().next();
       if (oldest.done !== true) this.entries.delete(oldest.value);
     }
-    this.entries.set(key, { failures, lastFailureAt: now, nextAllowedAt: now + delayFor(failures) });
+    const shifted = failures - this.freeAttempts + FREE_ATTEMPTS;
+    this.entries.set(key, { failures, lastFailureAt: now, nextAllowedAt: now + delayFor(shifted) });
   }
 
   clear(login: string, ip: string): void {

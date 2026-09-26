@@ -65,6 +65,8 @@ const PasswordChange = z.object({
   /** End every other session once the password changes (ASVS 5.0 7.4.3). On unless refused. */
   endOtherSessions: z.boolean().optional(),
 });
+/** The per-IP throttle key: every login from one address, counted together. */
+const ANY_LOGIN = '\u0000*';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** An attempt refused by the throttle is an attempt to get past anti-automation (ASVS 5.0 16.3.3). */
@@ -341,8 +343,10 @@ export function authRoutes(deps: ApiDeps): Router {
       const { login, password } = parsed.data;
       const ip = req.ip ?? 'unknown';
 
-      // Throttle before hashing: a rejected guess must not have cost 64 MiB of Argon2id first.
-      const wait = rt.throttle.retryAfter(login, ip, nowMs());
+      // Throttle before hashing: a rejected guess must not have cost 64 MiB of Argon2id first. Per
+      // (login, IP) against guessing one account, and per IP across every login against spraying
+      // many — each unknown login still costs a decoy hash (ASVS 5.0 6.1.1, 2.4.1).
+      const wait = Math.max(rt.throttle.retryAfter(login, ip, nowMs()), rt.ipThrottle.retryAfter(ANY_LOGIN, ip, nowMs()));
       if (wait > 0) {
         logThrottled(req);
         res.setHeader('Retry-After', String(Math.ceil(wait / 1000)));
@@ -359,6 +363,7 @@ export function authRoutes(deps: ApiDeps): Router {
 
       if (!ok || account === null) {
         rt.throttle.recordFailure(login, ip, nowMs());
+        rt.ipThrottle.recordFailure(ANY_LOGIN, ip, nowMs());
         await recordAudit(db, {
           actor: anonymous,
           action: 'auth.signin.rejected',
@@ -467,6 +472,7 @@ export function authRoutes(deps: ApiDeps): Router {
       }
       rt.challenges.delete(parsed.data.challenge);
       rt.throttle.clear(pending.login, ip);
+      rt.ipThrottle.clear(ANY_LOGIN, ip);
       setSessionCookie(res, issued.token, rt.secure);
       res.json({ next: 'done', account: { id: account.id, displayName: account.displayName, isAdmin: account.isAdmin } });
     }),
