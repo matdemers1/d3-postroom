@@ -280,8 +280,9 @@ model Mailbox {
   createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account  Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   messages Message[]
+  expunged ExpungedMessage[]
 
   @@unique([accountId, name])
   @@map("mailbox")
@@ -621,4 +622,19 @@ model MessageSearch {
   @@index([fromText(ops: raw("gin_trgm_ops"))], map: "message_search_from_trgm_idx", type: Gin)
   @@index([bodyText(ops: raw("gin_trgm_ops"))], map: "message_search_body_trgm_idx", type: Gin)
   @@map("message_search")
+}
+
+/// UIDs removed from a mailbox by EXPUNGE or MOVE, with the modseq of the removal, so QRESYNC can
+/// answer VANISHED (EARLIER) (RFC 7162 §3.2.10). Pruned with the mailbox; never read for anything else.
+model ExpungedMessage {
+  mailboxId String   @map("mailbox_id") @db.Uuid
+  uid       Int
+  modseq    BigInt
+  at        DateTime @default(now()) @db.Timestamptz(6)
+
+  mailbox Mailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@id([mailboxId, uid])
+  @@index([mailboxId, modseq])
+  @@map("expunged_message")
 }

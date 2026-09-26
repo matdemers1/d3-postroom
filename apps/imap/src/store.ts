@@ -18,7 +18,7 @@
 // mailbox — each with an audit row naming how many messages went.
 //
 // QRESYNC (PST-T-3.3) will need the UIDs an EXPUNGE removed, with their modseq, to answer VANISHED
-// (EARLIER). There is no table for that yet; see `recordExpunged` below — the one place to write it.
+// (EARLIER), kept in expunged_message by `recordExpunged` below — the one place that writes it.
 import { randomInt, randomUUID } from 'node:crypto';
 import { recordAudit, type Actor } from '@postroom/audit';
 import type { BlobStore } from '@postroom/blobstore';
@@ -691,6 +691,12 @@ async function lockBlob(tx: Tx, sha256: string): Promise<void> {
  * (the lead adds `expunged_message(mailbox_id uuid, uid int, modseq bigint)`, primary key
  * (mailbox_id, uid)); when it exists, this becomes one INSERT ... SELECT unnest(...).
  */
-async function recordExpunged(_tx: Tx, _mailboxId: string, _uids: readonly number[], _modseq: bigint): Promise<void> {
-  // Intentionally a no-op until the table exists; see the comment above.
+async function recordExpunged(tx: Tx, mailboxId: string, uids: readonly number[], modseq: bigint): Promise<void> {
+  if (uids.length === 0) return;
+  // A UID is never reused within a UIDVALIDITY, so a second insert for the same (mailbox, uid) can
+  // only come from a replay of the same removal; keep the first.
+  await tx.expungedMessage.createMany({
+    data: uids.map((uid) => ({ mailboxId, uid, modseq })),
+    skipDuplicates: true,
+  });
 }
