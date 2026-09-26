@@ -1,9 +1,5 @@
 // A dedicated LISTEN connection, outside Prisma's pool (Prisma cannot receive notifications).
-//
-// `pg` is not yet a direct dependency of @postroom/api, so it is loaded from @postroom/db's own
-// dependency tree (the same pinned version the whole repo uses). When apps/api/package.json gains
-// `pg` itself, replace this with `import pg from 'pg'`; the interface below is all this app uses.
-import { createRequire } from 'node:module';
+import pg from 'pg';
 
 export interface ListenClient {
   connect: () => Promise<void>;
@@ -19,10 +15,7 @@ type ClientCtor = new (options: { connectionString: string }) => ListenClient;
 let ctor: ClientCtor | undefined;
 
 function loadPg(): ClientCtor {
-  if (ctor !== undefined) return ctor;
-  const require = createRequire(import.meta.resolve('@postroom/db'));
-  const pg = require('pg') as { Client: ClientCtor };
-  ctor = pg.Client;
+  ctor ??= pg.Client as unknown as ClientCtor;
   return ctor;
 }
 
