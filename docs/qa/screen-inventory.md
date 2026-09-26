@@ -54,10 +54,9 @@ report zero violations.
 | Admin: Deliverability | `/admin/deliverability` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: SMTP sessions | `/admin/smtp` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 
-¹ This needs one change outside the screens: `redirectFor` in `apps/web/src/api.ts` sends a
-non-admin who opens `/admin/*` back to the inbox without a word, before `Shell.tsx` can render the
-no-access state. With that redirect removed, the spec's non-admin test passes in both themes.
-Until then it fails, on purpose.
+¹ A non-admin who opens `/admin/*` sees the no-access state that `Shell.tsx` renders in place of the
+screen. `redirectFor` in `apps/web/src/api.ts` used to send them back to the inbox without a word,
+and that redirect is gone (1b2034a). The server still refuses every `/api/admin` call.
 
 `n/a` means the state cannot happen on that screen. A form or a static page makes no data call, so
 it has nothing to be empty of, wait for, or fail to load. A screen that is not under `/admin/` has

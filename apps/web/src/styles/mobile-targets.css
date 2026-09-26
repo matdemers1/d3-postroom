@@ -141,6 +141,14 @@
     min-height: 44px;
   }
 
+  /* A contact row's name is the row's link: at phone width it becomes the row's full-width,
+   * 44px-tall tap target rather than a 17px line of text (PST-T-11.2). */
+  .pr-contacts__list .d3-dlrow__title a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
   /* Text/search/date fields: the visible box (`.d3-inp`) is 28/34/40px tall with the control itself
    * shorter still (line-height only) and vertically centered — stretching the control to the
    * wrapper's cross size, and the wrapper itself to at least 44px, makes the *actual* <input> the

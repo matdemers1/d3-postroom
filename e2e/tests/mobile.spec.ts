@@ -280,6 +280,12 @@ test.describe('signed in', () => {
     await expect(page.getByRole('heading', { name: msg.subject, level: 2 })).toBeVisible();
     await assertMobileFriendly(page, `/mail/${msg.mailboxId}/${msg.id} (open message)`);
 
+    // The bare /mail route (App.tsx's /mail/*): the phone-width mailbox list the reading pane's
+    // Back returns to.
+    await page.goto('/mail');
+    await expect(page.locator('main')).toBeVisible();
+    await assertMobileFriendly(page, '/mail (mailbox list)');
+
     await page.goto('/?compose=new');
     await expect(page.getByRole('region', { name: 'New message' })).toBeVisible();
     await assertMobileFriendly(page, '/?compose=new (composer)');
