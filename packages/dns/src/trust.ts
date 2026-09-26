@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 // PST-REQ-064: the AD bit is only meaningful because our resolver is the only DNSSEC-validating
 // recursive resolver we ever ask. `trustAd` is derived from the configured server address, never
 // from anything the wire told us — a hostile resolver could set AD on a bogus answer too.
@@ -10,7 +11,10 @@ export interface ParsedServer {
 
 const DEFAULT_DNS_PORT = 53;
 
-export function parseServer(server: string): ParsedServer {
+export function parseServer(rawServer: string): ParsedServer {
+  // A value pasted from an .env file may carry stray whitespace; ' 1.1.1.1' must not slip past the
+  // public-resolver check below by failing an exact-string match.
+  const server = rawServer.trim();
   const bracketMatch = /^\[(?<host>[^\]]+)]:(?<port>\d+)$/.exec(server);
   if (bracketMatch?.groups) {
     return { host: bracketMatch.groups.host ?? '', port: Number(bracketMatch.groups.port) };
@@ -65,9 +69,18 @@ const PUBLIC_RESOLVERS = new Set([
  * refuse queries from public resolvers, so DNSBL lookups must call this before querying. */
 export function refuseIfPublicResolver(server: string): void {
   const { host } = parseServer(server);
-  if (PUBLIC_RESOLVERS.has(host)) {
+  const bare = host.toLowerCase().replace(/\.$/, '');
+  if (PUBLIC_RESOLVERS.has(bare)) {
     throw new DnsPublicResolverRefusedError(
-      `refusing to query public resolver ${host}: DNSBL zones (Spamhaus and similar) refuse queries from public resolvers`,
+      `refusing to query public resolver ${bare}: DNSBL zones (Spamhaus and similar) refuse queries from public resolvers`,
+    );
+  }
+  // By name, only our own resolver: a single-label compose service name (`unbound`) or localhost.
+  // A dotted hostname (`dns.google`, `one.one.one.one`) is somebody else's resolver, and resolving
+  // it to check its address would itself go through a resolver we have not vetted.
+  if (isIP(bare) === 0 && bare.includes('.')) {
+    throw new DnsPublicResolverRefusedError(
+      `refusing resolver hostname ${bare}: configure our own resolver by IP address or compose service name (e.g. unbound:53)`,
     );
   }
 }
