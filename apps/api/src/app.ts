@@ -11,6 +11,7 @@ import { autoconfigRoutes } from './autoconfig/index.js';
 import { mailRoutes } from './mail/index.js';
 import { deliveryRoutes } from './delivery/index.js';
 import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
+import { isSecureOrigin } from './auth/sessions.js';
 import type { ApiDeps } from './deps.js';
 
 // No third-party script, frame or connection, ever (PST-REQ-159, PST-REQ-175). HTML mail renders on
@@ -37,12 +38,24 @@ export function securityHeaders(_req: Request, res: Response, next: NextFunction
   next();
 }
 
+/**
+ * HSTS for two years, subdomains included (ASVS 5.0 3.4.1). Only on a secure origin: a plain-http
+ * loopback dev or e2e stack would otherwise teach the browser to refuse it.
+ */
+export const HSTS = 'max-age=63072000; includeSubDomains';
+
 export function createApp(deps: ApiDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   // One hop: the Cloudflare Tunnel's cloudflared, so req.ip is the client it reports.
   app.set('trust proxy', 1);
   app.use(securityHeaders);
+  if (isSecureOrigin(deps.config.webOrigin)) {
+    app.use((_req, res, next) => {
+      res.setHeader('Strict-Transport-Security', HSTS);
+      next();
+    });
+  }
 
   app.get('/health', async (_req, res) => {
     try {

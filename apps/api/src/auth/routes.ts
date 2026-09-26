@@ -4,33 +4,37 @@
 import { randomBytes } from 'node:crypto';
 import { inMemorySeen, LogoutTokenError, verifyLogoutToken, type VerifiedLogout } from '@d3cloudio/auth-client';
 import { audited, getAuditContext, recordAudit, type Actor } from '@postroom/audit';
-import { AddressKind, normalizeLocalPart, parseAddress, type Account, type Db } from '@postroom/db';
+import { AddressKind, normalizeLocalPart, parseAddress, type Account, type Db, type Prisma } from '@postroom/db';
 import express, { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { ApiDeps } from '../deps.js';
-import { currentSession, handle, requireSession, sessionOf } from './middleware.js';
+import { currentSession, handle, requireSession, requireStepUp, sessionOf } from './middleware.js';
 import {
   IdentityCollision,
   openTransaction,
   resolveIdentity,
   sealTransaction,
-  TX_COOKIE,
   TX_TTL_MS,
+  txCookieName,
   type OidcTransaction,
 } from './oidc.js';
 import { decoyHash, hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from './passwords.js';
+import { checkPassword, MAX_PASSWORD_LENGTH, type PasswordProblem } from './password-policy.js';
 import {
   CHALLENGE_TTL_MS,
   MAX_CODE_ATTEMPTS,
   runtimeFor,
   SETUP_TTL_MS,
+  STEP_UP_MS,
   type AuthRuntime,
 } from './runtime.js';
 import {
   clearSessionCookie,
   deleteSession,
+  hashToken,
   issueSession,
   readCookie,
+  sessionCookieName,
   setSessionCookie,
 } from './sessions.js';
 import { completeSetup, isSetupRequired, SetupConflict } from './setup.js';
@@ -54,6 +58,39 @@ const SetupComplete = z.object({ enrolToken: z.string().min(1).max(200), code: C
 const SignIn = z.object({ login: Login, password: Password });
 const SignInTotp = z.object({ challenge: z.string().min(1).max(200), code: Code });
 const StepUp = z.object({ code: Code });
+const PasswordChange = z.object({
+  currentPassword: Password,
+  newPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
+  code: Code,
+  /** End every other session once the password changes (ASVS 5.0 7.4.3). On unless refused. */
+  endOtherSessions: z.boolean().optional(),
+});
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function weakPassword(res: Response, problems: PasswordProblem[]): void {
+  res.status(400).json({ error: 'weak_password', problems });
+}
+
+/**
+ * A new sign-in ends the session the browser presented, if it had one (ASVS 5.0 7.2.4): the old
+ * token must not outlive the authentication that replaced it. Runs inside the issuing transaction.
+ */
+async function endPresentedSession(rt: AuthRuntime, tx: Prisma.TransactionClient, req: Request): Promise<string | null> {
+  const token = readCookie(req, sessionCookieName(rt.secure));
+  if (token === null) return null;
+  const row = await tx.session.findUnique({ where: { idHash: hashToken(token) }, select: { id: true } });
+  if (row === null) return null;
+  await deleteSession(tx, row.id);
+  return row.id;
+}
+
+/** Signed in or stepped up within the step-up window: fresh enough to change how the account signs in. */
+function freshlyAuthenticated(rt: AuthRuntime, session: { createdAt: Date; stepUpAt: Date | null }): boolean {
+  const now = rt.now().getTime();
+  const at = Math.max(session.createdAt.getTime(), session.stepUpAt?.getTime() ?? -Infinity);
+  const age = now - at;
+  return age >= 0 && age <= STEP_UP_MS;
+}
 
 function notConfigured(res: Response): void {
   res.status(503).json({ error: 'auth_not_configured' });
@@ -108,11 +145,11 @@ function signinError(message: string, linkAfter = false): string {
 }
 
 function txCookie(rt: AuthRuntime, res: Response, value: string, maxAgeMs: number): void {
-  res.cookie(TX_COOKIE, value, {
+  res.cookie(txCookieName(rt.secure), value, {
     httpOnly: true,
     secure: rt.secure,
     sameSite: 'lax',
-    path: '/api/auth/oidc',
+    path: '/',
     maxAge: maxAgeMs,
   });
 }
@@ -193,6 +230,11 @@ export function authRoutes(deps: ApiDeps): Router {
         return;
       }
       const { displayName, login, password } = parsed.data;
+      const problems = checkPassword(password, { domain: rt.domain });
+      if (problems.length > 0) {
+        weakPassword(res, problems);
+        return;
+      }
       const totpSecret = generateTotpSecret();
       // The handle for this enrolment in flight — not SETUP_TOKEN, which the operator brings.
       const enrolToken = randomBytes(32).toString('base64url');
@@ -388,13 +430,14 @@ export function authRoutes(deps: ApiDeps): Router {
           ? null
           : await db.$transaction(async (tx) => {
               if (!(await burnStep(tx, account.id, step))) return null;
+              const replaced = await endPresentedSession(rt, tx, req);
               const session = await issueSession(tx, account.id, { method: 'password', roles: [] }, req, rt.now());
               await recordAudit(tx, {
                 actor: asAccount(account.id),
                 action: 'auth.signin',
                 entityType: 'session',
                 entityId: session.id,
-                after: { method: 'password', accountId: account.id },
+                after: { method: 'password', accountId: account.id, replacedSessionId: replaced },
                 context: getAuditContext(req),
               });
               return session;
@@ -531,6 +574,135 @@ export function authRoutes(deps: ApiDeps): Router {
     }),
   );
 
+  // Ending one of your own sessions, or all the others, needs a step-up (ASVS 5.0 7.5.2).
+  router.delete(
+    '/sessions/:id',
+    requireSession(deps),
+    requireStepUp(deps),
+    handle(async (req, res) => {
+      const me = currentSession(req);
+      const id = String(req.params['id']);
+      const target = UUID.test(id) ? await db.session.findUnique({ where: { id }, select: { accountId: true } }) : null;
+      if (target === null || target.accountId !== me.accountId) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      await audited(
+        db,
+        asAccount(me.accountId),
+        { action: 'auth.session.revoke', entityType: 'session', context: getAuditContext(req) },
+        async (tx) => ({ entityId: id, before: await deleteSession(tx, id), after: null, result: null }),
+      );
+      if (id === me.sessionId) clearSessionCookie(res, rt.secure);
+      res.json({ ok: true });
+    }),
+  );
+
+  router.delete(
+    '/sessions',
+    requireSession(deps),
+    requireStepUp(deps),
+    handle(async (req, res) => {
+      const me = currentSession(req);
+      const ended = await db.$transaction(async (tx) => {
+        const others = await tx.session.findMany({ where: { accountId: me.accountId, id: { not: me.sessionId } }, select: { id: true } });
+        await tx.session.deleteMany({ where: { id: { in: others.map((o) => o.id) } } });
+        await recordAudit(tx, {
+          actor: asAccount(me.accountId),
+          action: 'auth.session.revoke-others',
+          entityType: 'account',
+          entityId: me.accountId,
+          after: { ended: others.map((o) => o.id) },
+          context: getAuditContext(req),
+        });
+        return others.length;
+      });
+      res.json({ ok: true, ended });
+    }),
+  );
+
+  // ─── Password change (ASVS 5.0 6.2.2, 6.2.3, 7.5.1, 7.4.3) ──────────────
+  // The current password and a TOTP code — full re-authentication — then the policy, then the new
+  // hash, with every other session ended unless the caller asks to keep them.
+
+  router.post(
+    '/password',
+    requireSession(deps),
+    handle(async (req, res) => {
+      const kek = rt.kek;
+      const pepper = rt.pepper;
+      if (pepper === null || kek === null) {
+        notConfigured(res);
+        return;
+      }
+      const parsed = PasswordChange.safeParse(req.body);
+      if (!parsed.success) {
+        badRequest(res, parsed.error);
+        return;
+      }
+      const me = currentSession(req);
+      const account = await db.account.findUnique({ where: { id: me.accountId } });
+      if (account === null || account.passwordHash === null || !account.totpEnabled || account.totpSecret === null) {
+        // A D3 Auth-only account has no password here to change; it is D3 Auth's to manage.
+        res.status(409).json({ error: 'no_password' });
+        return;
+      }
+      const throttleKey = `password:${account.id}`;
+      const ip = req.ip ?? 'unknown';
+      const wait = rt.throttle.retryAfter(throttleKey, ip, nowMs());
+      if (wait > 0) {
+        res.setHeader('Retry-After', String(Math.ceil(wait / 1000)));
+        res.status(429).json({ error: 'too_many_attempts', retryAfterSeconds: Math.ceil(wait / 1000) });
+        return;
+      }
+      const { currentPassword, newPassword, code } = parsed.data;
+      const passwordOk = await verifyPassword(account.passwordHash, currentPassword, pepper);
+      const step = passwordOk ? matchStep(openTotpSecret(kek, account.totpSecret, account.id), code, rt.now()) : null;
+      const problems = checkPassword(newPassword, { domain: rt.domain });
+      if (passwordOk && step !== null && problems.length > 0) {
+        weakPassword(res, problems);
+        return;
+      }
+      const newHash = passwordOk && step !== null ? await hashPassword(newPassword, pepper) : null;
+      const endOthers = parsed.data.endOtherSessions ?? true;
+      const ended =
+        newHash === null || step === null
+          ? null
+          : await db.$transaction(async (tx) => {
+              if (!(await burnStep(tx, account.id, step))) return null;
+              await tx.account.update({ where: { id: account.id }, data: { passwordHash: newHash } });
+              const others = endOthers
+                ? await tx.session.findMany({ where: { accountId: account.id, id: { not: me.sessionId } }, select: { id: true } })
+                : [];
+              await tx.session.deleteMany({ where: { id: { in: others.map((o) => o.id) } } });
+              await recordAudit(tx, {
+                actor: asAccount(account.id),
+                action: 'auth.password.change',
+                entityType: 'account',
+                entityId: account.id,
+                after: { endedSessions: others.map((o) => o.id) },
+                context: getAuditContext(req),
+              });
+              return others.length;
+            });
+      if (ended === null) {
+        rt.throttle.recordFailure(throttleKey, ip, nowMs());
+        await recordAudit(db, {
+          actor: asAccount(account.id),
+          action: 'auth.password.change.rejected',
+          entityType: 'account',
+          entityId: account.id,
+          after: { factor: passwordOk ? 'totp' : 'password' },
+          context: getAuditContext(req),
+        });
+        res.status(401).json({ error: passwordOk ? 'invalid_code' : 'invalid_credentials' });
+        return;
+      }
+      rt.throttle.clear(throttleKey, ip);
+      res.json({ ok: true, endedSessions: ended });
+    }),
+  );
+
   // ─── Sign in with D3 Auth ────────────────────────────────────────────────
 
   router.get(
@@ -543,7 +715,17 @@ export function authRoutes(deps: ApiDeps): Router {
       }
       // Linking attaches the identity to whoever is signed in here already — never to an account
       // matched by email afterwards.
-      const linkTo = req.query['link'] === '1' ? (await sessionOf(rt, req))?.accountId : undefined;
+      let linkTo: string | undefined;
+      if (req.query['link'] === '1') {
+        const session = await sessionOf(rt, req);
+        // Linking adds a way to sign in to this account, so it needs proof from the last five
+        // minutes — a signed-in browser left open is not enough (ASVS 5.0 7.5.1).
+        if (session !== null && !freshlyAuthenticated(rt, session)) {
+          res.redirect(302, signinError('Sign in again to link D3 Auth to this account.', true));
+          return;
+        }
+        linkTo = session?.accountId;
+      }
       let start;
       try {
         start = await client.beginSignIn();
@@ -567,13 +749,13 @@ export function authRoutes(deps: ApiDeps): Router {
   router.get(
     '/oidc/callback',
     handle(async (req, res) => {
-      res.clearCookie(TX_COOKIE, { httpOnly: true, secure: rt.secure, sameSite: 'lax', path: '/api/auth/oidc' });
+      res.clearCookie(txCookieName(rt.secure), { httpOnly: true, secure: rt.secure, sameSite: 'lax', path: '/' });
       const client = await rt.oidc.get(nowMs());
       if (client === null || rt.sessionSecret === null) {
         res.redirect(302, signinError('Sign in with D3 Auth is not available right now. Use your password.'));
         return;
       }
-      const sealed = readCookie(req, TX_COOKIE);
+      const sealed = readCookie(req, txCookieName(rt.secure));
       const tx = sealed === null ? null : openTransaction(rt.sessionSecret, sealed);
       const state = typeof req.query['state'] === 'string' ? req.query['state'] : '';
       // This browser started it, it has not expired, and it is the sign-in it started. The SDK
@@ -626,6 +808,7 @@ export function authRoutes(deps: ApiDeps): Router {
           );
           const account = await dbtx.account.findUniqueOrThrow({ where: { id: resolved.accountId } });
           if (account.disabledAt !== null) return null;
+          await endPresentedSession(rt, dbtx, req);
           const issued = await issueSession(
             dbtx,
             account.id,

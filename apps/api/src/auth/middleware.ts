@@ -1,14 +1,14 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { ApiDeps } from '../deps.js';
 import { runtimeFor, STEP_UP_MS, type AuthRuntime } from './runtime.js';
-import { readCookie, resolveSession, SESSION_COOKIE, type ResolvedSession } from './sessions.js';
+import { readCookie, resolveSession, sessionCookieName, type ResolvedSession } from './sessions.js';
 
 // The session a request carries, resolved at most once per request.
 const loaded = new WeakMap<Request, ResolvedSession | null>();
 
 export async function sessionOf(rt: AuthRuntime, req: Request): Promise<ResolvedSession | null> {
   if (loaded.has(req)) return loaded.get(req) ?? null;
-  const token = readCookie(req, SESSION_COOKIE);
+  const token = readCookie(req, sessionCookieName(rt.secure));
   const session = token === null ? null : await resolveSession(rt.db, token, rt.now());
   loaded.set(req, session);
   return session;

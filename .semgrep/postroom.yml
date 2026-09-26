@@ -102,7 +102,7 @@ rules:
       read by more people and kept longer than the thing they describe; log that it happened, not
       the value.
     paths:
-      exclude: ['**/test/**', '**/*.test.ts', 'e2e/**', 'fuzz/**']
+      exclude: ['**/test/**', '**/*.test.ts', '/e2e/**', '/fuzz/**']
     patterns:
       - pattern-either:
           - pattern: console.$LOG(..., <... $SECRET ...>, ...)
@@ -124,7 +124,7 @@ rules:
       exclude:
         # CREATE/DROP DATABASE cannot take a bind parameter. The name is generated in-process and
         # checked against ^[a-z0-9_]+$ on the line after it is made (drill.ts:188).
-        - apps/worker/src/drill/drill.ts
+        - /apps/worker/src/drill/drill.ts
     patterns:
       - pattern-either:
           - pattern: $DB.$queryRawUnsafe($Q, ...)
@@ -142,12 +142,12 @@ rules:
       secrets, nonces. Use crypto.randomBytes, randomInt or randomUUID. (Backoff jitter and MX
       tie-breaks pass Math.random as an injectable function, which this rule does not flag.)
     paths:
-      include: ['apps/*/src/**', 'packages/*/src/**', 'workers/**/src/**', 'edge/**']
+      include: ['/apps/*/src/**', '/packages/*/src/**', '/workers/**/src/**', '/edge/**']
       exclude:
         # The decoy input for a constant-time miss: its hash is verified and the result discarded
         # (verify.ts only accepts a match against a real candidate row), so its value is never a
         # secret. Retire by switching it to randomBytes as apps/api/src/auth/passwords.ts does.
-        - packages/credentials/src/hash.ts
+        - /packages/credentials/src/hash.ts
     pattern: Math.random()
 
   - id: postroom.tls-verification-disabled
@@ -163,7 +163,7 @@ rules:
         # Opportunistic STARTTLS to a remote MX (RFC 3207): with no DANE/MTA-STS policy there is no
         # authenticated name to hold the peer to. Whether it verified is recorded per delivery
         # (tlsPeer); enforcement arrives with MTA-STS/DANE in PST-T-7.5.
-        - apps/delivery/src/client/session.ts
+        - /apps/delivery/src/client/session.ts
     pattern-either:
       - pattern: '{..., rejectUnauthorized: false, ...}'
       - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
@@ -177,12 +177,12 @@ rules:
       smuggling ambiguity this server refuses from others.
     paths:
       include:
-        - apps/smtp-in/src/**
-        - apps/submission/src/**
-        - apps/imap/src/**
-        - apps/delivery/src/**
-        - packages/smtp-proto/src/**
-        - packages/imap-proto/src/**
+        - /apps/smtp-in/src/**
+        - /apps/submission/src/**
+        - /apps/imap/src/**
+        - /apps/delivery/src/**
+        - /packages/smtp-proto/src/**
+        - /packages/imap-proto/src/**
     patterns:
       - pattern-either:
           - pattern: $SOCK.write($LINE, ...)
@@ -199,7 +199,7 @@ rules:
       The webmail talks to its own origin and nothing else — no telemetry, no CDN, no third-party
       script or beacon (PST-REQ-159). Remote content in mail goes through the usercontent origin.
     paths:
-      include: ['apps/web/src/**']
+      include: ['/apps/web/src/**']
     pattern-either:
       - pattern: fetch("=~/^(https?:)?\/\//", ...)
       - pattern: fetch(`=~/^(https?:)?\/\//`, ...)
@@ -216,7 +216,7 @@ rules:
     message: >-
       No third-party scripts, stylesheets or fonts in the webmail shell (PST-REQ-159, PST-REQ-175).
     paths:
-      include: ['apps/web/*.html', '.semgrep/*.html']
+      include: ['/apps/web/*.html', '/.semgrep/*.html']
     pattern-regex: <(script|link|img|iframe)\b[^>]*\b(src|href)\s*=\s*["']?(https?:)?//
 
   - id: postroom.cookie-without-httponly

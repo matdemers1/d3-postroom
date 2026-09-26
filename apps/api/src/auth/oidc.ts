@@ -99,6 +99,12 @@ export class OidcProvider {
 // finish it, and nothing in it is readable or forgeable.
 
 export const TX_COOKIE = 'postroom_oidc';
+/** `__Host-` on a secure origin, like the session cookie (ASVS 5.0 3.3.1, 3.3.3); so Path=/. */
+export const SECURE_TX_COOKIE = '__Host-postroom_oidc';
+
+export function txCookieName(secure: boolean): string {
+  return secure ? SECURE_TX_COOKIE : TX_COOKIE;
+}
 export const TX_TTL_MS = 10 * 60 * 1000;
 const TAG_BYTES = 16;
 

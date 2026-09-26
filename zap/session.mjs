@@ -139,4 +139,5 @@ if (me.status !== 200 || me.json.signedIn !== true) fail('no session after signi
 const mailboxes = await call('GET', '/api/mailboxes');
 if (mailboxes.status !== 200) fail(`GET /api/mailboxes answered ${mailboxes.status} with the new session`);
 
-process.stdout.write(cookieHeader());
+// To run.sh's $(...) — the scanner needs the cookie; nothing logs it. The stack is thrown away.
+process.stdout.write(cookieHeader()); // nosemgrep: postroom.secret-in-log
