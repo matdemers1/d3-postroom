@@ -62,6 +62,9 @@ importers:
       '@postroom/delivery':
         specifier: workspace:*
         version: link:../delivery
+      '@postroom/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
       argon2:
         specifier: ^0.45.1
         version: 0.45.1

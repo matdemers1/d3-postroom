@@ -25,7 +25,8 @@
     "otpauth": "^9.5.2",
     "zod": "^4.6.5",
     "@postroom/credentials": "workspace:*",
-    "@postroom/delivery": "workspace:*"
+    "@postroom/delivery": "workspace:*",
+    "@postroom/queue": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
