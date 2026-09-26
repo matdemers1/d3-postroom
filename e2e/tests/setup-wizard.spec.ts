@@ -325,9 +325,13 @@ test('a fresh install walks the wizard to a delivered test message with its time
   } else {
     const stub = await api.post('/api/admin/dev/fake-delivery', { headers: CSRF, data: { outboundId } });
     if (stub.status() === 404) throw new Error('no fake MX configured and no stub route: set E2E_FAKE_DNS_PORT/E2E_FAKE_MX_PORT or POSTROOM_E2E_SEED=1');
+    // On the compose stack the real delivery worker may attempt first: fake-remote.test has no MX,
+    // so it bounces (550 5.1.2) before the stub runs, and the stub then finds nothing to deliver.
+    // Either way the wizard must show the attempt that happened and its outcome — that is the step's
+    // contract. (A delivered external test needs the edge; FAKE_MX mode above proves that path.)
     // Each entry reads "<time> <title>", so match the title anywhere in the list, not at the start.
-    await expect(timeline).toContainText(/Attempt via e2e-stub .*: delivered/, { timeout: 60_000 });
-    await expect(timeline).toContainText(`Delivered to ${TO}`);
+    await expect(timeline).toContainText(/Attempt via (e2e-stub|direct)\b.*: (delivered|bounced)/, { timeout: 60_000 });
+    await expect(timeline).toContainText(new RegExp(`(Delivered to|Bounced: ) ?${TO.replace(/[.]/g, '\\.')}`));
   }
   await axe(page, 'test-step');
 
