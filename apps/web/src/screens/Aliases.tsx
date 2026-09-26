@@ -8,7 +8,7 @@ const when = (iso: string | null): string =>
 
 /**
  * Masked aliases (PST-T-5.7, PST-REQ-112): a random address handed to one site, so a leak names
- * exactly who leaked it. Kill it and mail to it is refused with 550 from then on — no warning to
+ * exactly who leaked it. Turn it off and mail to it is refused from then on — no warning to
  * the sender, and nothing already delivered is touched.
  */
 export function Aliases() {
@@ -57,12 +57,12 @@ export function Aliases() {
       });
   };
 
-  const kill = (row: Alias) => {
+  const turnOff = (row: Alias) => {
     setNotice(null);
     api
       .killAlias(row.id)
       .then(async () => {
-        setNotice(`Killed ${row.address}. Mail to it is refused from now on.`);
+        setNotice(`Turned off ${row.address}. Mail to it is refused from now on.`);
         await load();
       })
       .catch((caught: unknown) => {
@@ -70,12 +70,12 @@ export function Aliases() {
       });
   };
 
-  const revive = (row: Alias) => {
+  const turnOn = (row: Alias) => {
     setNotice(null);
     api
       .reviveAlias(row.id)
       .then(async () => {
-        setNotice(`Revived ${row.address}.`);
+        setNotice(`Turned on ${row.address}.`);
         await load();
       })
       .catch((caught: unknown) => {
@@ -108,7 +108,7 @@ export function Aliases() {
     {
       key: 'status',
       header: 'Status',
-      cell: (a) => (a.killedAt === null ? <Badge tone="neutral">Live</Badge> : <Badge tone="danger">Killed</Badge>),
+      cell: (a) => (a.killedAt === null ? <Badge tone="neutral">Live</Badge> : <Badge tone="danger">Off</Badge>),
     },
     { key: 'createdAt', header: 'Created', cell: (a) => when(a.createdAt) },
     { key: 'lastUsedAt', header: 'Last used', cell: (a) => when(a.lastUsedAt) },
@@ -119,12 +119,12 @@ export function Aliases() {
       align: 'end',
       cell: (a) =>
         a.killedAt === null ? (
-          <Button variant="danger-ghost" size="sm" aria-label={`Kill ${a.address}`} onClick={() => { kill(a); }}>
-            Kill
+          <Button variant="danger-ghost" size="sm" aria-label={`Turn off ${a.address}`} onClick={() => { turnOff(a); }}>
+            Turn off
           </Button>
         ) : (
-          <Button variant="ghost" size="sm" aria-label={`Revive ${a.address}`} onClick={() => { revive(a); }}>
-            Revive
+          <Button variant="ghost" size="sm" aria-label={`Turn on ${a.address}`} onClick={() => { turnOn(a); }}>
+            Turn on
           </Button>
         ),
     },
@@ -134,7 +134,7 @@ export function Aliases() {
     <Page>
       <PageHeader
         title="Masked aliases"
-        description="Give every site its own random address. If it leaks, kill the alias — mail to it is refused with 550, no warning sent."
+        description="Give every site its own random address. If it leaks, turn off the alias — mail to it is refused, no warning sent."
         {...(rows === null ? {} : { count: rows.length, countNoun: { one: 'alias', other: 'aliases' } })}
       />
       {notice === null ? null : (

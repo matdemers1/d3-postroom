@@ -13,7 +13,7 @@ import {
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
-import { ApiError, INBOUND_STAGES, api, describeError, type AdminJob, type InboundStage } from '../api';
+import { ApiError, INBOUND_STAGES, api, describeError, serverUnreachable, type AdminJob, type InboundStage } from '../api';
 import { Loading, LoadFailed } from './states';
 
 const STATUS_OPTIONS = [
@@ -105,7 +105,7 @@ export function AdminJobs() {
       await load(status);
     } catch (caught) {
       if (caught instanceof ApiError) setNotice(describeError(caught));
-      else setNotice('Postroom did not answer. Try again.');
+      else setNotice(serverUnreachable('Try again.'));
     } finally {
       setBusy(false);
     }

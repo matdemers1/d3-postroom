@@ -152,11 +152,18 @@
   /* Text/search/date fields: the visible box (`.d3-inp`) is 28/34/40px tall with the control itself
    * shorter still (line-height only) and vertically centered — stretching the control to the
    * wrapper's cross size, and the wrapper itself to at least 44px, makes the *actual* <input> the
-   * full tap target rather than an invisible extension nobody could verify. */
+   * full tap target rather than an invisible extension nobody could verify.
+   *
+   * `.d3-sel` (a Select's trigger button) shares the `.d3-inp` class but holds a `.d3-sel__value`
+   * span, not a `.d3-inp__control` — stretching it left that span's text pinned to the top of the
+   * grown box instead of centered (PST-DA-042), so it keeps the base component's `align-items:
+   * center` here. */
   .d3-inp {
     /* +2px over 44 accounts for the wrapper's own 1px top/bottom border: align-items: stretch
      * fills the control to the flex container's *content* box, not its border box. */
     min-height: 46px;
+  }
+  .d3-inp:not(.d3-sel) {
     align-items: stretch;
   }
   .d3-inp__control {

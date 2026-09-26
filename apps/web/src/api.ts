@@ -870,12 +870,39 @@ export interface AdminJob {
   finishedAt: string | null;
 }
 
-/** Where a path must go for this auth state, or null to render it. Pure, so it is unit-tested. */
-export function redirectFor(state: AuthState, pathname: string): string | null {
+/**
+ * A same-origin, relative path Postroom will navigate to after sign-in (PST-DA-040). Refuses
+ * anything that could send the browser somewhere else: a scheme (`javascript:`, `https://evil`), a
+ * protocol-relative `//host` or `/\host` (some browsers treat a leading backslash as a slash), and
+ * anything without a single leading `/`. Pure, so it is unit-tested — this is the open-redirect
+ * guard, not a UX nicety.
+ */
+export function isSafeNextPath(value: string): boolean {
+  if (value === '' || !value.startsWith('/')) return false;
+  if (value.startsWith('//') || value.startsWith('/\\')) return false;
+  if (/[\r\n\t]/.test(value)) return false;
+  return true;
+}
+
+/**
+ * Where a path must go for this auth state, or null to render it. Pure, so it is unit-tested.
+ *
+ * PST-DA-040: a session that expires away from the inbox does not lose the page — signing out of
+ * anywhere but '/' remembers it as `/signin?next=<path>`, and signing in honours that `next` only
+ * when isSafeNextPath allows it (a same-origin relative path). '/' itself is already where sign-in
+ * lands by default, so it never grows a `next`.
+ */
+export function redirectFor(state: AuthState, pathname: string, search = ''): string | null {
   if (state.setupRequired) return pathname === '/setup' ? null : '/setup';
   if (pathname === '/setup') return '/signin';
-  if (!state.signedIn) return pathname === '/signin' ? null : '/signin';
-  if (pathname === '/signin') return '/';
+  if (!state.signedIn) {
+    if (pathname === '/signin' || pathname === '/') return pathname === '/signin' ? null : '/signin';
+    return isSafeNextPath(pathname) ? `/signin?next=${encodeURIComponent(pathname + search)}` : '/signin';
+  }
+  if (pathname === '/signin') {
+    const next = new URLSearchParams(search).get('next');
+    return next !== null && isSafeNextPath(next) ? next : '/';
+  }
   return null;
 }
 
@@ -899,24 +926,35 @@ function describeWeakPassword(body: unknown): string {
   return `That password ${problems.map((p) => PASSWORD_PROBLEM_LABEL[p]).join('; ')}.`;
 }
 
+/**
+ * The one wording for "the server didn't answer at all" (PST-DA-050, COPY-18) — a network failure,
+ * a timeout, anything that never reached `describeError`'s `switch`. Every screen that used to
+ * invent its own version of this sentence calls this instead, so "Postroom" and "server", and
+ * "Check your connection" and "Try again", never drift apart from each other. `next` names what to
+ * do about it, or what didn't happen as a result; it defaults to the plain retry.
+ */
+export function serverUnreachable(next = 'Check your connection and try again.'): string {
+  return `Postroom didn’t answer. ${next}`;
+}
+
 /** A human sentence for an API refusal on the sign-in, setup and account-security screens. */
 export function describeError(error: unknown): string {
-  if (!(error instanceof ApiError)) return 'Postroom did not answer. Check your connection and try again.';
+  if (!(error instanceof ApiError)) return serverUnreachable();
   switch (error.code) {
     case 'invalid_credentials':
-      return 'Those details did not match.';
+      return 'That address and password don’t match.';
     case 'invalid_code':
-      return 'That code did not match. Try the current one.';
+      return 'That code didn’t match. Try the current one.';
     case 'challenge_expired':
       return 'That took too long. Sign in again.';
     case 'too_many_attempts':
       return 'Too many attempts. Wait a moment and try again.';
     case 'totp_not_enrolled':
-      return 'This account has no authenticator enrolled. Ask the operator to set one up.';
+      return 'This account has no authenticator enrolled, so it can’t finish signing in. If Sign in with D3 Auth is set up for it, use that instead.';
     case 'setup_complete':
       return 'Setup is already complete. Sign in instead.';
     case 'setup_token_required':
-      return 'That setup token did not match. Copy SETUP_TOKEN from the server\'s env file.';
+      return 'That setup token didn’t match. Copy SETUP_TOKEN from the server\'s env file.';
     case 'setup_expired':
       return 'Setup took too long. Start again.';
     case 'login_taken':
@@ -924,7 +962,7 @@ export function describeError(error: unknown): string {
     case 'invalid_request':
       return 'The server refused part of the form. Check each field and try again.';
     case 'auth_not_configured':
-      return 'Sign-in is not configured on this server yet.';
+      return 'Sign-in isn’t configured on this server yet.';
     case 'weak_password':
       return describeWeakPassword(error.body);
     case 'no_password':
@@ -932,7 +970,7 @@ export function describeError(error: unknown): string {
     case 'step_up_required':
       return 'That needs a fresh authentication code.';
     default:
-      return 'Something went wrong. Try again.';
+      return 'Something went wrong on the server. Try again, and if it keeps happening, check Health.';
   }
 }
 

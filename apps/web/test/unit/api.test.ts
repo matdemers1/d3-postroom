@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, INBOUND_STAGES, describeError, queuePath, redirectFor, type AuthState } from '../../src/api';
+import { ApiError, INBOUND_STAGES, describeError, isSafeNextPath, queuePath, redirectFor, serverUnreachable, type AuthState } from '../../src/api';
 
 const base: AuthState = { setupRequired: false, oidcConfigured: false, oidcAvailable: false, signedIn: false };
 const signedIn = (isAdmin: boolean): AuthState => ({
@@ -41,6 +41,36 @@ describe('redirectFor', () => {
     expect(redirectFor(signedIn(true), '/admin/health')).toBeNull();
     expect(redirectFor(signedIn(true), '/admin/jobs')).toBeNull();
   });
+
+  it('remembers where a session expired away from the inbox, and honours it back only when safe (PST-DA-040)', () => {
+    expect(redirectFor(base, '/account/sessions')).toBe('/signin?next=%2Faccount%2Fsessions');
+    expect(redirectFor(base, '/mail', '?compose=new')).toBe('/signin?next=%2Fmail%3Fcompose%3Dnew');
+    // '/' is already where sign-in lands by default: no next needed.
+    expect(redirectFor(base, '/')).toBe('/signin');
+
+    expect(redirectFor(signedIn(false), '/signin', '?next=%2Faccount%2Fsessions')).toBe('/account/sessions');
+    // An absent, malformed or unsafe next falls back to the inbox rather than failing closed.
+    expect(redirectFor(signedIn(false), '/signin')).toBe('/');
+    expect(redirectFor(signedIn(false), '/signin', '?next=not-a-path')).toBe('/');
+    expect(redirectFor(signedIn(false), '/signin', '?next=%2F%2Fevil.example')).toBe('/');
+    expect(redirectFor(signedIn(false), '/signin', `?next=${encodeURIComponent('https://evil.example')}`)).toBe('/');
+  });
+});
+
+describe('isSafeNextPath (PST-DA-040)', () => {
+  it('allows only a same-origin, single-leading-slash relative path', () => {
+    expect(isSafeNextPath('/account/sessions')).toBe(true);
+    expect(isSafeNextPath('/mail?compose=new')).toBe(true);
+  });
+  it('refuses anything that could leave the origin, and empty input', () => {
+    expect(isSafeNextPath('')).toBe(false);
+    expect(isSafeNextPath('account/sessions')).toBe(false);
+    expect(isSafeNextPath('//evil.example')).toBe(false);
+    expect(isSafeNextPath('/\\evil.example')).toBe(false);
+    expect(isSafeNextPath('https://evil.example')).toBe(false);
+    expect(isSafeNextPath('javascript:alert(1)')).toBe(false);
+    expect(isSafeNextPath('/ok\r\nSet-Cookie: x=1')).toBe(false);
+  });
 });
 
 describe('INBOUND_STAGES', () => {
@@ -61,10 +91,25 @@ describe('queuePath (PST-T-6.6)', () => {
   });
 });
 
+describe('serverUnreachable (PST-DA-050, COPY-18)', () => {
+  it('gives one default sentence for "the server did not answer at all"', () => {
+    expect(serverUnreachable()).toBe('Postroom didn’t answer. Check your connection and try again.');
+  });
+
+  it('lets a caller name a consequence or next step, without inventing its own wording for the shared part', () => {
+    expect(serverUnreachable('Nothing changed.')).toBe('Postroom didn’t answer. Nothing changed.');
+    expect(serverUnreachable('Try again.')).toBe('Postroom didn’t answer. Try again.');
+  });
+
+  it('is what describeError falls back to for a non-ApiError failure, so the two never drift apart', () => {
+    expect(describeError(new Error('network'))).toBe(serverUnreachable());
+  });
+});
+
 describe('describeError', () => {
   it('gives one message for every credential failure', () => {
-    expect(describeError(new ApiError(401, 'invalid_credentials', null))).toBe('Those details did not match.');
-    expect(describeError(new Error('network'))).toMatch(/did not answer/);
+    expect(describeError(new ApiError(401, 'invalid_credentials', null))).toBe('That address and password don’t match.');
+    expect(describeError(new Error('network'))).toMatch(/didn’t answer/);
   });
 
   it('names which password rule failed (PST-T-4.9, PST-REQ-091)', () => {

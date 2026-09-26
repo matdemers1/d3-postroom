@@ -9,6 +9,8 @@ import {
   FormActions,
   FormField,
   Input,
+  Modal,
+  ModalClose,
   Page,
   PageHeader,
   Section,
@@ -25,7 +27,7 @@ const SCOPES: { scope: AppPasswordScope; label: string }[] = [
   { scope: 'imap', label: 'Read mail (IMAP)' },
   { scope: 'smtp', label: 'Send mail (SMTP)' },
   { scope: 'dav', label: 'Calendars and contacts (DAV)' },
-  { scope: 'sieve', label: 'Filters (ManageSieve)' },
+  { scope: 'sieve', label: 'Rules (ManageSieve)' },
 ];
 
 const when = (iso: string | null): string =>
@@ -46,6 +48,8 @@ export function AppPasswords() {
   const [busy, setBusy] = useState(false);
   const [revealed, setRevealed] = useState<{ label: string; password: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState<AppPassword | null>(null);
+  const [revoking, setRevoking] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -95,14 +99,19 @@ export function AppPasswords() {
 
   const revoke = (row: AppPassword) => {
     setNotice(null);
+    setRevoking(true);
     api
       .revokeAppPassword(row.id)
       .then(async () => {
+        setConfirming(null);
         setNotice(`Revoked "${row.label}". Its client is signed out at its next connection.`);
         await load();
       })
       .catch((caught: unknown) => {
         setNotice(describeError(caught));
+      })
+      .finally(() => {
+        setRevoking(false);
       });
   };
 
@@ -121,7 +130,7 @@ export function AppPasswords() {
     { key: 'label', header: 'Name', cell: (p) => p.label },
     {
       key: 'scopes',
-      header: 'May',
+      header: 'Permissions',
       cell: (p) => (
         <Cluster gap="4">
           {p.scopes.map((s) => (
@@ -148,7 +157,7 @@ export function AppPasswords() {
           size="sm"
           aria-label={`Revoke ${p.label}`}
           onClick={() => {
-            revoke(p);
+            setConfirming(p);
           }}
         >
           Revoke
@@ -214,7 +223,7 @@ export function AppPasswords() {
                 }}
               />
             </FormField>
-            <FormField label="It may" as="group">
+            <FormField label="Permissions" as="group">
               <Stack gap="8">
                 {SCOPES.map(({ scope, label: scopeLabel }) => (
                   <Checkbox
@@ -252,6 +261,35 @@ export function AppPasswords() {
           empty={<EmptyState kind="empty" heading="No app passwords yet" size="row" />}
         />
       )}
+
+      <Modal
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirming(null);
+        }}
+        destructive
+        title="Revoke this app password?"
+        description={confirming === null ? '' : `"${confirming.label}" is signed out at its next connection. This cannot be undone.`}
+        footer={
+          <>
+            <ModalClose>
+              <Button type="button">Cancel</Button>
+            </ModalClose>
+            <Button
+              type="button"
+              variant="danger"
+              loading={revoking}
+              onClick={() => {
+                if (confirming !== null) revoke(confirming);
+              }}
+            >
+              Revoke
+            </Button>
+          </>
+        }
+      >
+        {null}
+      </Modal>
     </Page>
   );
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Alert, AuthLayout, Spinner, ThemeProvider } from '@d3cloud/ui';
-import { api, redirectFor, type AuthState } from './api';
+import { Alert, AuthLayout, Button, Spinner, ThemeProvider } from '@d3cloud/ui';
+import { api, redirectFor, serverUnreachable, type AuthState } from './api';
+import { titleForPath } from './title';
 import { Calendar } from './calendar/Calendar';
 import { Contacts } from './contacts/Contacts';
 import { Keys } from './keys/Keys';
@@ -48,11 +49,22 @@ function Gate() {
     void refresh();
   }, [refresh]);
 
+  // PST-DA-043: the tab, browser history and screen readers all named the same 'Postroom' on every
+  // screen. Set on every navigation, not just the mount, so a route change without a full reload
+  // (React Router's own point) still updates it.
+  useEffect(() => {
+    document.title = titleForPath(location.pathname);
+  }, [location.pathname]);
+
   if (failed) {
     return (
       <AuthLayout title="Postroom is not answering">
-        <Alert tone="danger" title="Could not reach the server">
-          Reload the page in a moment.
+        <Alert
+          tone="danger"
+          title="Could not reach the server"
+          actions={<Button size="sm" onClick={() => void refresh()}>Try again</Button>}
+        >
+          {serverUnreachable()}
         </Alert>
       </AuthLayout>
     );
@@ -65,7 +77,7 @@ function Gate() {
     );
   }
 
-  const target = redirectFor(state, location.pathname);
+  const target = redirectFor(state, location.pathname, location.search);
   if (target !== null && target !== location.pathname) return <Navigate to={target} replace />;
 
   return (

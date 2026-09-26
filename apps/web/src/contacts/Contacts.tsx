@@ -89,7 +89,7 @@ export function Contacts() {
         <Input
           type="search"
           aria-label="Search contacts"
-          placeholder="Search by name, e-mail or organisation"
+          placeholder="Search by name, email or organization"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -315,10 +315,10 @@ function ContactPane({
           </Alert>
         )}
         <DescriptionList>
-          {contact.org === '' ? null : <DescriptionItem term="Organisation">{contact.org}</DescriptionItem>}
+          {contact.org === '' ? null : <DescriptionItem term="Organization">{contact.org}</DescriptionItem>}
           {contact.emails.map((e, i) => (
-            <DescriptionItem key={`e${String(i)}`} term={e.type === null ? 'E-mail' : `E-mail (${e.type})`}>
-              <a className="pr-contacts__email" href={`mailto:${e.address}`}>{e.address}</a>
+            <DescriptionItem key={`e${String(i)}`} term={e.type === null ? 'Email' : `Email (${e.type})`}>
+              <RouterLink className="pr-contacts__email" to={`/?compose=new&to=${encodeURIComponent(e.address)}`}>{e.address}</RouterLink>
             </DescriptionItem>
           ))}
           {contact.tels.map((t, i) => (
@@ -439,7 +439,7 @@ function ContactEditor({
               }}
             />
           </FormField>
-          <FormField label="Organisation" optional>
+          <FormField label="Organization" optional>
             <Input
               value={form.org}
               autoComplete="off"
@@ -448,13 +448,13 @@ function ContactEditor({
               }}
             />
           </FormField>
-          <FormField label="E-mail addresses" as="group">
+          <FormField label="Email addresses" as="group">
             <Stack gap="8">
               {form.emails.map((e, i) => (
                 <Cluster key={e.key} gap="8" align="center">
                   <Input
                     type="email"
-                    aria-label={`E-mail ${String(i + 1)}`}
+                    aria-label={`Email ${String(i + 1)}`}
                     value={e.address}
                     autoComplete="off"
                     onChange={(ev) => {
@@ -462,7 +462,7 @@ function ContactEditor({
                     }}
                   />
                   <Select
-                    aria-label={`E-mail ${String(i + 1)} type`}
+                    aria-label={`Email ${String(i + 1)} type`}
                     options={typeOptions(EMAIL_TYPES, e.type)}
                     value={e.type}
                     onValueChange={(v) => {
@@ -471,7 +471,7 @@ function ContactEditor({
                   />
                   <IconButton
                     icon={<RemoveIcon />}
-                    label={`Remove e-mail ${String(i + 1)}`}
+                    label={`Remove email ${String(i + 1)}`}
                     size="sm"
                     onClick={() => {
                       set({ emails: form.emails.filter((x) => x.key !== e.key) });
@@ -488,7 +488,7 @@ function ContactEditor({
                     set({ emails: [...form.emails, { key: rowKey(), address: '', type: 'none' }] });
                   }}
                 >
-                  Add e-mail
+                  Add email
                 </Button>
               </div>
             </Stack>

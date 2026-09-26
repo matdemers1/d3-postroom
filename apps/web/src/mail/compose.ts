@@ -1,7 +1,7 @@
 // What a new reply, reply-all, forward or blank message starts with, and what the composer sends
 // and saves (PST-T-3.11) — the rules live here, pure and unit-tested, so the composer and the
 // keyboard shortcuts agree on them.
-import { ApiError, type ComposeFields, type MessageBody, type MessageDetail, type PendingSend, type SavedDraft, type SendResult } from '../api';
+import { ApiError, serverUnreachable, type ComposeFields, type MessageBody, type MessageDetail, type PendingSend, type SavedDraft, type SendResult } from '../api';
 import type { ComposeMode } from './route';
 import { addressOf, displayName, fullDate, header, splitAddresses } from './format';
 import { keyErrorText } from '../keys/format';
@@ -195,7 +195,7 @@ export function resumableDraft(drafts: readonly SavedDraft[], draft: ComposeDraf
 
 /** A refused send, in words the person can act on. */
 export function sendErrorText(error: unknown): string {
-  if (!(error instanceof ApiError)) return 'Postroom did not answer, so nothing was sent. Check your connection and try again.';
+  if (!(error instanceof ApiError)) return serverUnreachable('So nothing was sent — check your connection and try again.');
   const message = typeof error.body === 'object' && error.body !== null && typeof (error.body as { message?: unknown }).message === 'string' ? (error.body as { message: string }).message : null;
   switch (error.code) {
     case 'no_recipients':
@@ -314,7 +314,7 @@ export function snoozeChoices(now: Date): { label: string; until: Date }[] {
 export function toastState(pending: PendingSend, now: Date, locale?: string): { text: string; canUndo: boolean; done: boolean } {
   const left = secondsLeft(pending.releaseAt, now);
   if (pending.kind === 'scheduled') {
-    const when = new Date(pending.releaseAt).toLocaleString(locale, { weekday: 'short', hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+    const when = new Date(pending.releaseAt).toLocaleString(locale, { weekday: 'short', hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
     return { text: `Scheduled for ${when}.`, canUndo: left > 0, done: false };
   }
   if (left > 0) return { text: `Sending… ${String(left)} s`, canUndo: true, done: false };

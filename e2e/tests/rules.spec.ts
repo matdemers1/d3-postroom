@@ -56,7 +56,7 @@ test('a builder rule round-trips through Sieve, and a compile error names its li
   // A compile error in the Sieve view is shown by line.
   await page.getByRole('tab', { name: 'Edit as Sieve' }).click();
   await source.fill('require "fileinto";\n\nfileinto "Receipts"\nkeep;\n');
-  await page.getByRole('button', { name: 'Check' }).click();
+  await page.getByRole('button', { name: 'Check syntax' }).click();
   await expect(page.getByText(/Line 4, column 1/)).toBeVisible();
   expect((await new AxeBuilder({ page }).include('main').withTags(WCAG).analyze()).violations).toEqual([]);
 });

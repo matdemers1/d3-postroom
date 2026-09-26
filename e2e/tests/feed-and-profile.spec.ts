@@ -78,8 +78,12 @@ test('the Newsletters feed scrolls three newsletters, marks them all read, and t
   }
 
   // None of these carry RFC 8058 headers (the seed route cannot set them) — the button says so.
+  // PST-DA-045: Unsubscribe confirms before it fires.
   const firstItem = items.first();
   await firstItem.getByTestId('unsubscribe-button').click();
+  const confirmDialog = page.getByRole('dialog', { name: 'Unsubscribe from this sender?' });
+  await expect(confirmDialog).toBeVisible();
+  await confirmDialog.getByRole('button', { name: 'Unsubscribe' }).click();
   await expect(firstItem.getByTestId('unsubscribe-not-offered')).toBeVisible();
 
   // Mark all read.

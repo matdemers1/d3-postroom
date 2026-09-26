@@ -6,7 +6,7 @@ import { draftFor, forwardSubject, replySubject } from '../../src/mail/compose';
 import { addressOf, backoffMs, displayName, mailboxLabel, splitAddresses } from '../../src/mail/format';
 import { describeTarget, resolveKey, SHORTCUTS, type KeyInput } from '../../src/mail/keys';
 import { initialList, listReducer, scrollToReveal, visibleRange, type ListState } from '../../src/mail/list';
-import { mailPath, narrowView, parseMailRoute } from '../../src/mail/route';
+import { isComposeToAddress, mailPath, narrowView, parseMailRoute } from '../../src/mail/route';
 
 const MB = '11111111-1111-4111-8111-111111111111';
 const ID = '22222222-2222-4222-8222-222222222222';
@@ -48,7 +48,7 @@ describe('resolveKey (PST-REQ-084)', () => {
 
 describe('mail routes (PST-REQ-077)', () => {
   it('parses each level of push navigation', () => {
-    expect(parseMailRoute('/')).toEqual({ mailboxIndex: false, mailboxId: null, messageId: null, compose: null });
+    expect(parseMailRoute('/')).toEqual({ mailboxIndex: false, mailboxId: null, messageId: null, compose: null, composeTo: null });
     expect(parseMailRoute('/mail')).toMatchObject({ mailboxIndex: true, mailboxId: null });
     expect(parseMailRoute(`/mail/${MB}`)).toMatchObject({ mailboxId: MB, messageId: null });
     expect(parseMailRoute(`/mail/${MB}/${ID}`, '?compose=reply')).toMatchObject({ mailboxId: MB, messageId: ID, compose: 'reply' });
@@ -68,12 +68,21 @@ describe('mail routes (PST-REQ-077)', () => {
     expect(mailPath(null)).toBe('/');
     expect(mailPath(MB, ID, 'forward')).toBe(`/mail/${MB}/${ID}?compose=forward`);
     const [path, search] = mailPath(MB, ID, 'replyall').split('?');
-    expect(parseMailRoute(path ?? '', `?${search ?? ''}`)).toEqual({ mailboxIndex: false, mailboxId: MB, messageId: ID, compose: 'replyall' });
+    expect(parseMailRoute(path ?? '', `?${search ?? ''}`)).toEqual({ mailboxIndex: false, mailboxId: MB, messageId: ID, compose: 'replyall', composeTo: null });
+  });
+  it('honours compose=new&to=<address> only when the address looks real, and only alongside compose=new (PST-DA-025)', () => {
+    expect(parseMailRoute('/', '?compose=new&to=jane%40example.org')?.composeTo).toBe('jane@example.org');
+    expect(parseMailRoute('/', '?compose=new&to=not-an-address')?.composeTo).toBeNull();
+    expect(parseMailRoute('/', '?compose=reply&to=jane%40example.org')?.composeTo).toBeNull();
+    expect(parseMailRoute('/')?.composeTo).toBeNull();
+    expect(isComposeToAddress('jane@example.org')).toBe(true);
+    expect(isComposeToAddress('not-an-address')).toBe(false);
+    expect(isComposeToAddress('jane@example.org,evil@example.org')).toBe(false);
   });
 });
 
 function initialRoute() {
-  return { mailboxIndex: false, mailboxId: null, messageId: null, compose: null };
+  return { mailboxIndex: false, mailboxId: null, messageId: null, compose: null, composeTo: null };
 }
 
 const msg = (uid: number, extra: Partial<MessageSummary> = {}): MessageSummary => ({

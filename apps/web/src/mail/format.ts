@@ -27,7 +27,8 @@ export function listDate(iso: string, now: Date = new Date(), locale?: string): 
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-  if (sameDay) return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  // PST-DA-050: 'numeric', not '2-digit' — a 12-hour clock reads "2:05 PM", not "02:05 PM".
+  if (sameDay) return d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' });
   if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
   return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
 }

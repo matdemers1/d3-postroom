@@ -3,7 +3,7 @@
 // Pure formatting lives in ./view.ts, unit tested there without pulling in @d3cloud/ui.
 import { useCallback, useId, useState } from 'react';
 import { Alert, Button, DescriptionItem, DescriptionList, Stack } from '@d3cloud/ui';
-import { api, ApiError, type InviteView, type Partstat } from '../api';
+import { api, ApiError, serverUnreachable, type InviteView, type Partstat } from '../api';
 import {
   attendeeCountLabel,
   inviteWhen,
@@ -48,7 +48,7 @@ export function InviteCard({ messageId, invite, onChanged }: InviteCardProps) {
         },
         (err: unknown) => {
           setBusy(null);
-          setError(err instanceof ApiError ? errorMessage(err) : 'Postroom did not answer. Check your connection.');
+          setError(err instanceof ApiError ? errorMessage(err) : serverUnreachable('Check your connection.'));
         },
       );
     },
@@ -66,7 +66,7 @@ export function InviteCard({ messageId, invite, onChanged }: InviteCardProps) {
       },
       (err: unknown) => {
         setBusy(null);
-        setError(err instanceof ApiError ? errorMessage(err) : 'Postroom did not answer. Check your connection.');
+        setError(err instanceof ApiError ? errorMessage(err) : serverUnreachable('Check your connection.'));
       },
     );
   }, [messageId, refresh]);
@@ -79,8 +79,8 @@ export function InviteCard({ messageId, invite, onChanged }: InviteCardProps) {
     <section aria-label="Invitation" className="pr-invite" data-testid="invite-card">
       <Stack gap="12">
         {invite.cancelled ? (
-          <Alert tone="warning" title="This event was cancelled">
-            The organizer cancelled {invite.summary === '' ? 'this event' : `“${invite.summary}”`}.
+          <Alert tone="warning" title="This event was canceled">
+            The organizer canceled {invite.summary === '' ? 'this event' : `“${invite.summary}”`}.
           </Alert>
         ) : null}
         <DescriptionList className="pr-invite__meta">

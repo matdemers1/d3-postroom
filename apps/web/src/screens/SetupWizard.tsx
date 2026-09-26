@@ -30,6 +30,7 @@ import {
   WIZARD_CHANGED_EVENT,
   WIZARD_STEPS,
   wizardReachable,
+  serverUnreachable,
   type DeliveryView,
   type WizardStep,
   type WizardView,
@@ -136,7 +137,7 @@ export function SetupWizard() {
       <Page>
         <PageHeader title="Set up mail" />
         <EmptyState kind="error" heading="Could not load the setup wizard" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-          The server did not answer.
+          {serverUnreachable()}
         </EmptyState>
       </Page>
     );
@@ -360,7 +361,7 @@ function DnsStep({ domain, busy, onNext }: { domain: string; busy: boolean; onNe
     >
       <Stack gap="16">
         {failed ? (
-          <Alert tone="danger">The DNS check did not answer. Try again.</Alert>
+          <Alert tone="danger">The DNS check didn’t answer. Try again.</Alert>
         ) : report === null ? (
           <Skeleton variant="block" />
         ) : (

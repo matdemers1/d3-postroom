@@ -16,7 +16,7 @@
 // sheet (mail.css), so focus trap, Escape, aria-modal and focus return are the library's.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Badge, Button, Checkbox, Cluster, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
-import { api, type InspectAlignment, type InspectScore, type MessageInspect, type ReceivedHop } from '../api';
+import { api, serverUnreachable, type InspectAlignment, type InspectScore, type MessageInspect, type ReceivedHop } from '../api';
 import { byteSize, fullDate } from './format';
 import { cryptoView, type CryptoPartView } from './inspect-crypto';
 import { describeTarget, onInspectRequest, resolveKey } from './keys';
@@ -576,7 +576,7 @@ function RawSection({ raw }: { raw: MessageInspect['raw'] }) {
         </Cluster>
         {state.status === 'error' ? (
           <Alert tone="warning" title="The raw source could not be loaded">
-            Postroom did not answer. The download link may still work.
+            {serverUnreachable('The download link may still work.')}
           </Alert>
         ) : null}
         {state.status === 'ready' ? (
@@ -718,7 +718,7 @@ export function InspectDrawer({ messageId }: { messageId: string }) {
           </Stack>
         ) : state.status === 'error' ? (
           <Alert tone="warning" title="The evidence could not be loaded" actions={<Button size="sm" onClick={() => { setAttempt((n) => n + 1); }}>Try again</Button>}>
-            Postroom did not answer. Check your connection.
+            {serverUnreachable('Check your connection.')}
           </Alert>
         ) : (
           <InspectSections data={state.data} learn={learn} />

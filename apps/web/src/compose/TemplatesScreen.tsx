@@ -1,7 +1,7 @@
 // The template manager (PST-T-9.2, PST-REQ-144): create, edit and delete the saved templates the
 // composer's `;` shortcut offers. CRUD over /api/templates, every mutation audited server-side.
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
-import { Alert, Button, EmptyState, FormActions, FormField, Input, Page, PageHeader, Section, Stack, Table, Textarea, type TableColumn } from '@d3cloud/ui';
+import { Alert, Button, EmptyState, FormActions, FormField, Input, Modal, ModalClose, Page, PageHeader, Section, Stack, Table, Textarea, type TableColumn } from '@d3cloud/ui';
 import { describeError } from '../api';
 import { templatesApi, type TemplateJson } from './api';
 import { Loading, LoadFailed } from '../screens/states';
@@ -23,6 +23,8 @@ export function TemplatesScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<TemplateJson | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -69,15 +71,20 @@ export function TemplatesScreen() {
 
   const remove = (row: TemplateJson) => {
     setNotice(null);
+    setRemoving(true);
     templatesApi
       .remove(row.id)
       .then(async () => {
+        setConfirming(null);
         setNotice(`Deleted ;${row.shortcut}.`);
         if (form.id === row.id) setForm(BLANK);
         await load();
       })
       .catch((caught: unknown) => {
         setNotice(describeError(caught));
+      })
+      .finally(() => {
+        setRemoving(false);
       });
   };
 
@@ -94,7 +101,7 @@ export function TemplatesScreen() {
           <Button variant="ghost" size="sm" aria-label={`Edit ${t.name}`} onClick={() => { edit(t); }}>
             Edit
           </Button>
-          <Button variant="danger-ghost" size="sm" aria-label={`Delete ${t.name}`} onClick={() => { remove(t); }}>
+          <Button variant="danger-ghost" size="sm" aria-label={`Delete ${t.name}`} onClick={() => { setConfirming(t); }}>
             Delete
           </Button>
         </>
@@ -177,6 +184,35 @@ export function TemplatesScreen() {
       ) : (
         <Table caption="Your compose templates" columns={columns} rows={rows} rowKey={(t) => t.id} empty={<EmptyState kind="empty" heading="No templates yet" size="row" />} />
       )}
+
+      <Modal
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirming(null);
+        }}
+        destructive
+        title="Delete this template?"
+        description={confirming === null ? '' : `;${confirming.shortcut} is removed from the composer's list. This cannot be undone.`}
+        footer={
+          <>
+            <ModalClose>
+              <Button type="button">Cancel</Button>
+            </ModalClose>
+            <Button
+              type="button"
+              variant="danger"
+              loading={removing}
+              onClick={() => {
+                if (confirming !== null) remove(confirming);
+              }}
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        {null}
+      </Modal>
     </Page>
   );
 }

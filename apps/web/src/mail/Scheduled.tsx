@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Alert, Button, Cluster, Menu, MenuContent, MenuItem, MenuTrigger } from '@d3cloud/ui';
-import { api, ApiError, type Mailbox, type PendingSend } from '../api';
+import { api, ApiError, serverUnreachable, type Mailbox, type PendingSend } from '../api';
 import { snoozeChoices, toastState } from './compose';
 import { useMail } from './MailContext';
 import { mailPath } from './route';
@@ -79,7 +79,7 @@ export function UndoSendToast() {
       if (drafts !== undefined && undone.draftId !== null) void navigate(mailPath(drafts.id, undone.draftId, 'new'));
     } catch (e) {
       announceHeld(null);
-      setNote({ tone: 'danger', text: e instanceof ApiError && e.code === 'not_held' ? 'Too late to undo: it has been sent.' : 'Postroom did not answer, so it could not be undone.' });
+      setNote({ tone: 'danger', text: e instanceof ApiError && e.code === 'not_held' ? 'Too late to undo: it has been sent.' : serverUnreachable('It could not be undone.') });
     }
   };
 
@@ -136,7 +136,7 @@ export function ScheduledSends({ drafts }: { drafts: Mailbox }) {
       void refreshMailboxes();
       if (edit && undone.draftId !== null) void navigate(mailPath(drafts.id, undone.draftId, 'new'));
     } catch (e) {
-      setError(e instanceof ApiError && e.code === 'not_held' ? 'That one has already been sent.' : 'Postroom did not answer. Try again.');
+      setError(e instanceof ApiError && e.code === 'not_held' ? 'That one has already been sent.' : serverUnreachable('Try again.'));
       load();
     }
   };
@@ -158,7 +158,7 @@ export function ScheduledSends({ drafts }: { drafts: Mailbox }) {
             <span className="pr-scheduled__what">
               {p.subject === '' ? '(no subject)' : p.subject} <span className="pr-scheduled__to">to {p.to}</span>
             </span>
-            <span className="pr-scheduled__when">{new Date(p.releaseAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="pr-scheduled__when">{new Date(p.releaseAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
             <Cluster gap="8">
               <Button size="sm" variant="ghost" onClick={() => void cancel(p, true)}>
                 Edit
@@ -189,7 +189,7 @@ export function SnoozeControl({ threadId, snoozed, inInbox, onDone }: { threadId
       void refreshMailboxes();
       onDone(done);
     } catch {
-      onDone('Postroom did not answer, so nothing changed.');
+      onDone(serverUnreachable('Nothing changed.'));
     } finally {
       setBusy(false);
     }
@@ -214,7 +214,7 @@ export function SnoozeControl({ threadId, snoozed, inInbox, onDone }: { threadId
           <MenuItem
             key={c.label}
             onSelect={() => {
-              void run(() => api.snoozeThread(threadId, c.until.toISOString()), `Snoozed until ${c.until.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}.`);
+              void run(() => api.snoozeThread(threadId, c.until.toISOString()), `Snoozed until ${c.until.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.`);
             }}
           >
             {c.label}
