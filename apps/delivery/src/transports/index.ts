@@ -4,9 +4,12 @@ import { createResolver } from '@postroom/dns';
 import { createDirectTransport, DEFAULT_HELO_NAME } from '../client/transport.js';
 import type { Log } from '../client/session.js';
 import type { AttemptOutcome } from '../state.js';
+import { sesTransportFromEnv } from './ses.js';
 import type { DeliveryRequest, DeliveryResult, Transport } from './types.js';
 
 export type { AttemptDetails, DeliveryRecipient, DeliveryRequest, DeliveryResult, Transport } from './types.js';
+export { createSesTransport, parseSesDomains, sesClaims, sesConfigFromEnv, sesTransportFromEnv, SES_DEFAULT_PORT, SES_TRANSPORT } from './ses.js';
+export type { SesConfig, SesTransport, SesTransportOptions } from './ses.js';
 
 export const NOT_BUILT = 'direct delivery not built yet (PST-T-1.6)';
 
@@ -40,7 +43,12 @@ export function transportFromEnv(env: NodeJS.ProcessEnv = process.env, log?: Log
   });
 }
 
-/** Every transport the daemon runs, keyed by OutboundRecipient.transport ('ses' arrives in PST-T-1.11). */
+/**
+ * Every transport the daemon runs, keyed by OutboundRecipient.transport: 'direct' always, 'ses'
+ * when SES credentials are configured (PST-T-1.11). The ses transport claims DELIVERY_SES_DOMAINS,
+ * so the worker routes those recipients to it at each attempt; see transports/ses.ts.
+ */
 export function transportsFromEnv(env: NodeJS.ProcessEnv = process.env, log?: Log): Record<string, Transport> {
-  return { direct: transportFromEnv(env, log) };
+  const ses = sesTransportFromEnv(env, log);
+  return { direct: transportFromEnv(env, log), ...(ses === undefined ? {} : { ses }) };
 }

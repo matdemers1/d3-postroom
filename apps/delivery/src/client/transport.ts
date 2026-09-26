@@ -52,7 +52,7 @@ function everyone(request: DeliveryRequest, outcome: AttemptOutcome): Record<str
 }
 
 /** Resolve `promise`, or reject as soon as `signal` aborts. */
-function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+export function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) return Promise.reject(new SmtpClientError('aborted', 'connect', abortReason(signal)));
   return new Promise<T>((resolve, reject) => {
     const onAbort = (): void => { reject(new SmtpClientError('aborted', 'connect', abortReason(signal))); };
