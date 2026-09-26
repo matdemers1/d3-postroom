@@ -28,4 +28,23 @@ useDefault = true
     # not used outside apps/worker's monitor test suite) — a public certificate, not a private
     # key, and not the production TLS material (which terminates at home and is never committed).
     '''^apps/worker/test/fixtures/cert\.crt$''',
+
+    # DKIM signing tests pass keys generated at test time (generateKeyPairSync) by variable
+    # reference — `privateKey: keys.ed25519.privateKey` — which the generic-api-key rule reads as
+    # an assignment. No key material is in these files.
+    '''^apps/delivery/test/integration/ses-worker\.test\.ts$''',
+    '''^apps/delivery/test/unit/ses\.test\.ts$''',
+    '''^packages/auth-checks/test/unit/dkim-verify\.test\.ts$''',
+    '''^packages/auth-checks/test/unit/dkim-sign\.test\.ts$''',
+
+    # A deliberately common password the e2e suite submits to prove the password policy refuses
+    # it (ASVS 6.2.4). Weak by design; never a credential.
+    '''^e2e/tests/account-security\.spec\.ts$''',
+
+    # The common-passwords blocklist the password policy checks against (ASVS 6.2.4) — published
+    # weak passwords, not secrets.
+    '''^apps/api/src/auth/common-passwords\.ts$''',
+
+    # The example environment file: every secret-looking key there is empty or a placeholder.
+    '''^\.env\.example$''',
   ]
