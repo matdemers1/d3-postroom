@@ -36,6 +36,19 @@ useDefault = true
     '''^packages/pgp/test/fixtures/bob-rsa3072\.TEST-ONLY\.sec\.asc$''',
     '''^packages/pgp/test/fixtures/carol-smime\.TEST-ONLY\.key\.pem$''',
 
+    # The Keys screen tells an import's kind from its armor header line (PST-T-12.2): the literal
+    # "BEGIN PGP PRIVATE KEY BLOCK" is a string it searches for, not key material.
+    '''^apps/web/src/keys/format\.ts$''',
+
+    # The AUTH-redaction tables (PST-T-6.3): base64 of the made-up user "alice", password
+    # "supersecret" and an XOAUTH2 blob, fed through the redactor to prove they never appear in a
+    # stored transcript or the live feed. Synthetic on purpose; the two files are byte-identical.
+    '''^apps/smtp-in/test/unit/transcript-redaction\.test\.ts$''',
+    '''^apps/submission/test/unit/transcript-redaction\.test\.ts$''',
+
+    # A published DMARC TXT record in the deliverability runbook: public DNS data, not a secret.
+    '''^docs/runbooks/deliverability\.md$''',
+
     # DKIM signing tests pass keys generated at test time (generateKeyPairSync) by variable
     # reference — `privateKey: keys.ed25519.privateKey` — which the generic-api-key rule reads as
     # an assignment. No key material is in these files.
