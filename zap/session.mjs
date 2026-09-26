@@ -43,7 +43,7 @@ async function call(method, path, body) {
     else jar.set(name, value);
   }
   const text = await res.text();
-  let json = null;
+  let json;
   try {
     json = text === '' ? null : JSON.parse(text);
   } catch {
