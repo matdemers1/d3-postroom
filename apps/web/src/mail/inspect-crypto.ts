@@ -70,6 +70,8 @@ const SIGNATURE_REASONS: Record<string, string> = {
   'ber-encoding': 'The signature is not in strict DER encoding, so it was not checked.',
   'signed-attributes-not-der': "The signature's signed attributes are not in the one encoding (DER) that can be checked without ambiguity, so it was not checked.",
   'malformed-certificate': "The signer's certificate is malformed, so the signature could not be checked.",
+  'subkey-not-bound': "The key that signed this sits inside a known key, but was never attached to it by that key's owner: anyone can append a key that way, so the signature says nothing about who sent the message.",
+  'key-not-for-signing': 'The key that signed this is not allowed to sign messages (its owner marked it for encryption or certification only), so the signature is not trusted.',
   'signer-key-unavailable': "The signer's key is not one of yours and did not come with the message, so the signature could not be checked.",
   'internal-error': 'The signature could not be checked because of a fault in Postroom; the message itself may be fine.',
   'analysis-failed': 'The message could not be read back to check its signature.',
@@ -98,7 +100,7 @@ export function signatureReasonSentence(status: string): string | null {
 
 export function signatureTone(status: string): CryptoTone {
   if (status === 'verified-known-key' || status === 'not-signed') return 'neutral';
-  if (status === 'bad-signature' || status === 'unsupported:key-revoked' || status.startsWith('unsupported:signature-type-')) return 'danger';
+  if (status === 'bad-signature' || status === 'unsupported:key-revoked' || status === 'unsupported:subkey-not-bound' || status.startsWith('unsupported:signature-type-')) return 'danger';
   return 'attention';
 }
 

@@ -28,6 +28,30 @@ crlf() { perl -pe 's/\r?\n/\r\n/'; }
 fpr() { g --with-colons --list-keys "$1" | awk -F: '/^fpr/{print $10; exit}'; }
 noaead() { printf 'setpref AES256 AES192 AES SHA512 SHA384 SHA256 ZLIB ZIP Uncompressed\ny\nsave\n' | g --command-fd 0 --edit-key "$1" >/dev/null 2>&1; }
 
+DATE='Sat, 26 Sep 2026 12:00:00 +0000'
+# Which sections to (re)generate: base (PST-T-12.1), authority (PST-T-12.3), smime-ber (PST-T-12.4).
+# Regenerating base makes new keys, and every other section depends on nothing it writes except
+# carol's committed S/MIME identity, so a later section can be regenerated alone:
+#   SECTIONS=authority bash packages/pgp/test/fixtures/make-fixtures.sh
+SECTIONS=" ${SECTIONS:-base authority smime-ber} "
+want() { [[ "$SECTIONS" == *" $1 "* ]]; }
+
+pgp_mime_signed() { # $1 part  $2 sig  $3 from  $4 subject
+  {
+    printf 'From: %s\nTo: Me <me@d3cloud.io>\nSubject: %s\nDate: %s\nMessage-ID: <%s@example.test>\nMIME-Version: 1.0\n' "$3" "$4" "$DATE" "$RANDOM$RANDOM"
+    printf 'Content-Type: multipart/signed; micalg=pgp-sha256; protocol="application/pgp-signature"; boundary="sig-b"\n\n'
+    printf 'This is an OpenPGP/MIME signed message (RFC 4880 and 3156)\n'
+    printf -- '--sig-b\n'
+  } | crlf
+  cat "$1"
+  {
+    printf -- '\n--sig-b\nContent-Type: application/pgp-signature; name="signature.asc"\nContent-Description: OpenPGP digital signature\nContent-Disposition: attachment; filename="signature.asc"\n\n'
+    cat "$2"
+    printf -- '\n--sig-b--\n'
+  } | crlf
+}
+
+if want base; then
 # ---- OpenPGP identities -------------------------------------------------------------------------
 g --quick-gen-key 'Alice Test <alice@example.test>' ed25519 sign never
 A="$(fpr alice@example.test)"
@@ -46,8 +70,6 @@ g --armor --export-secret-keys bob@example.test > "$OUT/bob-rsa3072.TEST-ONLY.se
 echo "$A" > "$OUT/alice-ed25519.fpr"
 echo "$B" > "$OUT/bob-rsa3072.fpr"
 
-DATE='Sat, 26 Sep 2026 12:00:00 +0000'
-
 # ---- PGP/MIME signed (RFC 3156 §5), Ed25519, Proton-shaped: the signed entity is multipart/mixed
 # carrying the sender's public key as an application/pgp-keys attachment.
 {
@@ -61,20 +83,6 @@ DATE='Sat, 26 Sep 2026 12:00:00 +0000'
 } | crlf > "$WORK/signed-ed25519.part"
 g --local-user "$A" --digest-algo SHA256 --armor --detach-sign -o "$WORK/signed-ed25519.sig" "$WORK/signed-ed25519.part"
 
-pgp_mime_signed() { # $1 part  $2 sig  $3 from  $4 subject
-  {
-    printf 'From: %s\nTo: Me <me@d3cloud.io>\nSubject: %s\nDate: %s\nMessage-ID: <%s@example.test>\nMIME-Version: 1.0\n' "$3" "$4" "$DATE" "$RANDOM$RANDOM"
-    printf 'Content-Type: multipart/signed; micalg=pgp-sha256; protocol="application/pgp-signature"; boundary="sig-b"\n\n'
-    printf 'This is an OpenPGP/MIME signed message (RFC 4880 and 3156)\n'
-    printf -- '--sig-b\n'
-  } | crlf
-  cat "$1"
-  {
-    printf -- '\n--sig-b\nContent-Type: application/pgp-signature; name="signature.asc"\nContent-Description: OpenPGP digital signature\nContent-Disposition: attachment; filename="signature.asc"\n\n'
-    cat "$2"
-    printf -- '\n--sig-b--\n'
-  } | crlf
-}
 pgp_mime_signed "$WORK/signed-ed25519.part" "$WORK/signed-ed25519.sig" 'Alice Test <alice@example.test>' 'Signed with Ed25519' > "$OUT/pgp-mime-signed-ed25519.eml"
 
 # ---- PGP/MIME signed, RSA-3072
@@ -160,5 +168,61 @@ printf 'Content-Type: text/plain; charset=us-ascii\n\nHello from Carol.\nThis me
   -from 'Carol Test <carol@example.test>' -to 'Me <me@d3cloud.io>' -subject 'CMS signed' > "$OUT/smime-cms-signed.eml"
 "$OPENSSL" smime -encrypt -aes256 -in smime.part -crlfeol \
   -from 'Dave <dave@example.test>' -to 'Carol Test <carol@example.test>' -subject 'S/MIME encrypted' carol.pem > "$OUT/smime-encrypted.eml"
+
+fi # base
+
+# ---- Key authority (PST-T-12.3): which key in a block may sign ------------------------------------
+#   dave     Ed25519 primary (sign) + Curve25519 subkey (encrypt) + Ed25519 subkey (sign, with its
+#            0x19 back-signature, which gpg always writes for a signing subkey)
+#   mallory  an attacker's Ed25519 key
+#   dave-poisoned  dave's exported key with mallory's public key packet appended as an UNBOUND
+#            public-subkey packet (tag 14, no 0x18 binding signature) — `gpg --import` drops it.
+if want authority; then
+  g --quick-gen-key 'Dave Test <dave@example.test>' ed25519 sign never
+  D="$(fpr dave@example.test)"
+  g --quick-add-key "$D" cv25519 encr never
+  g --quick-add-key "$D" ed25519 sign never
+  noaead "$D"
+  DS="$(g --with-colons --list-keys "$D" | awk -F: '$1=="sub"{cap=$12; sub_=1; next} $1=="fpr" && sub_ && cap ~ /s/ {print $10; exit} $1=="fpr"{sub_=0}')"
+  g --quick-gen-key 'Mallory <mallory@evil.test>' ed25519 sign never
+  M="$(fpr mallory@evil.test)"
+  g --armor --export "$D" > "$OUT/dave-ed25519.pub.asc"
+  g --armor --export "$M" > "$OUT/mallory-ed25519.pub.asc"
+  echo "$D" > "$OUT/dave-ed25519.fpr"
+  echo "$DS" > "$OUT/dave-ed25519-signing-subkey.fpr"
+  echo "$M" > "$OUT/mallory-ed25519.fpr"
+  g --export "$D" > "$WORK/dave.pgp"
+  g --export "$M" > "$WORK/mallory.pgp"
+  # Append mallory's primary key packet to dave's key as a public-subkey packet, and armor it.
+  node --input-type=module -e '
+    import { readFileSync, writeFileSync } from "node:fs";
+    const [dave, mal, out] = process.argv.slice(1);
+    const m = readFileSync(mal);
+    let p = 0, tag, len;
+    const ctb = m[p++];
+    if (ctb & 0x40) { tag = ctb & 0x3f; const l0 = m[p++]; if (l0 >= 192) throw new Error("long packet"); len = l0; }
+    else { tag = (ctb >> 2) & 0xf; const lt = ctb & 3; len = lt === 0 ? m[p] : m.readUInt16BE(p); p += lt === 0 ? 1 : 2; }
+    if (tag !== 6 || len >= 192) throw new Error("expected a short public key packet first");
+    const bytes = Buffer.concat([readFileSync(dave), Buffer.of(0xc0 | 14, len), m.subarray(p, p + len)]);
+    let crc = 0xb704ce;
+    for (const b of bytes) { crc ^= b << 16; for (let i = 0; i < 8; i++) { crc <<= 1; if (crc & 0x1000000) crc ^= 0x1864cfb; } }
+    const c = Buffer.of((crc >> 16) & 255, (crc >> 8) & 255, crc & 255).toString("base64");
+    const body = bytes.toString("base64").replace(/(.{64})/g, "$1\n").trimEnd();
+    writeFileSync(out, `-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n${body}\n=${c}\n-----END PGP PUBLIC KEY BLOCK-----\n`);
+  ' "$WORK/dave.pgp" "$WORK/mallory.pgp" "$OUT/dave-poisoned.pub.asc"
+
+  { printf 'Content-Type: text/plain; charset=us-ascii\n\nWire the money to account 1234.\n\n-- Dave\n'; } | crlf > "$WORK/pay.part"
+  # The attack: From dave, signed by mallory.
+  g --local-user "$M" --digest-algo SHA256 --armor --detach-sign -o "$WORK/pay-mal.sig" "$WORK/pay.part"
+  pgp_mime_signed "$WORK/pay.part" "$WORK/pay-mal.sig" 'Dave Test <dave@example.test>' 'pay' > "$OUT/pgp-mime-signed-mallory-as-dave.eml"
+  # Signed by dave's primary ("!" forces that key: gpg would otherwise pick the newest signing subkey).
+  g --local-user "$D!" --digest-algo SHA256 --armor --detach-sign -o "$WORK/pay-dave.sig" "$WORK/pay.part"
+  pgp_mime_signed "$WORK/pay.part" "$WORK/pay-dave.sig" 'Dave Test <dave@example.test>' 'pay' > "$OUT/pgp-mime-signed-dave-primary.eml"
+  # Signed by dave's bound signing subkey.
+  g --local-user "$DS!" --digest-algo SHA256 --armor --detach-sign -o "$WORK/pay-dave-sub.sig" "$WORK/pay.part"
+  pgp_mime_signed "$WORK/pay.part" "$WORK/pay-dave-sub.sig" 'Dave Test <dave@example.test>' 'pay' > "$OUT/pgp-mime-signed-dave-subkey.eml"
+fi # authority
+
+# @@SMIMEBER@@
 
 echo "fixtures written to $OUT"

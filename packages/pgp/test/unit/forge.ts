@@ -29,12 +29,18 @@ export interface SigOptions {
   expiresSeconds?: number;
   keyExpiresSeconds?: number;
   revocationReason?: number;
+  /** Key flags (subpacket 27), on a self-signature or binding. */
+  flags?: number;
+  /** An embedded signature (subpacket 32, hashed): the body of a 0x19 back-signature. */
+  embedded?: Buffer;
 }
 
 const HASHES: Record<number, string> = { 2: 'sha1', 8: 'sha256', 10: 'sha512' };
 
 function sub(type: number, body: Buffer): Buffer {
-  return Buffer.concat([Buffer.of(body.length + 1, type), body]);
+  const n = body.length + 1;
+  const len = n < 192 ? Buffer.of(n) : Buffer.of(((n - 192) >> 8) + 192, (n - 192) & 0xff);
+  return Buffer.concat([len, Buffer.of(type), body]);
 }
 
 /** A v4 Ed25519 (algorithm 27) key's public packet body. */
@@ -51,18 +57,25 @@ function fingerprintOf(body: Buffer): string {
 
 /** A v4 signature packet by `priv` (fingerprint `fpr`) over `data`. */
 export function signaturePacket(priv: KeyObject, fpr: string, data: Buffer, o: SigOptions = {}): Buffer {
+  return encodePacket(2, signatureBody(priv, fpr, data, o));
+}
+
+/** The body of a v4 Ed25519 signature packet by `priv` (fingerprint `fpr`) over `data`. */
+export function signatureBody(priv: KeyObject, fpr: string, data: Buffer, o: SigOptions = {}): Buffer {
   const hashId = o.hash ?? 8;
   const subs: Buffer[] = [];
   if (o.created !== null) subs.push(sub(2, u32(secs(o.created ?? new Date()))));
   if (o.expiresSeconds !== undefined) subs.push(sub(3, u32(o.expiresSeconds)));
   if (o.keyExpiresSeconds !== undefined) subs.push(sub(9, u32(o.keyExpiresSeconds)));
   if (o.revocationReason !== undefined) subs.push(sub(29, Buffer.of(o.revocationReason)));
+  if (o.flags !== undefined) subs.push(sub(27, Buffer.of(o.flags)));
+  if (o.embedded !== undefined) subs.push(sub(32, o.embedded));
   subs.push(sub(33, Buffer.concat([Buffer.of(4), Buffer.from(fpr, 'hex')])));
   const hashed = Buffer.concat(subs);
   const prefix = Buffer.concat([Buffer.of(4, o.type ?? 0, 27, hashId), u16(hashed.length), hashed]);
   const trailer = Buffer.concat([prefix, Buffer.of(4, 0xff), u32(prefix.length)]);
   const digest = createHash(HASHES[hashId] ?? 'sha256').update(data).update(trailer).digest();
-  return encodePacket(2, Buffer.concat([prefix, u16(0), digest.subarray(0, 2), sign(null, digest, priv)]));
+  return Buffer.concat([prefix, u16(0), digest.subarray(0, 2), sign(null, digest, priv)]);
 }
 
 export interface KeyOptions {
@@ -72,8 +85,15 @@ export interface KeyOptions {
   keyExpiresSeconds?: number;
   /** A key revocation signature (0x20). `forged` signs it with a different key. */
   revocation?: { created: Date; reason?: number; forged?: boolean };
-  /** Add an Ed25519 signing subkey, optionally revoked (0x28). */
-  subkey?: { revocation?: { created: Date; reason?: number } };
+  /** Key flags on the primary's self-certification (default 0x03, certify + sign); null leaves them out. */
+  primaryFlags?: number | null;
+  /**
+   * Add an Ed25519 subkey, optionally revoked (0x28). By default it is a proper signing subkey:
+   * bound (0x18) with key flags 0x02 and an embedded 0x19 back-signature. `unbound` leaves the 0x18
+   * out, `flags` changes (or, null, drops) the flags, `backSig` false leaves the 0x19 out and
+   * 'forged' makes it with another key.
+   */
+  subkey?: { revocation?: { created: Date; reason?: number }; unbound?: boolean; flags?: number | null; backSig?: boolean | 'forged' };
 }
 
 export interface ForgedKey {
@@ -100,7 +120,8 @@ export function forgeKey(o: KeyOptions = {}): ForgedKey {
     packets.push(signaturePacket(signer, fpr, frame(body), { type: 0x20, created: o.revocation.created, ...(o.revocation.reason === undefined ? {} : { revocationReason: o.revocation.reason }) }));
   }
   packets.push(encodePacket(13, uid));
-  packets.push(signaturePacket(privateKey, fpr, uidData, { type: 0x13, created, ...(o.keyExpiresSeconds === undefined ? {} : { keyExpiresSeconds: o.keyExpiresSeconds }) }));
+  const primaryFlags = o.primaryFlags === undefined ? 0x03 : o.primaryFlags;
+  packets.push(signaturePacket(privateKey, fpr, uidData, { type: 0x13, created, ...(o.keyExpiresSeconds === undefined ? {} : { keyExpiresSeconds: o.keyExpiresSeconds }), ...(primaryFlags === null ? {} : { flags: primaryFlags }) }));
   let subPriv: KeyObject | null = null;
   let subFpr: string | null = null;
   if (o.subkey !== undefined) {
@@ -110,7 +131,10 @@ export function forgeKey(o: KeyOptions = {}): ForgedKey {
     subFpr = fingerprintOf(subBody);
     packets.push(encodePacket(14, subBody));
     const bindData = Buffer.concat([frame(body), frame(subBody)]);
-    packets.push(signaturePacket(privateKey, fpr, bindData, { type: 0x18, created }));
+    const flags = o.subkey.flags === undefined ? 0x02 : o.subkey.flags;
+    const back = o.subkey.backSig ?? true;
+    const backBody = back === false ? undefined : signatureBody(back === 'forged' ? generateKeyPairSync('ed25519').privateKey : pair.privateKey, subFpr, bindData, { type: 0x19, created });
+    if (o.subkey.unbound !== true) packets.push(signaturePacket(privateKey, fpr, bindData, { type: 0x18, created, ...(flags === null ? {} : { flags }), ...(backBody === undefined ? {} : { embedded: backBody }) }));
     const rev = o.subkey.revocation;
     if (rev !== undefined) packets.push(signaturePacket(privateKey, fpr, bindData, { type: 0x28, created: rev.created, ...(rev.reason === undefined ? {} : { revocationReason: rev.reason }) }));
   }

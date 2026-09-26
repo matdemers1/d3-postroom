@@ -196,6 +196,21 @@ describe.skipIf(!baseUrl)('Inspect: signature and encryption (PST-T-12.1, PST-RE
     expect(['decrypted', 'failed:private-key-unavailable']).toContain(viaRoute.crypto.encryption.status);
   });
 
+  it("PST-T-12.3: an attacker's key appended to a contact's stored key as an unbound subkey never verifies as the contact", async () => {
+    const me = await person();
+    const daveFpr = fixture('dave-ed25519.fpr').toString('utf8').trim();
+    const row = (publicKey: string) =>
+      db.cryptoKey.create({ data: { accountId: me.id, kind: 'pgp', owner: 'contact', address: 'dave@example.test', fingerprint: daveFpr, algorithm: 'ed25519', publicKey } });
+    const poisoned = await row(fixture('dave-poisoned.pub.asc').toString('utf8'));
+    const forged = await file(me.inbox, fixture('pgp-mime-signed-mallory-as-dave.eml'));
+    const body = await inspect(me.cookie, forged.id);
+    expect(body.crypto.signature.status).toBe('unsupported:subkey-not-bound');
+    expect(body.crypto.signature.signer).toMatchObject({ userIds: [], knownKeyId: null, fromMatches: null });
+    // Dave's own signing subkey, bound with its back-signature, still verifies against the same row.
+    const genuine = await file(me.inbox, fixture('pgp-mime-signed-dave-subkey.eml'));
+    expect((await inspect(me.cookie, genuine.id)).crypto.signature).toMatchObject({ status: 'verified-known-key', signer: { knownKeyId: poisoned.id } });
+  });
+
   it('S/MIME signed: valid, with the chain as presented', async () => {
     const me = await person();
     const m = await file(me.inbox, fixture('smime-signed.eml'));

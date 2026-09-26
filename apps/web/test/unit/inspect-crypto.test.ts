@@ -102,6 +102,8 @@ describe('cryptoView', () => {
       'unsupported:signed-attributes-not-der',
       'unsupported:malformed-certificate',
       'unsupported:internal-error',
+      'unsupported:subkey-not-bound',
+      'unsupported:key-not-for-signing',
     ];
     for (const status of reasons) {
       const sentence = signatureReasonSentence(status);
@@ -117,6 +119,10 @@ describe('cryptoView', () => {
     expect(signatureTone('unsupported:signature-type-0x13')).toBe('danger');
     expect(signatureTone('unsupported:key-revoked')).toBe('danger');
     expect(signatureTone('unsupported:key-expired')).toBe('attention');
+    // PST-T-12.3: an unbound subkey is an attack on a contact's key; a key not for signing is a misuse.
+    expect(signatureTone('unsupported:subkey-not-bound')).toBe('danger');
+    expect(signatureTone('unsupported:key-not-for-signing')).toBe('attention');
+    expect(signatureReasonSentence('unsupported:subkey-not-bound')).toContain('anyone can append');
     // A reason without its own sentence still reads, from its name.
     expect(cryptoView({ ...PGP_VERIFIED, signature: { ...PGP_VERIFIED.signature, status: 'unsupported:ecdsa' } }).signature.headline).toBe('The signature could not be checked: ecdsa.');
     expect(cryptoView({ ...PGP_VERIFIED, encryption: { ...NOT_ENCRYPTED, status: 'failed:malformed-message' } }).encryption.headline).toContain('more than one literal data packet');

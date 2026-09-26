@@ -12,9 +12,9 @@
 // until the revocation's own creation time. No reason, "no reason" (0) and "compromised" (2) are
 // hard: nothing the key ever signed is trusted.
 
-import { UnsupportedError } from './errors.js';
+import { PgpError, UnsupportedError } from './errors.js';
 import type { KeyMaterial, KeySignature, OpenPgpKey } from './keys.js';
-import { digestFor, SignatureType, verifyDigest, type SignaturePacket } from './signature.js';
+import { digestFor, parseSignaturePacket, SignatureType, verifyDigest, type SignaturePacket } from './signature.js';
 
 export interface Revocation {
   of: 'primary' | 'subkey';
@@ -115,4 +115,107 @@ export function keyState(key: OpenPgpKey, material: KeyMaterial): KeyState {
 /** The revocation that makes a signature made at `at` untrustworthy, or null. */
 export function revokedAt(state: KeyState, at: Date): Revocation | null {
   return state.revocations.find((r) => r.hard || r.at === null || r.at.getTime() <= at.getTime()) ?? null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Signing authority (PST-T-12.3): which key in a block may sign a message at all.
+//
+// Matching a signature's issuer against every key packet in a block is not enough: anyone can
+// append their own key to a contact's exported key as a public-subkey packet (tag 14) — gpg drops
+// it on import, and so must this. RFC 9580 §10.1 and §5.2.1:
+//   * a subkey belongs to the key only through a subkey binding signature (0x18) made by the
+//     primary over primary || subkey, that verifies (the latest one that does is the one read);
+//   * a subkey may sign only when that binding carries key flag 0x02 (§5.2.3.29) AND an embedded
+//     primary key binding signature (0x19, §5.2.3.34) made BY THE SUBKEY over the same bytes, that
+//     verifies — the subkey's own consent to being claimed by this primary;
+//   * the primary may sign only when its latest valid self-signature (a certification 0x10–0x13
+//     over a user ID, or a direct-key signature 0x1F) carries key flag 0x02.
+// When that self-signature has no key flags subpacket at all (RFC 2440-era keys), usage is inferred
+// from the algorithm, as RFC 9580 §5.2.3.29 leaves to the implementation: a primary whose algorithm
+// can sign may. A subkey never gets that inference — a signing subkey without flags cannot have the
+// 0x19 back-signature a signing subkey needs, so there is nothing to infer from. gpg and Proton
+// always write key flags, so their keys are judged on them.
+// Revoked subkeys (0x28) are handled by keyState/revokedAt, as are revoked primaries.
+
+export interface AuthorityProblem {
+  reason: 'subkey-not-bound' | 'key-not-for-signing';
+  text: string;
+}
+
+/** Key flags (subpacket 27, first octet) from a signature's hashed area; null when absent. */
+export function keyFlags(sig: SignaturePacket): number | null {
+  const sp = sig.hashed.find((s) => s.type === 27);
+  if (sp === undefined) return null;
+  return sp.body[0] ?? 0;
+}
+
+/** Public-key algorithms that can make signatures (RFC 9580 §9.1). */
+const SIGNING_ALGORITHMS = new Set([1, 3, 17, 19, 22, 27, 28]);
+
+const hex2 = (n: number): string => `0x${n.toString(16).padStart(2, '0')}`;
+
+/** The embedded signatures (subpacket 32) of a binding, hashed area first; unparseable ones are skipped. */
+function embeddedSignatures(sig: SignaturePacket): SignaturePacket[] {
+  const out: SignaturePacket[] = [];
+  for (const s of [...sig.hashed, ...sig.unhashed]) {
+    if (s.type !== 32) continue;
+    try {
+      out.push(parseSignaturePacket(s.body));
+    } catch (err) {
+      if (!(err instanceof PgpError)) throw err;
+    }
+  }
+  return out;
+}
+
+/** A 0x19 primary key binding signature by `subkey` over primary || subkey that verifies. */
+function backSigned(primary: KeyMaterial, subkey: KeyMaterial, binding: SignaturePacket): boolean {
+  const data = keySignatureData(primary, { sig: binding, target: { kind: 'subkey', subkey } });
+  for (const back of embeddedSignatures(binding)) {
+    if (back.type !== 0x19) continue;
+    try {
+      if (verifyDigest(back, digestFor(back, data), subkey, { allowSha1ForKeySignatures: true })) return true;
+    } catch (err) {
+      if (!(err instanceof PgpError)) throw err;
+    }
+  }
+  return false;
+}
+
+/**
+ * Why `material` (the primary or a subkey of `key`) may not sign messages, or null when it may.
+ * Applies to a key from the account's keyring and one attached to the message alike.
+ */
+export function signingAuthority(key: OpenPgpKey, material: KeyMaterial): AuthorityProblem | null {
+  const primary = key.primary;
+  const mine = key.signatures.filter((ks) => byPrimary(ks.sig, primary));
+  if (material === primary || material.fingerprint === primary.fingerprint) {
+    const self = latestValid(
+      primary,
+      mine.filter((ks) => (ks.target.kind === 'uid' && CERTIFICATIONS.has(ks.sig.type)) || (ks.target.kind === 'key' && ks.sig.type === SignatureType.DirectKey)),
+    );
+    if (self === null) return { reason: 'key-not-for-signing', text: 'the key carries no self-signature that verifies, so nothing in it says the key may sign (RFC 9580 §5.2.3.29)' };
+    const flags = keyFlags(self.sig);
+    if (flags === null) {
+      if (SIGNING_ALGORITHMS.has(primary.algorithm)) return null;
+      return { reason: 'key-not-for-signing', text: `the key's self-signature has no key flags, and its algorithm (${primary.algorithmName}) cannot sign` };
+    }
+    if ((flags & 0x02) === 0) return { reason: 'key-not-for-signing', text: `the key's self-signature grants key flags ${hex2(flags)}, without 0x02 (sign data): the key may not sign messages (RFC 9580 §5.2.3.29)` };
+    return null;
+  }
+  const binding = latestValid(
+    primary,
+    mine.filter((ks) => ks.sig.type === SignatureType.SubkeyBinding && ks.target.kind === 'subkey' && ks.target.subkey.fingerprint === material.fingerprint),
+  );
+  if (binding === null) {
+    return { reason: 'subkey-not-bound', text: `the signing key ${material.fingerprint} sits in the key block as a subkey, but no subkey binding signature (0x18) by the primary key ${primary.fingerprint} verifies for it: it is not part of this key, and anyone could have appended it` };
+  }
+  const flags = keyFlags(binding.sig);
+  if (flags === null || (flags & 0x02) === 0) {
+    return { reason: 'key-not-for-signing', text: `the subkey ${material.fingerprint} is bound with key flags ${flags === null ? '(none)' : hex2(flags)}, without 0x02 (sign data): it may not sign messages (RFC 9580 §5.2.3.29)` };
+  }
+  if (!backSigned(primary, material, binding.sig)) {
+    return { reason: 'subkey-not-bound', text: `the signing subkey ${material.fingerprint} has no primary key binding signature (0x19) of its own that verifies, so it never agreed to belong to ${primary.fingerprint} (RFC 9580 §5.2.3.34)` };
+  }
+  return null;
 }

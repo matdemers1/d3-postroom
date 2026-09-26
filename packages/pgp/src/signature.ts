@@ -175,7 +175,7 @@ export function parseSignaturePacket(body: Buffer): SignaturePacket {
 }
 
 /** Subpackets whose meaning we honour, so a critical one is not a reason to refuse. */
-const KNOWN_CRITICAL = new Set([2, 3, 9, 16, 27, 29, 33, 11, 21, 22, 30, 23, 25, 20]);
+const KNOWN_CRITICAL = new Set([2, 3, 9, 16, 27, 29, 32, 33, 11, 21, 22, 30, 23, 25, 20]);
 
 /** RFC 9580 §5.2.4: hashedPrefix || 0x04 0xFF || four-octet length of hashedPrefix. */
 export function signatureTrailer(sig: SignaturePacket): Buffer {

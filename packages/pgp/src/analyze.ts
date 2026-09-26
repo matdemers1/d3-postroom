@@ -33,7 +33,7 @@ import { ArmorError, CmsError, DerError, PgpError, UnsupportedError } from './er
 import { allMaterials, parseKeys, userIdAddress, type KeyMaterial, type OpenPgpKey } from './keys.js';
 import { readPackets, Tag } from './packets.js';
 import { digestFor, finishDigest, hashName, isDocumentSignature, parseSignaturePacket, signatureTypeReason, verifyDigest, type SignaturePacket } from './signature.js';
-import { keyState, revokedAt } from './validity.js';
+import { keyState, revokedAt, signingAuthority, type AuthorityProblem } from './validity.js';
 import { CollectSink, HashSink, splitLines, walkMultipart, type ByteSource, type Line } from './stream.js';
 
 export type SignatureStatus = 'verified-known-key' | 'valid-signature-unknown-key' | 'bad-signature' | 'not-signed' | `unsupported:${string}`;
@@ -178,17 +178,46 @@ function reasonOf(err: unknown): string {
 // ---------------------------------------------------------------------------------------------
 // OpenPGP signatures
 
-function findMaterial(keys: readonly OpenPgpKey[], sig: SignaturePacket): { key: OpenPgpKey; material: KeyMaterial } | null {
-  for (const key of keys) {
-    for (const m of allMaterials(key)) {
-      if (sig.issuerFingerprint !== null ? m.fingerprint === sig.issuerFingerprint : m.keyId === sig.issuerKeyId) return { key, material: m };
-    }
-  }
-  return null;
+interface Resolved {
+  key: OpenPgpKey;
+  material: KeyMaterial;
+  known: KnownKey | null;
+  source: SignerReport['keySource'];
+  /** Why this key may not sign (unbound subkey, no signing flag), or null when it may. */
+  problem: AuthorityProblem | null;
 }
 
-function signerOf(sig: SignaturePacket, found: { key: OpenPgpKey; material: KeyMaterial } | null, from: string | null, known: KnownKey | null, source: SignerReport['keySource']): SignerReport {
-  const userIds = found?.key.userIds ?? [];
+function issuedBy(m: KeyMaterial, sig: SignaturePacket): boolean {
+  return sig.issuerFingerprint !== null ? m.fingerprint === sig.issuerFingerprint : m.keyId === sig.issuerKeyId;
+}
+
+/**
+ * The key that made `sig`: every key packet whose fingerprint (or key ID) is the issuer's, the
+ * account's keys before keys attached to the message. A match counts only with signing authority
+ * (validity.ts signingAuthority: a bound subkey with flag 0x02 and its 0x19 back-signature, or a
+ * primary whose self-signature allows signing), so an attacker's key appended to a contact's key as
+ * an unbound subkey never speaks for the contact. The first match with authority wins; when none
+ * has it, the first match is returned with its problem, so the drawer can say why.
+ */
+function resolveSigner(ring: Keyring, attached: readonly OpenPgpKey[], sig: SignaturePacket): Resolved | null {
+  let first: Resolved | null = null;
+  const pools: { key: OpenPgpKey; known: KnownKey | null; source: SignerReport['keySource'] }[] = [
+    ...ring.pgp.map((e) => ({ key: e.key, known: e.known, source: 'account' as const })),
+    ...attached.map((key) => ({ key, known: null, source: 'message' as const })),
+  ];
+  for (const { key, known, source } of pools) {
+    for (const material of allMaterials(key)) {
+      if (!issuedBy(material, sig)) continue;
+      const r: Resolved = { key, material, known, source, problem: signingAuthority(key, material) };
+      if (r.problem === null) return r;
+      first ??= r;
+    }
+  }
+  return first;
+}
+
+function signerOf(sig: SignaturePacket, found: { key: OpenPgpKey; material: KeyMaterial } | null, from: string | null, known: KnownKey | null, source: SignerReport['keySource'], withUserIds = true): SignerReport {
+  const userIds = withUserIds ? (found?.key.userIds ?? []) : [];
   const addresses = [...new Set(userIds.map(userIdAddress).filter((a): a is string => a !== null))];
   if (known !== null && !addresses.includes(known.address)) addresses.push(known.address);
   return {
@@ -240,23 +269,8 @@ function checkPgpSignatures(
       continue;
     }
     const reasons: string[] = [];
-    let source: SignerReport['keySource'] = 'none';
-    let known: KnownKey | null = null;
-    let found: { key: OpenPgpKey; material: KeyMaterial } | null = null;
-    for (const e of ring.pgp) {
-      const f = findMaterial([e.key], sig);
-      if (f !== null) {
-        found = f;
-        known = e.known;
-        source = 'account';
-        break;
-      }
-    }
-    if (found === null) {
-      found = findMaterial(attached, sig);
-      if (found !== null) source = 'message';
-    }
-    if (found === null) {
+    const resolved = resolveSigner(ring, attached, sig);
+    if (resolved === null) {
       firstUnresolved ??= {
         ...NOT_SIGNED,
         status: 'unsupported:signer-key-unavailable',
@@ -266,6 +280,16 @@ function checkPgpSignatures(
       };
       continue;
     }
+    const { source, problem } = resolved;
+    if (problem !== null) {
+      // Not verified at all: whatever the maths says, this key does not speak for the key block it
+      // sits in. An unbound subkey is not reported with the block's user IDs — they are not its own.
+      const own = problem.reason !== 'subkey-not-bound';
+      const signer = signerOf(sig, { key: resolved.key, material: resolved.material }, from, own ? resolved.known : null, source, own);
+      return { ...NOT_SIGNED, status: `unsupported:${problem.reason}`, format, reasons: [problem.text], signer };
+    }
+    const found = { key: resolved.key, material: resolved.material };
+    const known = resolved.known;
     try {
       const digest = digestOf(sig);
       if (digest === null) throw new UnsupportedError(`hash-${String(sig.hashAlgorithm)}-not-computed`);
