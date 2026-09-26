@@ -13,7 +13,7 @@ import { DAEMON } from './daemon.js';
 import { drillHandler } from './drill/drill.js';
 import { inboundHealth, maintenanceHealth } from './health.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
-import { sweepUnthreaded } from './sweep/thread-sweep.js';
+import { createThreadSweeper } from './sweep/thread-sweep.js';
 
 await runDaemon({
   name: DAEMON,
@@ -66,8 +66,9 @@ await runDaemon({
     // Repairs a Message left with threadId NULL by a crash between the file stage's commit and its
     // post-commit assignThread call (PST-T-3.14, PST-REQ-078): once at start, then on an interval.
     const threadSweepMs = envInt(ctx.env, 'THREAD_SWEEP_MS', 60_000);
+    const threadSweep = createThreadSweeper({ db, blobs: lazyBlobs, log: ctx.log, now: () => new Date() });
     const runThreadSweep = (): void => {
-      sweepUnthreaded({ db, blobs: lazyBlobs, log: ctx.log, now: () => new Date() }).catch((err: unknown) => {
+      threadSweep().catch((err: unknown) => {
         ctx.log('thread-sweep-error', { error: err instanceof Error ? err.message : String(err) });
       });
     };

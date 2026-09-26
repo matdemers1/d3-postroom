@@ -3,7 +3,7 @@
 // crash actually leaves the row: fileLocalMessage + the same denorm fields the file stage writes
 // inside its transaction (PST-REQ-078), with assignThread never called — no thread, no In-Reply-To
 // or References column (those are only ever written by assignThread itself).
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -14,7 +14,7 @@ import { seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { fileLocalMessage } from '@postroom/dsn';
 import { startWorker, type RunningWorker } from '@postroom/queue';
-import { sweepUnthreaded } from '../../src/sweep/thread-sweep.js';
+import { createThreadSweeper, sweepUnthreaded } from '../../src/sweep/thread-sweep.js';
 import { createInboundPipeline, INBOUND_QUEUE } from '../../src/pipeline.js';
 import { Clock, spool, type TestRecipient } from './helpers.js';
 
@@ -119,7 +119,7 @@ describe.skipIf(baseUrl === undefined)('thread sweep (PST-T-3.14, PST-REQ-078)',
     // The reply's blob carries In-Reply-To/References the row itself doesn't — the sweep must
     // re-derive them from the stored message, not from denormalised columns.
     const first = await sweepUnthreaded({ db, blobs, log: () => undefined, now: clock.now }, { graceMs: 0 });
-    expect(first).toEqual({ scanned: 1, threaded: 1, skipped: 0 });
+    expect(first).toMatchObject({ scanned: 1, threaded: 1, skipped: 0, failed: 0 });
 
     const threaded = await db.message.findUniqueOrThrow({ where: { id: crashedId } });
     expect(threaded.threadId).toBe(parentCopy.threadId);
@@ -128,7 +128,7 @@ describe.skipIf(baseUrl === undefined)('thread sweep (PST-T-3.14, PST-REQ-078)',
 
     // Idempotent: running again finds nothing left to do.
     const second = await sweepUnthreaded({ db, blobs, log: () => undefined, now: clock.now }, { graceMs: 0 });
-    expect(second).toEqual({ scanned: 0, threaded: 0, skipped: 0 });
+    expect(second).toMatchObject({ scanned: 0, threaded: 0, skipped: 0, failed: 0 });
     const again = await db.message.findUniqueOrThrow({ where: { id: crashedId } });
     expect(again.threadId).toBe(threaded.threadId);
   });
@@ -138,7 +138,7 @@ describe.skipIf(baseUrl === undefined)('thread sweep (PST-T-3.14, PST-REQ-078)',
     const id = await fileWithoutThreading({ subject: 'Grace check', from: 'carol@example.org', messageId: mid });
 
     const result = await sweepUnthreaded({ db, blobs, log: () => undefined, now: clock.now }, { graceMs: 3_600_000 });
-    expect(result).toEqual({ scanned: 0, threaded: 0, skipped: 0 });
+    expect(result).toMatchObject({ scanned: 0, threaded: 0, skipped: 0, failed: 0 });
 
     // Left unthreaded on purpose (still inside its grace window) — clean it up so it doesn't
     // become a stray candidate for the tests below, which sweep with graceMs: 0.
@@ -152,12 +152,33 @@ describe.skipIf(baseUrl === undefined)('thread sweep (PST-T-3.14, PST-REQ-078)',
     }
 
     const first = await sweepUnthreaded({ db, blobs, log: () => undefined, now: clock.now }, { graceMs: 0, limit: 2 });
-    expect(first).toEqual({ scanned: 2, threaded: 2, skipped: 0 });
+    expect(first).toMatchObject({ scanned: 2, threaded: 2, skipped: 0, failed: 0 });
     const remaining = await db.message.count({ where: { id: { in: ids }, threadId: null } });
     expect(remaining).toBe(1);
 
     const second = await sweepUnthreaded({ db, blobs, log: () => undefined, now: clock.now }, { graceMs: 0, limit: 2 });
-    expect(second).toEqual({ scanned: 1, threaded: 1, skipped: 0 });
+    expect(second).toMatchObject({ scanned: 1, threaded: 1, skipped: 0, failed: 0 });
     expect(await db.message.count({ where: { id: { in: ids }, threadId: null } })).toBe(0);
+  });
+  it('passes over a row it cannot thread, and the cursor keeps it from starving the rows behind it', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      ids.push(await fileWithoutThreading({ subject: `Poison ${i}`, from: `erin${i}@example.org`, messageId: `poison-${i}-${randomUUID()}@example.org` }));
+    }
+    // The first row by id loses its blob file: reading it throws on every attempt.
+    const sorted = [...ids].sort();
+    const bad = await db.message.findUniqueOrThrow({ where: { id: sorted[0] ?? '' } });
+    unlinkSync(join(blobRoot, bad.blobSha256.slice(0, 2), bad.blobSha256.slice(2, 4), bad.blobSha256));
+
+    // One sweep call isolates the failure instead of throwing out of the whole batch.
+    const once = await sweepUnthreaded({ db, blobs, log: () => undefined, now: clock.now }, { graceMs: 0, limit: 1 });
+    expect(once).toMatchObject({ scanned: 1, threaded: 0, failed: 1 });
+
+    // With limit 1 the bad row is always first by id; the cursor still reaches the others.
+    const sweep = createThreadSweeper({ db, blobs, log: () => undefined, now: clock.now }, { graceMs: 0, limit: 1 });
+    for (let i = 0; i < 4; i++) await sweep();
+    const left = await db.message.findMany({ where: { id: { in: ids }, threadId: null }, select: { id: true } });
+    expect(left.map((r) => r.id)).toEqual([sorted[0]]);
+    await db.message.delete({ where: { id: sorted[0] ?? '' } });
   });
 });
