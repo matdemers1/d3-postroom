@@ -234,6 +234,9 @@ importers:
       '@postroom/audit':
         specifier: workspace:*
         version: link:../../packages/audit
+      '@postroom/auth-checks':
+        specifier: workspace:*
+        version: link:../../packages/auth-checks
       '@postroom/auth-throttle':
         specifier: workspace:*
         version: link:../../packages/auth-throttle
@@ -252,6 +255,9 @@ importers:
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/dav-store':
+        specifier: workspace:*
+        version: link:../../packages/dav-store
       '@postroom/db':
         specifier: workspace:*
         version: link:../../packages/db

@@ -15,14 +15,14 @@
 // runs inside the same transaction (the webmail files its Sent copy there, so a message is either
 // queued AND in Sent, or neither).
 import { Readable } from 'node:stream';
-import { HeaderTooLargeError, signMessage, splitMessage, type HeaderField } from '@postroom/auth-checks';
+import { HeaderTooLargeError, parseHeaderFields, signMessage, splitMessage, type HeaderField } from '@postroom/auth-checks';
 import { recordAudit, type RequestContext } from '@postroom/audit';
-import { contactIndexFor, DavStore, DEFAULT_DAV_LIMITS, harvestRecipients, type DavLimits } from '@postroom/dav-store';
+import { contactIndexFor, DavStore, DEFAULT_DAV_LIMITS, harvestRecipients, parseListPost, type DavLimits } from '@postroom/dav-store';
 import { tmpDir, type BlobStore } from '@postroom/blobstore';
 import type { Kek } from '@postroom/crypto';
 import type { Db, Prisma } from '@postroom/db';
 import { enqueueOutbound } from '@postroom/delivery';
-import { parseMailboxes } from '@postroom/mime';
+import { parseMailboxes, parseMessageIdList } from '@postroom/mime';
 import { reply, type SmtpReply } from '@postroom/smtp-proto';
 import { CapExceededError } from './caps-seam.js';
 import { loadSigningKeys } from './dkim.js';
@@ -164,21 +164,64 @@ export async function sendableAddresses(db: Db, accountId: string): Promise<stri
 }
 
 /**
+ * The `List-Post` address of the account's own message that `In-Reply-To`/`References` name, or
+ * null (PST-T-8.8): a Reply-All to a list thread must not harvest the list's posting address as a
+ * new contact, so its address is excluded before the write, resolved from the stored original's
+ * headers — read bounded, like any other header block, never the whole message.
+ */
+async function repliedListPostAddress(deps: AcceptDeps, storage: SubmissionStorage, accountId: string, fields: readonly HeaderField[]): Promise<string | null> {
+  const ids = new Set<string>();
+  const irt = fields.find((f) => f.key === 'in-reply-to');
+  const refs = fields.find((f) => f.key === 'references');
+  if (irt !== undefined) for (const id of parseMessageIdList(fieldValue(irt))) ids.add(id);
+  if (refs !== undefined) for (const id of parseMessageIdList(fieldValue(refs))) ids.add(id);
+  if (ids.size === 0) return null;
+  const original = await deps.db.message.findFirst({
+    where: { messageIdHeader: { in: [...ids] }, mailbox: { accountId } },
+    select: { blobSha256: true },
+    orderBy: { receivedAt: 'desc' },
+  });
+  if (original === null) return null;
+  try {
+    const stream = await storage.blobs.get(original.blobSha256);
+    const split = await splitMessage(stream, { maxHeaderBytes: deps.maxHeaderBytes ?? DEFAULT_MAX_HEADER_BYTES });
+    const listPost = parseHeaderFields(split.headerBlock).find((f) => f.key === 'list-post');
+    return listPost === undefined ? null : parseListPost(fieldValue(listPost));
+  } catch {
+    // The original's blob is gone or unreadable: no address to exclude, never a reason to fail.
+    return null;
+  }
+}
+
+/**
  * Contact auto-harvest (PST-REQ-138), after the commit: the message is accepted whatever happens
  * here, so a failure is logged and never answered. Idempotent (one card per address, written
  * If-None-Match: *), so a retried submission cannot duplicate a card. To and Cc only — a Bcc
- * recipient was deliberately kept out of the message.
+ * recipient was deliberately kept out of the message. Never the list's own posting address
+ * (PST-T-8.8): a mailing-list/role local part is always excluded, and so is the address a
+ * List-Post header names — this message's own, or the message it replies to's.
  */
-async function harvestContacts(deps: AcceptDeps, kek: Kek, input: AcceptInput, fields: readonly HeaderField[]): Promise<void> {
+async function harvestContacts(deps: AcceptDeps, storage: SubmissionStorage, input: AcceptInput, fields: readonly HeaderField[]): Promise<void> {
   try {
     const named = fields.filter((f) => f.key === 'to' || f.key === 'cc').flatMap((f) => parseMailboxes(fieldValue(f)));
     if (named.length === 0) return;
+    const excludedAddresses = new Set<string>();
+    const ownListPost = fields.find((f) => f.key === 'list-post');
+    if (ownListPost !== undefined) {
+      const address = parseListPost(fieldValue(ownListPost));
+      if (address !== null) excludedAddresses.add(address);
+    }
+    const repliedAddress = await repliedListPostAddress(deps, storage, input.submitter.accountId, fields);
+    if (repliedAddress !== null) excludedAddresses.add(repliedAddress);
+
+    const kek = storage.kek;
     const store = new DavStore(deps.db, kek, deps.davLimits ?? DEFAULT_DAV_LIMITS);
     const result = await harvestRecipients(deps.db, store, contactIndexFor(deps.db, kek), {
       accountId: input.submitter.accountId,
       recipients: named,
       context: input.auditContext,
       now: deps.now(),
+      excludedAddresses,
     });
     if (result.added.length > 0) deps.log('contacts-harvested', { session: input.sessionId, accountId: input.submitter.accountId, added: result.added.length });
   } catch (err) {
@@ -314,7 +357,7 @@ export async function acceptSubmission(body: Readable, input: AcceptInput, deps:
       }, TX_OPTIONS);
 
       deps.log('accepted', { session: input.sessionId, accountId: submitter.accountId, outboundMessageId: accepted.outboundId, recipients: recipients.length });
-      await harvestContacts(deps, storage.kek, input, headers.fields);
+      await harvestContacts(deps, storage, input, headers.fields);
       return { ok: true, ...accepted };
     } catch (err) {
       if (err instanceof CapExceededError) {

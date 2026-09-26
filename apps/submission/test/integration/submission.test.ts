@@ -10,13 +10,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { KeyObject } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import { publicKeyFromDnsRecord, verifyLocal } from '@postroom/auth-checks';
 import { createBlobStore, tmpDir, type BlobStore } from '@postroom/blobstore';
 import { createAppPassword, hashAppPassword, revokeAppPassword } from '@postroom/credentials';
 import { createAuthThrottle } from '@postroom/auth-throttle';
 import { generateKek, type Kek } from '@postroom/crypto';
 import { COLLECTED_SLUG, contactOfBytes, DavStore, DEFAULT_DAV_LIMITS } from '@postroom/dav-store';
-import { AddressKind, seed, type Db } from '@postroom/db';
+import { AddressKind, randomUidValidity, seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ensureDkimKeys } from '../../src/dkim.js';
@@ -399,5 +400,49 @@ describe.skipIf(baseUrl === undefined)('submission daemon (PST-T-1.2)', () => {
     await send('Cc: colleague@example.net');
     expect(await names()).toEqual(['Colleague Person', 'Friend']);
     c.close();
+  });
+
+  it('PST-T-8.8: a Reply-All to a list thread harvests the humans but not the list posting address', async () => {
+    const acct = await makeAccount();
+
+    // Seed the original list message in the account's INBOX, carrying List-Id/List-Post.
+    const originalHeaders =
+      'From: someone@example.org\r\nTo: the-club@example.org\r\nSubject: club news\r\n' +
+      `Date: ${new Date().toUTCString()}\r\nMessage-ID: <orig@example.org>\r\n` +
+      'List-Id: The Club <the-club.example.org>\r\nList-Post: <mailto:the-club@example.org>\r\n';
+    const originalPut = await blobs.put(Buffer.from(`${originalHeaders}\r\nhello, club\r\n`, 'latin1'));
+    const inbox = await db.mailbox.create({ data: { accountId: acct.id, name: 'INBOX', specialUse: 'inbox', uidvalidity: randomUidValidity(randomInt) } });
+    await db.message.create({
+      data: {
+        mailboxId: inbox.id,
+        uid: 1,
+        modseq: 1n,
+        blobSha256: originalPut.sha256,
+        size: originalPut.size,
+        internalDate: new Date(),
+        messageIdHeader: 'orig@example.org',
+      },
+    });
+
+    // The Reply-All, over submission: To carries a human and the list's own address.
+    const c = await over465();
+    expect((await authPlain(c, acct.address, acct.appPassword)).code).toBe(235);
+    expect((await c.send(`MAIL FROM:<${acct.address}>`)).code).toBe(250);
+    for (const r of ['alice@example.org', 'the-club@example.org']) expect((await c.send(`RCPT TO:<${r}>`)).code).toBe(250);
+    const head = [
+      `From: Me <${acct.address}>`,
+      'To: Alice <alice@example.org>, the-club@example.org',
+      'Subject: Re: club news',
+      'In-Reply-To: <orig@example.org>',
+    ];
+    const reply = [...head, '', 'hello back', ''].join('\r\n');
+    expect((await c.data(reply)).final?.code).toBe(250);
+    c.close();
+
+    const store = new DavStore(db, kek, DEFAULT_DAV_LIMITS);
+    const book = await store.getCollection(acct.id, 'addressbook', COLLECTED_SLUG);
+    if (book === null) throw new Error('no Collected address book');
+    const names = (await store.getResources(book.id)).map((r) => contactOfBytes(r.data).displayName).sort();
+    expect(names).toEqual(['Alice']);
   });
 });
