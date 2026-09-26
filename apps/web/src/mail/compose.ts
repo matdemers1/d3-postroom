@@ -119,6 +119,10 @@ export interface ComposeState {
   inReplyTo: string | null;
   references: string[];
   forwardOf: string | null;
+  /** PST-T-9.2, PST-REQ-145: Markdown, rendered to sanitized HTML and sent multipart/alternative. */
+  format: 'plain' | 'markdown';
+  /** PST-T-9.2, PST-REQ-146: adds Disposition-Notification-To on send. */
+  requestReceipt: boolean;
 }
 
 export function initialState(draft: ComposeDraft): ComposeState {
@@ -131,6 +135,8 @@ export function initialState(draft: ComposeDraft): ComposeState {
     inReplyTo: draft.inReplyTo,
     references: draft.references,
     forwardOf: draft.mode === 'forward' ? draft.sourceId : null,
+    format: 'plain',
+    requestReceipt: false,
   };
 }
 
@@ -148,6 +154,18 @@ export function fieldsOf(state: ComposeState): ComposeFields {
   };
 }
 
+/** PST-T-9.2: the two fields Send needs beyond ComposeFields. Merged into the SendInput sent to the
+ *  server (a variable of this widened type, not an inline object literal, so no change to api.ts's
+ *  SendInput is needed for these to reach the request body). */
+export interface ComposeSendExtra {
+  format: 'plain' | 'markdown';
+  requestReceipt: boolean;
+}
+
+export function sendExtra(state: ComposeState): ComposeSendExtra {
+  return { format: state.format, requestReceipt: state.requestReceipt };
+}
+
 export function hasRecipients(state: ComposeState): boolean {
   return splitAddresses(state.to).length + splitAddresses(state.cc).length + splitAddresses(state.bcc).length > 0;
 }
@@ -163,6 +181,8 @@ export function stateFromSaved(saved: SavedDraft): ComposeState {
     inReplyTo: saved.inReplyTo,
     references: saved.references,
     forwardOf: saved.forwardOf,
+    format: 'plain',
+    requestReceipt: false,
   };
 }
 
@@ -289,4 +309,60 @@ export function toastState(pending: PendingSend, now: Date, locale?: string): { 
   }
   if (left > 0) return { text: `Sending… ${String(left)} s`, canUndo: true, done: false };
   return { text: 'Sent.', canUndo: false, done: true };
+}
+
+// --- Saved templates: the ; shortcut and {{variables}} (PST-T-9.2, PST-REQ-144) ------------------
+
+export interface ComposeTemplateLike {
+  shortcut: string;
+  name: string;
+  subject: string | null;
+  body: string;
+}
+
+export interface TemplateVariables {
+  name?: string;
+  first_name?: string;
+  date?: string;
+}
+
+const VARIABLE = /\{\{\s*(\w+)\s*\}\}/g;
+
+/** {{name}}, {{first_name}}, {{date}} filled in; an unknown variable is left blank, not passed through. */
+export function fillTemplateText(body: string, vars: TemplateVariables): string {
+  return body.replace(VARIABLE, (_match, key: string) => {
+    if (key === 'date') return vars.date ?? new Date().toLocaleDateString();
+    if (key === 'name') return vars.name ?? '';
+    if (key === 'first_name') return vars.first_name ?? '';
+    return '';
+  });
+}
+
+/**
+ * Whether the text just before `cursor` is a `;shortcut` the composer should offer to expand: a `;`
+ * preceded by nothing or whitespace, followed by shortcut characters and nothing else up to the
+ * cursor. Returns what was typed after `;` (possibly empty, right after typing it) and the range in
+ * `text` a chosen template replaces.
+ */
+export function templateTrigger(text: string, cursor: number): { shortcut: string; start: number; end: number } | null {
+  const before = text.slice(0, cursor);
+  const match = /(?:^|[\s])(;([a-zA-Z0-9_-]*))$/.exec(before);
+  if (match === null) return null;
+  const whole = match[1] ?? '';
+  const shortcut = match[2] ?? '';
+  return { shortcut, start: cursor - whole.length, end: cursor };
+}
+
+/** Templates offered for what was typed after `;`, by shortcut prefix. */
+export function matchingTemplates<T extends ComposeTemplateLike>(templates: readonly T[], query: string): T[] {
+  const q = query.toLowerCase();
+  return templates.filter((t) => t.shortcut.toLowerCase().startsWith(q));
+}
+
+/** Replace the `;shortcut` trigger with the template's body, variables filled; the cursor lands
+ *  right after what was inserted. */
+export function applyTemplate(text: string, trigger: { start: number; end: number }, template: ComposeTemplateLike, vars: TemplateVariables): { text: string; cursor: number } {
+  const filled = fillTemplateText(template.body, vars);
+  const next = text.slice(0, trigger.start) + filled + text.slice(trigger.end);
+  return { text: next, cursor: trigger.start + filled.length };
 }

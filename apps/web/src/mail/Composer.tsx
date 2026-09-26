@@ -13,18 +13,23 @@
 // it without a reload — no separate "sent" screen needed to say so. The mailbox list updates over SSE.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Alert, Button, FormActions, FormField, Input, Select, Stack, Textarea } from '@d3cloud/ui';
+import { Alert, Button, Checkbox, FormActions, FormField, Input, Select, Stack, Textarea } from '@d3cloud/ui';
 import { api, ApiError, type DraftInput } from '../api';
+import { templatesApi, type TemplateJson } from '../compose/api';
 import {
+  applyTemplate,
   fieldsOf,
   hasRecipients,
   initialState,
   isHeld,
+  matchingTemplates,
   REMIND_CHOICES,
   resumableDraft,
   sendErrorText,
+  sendExtra,
   sendOptions,
   stateFromSaved,
+  templateTrigger,
   toLocalInput,
   undoSeconds,
   setUndoSeconds,
@@ -74,6 +79,10 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
   const toRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
+  // PST-T-9.2: saved templates via the ; shortcut (PST-REQ-144).
+  const [templates, setTemplates] = useState<TemplateJson[] | null>(null);
+  const [picker, setPicker] = useState<{ start: number; end: number; shortcut: string } | null>(null);
+
   // Everything a timer, an unmount or a queued save needs, current.
   const latest = useRef(state);
   latest.current = state;
@@ -89,6 +98,35 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
     version.current += 1;
     setState((s) => ({ ...s, ...patch }));
   };
+
+  /** The body changed: check whether the cursor now sits right after a `;shortcut` (PST-REQ-144). */
+  const onBodyChange = (text: string, cursor: number) => {
+    edit({ text });
+    const trigger = templateTrigger(text, cursor);
+    if (trigger === null) {
+      setPicker(null);
+      return;
+    }
+    setPicker(trigger);
+    if (templates === null) void templatesApi.list().then((r) => { setTemplates(r.templates); }).catch(() => { setTemplates([]); });
+  };
+
+  const chooseTemplate = (template: TemplateJson) => {
+    if (picker === null) return;
+    const displayName = me === null ? '' : me.split('@')[0] ?? '';
+    const vars = { name: displayName, first_name: displayName.split(/[.\s_-]/)[0] ?? displayName, date: new Date().toLocaleDateString() };
+    const result = applyTemplate(latest.current.text, picker, template, vars);
+    const patch: Partial<ComposeState> = { text: result.text };
+    if (template.subject !== null && latest.current.subject === '') patch.subject = template.subject;
+    edit(patch);
+    setPicker(null);
+    requestAnimationFrame(() => {
+      bodyRef.current?.focus();
+      bodyRef.current?.setSelectionRange(result.cursor, result.cursor);
+    });
+  };
+
+  const templateMatches = picker === null || templates === null ? [] : matchingTemplates(templates, picker.shortcut);
 
   const draftInput = useCallback(
     (s: ComposeState): DraftInput => ({ ...fieldsOf(s), ...(me === null ? {} : { from: me }), mode: draft.mode, sourceId: draft.sourceId }),
@@ -215,7 +253,14 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
     // Let a save in flight land first, so the draft it made is the one the send removes.
     await chain.current;
     try {
-      const result = await api.sendOrHold({ ...fieldsOf(latest.current), from: me, draftId: draftId.current, ...timed.options });
+      const body: Parameters<typeof api.sendOrHold>[0] & ReturnType<typeof sendExtra> = {
+        ...fieldsOf(latest.current),
+        from: me,
+        draftId: draftId.current,
+        ...timed.options,
+        ...sendExtra(latest.current),
+      };
+      const result = await api.sendOrHold(body);
       // Held (undo window or scheduled): the toast outside the composer offers Undo (PST-REQ-140).
       if (isHeld(result)) announceHeld(result);
       finished.current = true;
@@ -302,9 +347,43 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
         <FormField label="Subject">
           <Input value={state.subject} onChange={(e) => { edit({ subject: e.target.value }); }} />
         </FormField>
-        <FormField label="Message" {...(state.forwardOf !== null ? { help: 'The original message is attached in full.' } : {})}>
-          <Textarea ref={bodyRef} rows={12} value={state.text} onChange={(e) => { edit({ text: e.target.value }); }} />
+        <FormField
+          label="Message"
+          help={state.forwardOf !== null ? 'The original message is attached in full.' : 'Type ; to insert a saved template.'}
+        >
+          <Textarea
+            ref={bodyRef}
+            rows={12}
+            value={state.text}
+            onChange={(e) => { onBodyChange(e.target.value, e.target.selectionStart); }}
+          />
         </FormField>
+        {picker !== null && templateMatches.length > 0 ? (
+          <ul className="pr-composer__template-picker" role="listbox" aria-label="Matching templates">
+            {templateMatches.map((t) => (
+              <li key={t.id}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => { chooseTemplate(t); }}>
+                  ;{t.shortcut} — {t.name}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <FormField label="Format" help="Markdown is sent as sanitized HTML alongside the plain text (PST-REQ-145).">
+          <Select
+            options={[
+              { value: 'plain', label: 'Plain text' },
+              { value: 'markdown', label: 'Markdown' },
+            ]}
+            value={state.format}
+            onValueChange={(v) => { edit({ format: v === 'markdown' ? 'markdown' : 'plain' }); }}
+          />
+        </FormField>
+        <Checkbox
+          label="Request read receipt"
+          checked={state.requestReceipt}
+          onCheckedChange={(checked) => { edit({ requestReceipt: checked === true }); }}
+        />
         <FormField label="Remind me" optional help="If nobody replies in time, the message comes back to your Inbox.">
           <Select
             options={REMIND_CHOICES.map((c) => ({ value: c.seconds === null ? 'none' : String(c.seconds), label: c.label }))}

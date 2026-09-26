@@ -135,6 +135,15 @@ function FilterIcon() {
   );
 }
 
+function TemplatesIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M6 4h9l4 4v12H6z" />
+      <path d="M9 12h6M9 16h6" />
+    </svg>
+  );
+}
+
 function ContactsIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -237,6 +246,9 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
             </SideNavItem>
             <SideNavItem asChild icon={<FilterIcon />} label="Rules" current={location.pathname === '/account/rules'}>
               <RouterLink to="/account/rules" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<TemplatesIcon />} label="Compose templates" current={location.pathname === '/account/templates'}>
+              <RouterLink to="/account/templates" />
             </SideNavItem>
           </SideNavGroup>
           {account?.isAdmin === true ? (

@@ -1190,6 +1190,32 @@
         ],
         "additionalProperties": false
       },
+      "MdnResponse": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "The Message-ID header of the MDN that was sent."
+          },
+          "outboundId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "sentMessageId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The copy filed in Sent."
+          }
+        },
+        "required": [
+          "messageId",
+          "outboundId",
+          "sentMessageId"
+        ],
+        "additionalProperties": false
+      },
       "MessageBody": {
         "type": "object",
         "properties": {
@@ -3473,6 +3499,78 @@
         ],
         "additionalProperties": false
       },
+      "Template": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "shortcut": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "shortcut",
+          "name",
+          "subject",
+          "body",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "TemplateCreated": {
+        "type": "object",
+        "properties": {
+          "template": {
+            "$ref": "#/components/schemas/Template"
+          }
+        },
+        "required": [
+          "template"
+        ],
+        "additionalProperties": false
+      },
+      "TemplateList": {
+        "type": "object",
+        "properties": {
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Template"
+            }
+          }
+        },
+        "required": [
+          "templates"
+        ],
+        "additionalProperties": false
+      },
       "ThreadDetail": {
         "type": "object",
         "properties": {
@@ -5265,6 +5363,15 @@
                       }
                     ]
                   },
+                  "format": {
+                    "default": "plain",
+                    "description": "markdown: text is Markdown, sent multipart/alternative with sanitized HTML (PST-REQ-145).",
+                    "type": "string",
+                    "enum": [
+                      "plain",
+                      "markdown"
+                    ]
+                  },
                   "mode": {
                     "anyOf": [
                       {
@@ -5629,6 +5736,15 @@
                       {
                         "type": "null"
                       }
+                    ]
+                  },
+                  "format": {
+                    "default": "plain",
+                    "description": "markdown: text is Markdown, sent multipart/alternative with sanitized HTML (PST-REQ-145).",
+                    "type": "string",
+                    "enum": [
+                      "plain",
+                      "markdown"
                     ]
                   },
                   "mode": {
@@ -6089,6 +6205,15 @@
                       }
                     ]
                   },
+                  "format": {
+                    "default": "plain",
+                    "description": "markdown: text is Markdown, sent multipart/alternative with sanitized HTML (PST-REQ-145).",
+                    "type": "string",
+                    "enum": [
+                      "plain",
+                      "markdown"
+                    ]
+                  },
                   "draftId": {
                     "description": "The draft this send replaces; it is removed from Drafts in the same transaction.",
                     "anyOf": [
@@ -6101,6 +6226,11 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "requestReceipt": {
+                    "default": false,
+                    "description": "Add Disposition-Notification-To: the sender’s own address (PST-REQ-146).",
+                    "type": "boolean"
                   },
                   "undoSeconds": {
                     "description": "Undo send: hold the message this many seconds before it is queued (0–30; the webmail sends its setting, default 10). Absent or 0 sends at once.",
@@ -7931,6 +8061,99 @@
         }
       }
     },
+    "/api/messages/{id}/mdn": {
+      "post": {
+        "operationId": "sendMdn",
+        "tags": [
+          "Compose"
+        ],
+        "summary": "Send an RFC 8098 read receipt (MDN) for one of the caller’s inbound messages (PST-REQ-146).",
+        "description": "Only once per message: marks the message $MDNSent. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The MDN was sent and filed in Sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MdnResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a message of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It already asked and got one, or it never asked for one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/messages/{id}/outbound": {
       "get": {
         "operationId": "getMessageOutbound",
@@ -9294,6 +9517,392 @@
           },
           "404": {
             "description": "No script by that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates": {
+      "get": {
+        "operationId": "listTemplates",
+        "tags": [
+          "Templates"
+        ],
+        "summary": "The caller’s compose templates, by shortcut (PST-REQ-144).",
+        "responses": {
+          "200": {
+            "description": "Templates.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createTemplate",
+        "tags": [
+          "Templates"
+        ],
+        "summary": "Create a compose template.",
+        "description": "Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shortcut": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[^\\s;]+$",
+                    "description": "What ; matches on in the composer, unique per account (without the leading ;)."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "subject": {
+                    "type": "string",
+                    "maxLength": 998
+                  },
+                  "body": {
+                    "type": "string",
+                    "maxLength": 1000000,
+                    "description": "Markdown, with {{variables}}."
+                  }
+                },
+                "required": [
+                  "shortcut",
+                  "name",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new template.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The shortcut is already used by another of the caller’s templates.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}": {
+      "delete": {
+        "operationId": "deleteTemplate",
+        "tags": [
+          "Templates"
+        ],
+        "summary": "Delete a template.",
+        "description": "Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a template of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getTemplate",
+        "tags": [
+          "Templates"
+        ],
+        "summary": "One template.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The template.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateCreated"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a template of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateTemplate",
+        "tags": [
+          "Templates"
+        ],
+        "summary": "Replace a template.",
+        "description": "Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shortcut": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[^\\s;]+$",
+                    "description": "What ; matches on in the composer, unique per account (without the leading ;)."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "subject": {
+                    "type": "string",
+                    "maxLength": 998
+                  },
+                  "body": {
+                    "type": "string",
+                    "maxLength": 1000000,
+                    "description": "Markdown, with {{variables}}."
+                  }
+                },
+                "required": [
+                  "shortcut",
+                  "name",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The template after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a template of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The shortcut is already used by another of the caller’s templates.",
             "content": {
               "application/json": {
                 "schema": {

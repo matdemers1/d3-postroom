@@ -68,6 +68,9 @@ describe('drafts', () => {
       inReplyTo: '<plans@example.org>',
       references: ['<plans@example.org>'],
       forwardOf: null,
+      // PST-T-9.2: a saved draft has no Markdown/receipt state of its own; it always resumes plain.
+      format: 'plain',
+      requestReceipt: false,
     });
   });
 
