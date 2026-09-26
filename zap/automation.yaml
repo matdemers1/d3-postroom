@@ -1,0 +1,126 @@
+# ZAP Automation Framework plan: the authenticated scan of the webmail and /api (PST-T-4.3,
+# PST-REQ-090). Run by zap/run.sh, which signs an operator in first and writes zap/report/.
+#
+# Three decisions shape it, all copied from D3 Auth's scan, which passed the same gate:
+#
+# - Authenticated by header, not by teaching ZAP to sign in. Sign-in is password then a TOTP code
+#   from a secret only setup reveals; zap/session.mjs drives the real flow once and ZAP rides the
+#   cookie it gets. It also sends the CSRF header the web app sends, so the active scan reaches the
+#   handlers behind the CSRF guard instead of collecting 403s.
+# - The API is seeded, not spidered. A spider follows links; a JSON API has none. Every GET route the
+#   web app calls is listed so the active scan has parameters to attack.
+# - Anything that would end the scan's own session, or hang it, is out of scope: signing out, ending
+#   sessions, changing the password, first-run setup (already done) and the SSE stream (it never
+#   ends). Attacking those does not find vulnerabilities, it finds a scanner that has logged itself
+#   out and reports a clean bill of health for the sign-in page.
+
+env:
+  contexts:
+    - name: postroom
+      urls:
+        - ${ZAP_TARGET}
+      includePaths:
+        - ${ZAP_TARGET}/.*
+      excludePaths:
+        - ${ZAP_TARGET}/api/auth/signout.*
+        - ${ZAP_TARGET}/api/auth/setup/.*
+        - ${ZAP_TARGET}/api/auth/password.*
+        - ${ZAP_TARGET}/api/auth/sessions/.*
+        - ${ZAP_TARGET}/api/admin/sessions.*
+        - ${ZAP_TARGET}/api/events.*
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  - type: replacer
+    parameters:
+      deleteAllRules: true
+    rules:
+      - description: The signed-in operator's session (zap/session.mjs)
+        matchType: req_header
+        matchString: Cookie
+        matchRegex: false
+        replacementString: ${ZAP_COOKIE}
+      - description: The header the web app sends on every state-changing request (csrfGuard)
+        matchType: req_header
+        matchString: x-postroom-csrf
+        matchRegex: false
+        replacementString: '1'
+
+  # A scan that silently lost its session would scan the sign-in page and call everything clean. The
+  # signed-in requests must come back 200, or the run fails before any scanning starts.
+  - type: requestor
+    requests:
+      - url: ${ZAP_TARGET}/api/mailboxes
+        responseCode: 200
+      - url: ${ZAP_TARGET}/api/app-passwords
+        responseCode: 200
+      - url: ${ZAP_TARGET}/api/admin/jobs
+        responseCode: 200
+      - url: ${ZAP_TARGET}/api/auth/state
+        responseCode: 200
+      - url: ${ZAP_TARGET}/api/auth/sessions
+      - url: ${ZAP_TARGET}/api/messages/outbound?limit=20
+      - url: ${ZAP_TARGET}/api/search?q=from%3Aoperator%20hello&limit=20
+      - url: ${ZAP_TARGET}/api/mailboxes/00000000-0000-4000-8000-000000000000/messages?limit=20
+      - url: ${ZAP_TARGET}/api/messages/00000000-0000-4000-8000-000000000000
+      - url: ${ZAP_TARGET}/api/messages/00000000-0000-4000-8000-000000000000/body
+      - url: ${ZAP_TARGET}/api/messages/00000000-0000-4000-8000-000000000000/raw
+      - url: ${ZAP_TARGET}/api/messages/00000000-0000-4000-8000-000000000000/attachments/1
+      - url: ${ZAP_TARGET}/api/messages/00000000-0000-4000-8000-000000000000/delivery
+      - url: ${ZAP_TARGET}/api/threads/00000000-0000-4000-8000-000000000000
+      - url: ${ZAP_TARGET}/api/auth/oidc/start
+      - url: ${ZAP_TARGET}/api/auth/oidc/callback?code=zap&state=zap
+      - url: ${ZAP_TARGET}/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress=operator%40d3cloud.io
+      - url: ${ZAP_TARGET}/mail/config-v1.1.xml?emailaddress=operator%40d3cloud.io
+      - url: ${ZAP_TARGET}/autodiscover/autodiscover.xml?emailaddress=operator%40d3cloud.io
+      - url: ${ZAP_TARGET}/health
+      - url: ${ZAP_TARGET}/
+      - url: ${ZAP_TARGET}/signin
+      - url: ${ZAP_TARGET}/setup
+      - url: ${ZAP_TARGET}/app-passwords
+      - url: ${ZAP_TARGET}/admin/sessions
+
+  - type: spider
+    parameters:
+      context: postroom
+      maxDuration: 2
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: activeScan
+    parameters:
+      context: postroom
+      maxRuleDurationInMins: 2
+      maxScanDurationInMins: 30
+      threadPerHost: 4
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/report
+      reportFile: zap-report.html
+      reportTitle: Postroom — ZAP authenticated scan
+    risks: [high, medium, low, info]
+
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: /zap/wrk/report
+      reportFile: zap-report.json
+    risks: [high, medium, low, info]
+
+  # The gate (PST-REQ-090): any High fails the run. Mediums are read and triaged, not ignored, but
+  # they do not stop a nightly scan by themselves.
+  - type: exitStatus
+    parameters:
+      errorLevel: High
+      warnLevel: Medium

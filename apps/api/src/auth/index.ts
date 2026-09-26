@@ -14,7 +14,7 @@ export { isSetupRequired } from './setup.js';
 export { OidcProvider, resolveIdentity, IdentityCollision } from './oidc.js';
 export { hashPassword, verifyPassword } from './passwords.js';
 export { sealTotpSecret, generateTotpSecret } from './totp.js';
-export { SESSION_COOKIE, IDLE_MS, ABSOLUTE_MS } from './sessions.js';
+export { SESSION_COOKIE, SECURE_SESSION_COOKIE, sessionCookieName, IDLE_MS, ABSOLUTE_MS } from './sessions.js';
 
 /** GET /setup once an operator exists: straight to /signin (PST-REQ-171). */
 export function setupPageGuard(deps: ApiDeps): RequestHandler {

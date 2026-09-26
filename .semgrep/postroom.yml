@@ -1,0 +1,236 @@
+# Custom Semgrep rules for Postroom (PST-T-4.3, PST-REQ-089).
+#
+# The registry packs (p/typescript, p/nodejs, p/owasp-top-ten, p/jwt) find the generic mistakes.
+# These encode the project's own non-negotiables (CLAUDE.md) where a machine can check them
+# statically — each one is a rule already written in prose, turned into something CI refuses to
+# merge. Every rule has a positive and a negative case in postroom.ts beside this file, run with
+# `semgrep --test .semgrep/`.
+#
+# A path exclusion below is a reviewed exception, never a convenience: each names the file, the
+# reason it is correct there, and what would retire it.
+#
+# Not encoded, deliberately: "every mutating /api route is audited" (PST-REQ-009). Whether a handler
+# audits depends on what it calls several modules away (audited(), recordAudit(), createAppPassword()
+# → audited() …), which a pattern cannot follow without false positives on every helper. The
+# runtime net is mutationAuditGuard (packages/audit/src/express.ts), which flags any 2xx/3xx
+# POST/PUT/PATCH/DELETE under /api that left no audit_event row for its request id.
+
+rules:
+  - id: postroom.dynamic-code
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      eval, new Function and string timers turn data into code. Nothing in Postroom needs them;
+      parse the input instead.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: Function(...)
+      - pattern: setTimeout("...", ...)
+      - pattern: setInterval("...", ...)
+      - pattern: setTimeout(`...`, ...)
+      - pattern: setInterval(`...`, ...)
+
+  - id: postroom.shell-command-injection
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      A shell command built from a string is an injection waiting for its input. Use execFile or
+      spawn with an argument array and no shell (see apps/worker/src/backup/pgtools.ts).
+    # Only child_process's exec/execSync: RegExp.prototype.exec is not a shell.
+    pattern-either:
+      - patterns:
+          - pattern-inside: |
+              import * as $CP from "=~/^(node:)?child_process$/";
+              ...
+          - pattern-either:
+              - pattern: $CP.exec(...)
+              - pattern: $CP.execSync(...)
+              - pattern: '$CP.$SPAWN($CMD, $ARGS, {..., shell: true, ...})'
+      - patterns:
+          - pattern-inside: |
+              import $CP from "=~/^(node:)?child_process$/";
+              ...
+          - pattern-either:
+              - pattern: $CP.exec(...)
+              - pattern: $CP.execSync(...)
+              - pattern: '$CP.$SPAWN($CMD, $ARGS, {..., shell: true, ...})'
+      - patterns:
+          - pattern-inside: |
+              import { ..., $FN, ... } from "=~/^(node:)?child_process$/";
+              ...
+          - metavariable-regex:
+              metavariable: $FN
+              regex: ^(exec|execSync)$
+          - pattern: $FN(...)
+      - patterns:
+          - pattern-inside: |
+              import { ..., $FN, ... } from "=~/^(node:)?child_process$/";
+              ...
+          - metavariable-regex:
+              metavariable: $FN
+              regex: ^(spawn|spawnSync|execFile|execFileSync)$
+          - pattern-either:
+              - pattern: '$FN($CMD, $ARGS, {..., shell: true, ...})'
+              - pattern: '$FN($CMD, {..., shell: true, ...})'
+
+  - id: postroom.reflected-user-input
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Request input written straight into a response body is reflected XSS. Answer with res.json
+      (which sets application/json), or escape for the content type you send.
+    patterns:
+      - pattern-either:
+          - pattern: $RES.send(...)
+          - pattern: $RES.write(...)
+          - pattern: $RES.end(...)
+      - pattern-either:
+          - pattern: $RES.$M(..., <... $REQ.query ...>, ...)
+          - pattern: $RES.$M(..., <... $REQ.params ...>, ...)
+          - pattern: $RES.$M(..., <... $REQ.body ...>, ...)
+          - pattern: $RES.$M(..., <... $REQ.headers ...>, ...)
+          - pattern: $RES.$M(..., <... $REQ.cookies ...>, ...)
+          - pattern: $RES.$M(..., <... $REQ.get(...) ...>, ...)
+          - pattern: $RES.$M(..., <... $REQ.originalUrl ...>, ...)
+      # A structured log line is not a response body.
+      - pattern-not: process.stdout.write(...)
+      - pattern-not: process.stderr.write(...)
+
+  - id: postroom.secret-in-log
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      A password, app password, token, secret, pepper or key is being written to a log. Logs are
+      read by more people and kept longer than the thing they describe; log that it happened, not
+      the value.
+    paths:
+      exclude: ['**/test/**', '**/*.test.ts', '/e2e/**', '/fuzz/**']
+    patterns:
+      - pattern-either:
+          - pattern: console.$LOG(..., <... $SECRET ...>, ...)
+          - pattern: process.stdout.write(<... $SECRET ...>, ...)
+          - pattern: process.stderr.write(<... $SECRET ...>, ...)
+      - metavariable-regex:
+          metavariable: $SECRET
+          # An identifier or member path whose last segment names a secret.
+          regex: (?i)^[\w$.?!]*?\b\w*(password|passwd|appPassword|secret|token|pepper|kek|dek|privateKey|apiKey|cookie)\w*$
+      - focus-metavariable: $SECRET
+
+  - id: postroom.raw-sql-interpolated
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      $queryRawUnsafe/$executeRawUnsafe/Prisma.raw with a built string is SQL injection. Use the
+      tagged-template $queryRaw`...${value}` form, which binds every interpolation as a parameter.
+    paths:
+      exclude:
+        # CREATE/DROP DATABASE cannot take a bind parameter. The name is generated in-process and
+        # checked against ^[a-z0-9_]+$ on the line after it is made (drill.ts:188).
+        - /apps/worker/src/drill/drill.ts
+    patterns:
+      - pattern-either:
+          - pattern: $DB.$queryRawUnsafe($Q, ...)
+          - pattern: $DB.$executeRawUnsafe($Q, ...)
+          - pattern: Prisma.raw($Q)
+      - pattern-not: $DB.$queryRawUnsafe("...", ...)
+      - pattern-not: $DB.$executeRawUnsafe("...", ...)
+      - pattern-not: Prisma.raw("...")
+
+  - id: postroom.insecure-randomness
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Math.random is not a source of anything an attacker benefits from guessing — tokens, ids,
+      secrets, nonces. Use crypto.randomBytes, randomInt or randomUUID. (Backoff jitter and MX
+      tie-breaks pass Math.random as an injectable function, which this rule does not flag.)
+    paths:
+      include: ['/apps/*/src/**', '/packages/*/src/**', '/workers/**/src/**', '/edge/**']
+      exclude:
+        # The decoy input for a constant-time miss: its hash is verified and the result discarded
+        # (verify.ts only accepts a match against a real candidate row), so its value is never a
+        # secret. Retire by switching it to randomBytes as apps/api/src/auth/passwords.ts does.
+        - /packages/credentials/src/hash.ts
+    pattern: Math.random()
+
+  - id: postroom.tls-verification-disabled
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Turning off certificate verification makes TLS decoration. Verify, or record why this peer
+      cannot be verified and what enforces it instead.
+    paths:
+      exclude:
+        - '**/test/**'
+        - '**/*.test.ts'
+        # Opportunistic STARTTLS to a remote MX (RFC 3207): with no DANE/MTA-STS policy there is no
+        # authenticated name to hold the peer to. Whether it verified is recorded per delivery
+        # (tlsPeer); enforcement arrives with MTA-STS/DANE in PST-T-7.5.
+        - /apps/delivery/src/client/session.ts
+    pattern-either:
+      - pattern: '{..., rejectUnauthorized: false, ...}'
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+      - pattern: process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = "0"
+
+  - id: postroom.bare-lf-on-the-wire
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      SMTP and IMAP lines end in CRLF, strictly (PST-REQ-049). A line written with a bare \n is the
+      smuggling ambiguity this server refuses from others.
+    paths:
+      include:
+        - /apps/smtp-in/src/**
+        - /apps/submission/src/**
+        - /apps/imap/src/**
+        - /apps/delivery/src/**
+        - /packages/smtp-proto/src/**
+        - /packages/imap-proto/src/**
+    patterns:
+      - pattern-either:
+          - pattern: $SOCK.write($LINE, ...)
+          - pattern: $SOCK.end($LINE, ...)
+      # A string or template literal whose final escape is \n without \r before it, matched on the
+      # source text: Semgrep does not expose a template literal's text to metavariable-regex. The
+      # CLIs' process.stdout/stderr print to a terminal, not a peer, and are left alone.
+      - pattern-regex: (?<!process\.stdout)(?<!process\.stderr)\.(write|end)\(\s*(["'`])[^\n]*?(?<!\\r)\\n\2\s*[,)]
+
+  - id: postroom.web-third-party-request
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      The webmail talks to its own origin and nothing else — no telemetry, no CDN, no third-party
+      script or beacon (PST-REQ-159). Remote content in mail goes through the usercontent origin.
+    paths:
+      include: ['/apps/web/src/**']
+    pattern-either:
+      - pattern: fetch("=~/^(https?:)?\/\//", ...)
+      - pattern: fetch(`=~/^(https?:)?\/\//`, ...)
+      - pattern: new WebSocket(...)
+      - pattern: new EventSource("=~/^(https?:)?\/\//", ...)
+      - pattern: navigator.sendBeacon(...)
+      - pattern: import("=~/^(https?:)?\/\//")
+      - pattern: |
+          $S.src = "=~/^(https?:)?\/\//"
+
+  - id: postroom.web-third-party-script-tag
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      No third-party scripts, stylesheets or fonts in the webmail shell (PST-REQ-159, PST-REQ-175).
+    paths:
+      include: ['/apps/web/*.html', '/.semgrep/*.html']
+    pattern-regex: <(script|link|img|iframe)\b[^>]*\b(src|href)\s*=\s*["']?(https?:)?//
+
+  - id: postroom.cookie-without-httponly
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Every cookie Postroom sets is httpOnly and SameSite (ASVS V3.3.1, V3.3.4). Set both, and
+      secure outside a loopback origin.
+    patterns:
+      - pattern-either:
+          - pattern: $RES.cookie($NAME, $VALUE)
+          - pattern: $RES.cookie($NAME, $VALUE, {...})
+      - pattern-not: '$RES.cookie($NAME, $VALUE, {..., httpOnly: true, ..., sameSite: $SS, ...})'
+      - pattern-not: '$RES.cookie($NAME, $VALUE, {..., sameSite: $SS, ..., httpOnly: true, ...})'

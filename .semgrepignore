@@ -1,0 +1,18 @@
+# Semgrep scans source, not what is built from it or fetched into it (PST-T-4.3, PST-REQ-089).
+node_modules/
+**/dist/
+**/generated/
+.claude/
+e2e/playwright-report/
+e2e/test-results/
+zap/report/
+# The rule tests are meant to match; they are run with `semgrep --test .semgrep/`.
+.semgrep/postroom.ts
+.semgrep/postroom.html
+# Test code drives the servers under test with self-signed certificates and spawns them as child
+# processes; it never ships. The custom rules that matter in tests exclude them by path as well.
+apps/*/test/
+packages/*/test/
+# The WireGuard sidecar configures an interface and nftables: it runs as root with NET_ADMIN by
+# design (docker-compose.yml cap_add). Every other image drops to a non-root USER.
+docker/wireguard/Dockerfile

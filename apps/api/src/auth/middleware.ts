@@ -1,14 +1,15 @@
+import { getAuditContext, recordAudit } from '@postroom/audit';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { ApiDeps } from '../deps.js';
 import { runtimeFor, STEP_UP_MS, type AuthRuntime } from './runtime.js';
-import { readCookie, resolveSession, SESSION_COOKIE, type ResolvedSession } from './sessions.js';
+import { readCookie, resolveSession, sessionCookieName, type ResolvedSession } from './sessions.js';
 
 // The session a request carries, resolved at most once per request.
 const loaded = new WeakMap<Request, ResolvedSession | null>();
 
 export async function sessionOf(rt: AuthRuntime, req: Request): Promise<ResolvedSession | null> {
   if (loaded.has(req)) return loaded.get(req) ?? null;
-  const token = readCookie(req, SESSION_COOKIE);
+  const token = readCookie(req, sessionCookieName(rt.secure));
   const session = token === null ? null : await resolveSession(rt.db, token, rt.now());
   loaded.set(req, session);
   return session;
@@ -22,6 +23,25 @@ export function currentSession(req: Request): ResolvedSession {
 }
 
 type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;
+
+/**
+ * A refused authorization is audited (ASVS 5.0 16.3.2): who, which route, why. Best effort — a
+ * failed write is reported on stderr and never turns a 403 into a 500.
+ */
+export async function recordDenied(rt: AuthRuntime, req: Request, accountId: string, reason: string): Promise<void> {
+  try {
+    await recordAudit(rt.db, {
+      actor: { kind: 'account', accountId },
+      action: 'authz.denied',
+      entityType: 'route',
+      entityId: null,
+      after: { method: req.method, path: req.baseUrl + req.path, reason },
+      context: getAuditContext(req),
+    });
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({ event: 'authz-denied-unrecorded', reason, error: error instanceof Error ? error.message : String(error) })}\n`);
+  }
+}
 
 /** Express 5 forwards a rejected promise to the error handler; this makes that explicit and typed. */
 export function handle(fn: AsyncHandler): RequestHandler {
@@ -54,6 +74,7 @@ export function requireAdmin(deps: ApiDeps): RequestHandler {
       return;
     }
     if (!session.isAdmin) {
+      await recordDenied(rt, req, session.accountId, 'not_admin');
       res.status(403).json({ error: 'forbidden' });
       return;
     }
@@ -73,6 +94,7 @@ export function requireStepUp(deps: ApiDeps): RequestHandler {
     const at = session.stepUpAt;
     const age = at === null ? Infinity : rt.now().getTime() - at.getTime();
     if (!(age >= 0 && age <= STEP_UP_MS)) {
+      await recordDenied(rt, req, session.accountId, 'step_up_required');
       res.status(403).json({ error: 'step_up_required' });
       return;
     }
@@ -100,6 +122,11 @@ export function csrfGuard(deps: ApiDeps): RequestHandler {
       next();
       return;
     }
+    // A cross-site state change is an attempt to get past a control (ASVS 5.0 16.3.3). Logged, not
+    // audited: anyone on the internet can send one, and the audit table is not theirs to fill.
+    process.stderr.write(
+      `${JSON.stringify({ event: 'csrf-refused', method: req.method, path: req.originalUrl.split('?')[0], origin: req.get('origin') ?? null, ip: req.ip ?? null })}\n`,
+    );
     res.status(403).json({ error: 'csrf' });
   };
 }

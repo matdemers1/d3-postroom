@@ -1,11 +1,13 @@
 // /api/admin routes that belong to auth. Mounted behind requireAdmin; the destructive one behind
 // requireStepUp as well — the demonstration route for PST-REQ-008.
-import { audited, getAuditContext } from '@postroom/audit';
+import { audited, getAuditContext, recordAudit } from '@postroom/audit';
 import { Router } from 'express';
 import type { ApiDeps } from '../deps.js';
 import { currentSession, handle, requireStepUp } from './middleware.js';
 import { runtimeFor } from './runtime.js';
 import { deleteSession } from './sessions.js';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function adminRoutes(deps: ApiDeps): Router {
   const rt = runtimeFor(deps);
@@ -62,6 +64,39 @@ export function adminRoutes(deps: ApiDeps): Router {
         },
       );
       res.json({ ok: true });
+    }),
+  );
+
+  // Every session of one account (?accountId=), or of everybody but the caller (?all=1) — ASVS 5.0
+  // 7.4.5. The caller's own session survives either way, so the admin is not locked out mid-action.
+  router.delete(
+    '/sessions',
+    requireStepUp(deps),
+    handle(async (req, res) => {
+      const me = currentSession(req);
+      const accountId = req.query['accountId'];
+      const all = req.query['all'] === '1';
+      if (all === (accountId !== undefined) || (accountId !== undefined && (typeof accountId !== 'string' || !UUID.test(accountId)))) {
+        res.status(400).json({ error: 'invalid_request' });
+        return;
+      }
+      const ended = await db.$transaction(async (tx) => {
+        const rows = await tx.session.findMany({
+          where: { id: { not: me.sessionId }, ...(all ? {} : { accountId: accountId as string }) },
+          select: { id: true },
+        });
+        await tx.session.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
+        await recordAudit(tx, {
+          actor: { kind: 'account', accountId: me.accountId },
+          action: all ? 'admin.session.revoke-all' : 'admin.session.revoke-account',
+          entityType: all ? 'session' : 'account',
+          entityId: all ? null : (accountId as string),
+          after: { ended: rows.map((r) => r.id) },
+          context: getAuditContext(req),
+        });
+        return rows.length;
+      });
+      res.json({ ok: true, ended });
     }),
   );
 
