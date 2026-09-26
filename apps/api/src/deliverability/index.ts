@@ -21,9 +21,11 @@ import type { ApiDeps } from '../deps.js';
 import { DEFAULT_BLOB_ROOT } from '../mail/index.js';
 import { MAILBOX_CHANNEL } from '../mail/store.js';
 import { aggregate, type Deliverability } from './aggregate.js';
+import { computeProposals } from './proposals.js';
 import { reverseNames } from './rdns.js';
 
 export type { Deliverability } from './aggregate.js';
+export type { DmarcProposal, ProposalEvidenceDay, ProposalResult } from './proposals.js';
 
 const DAY_MS = 86_400_000;
 const Query = z.object({ days: z.coerce.number().int().min(1).max(3660).default(30) });
@@ -77,6 +79,15 @@ export function deliverabilityRoutes(deps: ApiDeps): Router {
         for (const s of busiest) s.reverseDns = names.get(s.sourceIp) ?? null;
       }
       res.json({ ...body, mailboxes: { dmarc: await reportAddress(db, deps.env) } });
+    }),
+  );
+
+  // PST-T-7.2 (PST-REQ-123): one result per our domain, naming the 14-day streak's evidence or why
+  // it isn't there yet.
+  router.get(
+    '/proposals',
+    handle(async (_req, res) => {
+      res.json({ proposals: await computeProposals(db, deps.env, rt.now()) });
     }),
   );
 

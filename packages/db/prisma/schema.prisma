@@ -1002,12 +1002,19 @@ model DmarcReport {
   /// The message it arrived in; null once that message is gone.
   messageId       String?  @map("message_id") @db.Uuid
   receivedAt      DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  /// ours | foreign (PST-T-7.9, PST-REQ-122): whether policy_published/domain is one of our Domain
+  /// rows. A foreign report is stored (so it is visible and auditable) but excluded from every
+  /// Deliverability aggregate. Existing rows default to "ours".
+  status          String   @default("ours")
+  /// Why a foreign report was classified foreign. Null for "ours".
+  reason          String?
 
   message Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
   records DmarcRecord[]
 
   @@unique([orgName, reportId])
   @@index([rangeBegin])
+  @@index([status])
   @@map("dmarc_report")
 }
 
@@ -1044,12 +1051,18 @@ model TlsRptReport {
   rangeEnd    DateTime @map("range_end") @db.Timestamptz(6)
   messageId   String?  @map("message_id") @db.Uuid
   receivedAt  DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  /// ours | foreign (PST-T-7.9, PST-REQ-122): whether any policies[].policy-domain is one of our
+  /// Domain rows. Foreign when none of them are. Existing rows default to "ours".
+  status      String   @default("ours")
+  /// Why a foreign report was classified foreign. Null for "ours".
+  reason      String?
 
   message  Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull)
   policies TlsRptPolicy[]
 
   @@unique([orgName, reportId])
   @@index([rangeBegin])
+  @@index([status])
   @@map("tlsrpt_report")
 }
 

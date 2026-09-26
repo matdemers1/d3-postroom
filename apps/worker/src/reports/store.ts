@@ -8,6 +8,7 @@
 import { recordAudit } from '@postroom/audit';
 import type { Db, Prisma } from '@postroom/db';
 import { dmarcPassed, type DmarcAggregateReport, type TlsRptReport } from '@postroom/reports';
+import { classifyDmarc, classifyTlsRpt, ourDomainNames } from './domains.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -25,11 +26,12 @@ export type MessageOutcome = 'ingested' | 'duplicate' | 'error' | 'no-report';
 const SYSTEM = { kind: 'system', label: 'reports' } as const;
 const json = (v: unknown): string => JSON.stringify(v);
 
-async function storeDmarc(tx: Tx, r: DmarcAggregateReport, messageId: string): Promise<{ id: string; created: boolean }> {
+async function storeDmarc(tx: Tx, r: DmarcAggregateReport, messageId: string, ourDomains: ReadonlySet<string>): Promise<{ id: string; created: boolean }> {
+  const { status, reason } = classifyDmarc(r.policy.domain, ourDomains);
   const inserted = await tx.$queryRaw<{ id: string }[]>`
-    INSERT INTO dmarc_report (org_name, report_id, email, domain, range_begin, range_end, policy_published, message_id)
+    INSERT INTO dmarc_report (org_name, report_id, email, domain, range_begin, range_end, policy_published, message_id, status, reason)
     VALUES (${r.orgName}, ${r.reportId}, ${r.email}, ${r.policy.domain}, to_timestamp(${r.begin}), to_timestamp(${r.end}),
-            ${json(r.policy)}::jsonb, ${messageId}::uuid)
+            ${json(r.policy)}::jsonb, ${messageId}::uuid, ${status}, ${reason})
     ON CONFLICT (org_name, report_id) DO NOTHING
     RETURNING id::text AS id`;
   const row = inserted[0];
@@ -59,15 +61,16 @@ async function storeDmarc(tx: Tx, r: DmarcAggregateReport, messageId: string): P
     action: 'reports.dmarc.ingest',
     entityType: 'dmarc_report',
     entityId: row.id,
-    after: { org: r.orgName, reportId: r.reportId, domain: r.policy.domain, records: r.records.length, messages, passed, messageId },
+    after: { org: r.orgName, reportId: r.reportId, domain: r.policy.domain, records: r.records.length, messages, passed, messageId, status, reason },
   });
   return { id: row.id, created: true };
 }
 
-async function storeTlsRpt(tx: Tx, r: TlsRptReport, messageId: string): Promise<{ id: string; created: boolean }> {
+async function storeTlsRpt(tx: Tx, r: TlsRptReport, messageId: string, ourDomains: ReadonlySet<string>): Promise<{ id: string; created: boolean }> {
+  const { status, reason } = classifyTlsRpt(r.policies.map((p) => p.policyDomain), ourDomains);
   const inserted = await tx.$queryRaw<{ id: string }[]>`
-    INSERT INTO tlsrpt_report (org_name, report_id, contact_info, range_begin, range_end, message_id)
-    VALUES (${r.organizationName}, ${r.reportId}, ${r.contactInfo}, ${r.start}::timestamptz, ${r.end}::timestamptz, ${messageId}::uuid)
+    INSERT INTO tlsrpt_report (org_name, report_id, contact_info, range_begin, range_end, message_id, status, reason)
+    VALUES (${r.organizationName}, ${r.reportId}, ${r.contactInfo}, ${r.start}::timestamptz, ${r.end}::timestamptz, ${messageId}::uuid, ${status}, ${reason})
     ON CONFLICT (org_name, report_id) DO NOTHING
     RETURNING id::text AS id`;
   const row = inserted[0];
@@ -111,6 +114,8 @@ async function storeTlsRpt(tx: Tx, r: TlsRptReport, messageId: string): Promise<
       successful: r.policies.reduce((n, p) => n + p.totalSuccessful, 0),
       failed: r.policies.reduce((n, p) => n + p.totalFailure, 0),
       messageId,
+      status,
+      reason,
     },
   });
   return { id: row.id, created: true };
@@ -134,13 +139,14 @@ export async function storeMessageReports(db: Db, messageId: string, parsed: rea
         INSERT INTO report_ingest (message_id, outcome, detail) VALUES (${messageId}::uuid, 'pending', '[]'::jsonb)
         ON CONFLICT (message_id) DO NOTHING`;
       if (claimed === 0) return null;
+      const ourDomains = await ourDomainNames(tx);
       const results: AttachmentOutcome[] = [];
       for (const a of parsed) {
         if (a.kind === 'error') {
           results.push({ partId: a.partId, filename: a.filename, result: 'error', code: a.code, message: a.message.slice(0, 300) });
           continue;
         }
-        const stored = a.kind === 'dmarc' ? await storeDmarc(tx, a.report, messageId) : await storeTlsRpt(tx, a.report, messageId);
+        const stored = a.kind === 'dmarc' ? await storeDmarc(tx, a.report, messageId, ourDomains) : await storeTlsRpt(tx, a.report, messageId, ourDomains);
         results.push({
           partId: a.partId,
           filename: a.filename,

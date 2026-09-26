@@ -74,6 +74,8 @@ export const api = {
   adminHealth: () => call<{ tiles: HealthTile[] }>('GET', '/api/admin/health'),
   // PST-T-7.1 (PST-REQ-122): DMARC aggregate and TLS-RPT reports, charted on Deliverability.
   adminDeliverability: (days: number) => call<Deliverability>('GET', `/api/admin/deliverability?days=${String(days)}`),
+  // PST-T-7.2 (PST-REQ-123): a 14-day-clean-streak DMARC progression proposal, per our domain.
+  adminDeliverabilityProposals: () => call<{ proposals: ProposalResult[] }>('GET', '/api/admin/deliverability/proposals'),
   adminJobs: (opts: { status?: string; queue?: string } = {}) => {
     const q = new URLSearchParams();
     if (opts.status !== undefined) q.set('status', opts.status);
@@ -964,4 +966,45 @@ export interface Deliverability {
     byFailureType: { resultType: string; sessions: number }[];
     reports: { id: string; org: string; reportId: string; begin: string; end: string; successful: number; failed: number }[];
   };
+}
+
+// ─── DMARC progression proposals (PST-T-7.2, PST-REQ-123) ────────────────────────────────────────
+
+export interface ProposalEvidenceDay {
+  /** YYYY-MM-DD, UTC. */
+  day: string;
+  reports: number;
+  messages: number;
+  sources: string[];
+  orgs: string[];
+}
+
+export interface DmarcProposal {
+  domain: string;
+  currentStage: 'none' | 'quarantine' | 'reject';
+  currentPct: number;
+  proposedStage: 'none' | 'quarantine' | 'reject';
+  proposedPct: number;
+  /** The exact TXT value to publish at `_dmarc.<domain>`. Postroom never publishes it itself. */
+  txtValue: string;
+  evidence: { from: string; to: string; days: ProposalEvidenceDay[] };
+}
+
+export interface ProposalResult {
+  domain: string;
+  eligible: boolean;
+  proposal: DmarcProposal | null;
+  /** Why there is no proposal. Null when `eligible`. */
+  reason: string | null;
+}
+
+/** The sentence describing what a proposal moves, for AdminDeliverability's ProposalCard — kept
+ * here (rather than in the .tsx) so it is unit-testable without pulling in `@d3cloud/ui`. */
+export function proposalSummary(p: Pick<DmarcProposal, 'currentStage' | 'currentPct' | 'proposedStage' | 'proposedPct'>): string {
+  return `14 consecutive clean UTC days: propose moving from p=${p.currentStage}; pct=${String(p.currentPct)} to p=${p.proposedStage}; pct=${String(p.proposedPct)}.`;
+}
+
+/** One evidence day's source/org lists, joined the way the table's columns render them. */
+export function evidenceRowText(day: ProposalEvidenceDay): { sources: string; orgs: string } {
+  return { sources: day.sources.join(', '), orgs: day.orgs.join(', ') };
 }
