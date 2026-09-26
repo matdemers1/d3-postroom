@@ -185,7 +185,21 @@ export async function knownSenderContext(db: Db, accountId: string, opts: { excl
 
 /** The phishing/lookalike verdict for one message, or null when there is nothing stored to check
  * (no message_verdict — e.g. this account's own Sent copy) or no blob store is configured. */
+/**
+ * The phishing verdict for a message, or null when it cannot be computed. A side signal: a blob that
+ * cannot be read here (moved, re-keyed, or a parse failure) must never take the message detail down
+ * with it, so any failure is logged and answers null.
+ */
 export async function messagePhish(db: Db, blobs: BlobStore | null, accountId: string, message: Message & { verdict: MessageVerdict | null }): Promise<PhishJson | null> {
+  try {
+    return await computeMessagePhish(db, blobs, accountId, message);
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({ event: 'phish-unavailable', messageId: message.id, error: error instanceof Error ? error.message : String(error) })}\n`);
+    return null;
+  }
+}
+
+async function computeMessagePhish(db: Db, blobs: BlobStore | null, accountId: string, message: Message & { verdict: MessageVerdict | null }): Promise<PhishJson | null> {
   if (message.verdict === null || blobs === null) return null;
   const stream = await blobs.get(message.blobSha256);
   const summary = await collectMessage(stream);
