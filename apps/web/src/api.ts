@@ -65,6 +65,10 @@ export const api = {
   signInTotp: (input: { challenge: string; code: string }) => call<{ next: 'done' }>('POST', '/api/auth/signin/totp', input),
   signOut: () => call<{ ok: true }>('POST', '/api/auth/signout'),
   stepUp: (code: string) => call<{ ok: true }>('POST', '/api/auth/step-up', { code }),
+  changePassword: (input: { currentPassword: string; newPassword: string; code: string; endOtherSessions?: boolean }) =>
+    call<{ ok: true; endedSessions: number }>('POST', '/api/auth/password', input),
+  sessions: () => call<{ sessions: AccountSession[] }>('GET', '/api/auth/sessions'),
+  endSession: (id: string) => call<{ ok: true }>('DELETE', `/api/auth/sessions/${encodeURIComponent(id)}`),
   adminSessions: () => call<{ sessions: AdminSession[] }>('GET', '/api/admin/sessions'),
   revokeSession: (id: string) => call<{ ok: true }>('DELETE', `/api/admin/sessions/${encodeURIComponent(id)}`),
   appPasswords: () => call<{ appPasswords: AppPassword[] }>('GET', '/api/app-passwords'),
@@ -215,6 +219,16 @@ export interface AppPassword {
   frozenAt: string | null;
 }
 
+/** One of the caller's own live sessions, as GET /api/auth/sessions lists it (PST-REQ-091). */
+export interface AccountSession {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  ip: string | null;
+  userAgent: string | null;
+  current: boolean;
+}
+
 export interface AdminSession {
   id: string;
   accountId: string;
@@ -237,7 +251,27 @@ export function redirectFor(state: AuthState, pathname: string): string | null {
   return null;
 }
 
-/** A human sentence for an API refusal on the sign-in and setup screens. */
+/** Password policy problem codes, in the order password-policy.ts reports them (PST-T-4.3). */
+type PasswordProblem = 'too_short' | 'too_long' | 'common' | 'context_word';
+
+const PASSWORD_PROBLEM_LABEL: Record<PasswordProblem, string> = {
+  too_short: 'must be at least 12 characters',
+  too_long: 'must be at most 1024 characters',
+  common: 'is one of the most common breached passwords',
+  context_word: "is built on Postroom's own name — choose something unrelated",
+};
+
+/** Which rule a refused password failed, from the `weak_password` response body's `problems`. */
+function describeWeakPassword(body: unknown): string {
+  const problems =
+    typeof body === 'object' && body !== null && Array.isArray((body as { problems?: unknown }).problems)
+      ? ((body as { problems: unknown[] }).problems.filter((p): p is PasswordProblem => typeof p === 'string' && p in PASSWORD_PROBLEM_LABEL))
+      : [];
+  if (problems.length === 0) return 'That password is too weak. Choose another.';
+  return `That password ${problems.map((p) => PASSWORD_PROBLEM_LABEL[p]).join('; ')}.`;
+}
+
+/** A human sentence for an API refusal on the sign-in, setup and account-security screens. */
 export function describeError(error: unknown): string {
   if (!(error instanceof ApiError)) return 'Postroom did not answer. Check your connection and try again.';
   switch (error.code) {
@@ -263,6 +297,12 @@ export function describeError(error: unknown): string {
       return 'Check the highlighted fields.';
     case 'auth_not_configured':
       return 'Sign-in is not configured on this server yet.';
+    case 'weak_password':
+      return describeWeakPassword(error.body);
+    case 'no_password':
+      return 'This account signs in with D3 Auth and has no password here to change.';
+    case 'step_up_required':
+      return 'That needs a fresh authentication code.';
     default:
       return 'Something went wrong. Try again.';
   }

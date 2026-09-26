@@ -5,7 +5,9 @@ import { api, redirectFor, type AuthState } from './api';
 import { MailProvider } from './mail/MailContext';
 import { AdminSessions } from './screens/AdminSessions';
 import { AppPasswords } from './screens/AppPasswords';
+import { ChangePassword } from './screens/ChangePassword';
 import { Mail } from './screens/Mail';
+import { Sessions } from './screens/Sessions';
 import { Setup } from './screens/Setup';
 import { Shell } from './screens/Shell';
 import { SignIn } from './screens/SignIn';
@@ -67,6 +69,8 @@ function Gate() {
           <Route path="/mail/*" element={null} />
         </Route>
         <Route path="/app-passwords" element={<AppPasswords />} />
+        <Route path="/account/password" element={<ChangePassword />} />
+        <Route path="/account/sessions" element={<Sessions />} />
         <Route path="/admin/sessions" element={<AdminSessions />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
