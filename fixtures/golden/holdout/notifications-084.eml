@@ -1,0 +1,11 @@
+From: Threadline <alerts@threadline.example.org>
+To: sam@d3cloud.io
+Subject: Your deploy finished
+List-Unsubscribe: <https://threadline.example.org/notifications/unsubscribe>
+Date: Sat, 12 Sep 2026 13:57:29 +0000
+Message-ID: <golden-0176.20260926@threadline.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=threadline.example.org; dkim=pass header.d=threadline.example.org; dmarc=pass header.from=threadline.example.org
+
+Your deploy finished
+
+Open Threadline: https://threadline.example.org/open

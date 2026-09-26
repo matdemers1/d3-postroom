@@ -1,0 +1,13 @@
+From: Founders Digest <newsletter@foundersdigest.example.com>
+Precedence: list
+List-Unsubscribe: <mailto:leave@foundersdigest.example.com>
+X-Mailgun-Variables: {}
+To: dana@d3cloud.io
+Subject: What we read this week
+Date: Sun, 06 Sep 2026 11:42:52 +0000
+Message-ID: <golden-0083.20260926@foundersdigest.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=foundersdigest.example.com; dkim=pass header.d=foundersdigest.example.com; dmarc=pass header.from=foundersdigest.example.com
+
+What we read this week
+
+Read online: https://foundersdigest.example.com/issues/3

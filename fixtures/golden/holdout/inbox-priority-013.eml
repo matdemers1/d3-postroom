@@ -1,0 +1,12 @@
+From: Maria Brooks <maria.brooks@people.example.net>
+To: sam@d3cloud.io
+Subject: A small favor to ask
+Date: Thu, 03 Sep 2026 14:16:49 +0000
+Message-ID: <golden-0033.20260926@people.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=people.example.net; dkim=pass header.d=people.example.net; dmarc=pass header.from=people.example.net
+
+A small favor to ask
+
+Maria Brooks
+
+Sent from my phone

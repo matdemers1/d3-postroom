@@ -1,0 +1,12 @@
+From: HailWay <hello@hailway.example.net>
+To: sam@d3cloud.io
+Subject: Your ride has been confirmed
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.09-10.0.0.1
+Date: Wed, 09 Sep 2026 11:41:00 +0000
+Message-ID: <golden-0128.20260926@hailway.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=hailway.example.net; dkim=pass header.d=hailway.example.net; dmarc=pass header.from=hailway.example.net
+
+Your ride has been confirmed
+
+More detail: https://hailway.example.net/status/1008

@@ -1,0 +1,13 @@
+From: Ivy Okafor <ivy.okafor@corp.example.org>
+To: team-list@example.net
+Cc: sam@d3cloud.io
+Subject: We met at the panel last week
+Date: Sat, 05 Sep 2026 20:41:58 +0000
+Message-ID: <golden-0071.20260926@corp.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=corp.example.org; dkim=pass header.d=corp.example.org; dmarc=pass header.from=corp.example.org
+
+Hello,
+
+We met at the panel last week
+
+Ivy Okafor

@@ -1,5 +1,5 @@
 {
-  "note": "Per-bucket precision/recall floors for the fixtures/golden replay (PST-REQ-107). Bootstrapped from the current classifier by `node scripts/golden/replay.mjs --write-thresholds`. Lowering any value here is a reviewed change — see docs/runbooks/calibration.md.",
+  "note": "Per-bucket precision/recall floors for the fixtures/golden/holdout replay (PST-REQ-107). Bootstrapped from the current classifier by `node scripts/golden/replay.mjs --write-thresholds`. Recorded from `holdout` only — `tune` is informational and never gates. Lowering any value here is a reviewed change made because the classifier changed, never to make a failing PR pass while looking at which holdout messages are failing — see docs/runbooks/calibration.md.",
   "buckets": {
     "inbox-priority": {
       "precision": 1,
@@ -15,14 +15,14 @@
     },
     "updates": {
       "precision": 1,
-      "recall": 0.96
+      "recall": 1
     },
     "receipts": {
       "precision": 1,
       "recall": 1
     },
     "notifications": {
-      "precision": 0.9615,
+      "precision": 1,
       "recall": 1
     },
     "junk": {
