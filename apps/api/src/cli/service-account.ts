@@ -82,7 +82,9 @@ try {
   process.stdout.write(`account          ${accountId}\n`);
   process.stdout.write(`address          ${address}\n`);
   process.stdout.write(`dailyRecipientCap ${String(dailyRecipientCap)}\n`);
-  process.stdout.write(`password         ${created.password}\n`);
+  // The one place the plaintext is shown, to the operator who ran this CLI (PST-REQ-046); stdout
+  // is their terminal, not a log.
+  process.stdout.write(`password         ${created.password}\n`); // nosemgrep: postroom.secret-in-log
   process.stdout.write('The password above is shown once — it cannot be recovered from the database.\n');
 } finally {
   await db.$disconnect();

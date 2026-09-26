@@ -100,6 +100,7 @@ export class OidcProvider {
 
 export const TX_COOKIE = 'postroom_oidc';
 export const TX_TTL_MS = 10 * 60 * 1000;
+const TAG_BYTES = 16;
 
 export interface OidcTransaction {
   verifier: string;
@@ -117,7 +118,7 @@ function txKey(sessionSecret: string): Buffer {
 
 export function sealTransaction(sessionSecret: string, tx: OidcTransaction): string {
   const nonce = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', txKey(sessionSecret), nonce);
+  const cipher = createCipheriv('aes-256-gcm', txKey(sessionSecret), nonce, { authTagLength: TAG_BYTES });
   const body = Buffer.concat([cipher.update(JSON.stringify(tx), 'utf8'), cipher.final()]);
   return Buffer.concat([nonce, body, cipher.getAuthTag()]).toString('base64url');
 }
@@ -125,10 +126,11 @@ export function sealTransaction(sessionSecret: string, tx: OidcTransaction): str
 export function openTransaction(sessionSecret: string, sealed: string): OidcTransaction | null {
   try {
     const raw = Buffer.from(sealed, 'base64url');
-    if (raw.length < 12 + 16 + 2) return null;
-    const decipher = createDecipheriv('aes-256-gcm', txKey(sessionSecret), raw.subarray(0, 12));
-    decipher.setAuthTag(raw.subarray(raw.length - 16));
-    const text = Buffer.concat([decipher.update(raw.subarray(12, raw.length - 16)), decipher.final()]).toString('utf8');
+    if (raw.length < 12 + TAG_BYTES + 2) return null;
+    // A pinned tag length: GCM would otherwise accept a truncated tag, and a short tag is forgeable.
+    const decipher = createDecipheriv('aes-256-gcm', txKey(sessionSecret), raw.subarray(0, 12), { authTagLength: TAG_BYTES });
+    decipher.setAuthTag(raw.subarray(raw.length - TAG_BYTES));
+    const text = Buffer.concat([decipher.update(raw.subarray(12, raw.length - TAG_BYTES)), decipher.final()]).toString('utf8');
     const parsed = JSON.parse(text) as Partial<OidcTransaction>;
     if (
       typeof parsed.verifier !== 'string' ||

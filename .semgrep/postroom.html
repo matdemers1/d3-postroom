@@ -1,0 +1,12 @@
+<!doctype html>
+<!-- Rule tests for postroom.web-third-party-script-tag. Run: semgrep --test .semgrep/ -->
+<html lang="en">
+  <head>
+    <!-- ruleid: postroom.web-third-party-script-tag -->
+    <script src="https://cdn.example.com/analytics.js"></script>
+    <!-- ruleid: postroom.web-third-party-script-tag -->
+    <link rel="stylesheet" href="//fonts.example.com/css?family=Inter" />
+    <!-- ok: postroom.web-third-party-script-tag -->
+    <script type="module" src="/src/main.tsx"></script>
+  </head>
+</html>
