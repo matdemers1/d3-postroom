@@ -39,10 +39,12 @@ export async function start(ctx: DaemonContext): Promise<void> {
     }
   }
 
-  const blobs = createBlobStore({ root: config.blobRoot, db, kek: loadKek({ env: ctx.env }) });
+  const kek = loadKek({ env: ctx.env });
+  const blobs = createBlobStore({ root: config.blobRoot, db, kek });
   const listeners = createImapListeners({
     db,
     blobs,
+    kek,
     pepper: pepper === '' ? undefined : pepper,
     tls,
     edgePeers: config.edgePeers,
