@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, INBOUND_STAGES, describeError, queuePath, redirectFor, type AuthState } from '../../src/api';
+import { ApiError, INBOUND_STAGES, describeError, isSafeNextPath, queuePath, redirectFor, type AuthState } from '../../src/api';
 
 const base: AuthState = { setupRequired: false, oidcConfigured: false, oidcAvailable: false, signedIn: false };
 const signedIn = (isAdmin: boolean): AuthState => ({
@@ -40,6 +40,36 @@ describe('redirectFor', () => {
     expect(redirectFor(signedIn(false), '/admin/jobs')).toBeNull();
     expect(redirectFor(signedIn(true), '/admin/health')).toBeNull();
     expect(redirectFor(signedIn(true), '/admin/jobs')).toBeNull();
+  });
+
+  it('remembers where a session expired away from the inbox, and honours it back only when safe (PST-DA-040)', () => {
+    expect(redirectFor(base, '/account/sessions')).toBe('/signin?next=%2Faccount%2Fsessions');
+    expect(redirectFor(base, '/mail', '?compose=new')).toBe('/signin?next=%2Fmail%3Fcompose%3Dnew');
+    // '/' is already where sign-in lands by default: no next needed.
+    expect(redirectFor(base, '/')).toBe('/signin');
+
+    expect(redirectFor(signedIn(false), '/signin', '?next=%2Faccount%2Fsessions')).toBe('/account/sessions');
+    // An absent, malformed or unsafe next falls back to the inbox rather than failing closed.
+    expect(redirectFor(signedIn(false), '/signin')).toBe('/');
+    expect(redirectFor(signedIn(false), '/signin', '?next=not-a-path')).toBe('/');
+    expect(redirectFor(signedIn(false), '/signin', '?next=%2F%2Fevil.example')).toBe('/');
+    expect(redirectFor(signedIn(false), '/signin', `?next=${encodeURIComponent('https://evil.example')}`)).toBe('/');
+  });
+});
+
+describe('isSafeNextPath (PST-DA-040)', () => {
+  it('allows only a same-origin, single-leading-slash relative path', () => {
+    expect(isSafeNextPath('/account/sessions')).toBe(true);
+    expect(isSafeNextPath('/mail?compose=new')).toBe(true);
+  });
+  it('refuses anything that could leave the origin, and empty input', () => {
+    expect(isSafeNextPath('')).toBe(false);
+    expect(isSafeNextPath('account/sessions')).toBe(false);
+    expect(isSafeNextPath('//evil.example')).toBe(false);
+    expect(isSafeNextPath('/\\evil.example')).toBe(false);
+    expect(isSafeNextPath('https://evil.example')).toBe(false);
+    expect(isSafeNextPath('javascript:alert(1)')).toBe(false);
+    expect(isSafeNextPath('/ok\r\nSet-Cookie: x=1')).toBe(false);
   });
 });
 

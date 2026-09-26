@@ -3,7 +3,7 @@
 // verifies against. Generate an OpenPGP key (Ed25519 + X25519), import an armored key or a PEM
 // certificate (with its private key, it is yours), export either half (the private half after a
 // fresh step-up), revoke your own, remove a contact's. Every change is audited on the server.
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -70,6 +70,12 @@ export function Keys() {
   const [genAddress, setGenAddress] = useState(mail?.me ?? '');
   const [genName, setGenName] = useState('');
   const [genBusy, setGenBusy] = useState(false);
+  const genAddressRef = useRef<HTMLInputElement>(null);
+
+  const goToGenerate = () => {
+    genAddressRef.current?.scrollIntoView({ block: 'center' });
+    genAddressRef.current?.focus();
+  };
 
   const [importText, setImportText] = useState('');
   const [importKey, setImportKey] = useState('');
@@ -312,10 +318,27 @@ export function Keys() {
       ) : (
         <Stack gap="24">
           <Section title="Your keys" description="Used to sign what you send, and to open mail encrypted to you. Encrypted mail you send is always encrypted to your own key too.">
-            <Table caption="Your keys" columns={ownColumns} rows={own} rowKey={(k) => k.id} empty={<EmptyState kind="empty" heading="No keys of your own yet" size="row" />} />
+            {own.length === 0 ? (
+              <EmptyState
+                kind="empty"
+                heading="No keys of your own yet"
+                size="inline"
+                action={<Button size="sm" onClick={goToGenerate}>Generate a key</Button>}
+              >
+                Generate an OpenPGP key below to sign what you send and decrypt mail encrypted to you.
+              </EmptyState>
+            ) : (
+              <Table captionHidden caption="Your keys" columns={ownColumns} rows={own} rowKey={(k) => k.id} />
+            )}
           </Section>
           <Section title="Contacts’ keys" description="Mail to these addresses can be encrypted; their signatures verify as a known key.">
-            <Table caption="Contacts’ keys" columns={contactColumns} rows={contacts} rowKey={(k) => k.id} empty={<EmptyState kind="empty" heading="No contacts’ keys yet" size="row" />} />
+            {contacts.length === 0 ? (
+              <EmptyState kind="empty" heading="No contacts’ keys yet" size="inline">
+                A contact's key appears here once you import it or receive signed mail from them.
+              </EmptyState>
+            ) : (
+              <Table captionHidden caption="Contacts’ keys" columns={contactColumns} rows={contacts} rowKey={(k) => k.id} />
+            )}
           </Section>
         </Stack>
       )}
@@ -324,7 +347,7 @@ export function Keys() {
         <form onSubmit={generate}>
           <Stack gap="16">
             <FormField label="Address" help="One of your own addresses.">
-              <Input name="address" type="email" required value={genAddress} onChange={(e) => { setGenAddress(e.target.value); }} />
+              <Input ref={genAddressRef} name="address" type="email" required value={genAddress} onChange={(e) => { setGenAddress(e.target.value); }} />
             </FormField>
             <FormField label="Name" optional help="Shown in the key’s user ID; default your display name.">
               <Input name="name" maxLength={200} value={genName} onChange={(e) => { setGenName(e.target.value); }} />

@@ -314,7 +314,7 @@ export function snoozeChoices(now: Date): { label: string; until: Date }[] {
 export function toastState(pending: PendingSend, now: Date, locale?: string): { text: string; canUndo: boolean; done: boolean } {
   const left = secondsLeft(pending.releaseAt, now);
   if (pending.kind === 'scheduled') {
-    const when = new Date(pending.releaseAt).toLocaleString(locale, { weekday: 'short', hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+    const when = new Date(pending.releaseAt).toLocaleString(locale, { weekday: 'short', hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
     return { text: `Scheduled for ${when}.`, canUndo: left > 0, done: false };
   }
   if (left > 0) return { text: `Sending… ${String(left)} s`, canUndo: true, done: false };

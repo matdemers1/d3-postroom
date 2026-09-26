@@ -117,8 +117,8 @@ export function SenderProfile() {
               ? '—'
               : profile.buckets.map((b) => `${BUCKET_LABEL[b.bucket] ?? b.bucket} (${String(b.count)})`).join(', ')}
           </DescriptionItem>
-          <DescriptionItem term="Pin">{profile.pin === null ? 'None' : (BUCKET_LABEL[profile.pin] ?? profile.pin)}</DescriptionItem>
-          <DescriptionItem term="Screen">{profile.screen === null ? 'None' : profile.screen === 'allow' ? 'Allowed' : 'Blocked'}</DescriptionItem>
+          <DescriptionItem term="Pinned to">{profile.pin === null ? 'Not pinned' : (BUCKET_LABEL[profile.pin] ?? profile.pin)}</DescriptionItem>
+          <DescriptionItem term="Screening">{profile.screen === null ? 'Not screened' : profile.screen === 'allow' ? 'Allowed' : 'Blocked'}</DescriptionItem>
           <DescriptionItem term="Wrote to">{profile.wroteTo.length === 0 ? '—' : profile.wroteTo.join(', ')}</DescriptionItem>
           <DescriptionItem term="Contact">{contact === null ? 'Not in your address book' : <RouterLink to={`/contacts/${contact.addressBookId}/${contact.name}`}>{contact.displayName}</RouterLink>}</DescriptionItem>
         </DescriptionList>

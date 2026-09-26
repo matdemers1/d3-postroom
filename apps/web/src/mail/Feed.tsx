@@ -5,7 +5,7 @@
 // offers RFC 8058 one-click unsubscribe gets its own button (PST-REQ-110), right there in the feed.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Alert, Button, EmptyState, Skeleton, Stack } from '@d3cloud/ui';
+import { Alert, Button, EmptyState, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
 import { api, ApiError, senderProfilePath, type Mailbox, type MessageSummary, type RenderTicket } from '../api';
 import { fullDate } from './format';
 import { isUnread, SEEN } from './list';
@@ -87,8 +87,10 @@ function FeedItemFrame({ messageId }: { messageId: string }) {
 
 function FeedItem({ message, onUnsubscribed }: { message: MessageSummary; onUnsubscribed: (address: string) => void }) {
   const [unsub, setUnsub] = useState<{ status: 'idle' | 'busy' | 'not-offered' | 'sent' | 'failed'; detail: string | undefined }>({ status: 'idle', detail: undefined });
+  const [confirming, setConfirming] = useState(false);
 
   const unsubscribe = async (): Promise<void> => {
+    setConfirming(false);
     setUnsub({ status: 'busy', detail: undefined });
     try {
       const result = await api.unsubscribe(message.id);
@@ -122,7 +124,13 @@ function FeedItem({ message, onUnsubscribed }: { message: MessageSummary; onUnsu
           ) : unsub.status === 'not-offered' ? (
             <span data-testid="unsubscribe-not-offered">{unsub.detail !== undefined ? `mailto: link only (${unsub.detail})` : 'No one-click unsubscribe'}</span>
           ) : (
-            <Button size="sm" variant="ghost" disabled={unsub.status === 'busy'} onClick={() => { void unsubscribe(); }} data-testid="unsubscribe-button">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={unsub.status === 'busy'}
+              onClick={() => { setConfirming(true); }}
+              data-testid="unsubscribe-button"
+            >
               {unsub.status === 'busy' ? 'Unsubscribing…' : 'Unsubscribe'}
             </Button>
           )}
@@ -134,6 +142,24 @@ function FeedItem({ message, onUnsubscribed }: { message: MessageSummary; onUnsu
         </Alert>
       ) : null}
       <FeedItemFrame messageId={message.id} />
+      <Modal
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Unsubscribe from this sender?"
+        description={`Postroom sends the one-click unsubscribe request${message.from === null ? '' : ` to ${message.from}`}. You can always resubscribe from the sender directly.`}
+        footer={
+          <>
+            <ModalClose>
+              <Button type="button">Cancel</Button>
+            </ModalClose>
+            <Button type="button" variant="primary" onClick={() => { void unsubscribe(); }}>
+              Unsubscribe
+            </Button>
+          </>
+        }
+      >
+        {null}
+      </Modal>
     </article>
   );
 }

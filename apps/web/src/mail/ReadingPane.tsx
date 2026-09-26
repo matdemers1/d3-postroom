@@ -405,6 +405,12 @@ function MessageMeta({ detail, body }: { detail: MessageDetail; body: MessageBod
     <DescriptionList className="pr-reader__meta">
       <DescriptionItem term="From">
         {from === '' ? '(unknown sender)' : from}
+        {detail.from === null || detail.from === '' ? null : (
+          <>
+            {' · '}
+            <RouterLink to={`/senders/${encodeURIComponent(detail.from)}`}>Sender profile</RouterLink>
+          </>
+        )}
         {contact === null ? null : (
           <>
             {' · '}

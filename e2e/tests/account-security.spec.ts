@@ -97,14 +97,17 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   await openNav(page);
   await page.getByRole('button', { name: new RegExp(`^${operator.displayName}`) }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
-  await expect(page).toHaveURL(/\/signin$/);
+  // PST-DA-040: signing out away from '/' remembers the page as ?next=.
+  await expect(page).toHaveURL(/\/signin\?next=%2Faccount%2Fpassword$/);
 
   await page.getByRole('textbox', { name: 'Login' }).fill(operator.login);
   await page.getByLabel('Password', { exact: true }).fill(operator.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
   await page.getByRole('button', { name: 'Verify' }).click();
-  await expect(page.getByRole('heading', { name: 'Mail', level: 1 })).toBeVisible();
+  // PST-DA-040: signing back in returns to the page the session expired away from.
+  await expect(page).toHaveURL(/\/account\/password$/);
+  await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
 });
 
 test('Devices lists sessions and revokes one after step-up', async ({ page, playwright, baseURL }) => {
@@ -122,6 +125,10 @@ test('Devices lists sessions and revokes one after step-up', async ({ page, play
   await expect(page.getByText('This session')).toBeVisible();
 
   await page.locator(`button[data-session-id="${otherId}"]`).click();
+  // PST-DA-030: a plain confirm first (no auth code needed yet), then the step-up code prompt.
+  const confirmDialog = page.getByRole('dialog', { name: 'Sign out this session?' });
+  await expect(confirmDialog).toBeVisible();
+  await confirmDialog.getByRole('button', { name: 'Sign out' }).click();
   const dialog = page.getByRole('dialog', { name: 'Confirm it is you' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));

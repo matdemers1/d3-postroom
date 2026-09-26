@@ -657,7 +657,7 @@ function MailPanes({ route }: { route: MailRoute }) {
     route.compose === null
       ? null
       : route.compose === 'new'
-        ? draftFor('new', null, me)
+        ? { ...draftFor('new', null, me), to: route.composeTo ?? '' }
         : open?.status === 'ready' && open.detail !== null && open.bodyStatus !== 'loading'
           ? draftFor(route.compose, { detail: open.detail, body: open.body }, me)
           : null;

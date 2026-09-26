@@ -48,6 +48,15 @@ async function mailboxIds(): Promise<Record<string, string>> {
   return out;
 }
 
+test('document.title names the screen, not just "Postroom", on navigation (PST-DA-043)', async ({ page }) => {
+  await inboxList(page);
+  await expect(page).toHaveTitle('Mail — Postroom');
+  await page.goto('/calendar');
+  await expect(page).toHaveTitle('Calendar — Postroom');
+  await page.goto('/account/keys');
+  await expect(page).toHaveTitle('Keys — Postroom');
+});
+
 test.describe('at 1280 px', () => {
   test.beforeEach(({ page: _page }, testInfo) => {
     test.skip(!isDesktop(testInfo.project.name), 'the three-pane layout is the desktop project');
@@ -92,6 +101,28 @@ test.describe('at 1280 px', () => {
     await page.keyboard.press('k');
     await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/${b.id}$`));
+  });
+
+  test('the reading pane links the From line to the sender profile (PST-DA-028)', async ({ page }) => {
+    const t = tag();
+    const from = `sender-link-${t}@example.test`;
+    const [msg] = await seedMail(api, [{ subject: `Reachable sender ${t}`, from: `Someone <${from}>`, text: `Hi from ${t}.` }]);
+    if (msg === undefined) throw new Error('seed returned nothing');
+
+    await inboxList(page);
+    await row(page, msg.subject).click();
+    await expect(page.getByRole('heading', { name: msg.subject, level: 2 })).toBeVisible();
+
+    const link = page.getByRole('link', { name: 'Sender profile' });
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(new RegExp(`/senders/${encodeURIComponent(from)}`));
+    await expect(page.getByRole('heading', { name: from })).toBeVisible();
+    // Plain-language labels, not the internal Pin/Screen/None jargon (PST-DA-028).
+    await expect(page.getByText('Pinned to')).toBeVisible();
+    await expect(page.getByText('Not pinned')).toBeVisible();
+    await expect(page.getByText('Screening')).toBeVisible();
+    await expect(page.getByText('Not screened')).toBeVisible();
   });
 
   test('e archives: the message leaves the Inbox and is in Archive', async ({ page }) => {

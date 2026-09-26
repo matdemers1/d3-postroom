@@ -870,12 +870,39 @@ export interface AdminJob {
   finishedAt: string | null;
 }
 
-/** Where a path must go for this auth state, or null to render it. Pure, so it is unit-tested. */
-export function redirectFor(state: AuthState, pathname: string): string | null {
+/**
+ * A same-origin, relative path Postroom will navigate to after sign-in (PST-DA-040). Refuses
+ * anything that could send the browser somewhere else: a scheme (`javascript:`, `https://evil`), a
+ * protocol-relative `//host` or `/\host` (some browsers treat a leading backslash as a slash), and
+ * anything without a single leading `/`. Pure, so it is unit-tested — this is the open-redirect
+ * guard, not a UX nicety.
+ */
+export function isSafeNextPath(value: string): boolean {
+  if (value === '' || !value.startsWith('/')) return false;
+  if (value.startsWith('//') || value.startsWith('/\\')) return false;
+  if (/[\r\n\t]/.test(value)) return false;
+  return true;
+}
+
+/**
+ * Where a path must go for this auth state, or null to render it. Pure, so it is unit-tested.
+ *
+ * PST-DA-040: a session that expires away from the inbox does not lose the page — signing out of
+ * anywhere but '/' remembers it as `/signin?next=<path>`, and signing in honours that `next` only
+ * when isSafeNextPath allows it (a same-origin relative path). '/' itself is already where sign-in
+ * lands by default, so it never grows a `next`.
+ */
+export function redirectFor(state: AuthState, pathname: string, search = ''): string | null {
   if (state.setupRequired) return pathname === '/setup' ? null : '/setup';
   if (pathname === '/setup') return '/signin';
-  if (!state.signedIn) return pathname === '/signin' ? null : '/signin';
-  if (pathname === '/signin') return '/';
+  if (!state.signedIn) {
+    if (pathname === '/signin' || pathname === '/') return pathname === '/signin' ? null : '/signin';
+    return isSafeNextPath(pathname) ? `/signin?next=${encodeURIComponent(pathname + search)}` : '/signin';
+  }
+  if (pathname === '/signin') {
+    const next = new URLSearchParams(search).get('next');
+    return next !== null && isSafeNextPath(next) ? next : '/';
+  }
   return null;
 }
 

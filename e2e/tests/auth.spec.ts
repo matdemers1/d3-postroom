@@ -87,9 +87,10 @@ test('sign out, then sign in with password + TOTP and reach the admin Sessions p
   await openNav(page);
   await page.getByRole('button', { name: new RegExp(`^${operator.displayName}`) }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
-  await expect(page).toHaveURL(/\/signin$/);
+  // PST-DA-040: signed out away from '/', the page it left is remembered as ?next=.
+  await expect(page).toHaveURL(/\/signin\?next=%2Fadmin%2Fsessions$/);
   await page.goto('/admin/sessions');
-  await expect(page).toHaveURL(/\/signin$/);
+  await expect(page).toHaveURL(/\/signin\?next=%2Fadmin%2Fsessions$/);
 });
 
 test('a wrong password is refused without saying which half was wrong', async ({ page }) => {

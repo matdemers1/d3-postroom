@@ -158,7 +158,7 @@ export function ScheduledSends({ drafts }: { drafts: Mailbox }) {
             <span className="pr-scheduled__what">
               {p.subject === '' ? '(no subject)' : p.subject} <span className="pr-scheduled__to">to {p.to}</span>
             </span>
-            <span className="pr-scheduled__when">{new Date(p.releaseAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="pr-scheduled__when">{new Date(p.releaseAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
             <Cluster gap="8">
               <Button size="sm" variant="ghost" onClick={() => void cancel(p, true)}>
                 Edit
@@ -214,7 +214,7 @@ export function SnoozeControl({ threadId, snoozed, inInbox, onDone }: { threadId
           <MenuItem
             key={c.label}
             onSelect={() => {
-              void run(() => api.snoozeThread(threadId, c.until.toISOString()), `Snoozed until ${c.until.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}.`);
+              void run(() => api.snoozeThread(threadId, c.until.toISOString()), `Snoozed until ${c.until.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.`);
             }}
           >
             {c.label}

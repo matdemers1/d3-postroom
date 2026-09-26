@@ -8,6 +8,8 @@ import {
   FormActions,
   FormField,
   Input,
+  Modal,
+  ModalClose,
   Page,
   PageHeader,
   Section,
@@ -279,6 +281,7 @@ export function Rules() {
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const open = useCallback(async (scriptName: string) => {
     setCompileError(null);
@@ -402,6 +405,7 @@ export function Rules() {
   const remove = (target: string) => {
     run(async () => {
       await sieveApi.remove(target);
+      setConfirming(null);
       const list = await load();
       if (target === name) await open(list?.find((s) => s.active)?.name ?? BUILDER_SCRIPT);
       setNotice(`Deleted "${target}".`);
@@ -434,7 +438,7 @@ export function Rules() {
               size="sm"
               variant="danger-ghost"
               onClick={() => {
-                remove(s.name);
+                setConfirming(s.name);
               }}
             >
               Delete {s.name}
@@ -585,6 +589,35 @@ export function Rules() {
           </Section>
         </Stack>
       )}
+
+      <Modal
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirming(null);
+        }}
+        destructive
+        title="Delete this script?"
+        description={confirming === null ? '' : `"${confirming}" is deleted for good. This cannot be undone.`}
+        footer={
+          <>
+            <ModalClose>
+              <Button type="button">Cancel</Button>
+            </ModalClose>
+            <Button
+              type="button"
+              variant="danger"
+              loading={busy}
+              onClick={() => {
+                if (confirming !== null) remove(confirming);
+              }}
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        {null}
+      </Modal>
     </Page>
   );
 }
