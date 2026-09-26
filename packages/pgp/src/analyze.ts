@@ -22,18 +22,23 @@
 // uses SHA-1, or its certificate was outside its validity window or is not for e-mail. Each of
 // those is an `unsupported:<reason>` naming it, so the drawer never says "verified" for them.
 //
+// S/MIME wrappers are read as BER (indefinite lengths, as Thunderbird/NSS and `openssl cms -stream`
+// send them); the bytes a signature covers stay strict DER (cms.ts). An application/pkcs7-mime
+// part that says it is enveloped is reported under encryption even when it will not parse. Several
+// SignerInfos follow one rule, whatever their order (checkSmimeSigner).
+//
 // analyzeMessage is total: any failure, including a bug here, is a status with a reason.
 
 import { createHash, createPrivateKey, type KeyObject } from 'node:crypto';
 import { createTransferDecoder, normalizeEncoding, parseContentType, parseHeaderBlock, parseMailboxes, type HeaderList } from '@postroom/mime';
 import { decodeArmor, decodeArmors, parseCleartext } from './armor.js';
-import { certificatesFromPem, chainOf, decryptEnvelopedData, digestName, matchesId, parseContentInfo, parseEnvelopedData, parseSignedData, rfc822Names, verifySigner, Oids, type Certificate, type ChainLink, type SignedData } from './cms.js';
+import { certificatesFromPem, chainOf, decryptEnvelopedData, digestName, matchesId, parseContentInfo, parseEnvelopedData, parseSignedData, rfc822Names, verifySigner, Oids, type Certificate, type ChainLink, type SignedData, type SignerInfo } from './cms.js';
 import { decryptMessage, type DecryptionKey, type InnerSignature, type PgpDecryptResult } from './decrypt.js';
 import { ArmorError, CmsError, DerError, PgpError, UnsupportedError } from './errors.js';
 import { allMaterials, parseKeys, userIdAddress, type KeyMaterial, type OpenPgpKey } from './keys.js';
 import { readPackets, Tag } from './packets.js';
 import { digestFor, finishDigest, hashName, isDocumentSignature, parseSignaturePacket, signatureTypeReason, verifyDigest, type SignaturePacket } from './signature.js';
-import { keyState, revokedAt } from './validity.js';
+import { keyState, revokedAt, signingAuthority, type AuthorityProblem } from './validity.js';
 import { CollectSink, HashSink, splitLines, walkMultipart, type ByteSource, type Line } from './stream.js';
 
 export type SignatureStatus = 'verified-known-key' | 'valid-signature-unknown-key' | 'bad-signature' | 'not-signed' | `unsupported:${string}`;
@@ -178,17 +183,46 @@ function reasonOf(err: unknown): string {
 // ---------------------------------------------------------------------------------------------
 // OpenPGP signatures
 
-function findMaterial(keys: readonly OpenPgpKey[], sig: SignaturePacket): { key: OpenPgpKey; material: KeyMaterial } | null {
-  for (const key of keys) {
-    for (const m of allMaterials(key)) {
-      if (sig.issuerFingerprint !== null ? m.fingerprint === sig.issuerFingerprint : m.keyId === sig.issuerKeyId) return { key, material: m };
-    }
-  }
-  return null;
+interface Resolved {
+  key: OpenPgpKey;
+  material: KeyMaterial;
+  known: KnownKey | null;
+  source: SignerReport['keySource'];
+  /** Why this key may not sign (unbound subkey, no signing flag), or null when it may. */
+  problem: AuthorityProblem | null;
 }
 
-function signerOf(sig: SignaturePacket, found: { key: OpenPgpKey; material: KeyMaterial } | null, from: string | null, known: KnownKey | null, source: SignerReport['keySource']): SignerReport {
-  const userIds = found?.key.userIds ?? [];
+function issuedBy(m: KeyMaterial, sig: SignaturePacket): boolean {
+  return sig.issuerFingerprint !== null ? m.fingerprint === sig.issuerFingerprint : m.keyId === sig.issuerKeyId;
+}
+
+/**
+ * The key that made `sig`: every key packet whose fingerprint (or key ID) is the issuer's, the
+ * account's keys before keys attached to the message. A match counts only with signing authority
+ * (validity.ts signingAuthority: a bound subkey with flag 0x02 and its 0x19 back-signature, or a
+ * primary whose self-signature allows signing), so an attacker's key appended to a contact's key as
+ * an unbound subkey never speaks for the contact. The first match with authority wins; when none
+ * has it, the first match is returned with its problem, so the drawer can say why.
+ */
+function resolveSigner(ring: Keyring, attached: readonly OpenPgpKey[], sig: SignaturePacket): Resolved | null {
+  let first: Resolved | null = null;
+  const pools: { key: OpenPgpKey; known: KnownKey | null; source: SignerReport['keySource'] }[] = [
+    ...ring.pgp.map((e) => ({ key: e.key, known: e.known, source: 'account' as const })),
+    ...attached.map((key) => ({ key, known: null, source: 'message' as const })),
+  ];
+  for (const { key, known, source } of pools) {
+    for (const material of allMaterials(key)) {
+      if (!issuedBy(material, sig)) continue;
+      const r: Resolved = { key, material, known, source, problem: signingAuthority(key, material) };
+      if (r.problem === null) return r;
+      first ??= r;
+    }
+  }
+  return first;
+}
+
+function signerOf(sig: SignaturePacket, found: { key: OpenPgpKey; material: KeyMaterial } | null, from: string | null, known: KnownKey | null, source: SignerReport['keySource'], withUserIds = true): SignerReport {
+  const userIds = withUserIds ? (found?.key.userIds ?? []) : [];
   const addresses = [...new Set(userIds.map(userIdAddress).filter((a): a is string => a !== null))];
   if (known !== null && !addresses.includes(known.address)) addresses.push(known.address);
   return {
@@ -240,23 +274,8 @@ function checkPgpSignatures(
       continue;
     }
     const reasons: string[] = [];
-    let source: SignerReport['keySource'] = 'none';
-    let known: KnownKey | null = null;
-    let found: { key: OpenPgpKey; material: KeyMaterial } | null = null;
-    for (const e of ring.pgp) {
-      const f = findMaterial([e.key], sig);
-      if (f !== null) {
-        found = f;
-        known = e.known;
-        source = 'account';
-        break;
-      }
-    }
-    if (found === null) {
-      found = findMaterial(attached, sig);
-      if (found !== null) source = 'message';
-    }
-    if (found === null) {
+    const resolved = resolveSigner(ring, attached, sig);
+    if (resolved === null) {
       firstUnresolved ??= {
         ...NOT_SIGNED,
         status: 'unsupported:signer-key-unavailable',
@@ -266,6 +285,16 @@ function checkPgpSignatures(
       };
       continue;
     }
+    const { source, problem } = resolved;
+    if (problem !== null) {
+      // Not verified at all: whatever the maths says, this key does not speak for the key block it
+      // sits in. An unbound subkey is not reported with the block's user IDs — they are not its own.
+      const own = problem.reason !== 'subkey-not-bound';
+      const signer = signerOf(sig, { key: resolved.key, material: resolved.material }, from, own ? resolved.known : null, source, own);
+      return { ...NOT_SIGNED, status: `unsupported:${problem.reason}`, format, reasons: [problem.text], signer };
+    }
+    const found = { key: resolved.key, material: resolved.material };
+    const known = resolved.known;
     try {
       const digest = digestOf(sig);
       if (digest === null) throw new UnsupportedError(`hash-${String(sig.hashAlgorithm)}-not-computed`);
@@ -376,9 +405,36 @@ function smimeValidity(cert: Certificate, known: KnownKey | null, at: Date): { r
   return null;
 }
 
+/**
+ * Several SignerInfos (RFC 5652 §5.1 allows any number; RFC 8551 §3.5 lets a receiver choose).
+ * The rule, so no ordering can launder a signature:
+ *   1. any SignerInfo that is bad-signature makes the message bad-signature — a signature over this
+ *      content that does not verify means the content, or the signature, is not what was sent;
+ *   2. otherwise, verified-known-key when at least one SignerInfo is;
+ *   3. otherwise the worst of the rest: any unsupported:<reason> (the first one) before
+ *      valid-signature-unknown-key.
+ * The report shown is that SignerInfo's own (signer, chain), with a reason naming its position.
+ * The same rule holds whichever order the SignerInfos arrive in.
+ */
 function checkSmimeSigner(sd: SignedData, digestOf: (hash: string) => Buffer | null, ring: Keyring, from: string | null, format: 'smime' | 'smime-opaque', now: Date): SignatureReport {
-  const si = sd.signers[0];
-  if (si === undefined) return { ...NOT_SIGNED, status: 'unsupported:no-signer-info', format, reasons: ['the SignedData has no SignerInfo'] };
+  if (sd.signers.length === 0) return { ...NOT_SIGNED, status: 'unsupported:no-signer-info', format, reasons: ['the SignedData has no SignerInfo'] };
+  const reports = sd.signers.map((si) => checkSmimeSignerInfo(sd, si, digestOf, ring, from, format, now));
+  const pick = (i: number, why: string): SignatureReport => {
+    const r = reports[i] ?? reports[0];
+    if (r === undefined) return { ...NOT_SIGNED, status: 'unsupported:no-signer-info', format, reasons: ['the SignedData has no SignerInfo'] };
+    if (reports.length === 1) return r;
+    return { ...r, reasons: [...r.reasons, `SignerInfo ${String(i + 1)} of ${String(reports.length)}: ${why}`] };
+  };
+  const bad = reports.findIndex((r) => r.status === 'bad-signature');
+  if (bad >= 0) return pick(bad, 'it does not verify, and one bad signature makes the message bad whatever the others say');
+  const verified = reports.findIndex((r) => r.status === 'verified-known-key');
+  if (verified >= 0) return pick(verified, 'it verifies with a known certificate, and no other SignerInfo is a bad signature');
+  const unsupported = reports.findIndex((r) => r.status.startsWith('unsupported:'));
+  if (unsupported >= 0) return pick(unsupported, 'none verifies with a known certificate, and this one could not be checked');
+  return pick(0, 'none verifies with a known certificate');
+}
+
+function checkSmimeSignerInfo(sd: SignedData, si: SignerInfo, digestOf: (hash: string) => Buffer | null, ring: Keyring, from: string | null, format: 'smime' | 'smime-opaque', now: Date): SignatureReport {
   const cert = sd.certificates.find((c) => matchesId(c, si.sid)) ?? ring.smime.find((s) => matchesId(s.cert, si.sid))?.cert;
   if (cert === undefined) return { ...NOT_SIGNED, status: 'unsupported:signer-certificate-unavailable', format, reasons: ['the signer\'s certificate was neither included nor in this account\'s keys'] };
   const chain = chainOf(cert, sd.certificates);
@@ -602,6 +658,7 @@ async function analyze(source: ByteSource, ring: Keyring, opts: AnalyzeOptions, 
   const now = opts.now ?? new Date();
   const lines = splitLines(source)[Symbol.asyncIterator]();
   let phase: 'signature' | 'encryption' = 'signature';
+  let encFormat: EncryptionReport['format'] = null;
   try {
     const headers = await readHeaders(lines, opts.maxHeaderBytes ?? 256 * 1024);
     if (headers === null) return { signature: NOT_SIGNED, encryption: NOT_ENCRYPTED };
@@ -643,6 +700,7 @@ async function analyze(source: ByteSource, ring: Keyring, opts: AnalyzeOptions, 
 
     if (ct.mimeType === 'multipart/encrypted' && boundary !== undefined) {
       phase = 'encryption';
+      encFormat = 'pgp-mime';
       if (protocol !== 'application/pgp-encrypted') return { signature: NOT_SIGNED, encryption: { ...NOT_ENCRYPTED, status: `failed:unsupported-protocol-${protocol === '' ? 'missing' : protocol}`, reasons: [`multipart/encrypted with protocol "${protocol}"`] } };
       const enc = new CollectSink(maxEnc);
       const walk = await walkMultipart(lines, boundary, (i) => (i === 1 ? enc : null), 2);
@@ -655,11 +713,25 @@ async function analyze(source: ByteSource, ring: Keyring, opts: AnalyzeOptions, 
     }
 
     if (ct.mimeType === 'application/pkcs7-mime' || ct.mimeType === 'application/x-pkcs7-mime') {
+      // RFC 8551 §3.2.2: smime-type names what is inside, and .p7m is the enveloped file name. Say
+      // "encrypted" from the MIME type, BEFORE parsing — so an enveloped body that will not parse
+      // reads failed:<reason>, never not-encrypted. (Opaque signed-data is also sent as .p7m, but
+      // with smime-type=signed-data, which wins.)
+      const smimeType = (ct.params['smime-type'] ?? '').toLowerCase();
+      const name = (ct.params['name'] ?? '').toLowerCase();
+      if (smimeType === 'enveloped-data' || smimeType === 'authenveloped-data' || (smimeType === '' && name.endsWith('.p7m'))) {
+        phase = 'encryption';
+        encFormat = 'smime';
+      }
       const rest = await collectRest(lines, maxEnc);
       if (rest.overflow) return { signature: NOT_SIGNED, encryption: { ...NOT_ENCRYPTED, status: 'failed:too-large', format: 'smime', reasons: [`the S/MIME body is over ${String(maxEnc)} bytes`] } };
-      const der = decodeBody(headers, rest.buffer());
-      const ci = parseContentInfo(der);
-      if (ci.contentType === Oids.envelopedData) phase = 'encryption';
+      const body = decodeBody(headers, rest.buffer());
+      // BER: Thunderbird/NSS and `openssl cms -stream` send indefinite lengths (cms.ts).
+      const ci = parseContentInfo(body);
+      if (ci.contentType === Oids.envelopedData || ci.contentType === Oids.authEnvelopedData) {
+        phase = 'encryption';
+        encFormat = 'smime';
+      } else if (ci.contentType === Oids.signedData) phase = 'signature';
       if (ci.contentType === Oids.envelopedData) return await afterDecryption(await decryptSmime(parseEnvelopedData(ci.content), ring), ring, opts, depth, from, true);
       if (ci.contentType === Oids.authEnvelopedData) return { signature: NOT_SIGNED, encryption: { ...NOT_ENCRYPTED, status: 'failed:unsupported-auth-enveloped-data', format: 'smime', reasons: ['AuthEnvelopedData (AES-GCM, RFC 5083) is not supported yet'] } };
       if (ci.contentType === Oids.signedData) {
@@ -668,6 +740,7 @@ async function analyze(source: ByteSource, ring: Keyring, opts: AnalyzeOptions, 
         if (content === null) return { signature: { ...NOT_SIGNED, status: 'unsupported:opaque-signed-without-content', format: 'smime-opaque', reasons: ['signed-data without encapsulated content'] }, encryption: NOT_ENCRYPTED };
         return { signature: checkSmime(sd, (h) => createHash(h).update(content).digest(), ring, from, 'smime-opaque', now), encryption: NOT_ENCRYPTED };
       }
+      if (phase === 'encryption') return { signature: NOT_SIGNED, encryption: { ...NOT_ENCRYPTED, status: `failed:cms-content-${ci.contentType}`, format: 'smime', reasons: [`the ${smimeType === '' ? '.p7m' : smimeType} body holds CMS content ${ci.contentType}, not EnvelopedData`] } };
       return { signature: { ...NOT_SIGNED, status: `unsupported:cms-content-${ci.contentType}` }, encryption: NOT_ENCRYPTED };
     }
 
@@ -692,7 +765,7 @@ async function analyze(source: ByteSource, ring: Keyring, opts: AnalyzeOptions, 
     return { signature: NOT_SIGNED, encryption: NOT_ENCRYPTED };
   } catch (err) {
     const reason = reasonOf(err);
-    if (phase === 'encryption') return { signature: NOT_SIGNED, encryption: { ...NOT_ENCRYPTED, status: `failed:${reason}`, reasons: [describe(err)] } };
+    if (phase === 'encryption') return { signature: NOT_SIGNED, encryption: { ...NOT_ENCRYPTED, status: `failed:${reason}`, format: encFormat, reasons: [describe(err)] } };
     return { signature: { ...NOT_SIGNED, status: `unsupported:${reason}`, reasons: [describe(err)] }, encryption: NOT_ENCRYPTED };
   } finally {
     await lines.return(undefined);

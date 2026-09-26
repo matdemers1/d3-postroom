@@ -1,12 +1,16 @@
 // CMS / PKCS#7 (RFC 5652) for S/MIME 4.0 (RFC 8551): ContentInfo, SignedData with signed
 // attributes (contentType + messageDigest, §11.1/§11.2), EnvelopedData with KeyTransRecipientInfo,
 // and the handful of certificate fields a signer or recipient is identified by (RFC 5280 §4.1).
-// Structures are read with the DER reader in der.ts; certificates' own signatures, subjects and
-// rfc822Names come from node:crypto's X509Certificate, as do every signature check and cipher.
+// The wrappers (ContentInfo, SignedData, EnvelopedData, the certificate set) are read in der.ts's
+// BER mode, since Thunderbird/NSS and `openssl cms -stream` send indefinite lengths and segmented
+// OCTET STRINGs there; what a signature covers is read strictly as DER — each certificate, and the
+// signed attributes, whose DER SET OF re-encoding must equal the bytes received (verifySigner).
+// Certificates' own signatures, subjects and rfc822Names come from node:crypto's X509Certificate,
+// as do every signature check and cipher.
 
 import { constants, createDecipheriv, createHash, privateDecrypt, publicDecrypt, timingSafeEqual, verify as cryptoVerify, X509Certificate, type KeyObject } from 'node:crypto';
-import { CmsError, DerError, NotDerError } from './errors.js';
-import { children, derSetOf, expect, isContext, isUniversal, octets, oidOf, readTlv, UTag, type Tlv } from './der.js';
+import { BerError, CmsError, DerError, NotDerError } from './errors.js';
+import { children, definiteForm, derSetOf, expect, isContext, isUniversal, octets, oidOf, readTlv, UTag, type Encoding, type Tlv } from './der.js';
 import { rsaPkcs1Decrypt } from './rsa.js';
 
 export const Oids = {
@@ -64,9 +68,13 @@ const DIGEST_INFO: Record<string, string> = {
   sha512: '3051300d060960864801650304020305000440',
 };
 
-/** A DER reader failure as a CmsError: BER is named (unsupported), anything else is malformed. */
+/**
+ * A DER/BER reader failure as a CmsError: BER where only DER may be (a certificate) is named
+ * (unsupported), malformed BER and anything else is malformed.
+ */
 function asCmsError(err: unknown): unknown {
-  if (err instanceof NotDerError) return new CmsError('unsupported-ber-encoding', `${err.message}: only DER is read`);
+  if (err instanceof NotDerError) return new CmsError('unsupported-ber-encoding', `${err.message}: a certificate must be DER`);
+  if (err instanceof BerError) return new CmsError('malformed-ber', err.message);
   if (err instanceof DerError) return new CmsError('malformed-der', err.message);
   return err;
 }
@@ -181,7 +189,8 @@ function readSid(t: Tlv | undefined): SignerId {
   if (t === undefined) throw new CmsError('missing-signer-identifier');
   if (isUniversal(t, UTag.Sequence)) {
     const [issuer, serial] = children(t);
-    return { kind: 'issuer-serial', issuer: expect(issuer, UTag.Sequence, 'issuer').raw, serial: expect(serial, UTag.Integer, 'serialNumber').content };
+    // A BER sender may frame the issuer Name with indefinite lengths; it is compared in definite form.
+    return { kind: 'issuer-serial', issuer: definiteForm(expect(issuer, UTag.Sequence, 'issuer')), serial: expect(serial, UTag.Integer, 'serialNumber').content };
   }
   if (isContext(t, 0)) return { kind: 'ski', ski: t.constructed ? octets(t) : t.content };
   throw new CmsError('bad-signer-identifier');
@@ -200,9 +209,10 @@ export interface ContentInfo {
   content: Tlv;
 }
 
-export function parseContentInfo(der: Buffer): ContentInfo {
+/** ContentInfo, read as BER by default (a DER encoding is BER too); `encoding: 'der'` is strict. */
+export function parseContentInfo(bytes: Buffer, encoding: Encoding = 'ber'): ContentInfo {
   try {
-    const ci = readTlv(der);
+    const ci = readTlv(bytes, 0, 0, encoding);
     const [type, explicit] = children(expect(ci, UTag.Sequence, 'ContentInfo'));
     const contentType = oidOf(type, 'contentType');
     if (explicit === undefined || !isContext(explicit, 0)) throw new CmsError('content-info-no-content');
@@ -333,6 +343,22 @@ export function verifySigner(si: SignerInfo, cert: Certificate, eContentType: st
   const key = cert.publicKey;
   let signingTime: Date | null = null;
   if (si.signedAttrs !== null) {
+    // RFC 5652 §5.4: the signature is over the DER encoding of the attributes as a SET OF, not
+    // the [0] IMPLICIT bytes as they arrived. Re-read them strictly as DER (the SignedData around
+    // them may be BER), re-encode (sorted per X.690 §11.6) and require the bytes received to be
+    // exactly that — before reading anything from them — so there is one encoding and it is the
+    // one checked.
+    let strict: Tlv[];
+    try {
+      strict = children(readTlv(Buffer.from(si.signedAttrs.raw), 0, 0, 'der'));
+    } catch (err) {
+      if (err instanceof NotDerError) throw new CmsError('unsupported-signed-attributes-not-der', `the signed attributes are not DER (${err.message}), so the bytes signed are ambiguous`);
+      throw asCmsError(err);
+    }
+    const set = derSetOf(strict.map((a) => a.raw));
+    const retagged = Buffer.from(si.signedAttrs.raw);
+    retagged[0] = 0x31;
+    if (!set.equals(retagged)) throw new CmsError('unsupported-signed-attributes-not-der', 'the signed attributes are not in DER order (X.690 §11.6), so the bytes signed are ambiguous');
     const md = si.attributes.get(Oids.messageDigestAttr);
     const ct = si.attributes.get(Oids.contentTypeAttr);
     if (md?.length !== 1 || ct?.length !== 1) return { valid: false, reasons: ['signed attributes lack exactly one messageDigest and one contentType (RFC 5652 §5.3)'], signingTime, hash };
@@ -342,13 +368,6 @@ export function verifySigner(si: SignerInfo, cert: Certificate, eContentType: st
     }
     if (oidOf(ct[0]) !== eContentType) return { valid: false, reasons: ['contentType attribute does not match the encapsulated content type'], signingTime, hash };
     signingTime = readTime(si.attributes.get(Oids.signingTimeAttr)?.[0]);
-    // RFC 5652 §5.4: the signature is over the DER encoding of the attributes as a SET OF, not
-    // the [0] IMPLICIT bytes as they arrived. Re-encode (sorted per X.690 §11.6) and require the
-    // bytes received to be exactly that, so there is one encoding and it is the one checked.
-    const set = derSetOf(children(si.signedAttrs).map((a) => a.raw));
-    const retagged = Buffer.from(si.signedAttrs.raw);
-    retagged[0] = 0x31;
-    if (!set.equals(retagged)) throw new CmsError('unsupported-signed-attributes-not-der', 'the signed attributes are not in DER order (X.690 §11.6), so the bytes signed are ambiguous');
     const ok = verifyWith(algo, algo.hash ?? hash, set, key, si.signature);
     reasons.push(ok ? `signature over the signed attributes verifies with the signer's certificate (${hash})` : 'signature over the signed attributes does not verify');
     return { valid: ok, reasons, signingTime, hash };
@@ -508,7 +527,7 @@ export function parseEnvelopedData(t: Tlv): EnvelopedData {
     const alg = children(expect(eci[1], UTag.Sequence, 'contentEncryptionAlgorithm'));
     const contentEncryptionAlgorithm = oidOf(alg[0]);
     const params = alg[1];
-    const iv = params !== undefined && isUniversal(params, UTag.OctetString) ? params.content : null;
+    const iv = params !== undefined && isUniversal(params, UTag.OctetString) ? octets(params) : null;
     const ec = eci[2];
     const encryptedContent = ec !== undefined && isContext(ec, 0) ? (ec.constructed ? octets(ec) : ec.content) : null;
     return { recipients, otherRecipients, contentEncryptionAlgorithm, iv, encryptedContent };

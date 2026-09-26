@@ -241,7 +241,7 @@ describe('streaming', () => {
     }
   });
 
-  for (const name of ['smime-signed.eml', 'smime-cms-signed.eml', 'pgp-mime-signed-ed25519.eml', 'pgp-mime-signed-encrypted.eml', 'smime-encrypted.eml', 'pgp-clearsigned.eml']) {
+  for (const name of ['smime-signed.eml', 'smime-cms-signed.eml', 'pgp-mime-signed-ed25519.eml', 'pgp-mime-signed-encrypted.eml', 'smime-encrypted.eml', 'pgp-clearsigned.eml', 'smime-ber-detached.eml', 'smime-ber-opaque.eml', 'smime-ber-encrypted.eml']) {
     it(`arbitrary mutations of ${name} never throw, and never leave the status set`, async () => {
       const eml = fixture(name);
       const keys = [alice('own', true), bob('own', true), carol('own', true)];

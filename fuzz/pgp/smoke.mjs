@@ -2,7 +2,7 @@
 // Fuzz smoke for @postroom/pgp (PST-T-12.1): a short, seeded fast-check burst of arbitrary bytes,
 // of OpenPGP-packet-shaped and DER-shaped bytes, and of single-byte mutations of the real corpus
 // (keys, signatures, encrypted messages, CMS SignedData/EnvelopedData, certificates) through every
-// reader (see target.mjs), then whole messages with mutated bytes through analyzeMessage, which must
+// reader (see target.mjs) — BER-shaped bytes too — then whole messages with mutated bytes through analyzeMessage, which must
 // always resolve to a report. Seed: FUZZ_SEED (CI pins 424242).
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,6 +23,16 @@ const packetish = fc.array(fc.tuple(fc.integer({ min: 0, max: 63 }), fc.uint8Arr
   .map((ps) => Buffer.concat(ps.map(([t, b]) => encodePacket(t, b))));
 const derish = fc.array(fc.tuple(fc.integer({ min: 0, max: 3 }), fc.boolean(), fc.integer({ min: 0, max: 40 }), fc.uint8Array({ maxLength: 60 })), { maxLength: 6 })
   .map((ts) => ts.reduce((acc, [c, k, t, v]) => encodeTlv(c, k, t, Buffer.concat([acc, Buffer.from(v)])), Buffer.alloc(0)));
+// BER-shaped: nested values with indefinite lengths closed by end-of-contents, padded long-form
+// lengths, and constructed OCTET STRINGs (PST-T-12.4).
+const berish = fc.array(fc.tuple(fc.integer({ min: 0, max: 3 }), fc.constantFrom('indefinite', 'padded', 'octets', 'plain'), fc.integer({ min: 1, max: 30 }), fc.uint8Array({ maxLength: 40 })), { maxLength: 8 })
+  .map((ts) => ts.reduce((acc, [c, kind, t, v]) => {
+    const inner = Buffer.concat([acc, Buffer.from(v)]);
+    if (kind === 'indefinite') return Buffer.concat([Buffer.of((c << 6) | 0x20 | t, 0x80), acc, encodeTlv(0, false, 4, v), Buffer.of(0, 0)]);
+    if (kind === 'padded') return Buffer.concat([Buffer.of((c << 6) | t, 0x84, 0, 0, inner.length >> 8, inner.length & 0xff), inner]);
+    if (kind === 'octets') return Buffer.concat([Buffer.of(0x24, 0x80), encodeTlv(0, false, 4, v), acc.length > 0 && acc[0] === 0x24 ? acc : Buffer.alloc(0), Buffer.of(0, 0)]);
+    return encodeTlv(c, true, t, inner);
+  }, Buffer.alloc(0)));
 const mutated = (pool) => fc.tuple(fc.constantFrom(...pool), fc.array(fc.tuple(fc.nat(), fc.integer({ min: 0, max: 255 })), { minLength: 1, maxLength: 6 }), fc.option(fc.nat(), { nil: undefined }))
   .map(([base, edits, cut]) => {
     const b = Buffer.from(base);
@@ -33,7 +43,7 @@ const mutated = (pool) => fc.tuple(fc.constantFrom(...pool), fc.array(fc.tuple(f
 let runs = 0;
 try {
   fc.assert(
-    fc.property(fc.oneof(fc.uint8Array({ maxLength: 1500 }).map((b) => Buffer.from(b)), packetish, derish, mutated(corpus)), (bytes) => {
+    fc.property(fc.oneof(fc.uint8Array({ maxLength: 1500 }).map((b) => Buffer.from(b)), packetish, derish, berish, mutated(corpus)), (bytes) => {
       runs++;
       exercise(bytes);
     }),

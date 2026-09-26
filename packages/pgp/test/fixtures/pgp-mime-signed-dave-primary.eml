@@ -1,0 +1,31 @@
+From: Dave Test <dave@example.test>
+To: Me <me@d3cloud.io>
+Subject: pay
+Date: Sat, 26 Sep 2026 12:00:00 +0000
+Message-ID: <2830010095@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/signed; micalg=pgp-sha256; protocol="application/pgp-signature"; boundary="sig-b"
+
+This is an OpenPGP/MIME signed message (RFC 4880 and 3156)
+--sig-b
+Content-Type: text/plain; charset=us-ascii
+
+Wire the money to account 1234.
+
+-- Dave
+
+--sig-b
+Content-Type: application/pgp-signature; name="signature.asc"
+Content-Description: OpenPGP digital signature
+Content-Disposition: attachment; filename="signature.asc"
+
+-----BEGIN PGP SIGNATURE-----
+
+iJEEABYIADkWIQRyiwKZcBGTF4qGq5hkJMK9HvuCKwUCarfiMxsUgAAAAAAEAA5t
+YW51MiwyLjUrMS4xMiwwLDMACgkQZCTCvR77giubEAD/TMWysYr3SK7fjS3M/VV8
+p7+cTTVgfWGPW6HuZMiHOOIBAI8/lUsau1aPQi7VzFqppT6h3+N/03EAfrnWmRpi
+ZTgN
+=NZvp
+-----END PGP SIGNATURE-----
+
+--sig-b--
