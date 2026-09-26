@@ -19,6 +19,7 @@ import {
   type RcptParams,
   type SmtpReply,
 } from '@postroom/smtp-proto';
+import { describePolicy, isMandatory, verifyPeer, type TlsPolicy } from '../policy/index.js';
 import type { AttemptOutcome } from '../state.js';
 import type { AttemptDetails, DeliveryRecipient, DeliveryRequest } from '../transports/types.js';
 import { errorText, SmtpClientError, type SmtpConnection } from './connection.js';
@@ -84,6 +85,11 @@ export interface SessionConfig {
 export interface Target {
   host: string;
   ip: string;
+  /**
+   * PST-T-7.5: the TLS policy for this MX host (DANE, MTA-STS, or opportunistic). Unset = plain
+   * opportunistic STARTTLS with nothing recorded about policy (the smarthost path).
+   */
+  policy?: TlsPolicy;
 }
 
 export type SessionResult =
@@ -167,9 +173,10 @@ function tlsOptionsFor(target: Target, cfg: SessionConfig): tls.ConnectionOption
     return { minVersion: 'TLSv1.2', ...(isIP(host) === 0 ? { servername: host } : {}), ...cfg.tlsOptions, rejectUnauthorized: true };
   }
   return {
-    // Opportunistic STARTTLS (RFC 3207): without DANE or MTA-STS there is no authenticated name to
-    // hold the peer to, so an unverifiable certificate still beats plaintext. Whether it verified is
-    // recorded in tlsPeer; enforcement arrives with MTA-STS/DANE (PST-T-7.5).
+    // The handshake itself never rejects: opportunistic STARTTLS (RFC 3207) prefers an unverifiable
+    // certificate to plaintext, and DANE / MTA-STS judge the peer themselves (verifyPeer) right
+    // after the handshake, before any command is sent, so a failure carries a precise reason. SNI
+    // is the MX name, as RFC 7672 §8.1 requires for DANE and RFC 8461 §4.2 for MTA-STS.
     rejectUnauthorized: false,
     minVersion: 'TLSv1.2',
     ...(isIP(host) === 0 ? { servername: host } : {}),
@@ -239,20 +246,57 @@ export async function runSession(conn: SmtpConnection, target: Target, request: 
     let caps = await hello(conn, cfg, target, false);
     if (!(caps instanceof Map)) return caps;
 
+    const policy = target.policy;
+    // DANE / MTA-STS enforce (PST-REQ-126): no verified TLS, no mail. Never a downgrade to plaintext.
+    const refuse = (reason: string): SessionResult => {
+      if (policy === undefined) throw new Error('refuse() without a policy');
+      const peer = details.tlsPeer === undefined ? '' : `; ${details.tlsPeer}`;
+      details.tlsPeer = `${describePolicy(policy.kind, false, reason)}${peer}`;
+      cfg.log('tls-policy-refused', { mxHost: target.host, mxIp: target.ip, policy: policy.kind, reason });
+      conn.fail(new SmtpClientError('tls', 'tls', `${policy.kind}: ${reason}`));
+      return { kind: 'next', outcome: { kind: 'temporary', enhanced: '4.7.5', text: `${target.host} [${target.ip}] ${policy.kind} requires verified TLS: ${reason}` } };
+    };
+    /** Not mandatory: record what enforcement would have said (MTA-STS testing) and carry on. */
+    const note = (verified: boolean, reason: string, tlsHappened = true): void => {
+      if (policy === undefined) return;
+      // Plaintext under no policy stays as it always was: empty TLS columns say it plainly.
+      if (policy.kind === 'opportunistic' && !tlsHappened) return;
+      const peer = details.tlsPeer === undefined ? '' : `; ${details.tlsPeer}`;
+      details.tlsPeer = `${describePolicy(policy.kind, verified, reason)}${peer}`;
+      if (policy.kind === 'mta-sts-testing' && !verified) cfg.log('mta-sts-testing-would-fail', { mxHost: target.host, mxIp: target.ip, reason });
+    };
+
     if (caps.has('STARTTLS')) {
       const starttls = await conn.command('starttls', 'STARTTLS', t.starttls);
       if (starttls.code === 220) {
-        const secure = await conn.startTls(tlsOptionsFor(target, cfg), t.tlsHandshake);
+        let secure: tls.TLSSocket;
+        try {
+          secure = await conn.startTls(tlsOptionsFor(target, cfg), t.tlsHandshake);
+        } catch (error) {
+          if (isMandatory(policy)) return refuse(`TLS handshake failed: ${errorText(error)}`);
+          throw error;
+        }
         const protocol = secure.getProtocol();
         if (protocol !== null) details.tlsVersion = protocol;
         details.tlsCipher = secure.getCipher().name;
         details.tlsPeer = describePeer(secure);
+        if (policy !== undefined) {
+          // Judged before a single command crosses the new session.
+          const verdict = verifyPeer(policy, secure, target.host);
+          if (!verdict.verified && isMandatory(policy)) return refuse(verdict.reason);
+          note(verdict.verified, verdict.reason);
+        }
         // RFC 3207 §4.2: forget everything learned before the handshake.
         caps = await hello(conn, cfg, target, true);
         if (!(caps instanceof Map)) return caps;
       } else {
         cfg.log('starttls-refused', { mxHost: target.host, mxIp: target.ip, code: starttls.code, text: replyText(starttls) });
+        if (isMandatory(policy)) return refuse(`STARTTLS refused: ${String(starttls.code)} ${replyText(starttls)}`);
+        note(false, `STARTTLS refused: ${String(starttls.code)}`, false);
       }
+    } else {
+      if (isMandatory(policy)) return refuse('STARTTLS not offered');
+      note(false, 'STARTTLS not offered', false);
     }
 
     if (cfg.smarthost !== undefined) {

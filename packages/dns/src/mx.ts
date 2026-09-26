@@ -11,9 +11,21 @@ export interface MxTarget {
   addresses: string[];
 }
 
+/**
+ * What our validating resolver vouched for (the AD bit, trusted only from our own resolver —
+ * trust.ts). DANE (RFC 7672 §2.2) applies to an MX host only when both the MX RRset (or, for an
+ * implicit MX, its denial) and that host's address records were validated.
+ */
+export interface MxDnssec {
+  /** The MX answer (or the NODATA that led to the implicit MX) carried AD. */
+  mx: boolean;
+  /** Per target host (as in MxTarget.host): every address lookup made for it carried AD. */
+  hosts: Record<string, boolean>;
+}
+
 export type MxResolution =
-  | { kind: 'mx'; targets: MxTarget[] }
-  | { kind: 'implicit'; targets: MxTarget[] }
+  | { kind: 'mx'; targets: MxTarget[]; dnssec: MxDnssec }
+  | { kind: 'implicit'; targets: MxTarget[]; dnssec: MxDnssec }
   /** RFC 7505: a single "0 ." MX record means "do not deliver here" — 556 5.1.10. */
   | { kind: 'null-mx' }
   | { kind: 'permanent'; reason: string };
@@ -63,19 +75,21 @@ function orderByPreference(records: MxAnswer[], rng: () => number): MxAnswer[] {
   return result;
 }
 
-async function resolveAddresses(resolver: Resolver, name: string, ipv4Only: boolean): Promise<string[]> {
+async function resolveAddresses(resolver: Resolver, name: string, ipv4Only: boolean): Promise<{ addresses: string[]; secure: boolean }> {
   const addresses: string[] = [];
   const aResult = await resolver.a(name);
+  let secure = aResult.ad;
   for (const rr of aResult.answers) {
     if (rr.kind === 'A') addresses.push(rr.address);
   }
   if (!ipv4Only) {
     const aaaaResult = await resolver.aaaa(name);
+    secure = secure && aaaaResult.ad;
     for (const rr of aaaaResult.answers) {
       if (rr.kind === 'AAAA') addresses.push(rr.address);
     }
   }
-  return addresses;
+  return { addresses, secure };
 }
 
 export async function resolveMxTargets(resolver: Resolver, domain: string, opts: ResolveMxOptions = {}): Promise<MxResolution> {
@@ -125,17 +139,19 @@ export async function resolveMxTargets(resolver: Resolver, domain: string, opts:
   if (mxRecords.length > 0) {
     const ordered = orderByPreference(mxRecords, rng);
     const targets: MxTarget[] = [];
+    const hosts: Record<string, boolean> = {};
     for (const rr of ordered) {
-      const addresses = await resolveAddresses(resolver, rr.exchange, ipv4Only);
+      const { addresses, secure } = await resolveAddresses(resolver, rr.exchange, ipv4Only);
       targets.push({ host: rr.exchange, preference: rr.preference, addresses });
+      hosts[rr.exchange] = (hosts[rr.exchange] ?? true) && secure;
     }
-    return { kind: 'mx', targets };
+    return { kind: 'mx', targets, dnssec: { mx: result.ad, hosts } };
   }
 
   // No MX at all: implicit MX per RFC 5321 §5.1, only if the domain itself has an address.
-  const addresses = await resolveAddresses(resolver, domain, ipv4Only);
+  const { addresses, secure } = await resolveAddresses(resolver, domain, ipv4Only);
   if (addresses.length === 0) {
     return { kind: 'permanent', reason: 'no-mx-no-address' };
   }
-  return { kind: 'implicit', targets: [{ host: domain, preference: 0, addresses }] };
+  return { kind: 'implicit', targets: [{ host: domain, preference: 0, addresses }], dnssec: { mx: result.ad, hosts: { [domain]: secure } } };
 }

@@ -2,7 +2,7 @@
 // handling (PST-REQ-031, PST-REQ-064). Hand-rolled wire format, no DNS libraries.
 export { DnsProtocolError, DnsPublicResolverRefusedError, DnsServfailError, DnsTimeoutError } from './errors.js';
 export { resolveMxTargets } from './mx.js';
-export type { MxResolution, MxTarget, ResolveMxOptions } from './mx.js';
+export type { MxDnssec, MxResolution, MxTarget, ResolveMxOptions } from './mx.js';
 export { decodeName, encodeName, normalizeName } from './name.js';
 export { createResolver, reverseDnsName } from './resolver.js';
 export type { ResolverOptions } from './resolver.js';

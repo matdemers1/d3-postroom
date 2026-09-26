@@ -108,3 +108,40 @@ describe('resolveMxTargets: NXDOMAIN and SERVFAIL', () => {
     await expect(resolveMxTargets(resolver, 'bogus.example.com')).rejects.toBeInstanceOf(DnsServfailError);
   });
 });
+
+describe('resolveMxTargets: DNSSEC status for DANE (PST-T-7.5)', () => {
+  const secureA = (name: string): ResolverResult => ({ rcode: RCode.NOERROR, ad: true, authority: [], answers: [aAnswer(name, '203.0.113.9')] });
+  const insecureA = (name: string): ResolverResult => ({ rcode: RCode.NOERROR, ad: false, authority: [], answers: [aAnswer(name, '203.0.113.9')] });
+
+  it('reports the MX RRset and each host\'s address lookups as validated only when every answer carried AD', async () => {
+    const resolver = stubResolver({
+      mx: () => ({ rcode: RCode.NOERROR, ad: true, authority: [], answers: [mxAnswer('example.com', 10, 'a.example.com'), mxAnswer('example.com', 20, 'b.example.com')] }),
+      a: (name) => (name === 'a.example.com' ? secureA(name) : insecureA(name)),
+    });
+    const result = await resolveMxTargets(resolver, 'example.com', { ipv4Only: true, rng: () => 0 });
+    expect(result.kind === 'mx' && result.dnssec).toEqual({ mx: true, hosts: { 'a.example.com': true, 'b.example.com': false } });
+  });
+
+  it('an unvalidated AAAA answer makes the host insecure when IPv6 is on', async () => {
+    const resolver = stubResolver({
+      mx: () => ({ rcode: RCode.NOERROR, ad: true, authority: [], answers: [mxAnswer('example.com', 10, 'a.example.com')] }),
+      a: secureA,
+      aaaa: () => ({ rcode: RCode.NOERROR, ad: false, authority: [], answers: [] }),
+    });
+    const result = await resolveMxTargets(resolver, 'example.com', { ipv4Only: false });
+    expect(result.kind === 'mx' && result.dnssec).toEqual({ mx: true, hosts: { 'a.example.com': false } });
+  });
+
+  it('an unvalidated MX answer is reported as such, and the implicit MX carries its own status', async () => {
+    const insecureMx = stubResolver({
+      mx: () => ({ rcode: RCode.NOERROR, ad: false, authority: [], answers: [mxAnswer('example.com', 10, 'a.example.com')] }),
+      a: secureA,
+    });
+    const r1 = await resolveMxTargets(insecureMx, 'example.com', { ipv4Only: true });
+    expect(r1.kind === 'mx' && r1.dnssec.mx).toBe(false);
+
+    const implicit = stubResolver({ mx: () => ({ rcode: RCode.NOERROR, ad: true, authority: [], answers: [] }), a: secureA });
+    const r2 = await resolveMxTargets(implicit, 'nomx.example.com', { ipv4Only: true });
+    expect(r2.kind === 'implicit' && r2.dnssec).toEqual({ mx: true, hosts: { 'nomx.example.com': true } });
+  });
+});
