@@ -5,7 +5,10 @@
 //     gpg decrypts it with bob's TEST key; Sent keeps the main copy; every copy is audited;
 //   · the S/MIME equivalent: no RecipientInfo in the main copy names dave's certificate, openssl cms
 //     -decrypt opens dave's copy with dave's key and refuses the main copy;
-//   · a held (undo) OpenPGP send hides Bcc behind the wildcard key ID; a held S/MIME one is refused;
+//   · PST-T-12.7: a held (undo) send with Bcc holds a main copy and one copy per Bcc, in both schemes
+//     (no wildcard key IDs, no 409 smime_bcc_held); undo queues nothing and releases every blob
+//     reference; the worker's releaseOne queues each copy to its own envelope, and gpg / openssl
+//     open each Bcc copy only with that recipient's key;
 //   · a signed send whose body has trailing spaces and a 900-character line: every line of the queued
 //     bytes stripped of trailing whitespace, and gpg --verify / openssl cms -verify still pass.
 import { spawnSync } from 'node:child_process';
@@ -25,7 +28,8 @@ import type { Express } from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { CryptoKeyCreated, KeyPublicExport } from '../../src/keys/schemas.js';
-import { SendResponse } from '../../src/compose/schemas.js';
+import { PendingSend, SendResponse } from '../../src/compose/schemas.js';
+import { releaseOne, type ReleaseDeps } from '../../../worker/src/scheduled/release.js';
 import { request } from '../loopback.js';
 import { KEK_BASE64, TestClock, baseConfig, cookieHeader, cookiesOf, createAccount, randomLogin, totpCode } from './helpers.js';
 
@@ -154,7 +158,7 @@ describe.skipIf(!baseUrl)('Encrypted Bcc and relay-proof signatures (PST-T-12.6,
   };
 
   beforeAll(async () => {
-    testDb = await createTestDatabase(baseUrl ?? '', 'pst_t126_crypto');
+    testDb = await createTestDatabase(baseUrl ?? '', 'pst_t127_crypto');
     db = testDb.db;
     await seed(db, { operatorName: 'Operator', domain: 'd3cloud.io' });
     blobRoot = await mkdtemp(join(tmpdir(), 'pst-t126-blobs-'));
@@ -301,38 +305,149 @@ describe.skipIf(!baseUrl)('Encrypted Bcc and relay-proof signatures (PST-T-12.6,
     expect(openssl(['cms', '-decrypt', '-in', join(dir, 'main.eml'), '-inkey', join(dir, 'dave.key'), '-recip', join(dir, 'dave.pem')]).status).not.toBe(0);
   });
 
-  it('a held OpenPGP send hides Bcc behind the wildcard key ID (gpg still opens it with bob’s key); a held S/MIME one is refused', async () => {
+  // --- PST-T-12.7: a held send (the web's default 10 s undo) holds separate copies too --------------
+
+  const releaseDeps = (): ReleaseDeps => ({ db, blobs, kek: () => kek, caps: () => Promise.resolve(), now: () => clock.now() });
+  /** Every blob a pending send references (the held one and each copy's), with its refcount now (0 = gone). */
+  const heldRefs = async (pendingId: string) => {
+    const row = await db.pendingSend.findUniqueOrThrow({ where: { id: pendingId }, include: { copies: { orderBy: { position: 'asc' } } } });
+    const shas = [...new Set([row.heldBlobSha256, ...row.copies.map((c) => c.blobSha256)])];
+    const found = await db.blob.findMany({ where: { sha256: { in: shas } }, select: { sha256: true, refcount: true } });
+    return shas.map((sha) => found.find((b) => b.sha256 === sha)?.refcount ?? 0);
+  };
+  const undo = (who: Person, id: string) => post(who, `/api/compose/pending/${id}/undo`);
+
+  it('held OpenPGP To alice, Bcc bob (undoSeconds 10): main + Bcc copies held, no wildcard; undo queues nothing and releases every blob; the next one released goes as separate copies gpg opens only with bob’s key', async () => {
     const me = await person();
-    await generate(me);
+    const mine = await generate(me);
     await importKey(me, { kind: 'pgp', armored: text('alice-ed25519.pub.asc') });
     const bob = generateKey({ userId: 'Bob <bob@example.test>' });
     await importKey(me, { kind: 'pgp', armored: bob.publicArmored });
-    const res = await post(me, '/api/compose/send', { from: me.address, to: ['alice@example.test'], bcc: ['bob@example.test'], subject: 'Held', text: 'Held secret.\n', undoSeconds: 10, crypto: { encrypt: 'pgp' } });
-    expect(res.status, JSON.stringify(res.body)).toBe(202);
-    const pending = await db.pendingSend.findFirstOrThrow({ where: { accountId: me.id } });
-    expect([...pending.recipients].sort()).toEqual(['alice@example.test', 'bob@example.test']);
-    const held = await blobBytes(pending.heldBlobSha256);
-    const pgp = pgpMessage(held);
-    expect(pgp.pkeskKeyIds).toHaveLength(3);
-    expect(pgp.pkeskKeyIds).toContain('0000000000000000');
-    for (const id of keyIdsOf(bob.key)) expect(pgp.pkeskKeyIds).not.toContain(id);
-    if (GPG !== null) {
-      const home = scratch();
-      expect(gpgIn(home, ['--import'], bob.secretArmored).status).toBe(0);
-      const opened = gpgIn(home, ['--decrypt'], pgp.armored);
-      expect(opened.status, opened.stderr.toString()).toBe(0);
-      expect(opened.stdout.toString('latin1')).toContain('Held secret.');
-    }
+    const [alice] = parseKeys(decodeArmor(text('alice-ed25519.pub.asc'))?.data ?? Buffer.alloc(0));
+    const [own] = parseKeys(decodeArmor(mine.publicArmored)?.data ?? Buffer.alloc(0));
+    if (alice === undefined || own === undefined) throw new Error('keys');
+    const send = (subject: string) => post(me, '/api/compose/send', { from: me.address, to: ['alice@example.test'], bcc: ['bob@example.test'], subject, text: 'Held secret.\n', undoSeconds: 10, crypto: { sign: 'pgp', encrypt: 'pgp' } });
 
+    // 1. Held: the main copy (To alice) and bob's copy, each its own blob; neither has a wildcard PKESK.
+    const first = await send('Held, then undone');
+    expect(first.status, JSON.stringify(first.body)).toBe(202);
+    const pending = PendingSend.parse(first.body);
+    const copies = await db.pendingSendCopy.findMany({ where: { pendingSendId: pending.id }, orderBy: { position: 'asc' } });
+    expect(copies.map((c) => [c.role, c.recipients])).toEqual([
+      ['main', ['alice@example.test']],
+      ['bcc', ['bob@example.test']],
+    ]);
+    const heldMain = pgpMessage(await blobBytes(copies[0]?.blobSha256 ?? ''));
+    expect(heldMain.pkeskKeyIds).not.toContain('0000000000000000');
+    for (const id of keyIdsOf(bob.key)) expect(heldMain.pkeskKeyIds).not.toContain(id);
+    const heldBob = pgpMessage(await blobBytes(copies[1]?.blobSha256 ?? ''));
+    expect(heldBob.pkeskKeyIds).not.toContain('0000000000000000');
+    expect(heldBob.pkeskKeyIds.some((id) => keyIdsOf(bob.key).includes(id))).toBe(true);
+    for (const id of keyIdsOf(alice)) expect(heldBob.pkeskKeyIds).not.toContain(id);
+    const refsHeld = await heldRefs(pending.id);
+    expect(refsHeld.every((n) => n > 0)).toBe(true);
+
+    // 2. Undo: nothing queued, and every reference the send held is released.
+    const undone = await undo(me, pending.id);
+    expect(undone.status, JSON.stringify(undone.body)).toBe(200);
+    expect(await heldRefs(pending.id)).toEqual(refsHeld.map(() => 0));
+    expect(await releaseOne(releaseDeps(), pending.id)).toBe('skipped');
+    expect(await queued(me.id)).toHaveLength(0);
+
+    // 3. Another, released by the worker: main to alice only, bob's copy to bob only.
+    const second = await send('Held, then released');
+    expect(second.status, JSON.stringify(second.body)).toBe(202);
+    const released = PendingSend.parse(second.body);
+    expect(await releaseOne(releaseDeps(), released.id)).toBe('released');
+    // Every reference the held send had is gone (Sent keeps the queued, DKIM-signed blob instead).
+    expect((await heldRefs(released.id)).every((n) => n === 0)).toBe(true);
+    const all = await queued(me.id);
+    expect(all).toHaveLength(2);
+    const main = all.find((q) => q.to.includes('alice@example.test'));
+    const bobs = all.find((q) => q.to.includes('bob@example.test'));
+    if (main === undefined || bobs === undefined) throw new Error('copies');
+    expect(main.to).toEqual(['alice@example.test']);
+    expect(bobs.to).toEqual(['bob@example.test']);
+    expect(headerOf(bobs.raw)).not.toMatch(/^Bcc:/im);
+    const mainPgp = pgpMessage(main.raw);
+    expect(mainPgp.pkeskKeyIds).toHaveLength(2);
+    expect(mainPgp.pkeskKeyIds).not.toContain('0000000000000000');
+    for (const id of keyIdsOf(bob.key)) expect(mainPgp.pkeskKeyIds).not.toContain(id);
+    expect(mainPgp.pkeskKeyIds.some((id) => keyIdsOf(own).includes(id))).toBe(true);
+    expect(main.raw.toString('latin1')).not.toMatch(/bob@example\.test/i);
+    const bobPgp = pgpMessage(bobs.raw);
+    for (const id of keyIdsOf(alice)) expect(bobPgp.pkeskKeyIds).not.toContain(id);
+    // Sent keeps the main copy as queued, once.
+    const row = await db.pendingSend.findUniqueOrThrow({ where: { id: released.id } });
+    expect((await db.message.findUniqueOrThrow({ where: { id: row.sentMessageId ?? '' } })).blobSha256).toBe(main.blobSha256);
+
+    if (GPG === null) return;
+    const home = scratch();
+    expect(gpgIn(home, ['--import'], bob.secretArmored).status).toBe(0);
+    const opened = gpgIn(home, ['--decrypt'], bobPgp.armored);
+    expect(opened.status, opened.stderr.toString()).toBe(0);
+    expect(opened.stdout.toString('latin1')).toContain('Held secret.');
+    expect(gpgIn(home, ['--decrypt'], mainPgp.armored).status).not.toBe(0);
+    // Without bob's key, bob's copy does not open.
+    expect(gpgIn(scratch(), ['--decrypt'], bobPgp.armored).status).not.toBe(0);
+  });
+
+  it('held S/MIME To carol, Bcc dave: accepted (no 409 smime_bcc_held); undo releases every blob; released, openssl opens dave’s copy only with dave’s key', async () => {
+    const me = await person();
     const cert = selfSignedCert(me.address);
     await importKey(me, { kind: 'smime', certificate: cert.pem, privateKey: cert.keyPem });
     await importKey(me, { kind: 'smime', certificate: text('carol-smime.pem') });
     const dave = selfSignedCert('dave@example.test');
     await importKey(me, { kind: 'smime', certificate: dave.pem });
-    const refused = await post(me, '/api/compose/send', { from: me.address, to: ['carol@example.test'], bcc: ['dave@example.test'], subject: 'Held', text: 'x', undoSeconds: 10, crypto: { encrypt: 'smime' } });
-    expect(refused.status).toBe(409);
-    expect(refused.body).toMatchObject({ error: 'smime_bcc_held' });
-    expect(await db.pendingSend.count({ where: { accountId: me.id } })).toBe(1);
+    const [daveCert] = certificatesFromPem(dave.pem);
+    const [carolCert] = certificatesFromPem(text('carol-smime.pem'));
+    if (daveCert === undefined || carolCert === undefined) throw new Error('certs');
+    const send = (subject: string) => post(me, '/api/compose/send', { from: me.address, to: ['carol@example.test'], bcc: ['dave@example.test'], subject, text: 'For Carol; Dave too.\n', undoSeconds: 10, crypto: { sign: 'smime', encrypt: 'smime' } });
+    const rids = (raw: Buffer) => {
+      const b64 = raw.subarray(raw.indexOf('\r\n\r\n') + 4).toString('latin1').replace(/\s+/g, '');
+      return parseEnvelopedData(parseContentInfo(Buffer.from(b64, 'base64')).content).recipients.map((r) => r.rid);
+    };
+    const names = (c: typeof daveCert) => (rid: ReturnType<typeof rids>[number]) => rid.kind === 'issuer-serial' && rid.issuer.equals(c.issuerRaw) && rid.serial.equals(c.serial);
+
+    const first = await send('Held S/MIME, undone');
+    expect(first.status, JSON.stringify(first.body)).toBe(202);
+    const pending = PendingSend.parse(first.body);
+    const copies = await db.pendingSendCopy.findMany({ where: { pendingSendId: pending.id }, orderBy: { position: 'asc' } });
+    expect(copies.map((c) => [c.role, c.recipients])).toEqual([
+      ['main', ['carol@example.test']],
+      ['bcc', ['dave@example.test']],
+    ]);
+    expect(rids(await blobBytes(copies[0]?.blobSha256 ?? '')).some(names(daveCert))).toBe(false);
+    const refsHeld = await heldRefs(pending.id);
+    expect((await undo(me, pending.id)).status).toBe(200);
+    expect(await heldRefs(pending.id)).toEqual(refsHeld.map(() => 0));
+    expect(await queued(me.id)).toHaveLength(0);
+
+    const second = await send('Held S/MIME, released');
+    expect(second.status, JSON.stringify(second.body)).toBe(202);
+    expect(await releaseOne(releaseDeps(), PendingSend.parse(second.body).id)).toBe('released');
+    const all = await queued(me.id);
+    expect(all).toHaveLength(2);
+    const main = all.find((q) => q.to.includes('carol@example.test'));
+    const daves = all.find((q) => q.to.includes('dave@example.test'));
+    if (main === undefined || daves === undefined) throw new Error('copies');
+    expect(main.to).toEqual(['carol@example.test']);
+    expect(daves.to).toEqual(['dave@example.test']);
+    expect(rids(main.raw).some(names(daveCert))).toBe(false);
+    expect(rids(main.raw).some(names(carolCert))).toBe(true);
+    expect(rids(daves.raw).some(names(daveCert))).toBe(true);
+    expect(rids(daves.raw).some(names(carolCert))).toBe(false);
+
+    if (OPENSSL === null) return;
+    const dir = scratch();
+    writeFileSync(join(dir, 'dave.key'), dave.keyPem);
+    writeFileSync(join(dir, 'dave.pem'), dave.pem);
+    writeFileSync(join(dir, 'dave.eml'), daves.raw);
+    writeFileSync(join(dir, 'main.eml'), main.raw);
+    const ok = openssl(['cms', '-decrypt', '-in', join(dir, 'dave.eml'), '-inkey', join(dir, 'dave.key'), '-recip', join(dir, 'dave.pem')]);
+    expect(ok.status, ok.stderr.toString()).toBe(0);
+    expect(ok.stdout.toString('latin1')).toContain('For Carol; Dave too.');
+    expect(openssl(['cms', '-decrypt', '-in', join(dir, 'main.eml'), '-inkey', join(dir, 'dave.key'), '-recip', join(dir, 'dave.pem')]).status).not.toBe(0);
   });
 
   const HOSTILE = `Trailing spaces here   \nand a tab\t\n${'y'.repeat(900)}\nFrom the top\nend\n`;

@@ -1163,11 +1163,38 @@ model PendingSend {
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   finishedAt         DateTime?        @map("finished_at") @db.Timestamptz(6)
 
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// PST-T-12.7: an encrypted send with Bcc holds several copies, each with its own envelope. None
+  /// for any other send (and for a row made before copies existed): heldBlobSha256 is the message.
+  copies  PendingSendCopy[]
 
   @@index([state, releaseAt])
   @@index([accountId, state])
   @@map("pending_send")
+}
+
+/// One copy of a held send (PST-T-12.7, PST-REQ-161), released with its siblings in one transaction:
+/// 'main' goes to the To/Cc envelope, each 'bcc' to its one recipient (encrypted to that recipient
+/// and the sender only), and 'sent' — only when there is no main copy — is what Sent keeps. Each row
+/// holds one reference on its blob until the send is released or cancelled.
+model PendingSendCopy {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pendingSendId String   @map("pending_send_id") @db.Uuid
+  /// 'main' | 'bcc' | 'sent'
+  role          String
+  /// Submission order within the send (the main copy first).
+  position      Int
+  recipients    String[]
+  blobSha256    String   @map("blob_sha256")
+  size          Int
+  /// The outbound_message this copy became (null while held, and for 'sent').
+  outboundId    String?  @map("outbound_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  pendingSend PendingSend @relation(fields: [pendingSendId], references: [id], onDelete: Cascade)
+
+  @@index([pendingSendId])
+  @@map("pending_send_copy")
 }
 
 /// A thread snoozed out of INBOX until `until` (PST-REQ-142). The moved messages keep their row ids

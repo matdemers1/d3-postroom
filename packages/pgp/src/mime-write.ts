@@ -65,6 +65,7 @@ function boundaryFor(...parts: Buffer[]): string {
 //     byte when it is already safe (its own DKIM signature survives); otherwise its parts are
 //     canonicalized by these same rules; and if the result is still not 7bit (8-bit header fields,
 //     say, RFC 6532 mail), it becomes message/global in base64, which RFC 6532 §3.5 allows.
+// The entity is read with CRLF line ends; one written with bare-LF line ends is made CRLF on the way in.
 // "Safe" means: US-ASCII without NUL, CRLF line ends only, no line over 998 octets, and no line
 // ending in whitespace. What cannot be made safe (a multipart nested past MAX_DEPTH, an unknown
 // transfer encoding over unsafe bytes) is refused rather than signed in a form a relay could break.
@@ -255,7 +256,17 @@ function canonical(bytes: Buffer, defaultType: string, depth: number): Buffer {
     return assemble(withFields(f, ['Content-Transfer-Encoding'], ['Content-Transfer-Encoding: base64']), base64Wrapped(body));
   }
   if (cte === 'quoted-printable' || cte === 'base64') {
-    if (isSevenBitSafe(body, QP_LINE)) return assemble(withFields(f, [], []), body);
+    if (isSevenBitSafe(body, QP_LINE)) {
+      // PST-T-12.7: kept as written — except that a QP line starting "From " is re-encoded "=46rom "
+      // (the same text once decoded), so an mbox relay's ">From" cannot touch a signed byte (RFC 3156
+      // §3). base64 cannot hold a space, so it has no such line.
+      if (cte === 'base64') return assemble(withFields(f, [], []), body);
+      const escaped = escapeQpFromLines(body);
+      if (escaped === null) return assemble(withFields(f, [], []), body);
+      if (isSevenBitSafe(escaped, QP_LINE)) return assemble(withFields(f, [], []), escaped);
+      // Escaping made a line too long for quoted-printable: decode and re-encode it whole.
+      return assemble(withFields(f, [], []), encodeQuotedPrintableSafe(decodeTransfer(cte, body)));
+    }
     const decoded = decodeTransfer(cte, body);
     const encoded = cte === 'base64' ? base64Wrapped(decoded) : encodeQuotedPrintableSafe(decoded);
     return assemble(withFields(f, [], []), encoded);
@@ -264,13 +275,33 @@ function canonical(bytes: Buffer, defaultType: string, depth: number): Buffer {
   throw new PgpError('unsafe-signed-entity', `a part in the unknown transfer encoding "${cte}" holds 8-bit or unsafe lines`);
 }
 
+/** The QP body with every line-initial "From " written "=46rom ", or null when it has none. */
+function escapeQpFromLines(body: Buffer): Buffer | null {
+  const text = body.toString('latin1');
+  if (!/(^|\r\n)From /.test(text)) return null;
+  return Buffer.from(text.replace(/(^|\r\n)From /g, '$1=46rom '), 'latin1');
+}
+
+/**
+ * An entity written with Unix line ends — its first line ends in a bare LF — made CRLF throughout.
+ * An entity whose header lines already end in CRLF is left as it is: a bare LF in its body is data
+ * (an 8bit part's byte), which the re-encoding below keeps exactly.
+ */
+function toCrlf(entity: Buffer): Buffer {
+  const lf = entity.indexOf(0x0a);
+  if (lf < 0 || (lf > 0 && entity[lf - 1] === 0x0d)) return entity;
+  return Buffer.from(entity.toString('latin1').replace(/\r?\n/g, '\r\n'), 'latin1');
+}
+
 /**
  * The MIME entity (content headers, blank line, body; strict CRLF) re-encoded so that every byte of
  * it survives transport untouched: 7bit, no line over 998 octets (76 in what is re-encoded here),
  * no trailing whitespace anywhere. The rules are above. What it returns is what gets signed.
  */
 export function canonicalizeForSigning(entity: Uint8Array): Buffer {
-  return canonical(Buffer.from(entity), 'text/plain', 0);
+  // PST-T-12.7: an entity with bare-LF line ends is normalised to CRLF first; read as it is, its
+  // blank line is never found and the whole body would be taken for header fields.
+  return canonical(toCrlf(Buffer.from(entity)), 'text/plain', 0);
 }
 
 /** RFC 1847: the signed entity verbatim, then the signature part. */

@@ -13,6 +13,15 @@
 //   · the Sent copy is filed from the queued blob, the Drafts copy is expunged (IMAP-visibly), the
 //     held blob's reference is released, and remind-if-no-reply is armed if it was asked for.
 //
+// PST-T-12.7 (PST-REQ-161): an encrypted send with Bcc holds several copies (pending_send_copy): the
+// main copy for the To/Cc envelope, one per Bcc recipient, and — only when there is no main copy — the
+// one Sent keeps. The first sendable copy is the accepting one; every other copy is accepted through
+// the same submission path INSIDE its transaction (a savepoint per copy; see nestedDb), each to its
+// own envelope. All of them are queued with the held → released transition, or none are: a refusal
+// of any copy rolls the whole release back and fails it. Sent keeps the main copy (or the 'sent'
+// one), once. A row with no copies (any other send, and every row made before copies existed) is
+// released from heldBlobSha256 exactly as before.
+//
 // If the Drafts copy is gone (deleted or edited from any client), the send is cancelled instead:
 // Drafts is where the person sees a pending message, so removing it there takes it back. A refusal
 // from the submission path (no DKIM keys, the recipient cap, a From no longer owned) marks it failed
@@ -46,13 +55,58 @@ export type ReleaseOutcome = 'released' | 'cancelled' | 'failed' | 'skipped';
 
 class AlreadyHandled extends Error {}
 class DraftGone extends Error {}
+/** A copy of a multi-copy send the submission path refused: the whole release rolls back. */
+class CopyRefused extends Error {
+  constructor(
+    readonly reason: string,
+    readonly lines: readonly string[],
+    readonly recipients: readonly string[],
+  ) {
+    super(`copy refused: ${reason}`);
+  }
+}
+
+type CopyRow = Awaited<ReturnType<Db['pendingSendCopy']['findMany']>>[number];
+
+/**
+ * The accepting transaction, seen as a database handle whose $transaction is a savepoint inside it:
+ * what lets acceptSubmission accept a further copy (its checks, DKIM signature, queue rows, audit
+ * row) as part of the transaction already open, rather than committing on its own. A savepoint
+ * rolls back only its own writes when the callback throws, so a failure in there (the contact
+ * harvest's, say) never aborts the release around it. Savepoints nest; one name serves them all
+ * (Postgres releases or rolls back to the most recent of that name).
+ */
+export function nestedDb(tx: Prisma.TransactionClient): Db {
+  const transaction = async (fn: unknown): Promise<unknown> => {
+    if (typeof fn !== 'function') throw new Error('only an interactive transaction can nest in a release');
+    await tx.$executeRaw`SAVEPOINT postroom_release_copy`;
+    try {
+      const result: unknown = await (fn as (t: Prisma.TransactionClient) => Promise<unknown>)(tx);
+      await tx.$executeRaw`RELEASE SAVEPOINT postroom_release_copy`;
+      return result;
+    } catch (error) {
+      await tx.$executeRaw`ROLLBACK TO SAVEPOINT postroom_release_copy`;
+      await tx.$executeRaw`RELEASE SAVEPOINT postroom_release_copy`;
+      throw error;
+    }
+  };
+  return new Proxy(tx, { get: (target, prop, receiver): unknown => (prop === '$transaction' ? transaction : (Reflect.get(target, prop, receiver) as unknown)) }) as unknown as Db;
+}
+
+/** Every blob reference a pending send holds: the held blob's, and each copy's. */
+async function releaseHeldBlobs(tx: Prisma.TransactionClient, blobs: BlobStore, held: string, copies: readonly { blobSha256: string }[], reaped: string[]): Promise<void> {
+  for (const sha of [held, ...copies.map((c) => c.blobSha256)]) {
+    const released = await blobs.release(sha, tx);
+    if (released.refcount === 0) reaped.push(sha);
+  }
+}
 
 /** One audit row per release attempt's outcome, as the system (on the account's behalf). */
 async function audit(tx: Tx | Db, action: string, pendingId: string, accountId: string, after: Record<string, unknown>): Promise<void> {
   await recordAudit(tx, { actor: ACTOR, action, entityType: 'pending_send', entityId: pendingId, before: { state: 'held' }, after: { accountId, ...after } });
 }
 
-/** Terminal, not-sent: held → cancelled | failed, the held blob's reference released. */
+/** Terminal, not-sent: held → cancelled | failed, every blob reference it holds released. */
 async function finishUnsent(deps: ReleaseDeps, id: string, state: 'cancelled' | 'failed', reason: string): Promise<boolean> {
   const reaped: string[] = [];
   const done = await deps.db.$transaction(async (tx) => {
@@ -60,8 +114,8 @@ async function finishUnsent(deps: ReleaseDeps, id: string, state: 'cancelled' | 
     if (row === null) return false;
     const n = await tx.pendingSend.updateMany({ where: { id, state: 'held' }, data: { state, reason, finishedAt: deps.now() } });
     if (n.count === 0) return false;
-    const released = await deps.blobs.release(row.heldBlobSha256, tx);
-    if (released.refcount === 0) reaped.push(row.heldBlobSha256);
+    const copies = await tx.pendingSendCopy.findMany({ where: { pendingSendId: id }, select: { blobSha256: true } });
+    await releaseHeldBlobs(tx, deps.blobs, row.heldBlobSha256, copies, reaped);
     await audit(tx, state === 'failed' ? 'compose.release-failed' : 'compose.release-cancelled', id, row.accountId, { state, reason, draftId: row.draftMessageId });
     return true;
   });
@@ -83,20 +137,32 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
 
   const addresses = await sendableAddresses(deps.db, row.accountId);
   const storage = { blobs: deps.blobs, kek: deps.kek() };
+  // PST-T-12.7: the copies, if this send has them; the first sendable one is the accepting one.
+  const copies: CopyRow[] = await deps.db.pendingSendCopy.findMany({ where: { pendingSendId: row.id }, orderBy: { position: 'asc' } });
+  const sendable = copies.filter((c) => c.role !== 'sent');
+  const sentCopy = copies.find((c) => c.role === 'sent') ?? null;
+  const primary = sendable[0] ?? null;
+  if (copies.length > 0 && primary === null) {
+    return (await finishUnsent(deps, id, 'failed', 'the held send has no copy to send')) ? 'failed' : 'skipped';
+  }
+  const later = sendable.slice(1);
+  const submitter = { accountId: row.accountId, addresses: new Set(addresses) };
+  const auditContext = { requestId: `pending-send:${row.id}` };
   let filed: { id: string; mailboxId: string } | null = null;
   const reaped: string[] = [];
   let outcome;
   try {
     outcome = await acceptSubmission(
-      await deps.blobs.get(row.heldBlobSha256),
+      await deps.blobs.get(primary?.blobSha256 ?? row.heldBlobSha256),
       {
-        submitter: { accountId: row.accountId, addresses: new Set(addresses) },
+        submitter,
         envelopeFrom: row.envelopeFrom,
-        recipients: row.recipients.map((address) => ({ address })),
+        recipients: (primary?.recipients ?? row.recipients).map((address) => ({ address })),
         sessionId: `pending:${row.id}`,
         submittedVia: 'webmail',
-        enforceCaps: (tx, recipients, at) => deps.caps(tx, row.accountId, recipients, at),
-        auditContext: { requestId: `pending-send:${row.id}` },
+        // With copies, the accepting one checks the cap for the whole send (as a send that goes now does).
+        enforceCaps: (tx, recipients, at) => deps.caps(tx, row.accountId, primary === null ? recipients : row.recipients, at),
+        auditContext,
         withinTransaction: async (tx, accepted) => {
           const now = deps.now();
           // The exactly-once gate: commits with the queue rows, or not at all.
@@ -110,11 +176,38 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
             if (sha !== null) reaped.push(sha);
             draftRemoved = current.id;
           }
+          // Every other copy, in this same transaction, each to its own envelope (PST-T-12.7).
+          const copyOutbound: { role: string; recipients: number; outboundId: string | null }[] = [];
+          if (primary !== null) {
+            await tx.pendingSendCopy.update({ where: { id: primary.id }, data: { outboundId: accepted.outboundId } });
+            copyOutbound.push({ role: primary.role, recipients: primary.recipients.length, outboundId: accepted.outboundId });
+          }
+          for (const c of later) {
+            const got = await acceptSubmission(
+              await deps.blobs.get(c.blobSha256),
+              {
+                submitter,
+                envelopeFrom: row.envelopeFrom,
+                recipients: c.recipients.map((address) => ({ address })),
+                sessionId: `pending:${row.id}:${String(c.position)}`,
+                submittedVia: 'webmail',
+                enforceCaps: (ctx, recipients, at) => deps.caps(ctx, row.accountId, recipients, at),
+                auditContext,
+                withinTransaction: async (ctx, copyAccepted) => {
+                  await ctx.pendingSendCopy.update({ where: { id: c.id }, data: { outboundId: copyAccepted.outboundId } });
+                },
+              },
+              { db: nestedDb(tx), storage: () => storage, now: deps.now, log },
+            );
+            if (!got.ok) throw new CopyRefused(got.reason, got.reply.lines, c.recipients);
+            copyOutbound.push({ role: c.role, recipients: c.recipients.length, outboundId: got.outboundId });
+          }
+          // Sent keeps the main copy as queued — or, with no main copy, the one held for Sent.
           const copy = await fileCopy(tx, {
             accountId: row.accountId,
             mailboxName: await specialMailboxName(tx, row.accountId, 'sent'),
-            blobSha256: accepted.blobSha256,
-            size: accepted.size,
+            blobSha256: sentCopy?.blobSha256 ?? accepted.blobSha256,
+            size: sentCopy?.size ?? accepted.size,
             flags: SENT_FLAGS,
             denorm: {
               messageIdHeader: accepted.messageId,
@@ -130,8 +223,7 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
             takeReference: true,
           });
           filed = copy;
-          const released = await deps.blobs.release(row.heldBlobSha256, tx);
-          if (released.refcount === 0) reaped.push(row.heldBlobSha256);
+          await releaseHeldBlobs(tx, deps.blobs, row.heldBlobSha256, copies, reaped);
           let reminderId: string | null = null;
           if (row.remindAfterSeconds !== null) {
             reminderId = (
@@ -157,6 +249,7 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
             sentMessageId: copy.id,
             draftRemoved,
             reminderId,
+            ...(copies.length === 0 ? {} : { copies: copyOutbound }),
           });
         },
       },
@@ -165,6 +258,10 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
   } catch (error) {
     if (error instanceof AlreadyHandled) return 'skipped';
     if (error instanceof DraftGone) return (await finishUnsent(deps, id, 'cancelled', 'the draft was removed')) ? 'cancelled' : 'skipped';
+    if (error instanceof CopyRefused) {
+      log('pending-send-copy-refused', { id, reason: error.reason });
+      return (await finishUnsent(deps, id, 'failed', `${error.reason} (the copy for ${error.recipients.join(', ')}): ${error.lines.join(' ')}; nothing was sent`)) ? 'failed' : 'skipped';
+    }
     throw error;
   }
   if (!outcome.ok) {

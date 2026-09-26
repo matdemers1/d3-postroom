@@ -195,30 +195,32 @@ export function pendingJson(row: PendingRow) {
 /**
  * Cancel a held send (undo, a cancelled schedule, or its draft copy being replaced or discarded).
  * The held → cancelled transition is conditional on `held`, so it serializes with the worker's
- * release on the row lock: exactly one of them wins. The copy in Drafts is left where it is. Returns
- * whether it was cancelled, and the held blob's sha when that was its last reference (reap it after
- * the commit).
+ * release on the row lock: exactly one of them wins. The copy in Drafts is left where it is. Every
+ * blob reference the send holds is released — the held blob's and each of its copies' (PST-T-12.7).
+ * Returns whether it was cancelled, and the shas whose last reference that was (reap them after the
+ * commit).
  */
-export async function cancelHeld(
-  tx: Tx,
-  blobs: BlobStore,
-  input: { id: string; heldBlobSha256: string; reason: string; now: Date },
-): Promise<{ cancelled: boolean; reaped: string | null }> {
+export async function cancelHeld(tx: Tx, blobs: BlobStore, input: { id: string; reason: string; now: Date }): Promise<{ cancelled: boolean; reaped: string[] }> {
   const n = await tx.pendingSend.updateMany({ where: { id: input.id, state: 'held' }, data: { state: 'cancelled', reason: input.reason, finishedAt: input.now } });
-  if (n.count === 0) return { cancelled: false, reaped: null };
-  const released = await blobs.release(input.heldBlobSha256, tx);
-  return { cancelled: true, reaped: released.refcount === 0 ? input.heldBlobSha256 : null };
+  if (n.count === 0) return { cancelled: false, reaped: [] };
+  const row = await tx.pendingSend.findUniqueOrThrow({ where: { id: input.id }, select: { heldBlobSha256: true, copies: { select: { blobSha256: true }, orderBy: { position: 'asc' } } } });
+  const reaped: string[] = [];
+  for (const sha of [row.heldBlobSha256, ...row.copies.map((c) => c.blobSha256)]) {
+    const released = await blobs.release(sha, tx);
+    if (released.refcount === 0) reaped.push(sha);
+  }
+  return { cancelled: true, reaped };
 }
 
 /** Cancel whatever held send keeps `draftId` as its Drafts copy (the draft is being replaced or discarded). */
 export async function cancelHeldForDraft(tx: Tx, blobs: BlobStore, accountId: string, draftId: string, reason: string, now: Date): Promise<{ ids: string[]; reaped: string[] }> {
-  const rows = await tx.pendingSend.findMany({ where: { accountId, draftMessageId: draftId, state: 'held' }, select: { id: true, heldBlobSha256: true } });
+  const rows = await tx.pendingSend.findMany({ where: { accountId, draftMessageId: draftId, state: 'held' }, select: { id: true } });
   const ids: string[] = [];
   const reaped: string[] = [];
   for (const r of rows) {
-    const c = await cancelHeld(tx, blobs, { id: r.id, heldBlobSha256: r.heldBlobSha256, reason, now });
+    const c = await cancelHeld(tx, blobs, { id: r.id, reason, now });
     if (c.cancelled) ids.push(r.id);
-    if (c.reaped !== null) reaped.push(c.reaped);
+    reaped.push(...c.reaped);
   }
   return { ids, reaped };
 }

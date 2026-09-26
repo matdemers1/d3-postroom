@@ -7,6 +7,9 @@
 //                (expunged_message in Snoozed, new UIDs in INBOX, pg_notify on both).
 //   PST-REQ-143  remind-if-no-reply — resurfaced only when nobody replied, never when a reply arrived;
 //                never a second delivery.
+//   PST-REQ-161  (PST-T-12.7) a held send with several copies — main, one per Bcc, a Sent copy —
+//                releases them in one transaction, each to its own envelope, exactly once and all or
+//                nothing; an undo releases every copy's blob; a row with no copies releases as before.
 import { randomInt, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -116,7 +119,7 @@ describe.skipIf(baseUrl === undefined)('scheduled loop (PST-T-9.1)', () => {
   const outboundFor = (me: Person, messageId: string) => db.outboundMessage.findMany({ where: { accountId: me.id, messageId }, include: { recipients: true } });
 
   beforeAll(async () => {
-    t = await createTestDatabase(baseUrl ?? '', 'pst_t91_worker');
+    t = await createTestDatabase(baseUrl ?? '', 'pst_t127_worker');
     db = t.db;
     blobRoot = mkdtempSync(join(tmpdir(), 'pst-t91-blobs-'));
     kek = generateKek();
@@ -289,6 +292,193 @@ describe.skipIf(baseUrl === undefined)('scheduled loop (PST-T-9.1)', () => {
     expect(row.state).toBe('failed');
     expect(row.reason).toMatch(/cap-exceeded/);
     expect(await db.message.count({ where: { id: pending.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
+  });
+
+  // --- PST-T-12.7: a held send with several copies (an encrypted send with Bcc) -----------------------
+
+  /**
+   * What POST /api/compose/send writes for a held encrypted send with Bcc: the held blob (the main
+   * copy), one pending_send_copy per copy — main (To alice), bcc (bob), bcc (carol) — each holding
+   * its own blob reference. `bccOnly` holds no main copy: a 'sent' copy for Sent, and the Bcc copies.
+   */
+  const holdCopies = async (me: Person, o: { releaseAt: Date; bccOnly?: boolean }) => {
+    const subject = `Copies ${randomUUID().slice(0, 6)}`;
+    const messageId = `<${randomUUID()}@d3cloud.io>`;
+    const base = { from: me.address, to: 'alice@example.org', subject, messageId };
+    const mainRaw = rawMessage({ ...base, subject: `${subject} [main]` });
+    const bobRaw = rawMessage({ ...base, subject: `${subject} [bob]` });
+    const carolRaw = rawMessage({ ...base, subject: `${subject} [carol]` });
+    const held = await blobs.put(mainRaw);
+    const draftBlob = await blobs.put(rawMessage({ ...base, bcc: 'bob@example.org, carol@example.org' }));
+    const draft = await db.$transaction((tx) => fileLocalMessage(tx, { accountId: me.id, mailbox: 'Drafts', blobSha256: draftBlob.sha256, size: draftBlob.size, internalDate: clock.now(), flags: ['\\Draft', '\\Seen'] }));
+    const copies = [
+      o.bccOnly === true ? { role: 'sent', recipients: [] as string[], raw: mainRaw } : { role: 'main', recipients: ['alice@example.org'], raw: mainRaw },
+      { role: 'bcc', recipients: ['bob@example.org'], raw: bobRaw },
+      { role: 'bcc', recipients: ['carol@example.org'], raw: carolRaw },
+    ];
+    const pending = await db.pendingSend.create({
+      data: {
+        accountId: me.id,
+        kind: 'undo',
+        releaseAt: o.releaseAt,
+        envelopeFrom: me.address,
+        recipients: [...(o.bccOnly === true ? [] : ['alice@example.org']), 'bob@example.org', 'carol@example.org'],
+        heldBlobSha256: held.sha256,
+        size: held.size,
+        draftMessageId: draft.id,
+        messageIdHeader: messageId,
+        subject,
+        toText: o.bccOnly === true ? '' : 'alice@example.org',
+      },
+    });
+    const shas: string[] = [held.sha256];
+    for (const [position, c] of copies.entries()) {
+      const put = await blobs.put(c.raw);
+      shas.push(put.sha256);
+      await db.pendingSendCopy.create({ data: { pendingSendId: pending.id, role: c.role, position, recipients: c.recipients, blobSha256: put.sha256, size: put.size } });
+    }
+    return { pending, shas: [...new Set(shas)], subject };
+  };
+
+  /** The API's cancelHeld (apps/api/src/compose/store.ts): conditional on held, then every blob reference released. */
+  const undoHeld = (id: string) =>
+    db.$transaction(async (tx) => {
+      const n = await tx.pendingSend.updateMany({ where: { id, state: 'held' }, data: { state: 'cancelled', reason: 'undone', finishedAt: clock.now() } });
+      if (n.count === 0) return 'too-late' as const;
+      const row = await tx.pendingSend.findUniqueOrThrow({ where: { id }, include: { copies: true } });
+      for (const sha of [row.heldBlobSha256, ...row.copies.map((c) => c.blobSha256)]) await blobs.release(sha, tx);
+      return 'undone' as const;
+    });
+
+  const envelopes = async (me: Person, messageId: string) =>
+    (await outboundFor(me, messageId)).map((o) => ({ to: o.recipients.map((r) => r.address).sort(), sha: o.blobSha256 })).sort((a, b) => (a.to[0] ?? '').localeCompare(b.to[0] ?? ''));
+
+  it('several copies release together: main to alice only, each Bcc copy only to its own recipient, Sent keeps the main copy, every reference released', async () => {
+    const me = await person();
+    const { pending, shas, subject } = await holdCopies(me, { releaseAt: clock.now() });
+    const refsBefore = await db.blob.findMany({ where: { sha256: { in: shas } }, select: { sha256: true, refcount: true } });
+    // The held blob and the main copy are the same bytes: one blob, two references (the row's, the copy's).
+    expect(refsBefore.map((r) => r.refcount).sort()).toEqual([1, 1, 2]);
+
+    expect(await releaseOne(deps, pending.id)).toBe('released');
+    const out = await envelopes(me, pending.messageIdHeader);
+    expect(out.map((o) => o.to)).toEqual([['alice@example.org'], ['bob@example.org'], ['carol@example.org']]);
+    const bytes = await Promise.all(out.map(async (o) => (await blobs.getBuffer(o.sha)).toString('latin1')));
+    expect(bytes[0]).toContain(`Subject: ${subject} [main]`);
+    expect(bytes[1]).toContain(`Subject: ${subject} [bob]`);
+    expect(bytes[2]).toContain(`Subject: ${subject} [carol]`);
+    for (const b of bytes) expect(b).toMatch(/^DKIM-Signature:/);
+
+    const row = await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id }, include: { copies: { orderBy: { position: 'asc' } } } });
+    expect(row.state).toBe('released');
+    expect(row.copies.map((c) => c.outboundId)).toEqual(expect.arrayContaining([expect.any(String)]));
+    expect(row.copies.every((c) => c.outboundId !== null)).toBe(true);
+    expect(row.outboundId).toBe(row.copies[0]?.outboundId);
+    // Sent keeps the main copy as queued — once.
+    const sent = await db.message.findUniqueOrThrow({ where: { id: row.sentMessageId ?? '' } });
+    expect(sent.mailboxId).toBe(me.box.Sent);
+    expect(sent.blobSha256).toBe(out[0]?.sha);
+    expect(await db.message.count({ where: { mailboxId: me.box.Sent } })).toBe(1);
+    // Every held reference went with the release: no held blob is left.
+    expect(await db.blob.count({ where: { sha256: { in: shas } } })).toBe(0);
+    // One submission.accept per copy; one compose.release naming them.
+    expect(await db.auditEvent.count({ where: { action: 'submission.accept', entityId: { in: row.copies.map((c) => c.outboundId ?? '') } } })).toBe(3);
+    const audit = await db.auditEvent.findFirstOrThrow({ where: { entityId: pending.id, action: 'compose.release' } });
+    expect(JSON.stringify(audit.after)).toContain('"copies"');
+    // Again: nothing more.
+    expect(await releaseOne(deps, pending.id)).toBe('skipped');
+    expect(await outboundFor(me, pending.messageIdHeader)).toHaveLength(3);
+  });
+
+  it('a Bcc-only send: only the Bcc copies are queued, and Sent keeps the copy held for it', async () => {
+    const me = await person();
+    const { pending, shas } = await holdCopies(me, { releaseAt: clock.now(), bccOnly: true });
+    const sentSha = (await db.pendingSendCopy.findFirstOrThrow({ where: { pendingSendId: pending.id, role: 'sent' } })).blobSha256;
+    expect(await releaseOne(deps, pending.id)).toBe('released');
+    const out = await envelopes(me, pending.messageIdHeader);
+    expect(out.map((o) => o.to)).toEqual([['bob@example.org'], ['carol@example.org']]);
+    const row = await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id } });
+    const sent = await db.message.findUniqueOrThrow({ where: { id: row.sentMessageId ?? '' } });
+    expect(sent.blobSha256).toBe(sentSha);
+    // The Sent copy keeps its blob; every other held reference is gone.
+    expect((await db.blob.findUniqueOrThrow({ where: { sha256: sentSha } })).refcount).toBe(1);
+    expect(await db.blob.count({ where: { sha256: { in: shas.filter((s) => s !== sentSha) } } })).toBe(0);
+  });
+
+  it('undo of a multi-copy send: nothing queued, every blob reference released', async () => {
+    const me = await person();
+    const { pending, shas } = await holdCopies(me, { releaseAt: new Date(clock.now().getTime() + 10_000) });
+    expect(await undoHeld(pending.id)).toBe('undone');
+    clock.advance(10_000);
+    await releaseDue(deps);
+    expect(await outboundFor(me, pending.messageIdHeader)).toHaveLength(0);
+    expect(await db.blob.count({ where: { sha256: { in: shas } } })).toBe(0);
+    expect(await db.message.count({ where: { id: pending.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
+  });
+
+  it('multi-copy: undo racing the release tick — exactly one wins, and never some copies sent and others not', async () => {
+    for (let round = 0; round < 8; round++) {
+      const me = await person();
+      const { pending, shas } = await holdCopies(me, { releaseAt: clock.now() });
+      const [undone, ...releases] = await Promise.all([undoHeld(pending.id), releaseOne(deps, pending.id), releaseOne(deps, pending.id)]);
+      const sent = await outboundFor(me, pending.messageIdHeader);
+      const state = (await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id } })).state;
+      if (undone === 'undone') {
+        expect(releases.every((r) => r === 'skipped')).toBe(true);
+        expect(sent).toHaveLength(0);
+        expect(state).toBe('cancelled');
+      } else {
+        expect(releases.filter((r) => r === 'released')).toHaveLength(1);
+        expect(sent).toHaveLength(3);
+        expect(state).toBe('released');
+      }
+      // Either way every held reference was released exactly once: none left over, none double-freed.
+      expect(await db.blob.count({ where: { sha256: { in: shas } } })).toBe(0);
+    }
+  });
+
+  it('multi-copy crash-safe: a crash inside the accepting transaction queues no copy; three racing releases queue each copy once', async () => {
+    const me = await person();
+    const { pending } = await holdCopies(me, { releaseAt: clock.now() });
+    await expect(releaseOne({ ...deps, beforeCommit: () => Promise.reject(new Error('kill -9')) }, pending.id)).rejects.toThrow('kill -9');
+    expect(await outboundFor(me, pending.messageIdHeader)).toHaveLength(0);
+    expect((await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id } })).state).toBe('held');
+    expect(await db.pendingSendCopy.count({ where: { pendingSendId: pending.id, outboundId: { not: null } } })).toBe(0);
+
+    const outcomes = await Promise.all([releaseOne(deps, pending.id), releaseOne(deps, pending.id), releaseOne(deps, pending.id)]);
+    expect(outcomes.filter((o) => o === 'released')).toHaveLength(1);
+    expect(outcomes.filter((o) => o === 'skipped')).toHaveLength(2);
+    const out = await envelopes(me, pending.messageIdHeader);
+    expect(out.map((o) => o.to)).toEqual([['alice@example.org'], ['bob@example.org'], ['carol@example.org']]);
+    expect(await db.message.count({ where: { mailboxId: me.box.Sent } })).toBe(1);
+  });
+
+  it('multi-copy all or nothing: a refusal of one Bcc copy fails the whole send — no copy is queued, the draft stays', async () => {
+    const me = await person();
+    const { pending, shas } = await holdCopies(me, { releaseAt: clock.now() });
+    const capped: ReleaseDeps = {
+      ...deps,
+      caps: (_tx, _account, recipients) => (recipients.length === 1 && recipients[0] === 'carol@example.org' ? Promise.reject(new CapExceededError({ code: 452, enhanced: '4.5.3', lines: ['Recipient cap reached'] })) : Promise.resolve()),
+    };
+    expect(await releaseOne(capped, pending.id)).toBe('failed');
+    expect(await outboundFor(me, pending.messageIdHeader)).toHaveLength(0);
+    const row = await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id } });
+    expect(row.state).toBe('failed');
+    expect(row.reason).toMatch(/cap-exceeded.*carol@example\.org/);
+    expect(await db.message.count({ where: { id: pending.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
+    expect(await db.message.count({ where: { mailboxId: me.box.Sent } })).toBe(0);
+    expect(await db.blob.count({ where: { sha256: { in: shas } } })).toBe(0);
+  });
+
+  it('a pre-migration-shaped held row (one blob, no copies) still releases, to its whole envelope', async () => {
+    const me = await person();
+    const pending = await hold(me, { releaseAt: clock.now() });
+    expect(await db.pendingSendCopy.count({ where: { pendingSendId: pending.id } })).toBe(0);
+    expect(await releaseOne(deps, pending.id)).toBe('released');
+    const out = await outboundFor(me, pending.messageIdHeader);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.recipients.map((r) => r.address).sort()).toEqual(['alice@example.org', 'secret@example.org']);
+    expect(await db.blob.findUnique({ where: { sha256: pending.heldBlobSha256 } })).toBeNull();
   });
 
   // --- PST-REQ-142 ----------------------------------------------------------------------------------
