@@ -96,6 +96,12 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
+      '@postroom/auth-throttle':
+        specifier: workspace:*
+        version: link:../../packages/auth-throttle
+      '@postroom/submission':
+        specifier: workspace:*
+        version: link:../submission
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
