@@ -149,7 +149,7 @@ describe.skipIf(baseUrl === undefined)('sender pins and the new-sender screen (P
       envelopeFrom: from,
       message: message({ from: `Stranger <${from}>`, to: 'me@d3cloud.io', subject: 'hello there' }),
     });
-    expect(copies[0]).toMatchObject({ flags: ['$People'], mailbox: { name: 'INBOX' }, verdict: { bucket: 'people' } });
+    expect(copies[0]).toMatchObject({ flags: ['$NewSender', '$People'], mailbox: { name: 'INBOX' }, verdict: { bucket: 'people' } });
     expect(copies[0]?.verdict?.scores).toMatchObject({ newSender: 1 });
     expect(copies[0]?.verdict?.reasons.some((r) => r.startsWith('new-sender:'))).toBe(true);
   });

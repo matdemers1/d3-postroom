@@ -2,6 +2,7 @@
 // (PST-T-5.4, PST-REQ-105, PST-REQ-106). Everything is scoped to the caller's account.
 import { normalizeAddress, type FilingBucket } from '@postroom/classifier';
 import type { Db, Prisma } from '@postroom/db';
+import { updateMessage } from '../mail/store.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -56,6 +57,9 @@ export async function setSenderScreen(tx: Tx, accountId: string, address: string
  * (PST-REQ-106: a screen decision answers the badge, so it should not keep showing). Only messages
  * whose scores carry `newSender` are touched; returns how many were changed.
  */
+/** The IMAP keyword the worker sets on a first-time human sender's copy (apps/worker file stage). */
+const NEW_SENDER_KEYWORD = '$NewSender';
+
 export async function clearNewSenderBadge(tx: Tx, accountId: string, address: string): Promise<number> {
   const normalized = normalizeAddress(address);
   const candidates = await tx.messageVerdict.findMany({
@@ -69,6 +73,8 @@ export async function clearNewSenderBadge(tx: Tx, accountId: string, address: st
     const scores = { ...((c.scores ?? {}) as Record<string, unknown>) };
     delete scores['newSender'];
     await tx.messageVerdict.update({ where: { messageId: c.messageId }, data: { scores: scores as Prisma.InputJsonValue } });
+    // The IMAP keyword too, as a flag change every client sees (modseq bump + notify).
+    await updateMessage(tx, { accountId, messageId: c.messageId, ifMatch: '*', add: [], remove: [NEW_SENDER_KEYWORD], moveTo: undefined });
     cleared++;
   }
   return cleared;

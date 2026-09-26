@@ -61,6 +61,8 @@ export function keywordSuffix(tag: string): string {
   return cleaned === '' ? '_' : cleaned;
 }
 
+/** IMAP keyword on a first-time human sender's INBOX copy (PST-T-5.4). */
+export const NEW_SENDER_KEYWORD = '$NewSender';
 export const tagKeyword = (tag: string): string => `${TAG_KEYWORD_PREFIX}${keywordSuffix(tag)}`;
 export const siteKeyword = (site: string): string => `${SITE_KEYWORD_PREFIX}${keywordSuffix(site)}`;
 
@@ -227,7 +229,13 @@ export async function fileStage(
         continue;
       }
       const decision = decisionFor(prior.classify, plan.accountId);
-      const keywords = [...new Set(decision.keyword === null ? plan.keywords : [...plan.keywords, decision.keyword])].sort();
+      // $NewSender marks a first-time human sender (PST-REQ-106) so every IMAP client sees the badge,
+      // not only the webmail; Allow/Block in the webmail clears it.
+      const extra = [
+        ...(decision.keyword === null ? [] : [decision.keyword]),
+        ...(decision.scores['newSender'] === 1 ? [NEW_SENDER_KEYWORD] : []),
+      ];
+      const keywords = [...new Set([...plan.keywords, ...extra])].sort();
       const mailbox = await targetMailboxName(tx, plan.accountId, decision);
       const filed = await fileLocalMessage(tx, {
         accountId: plan.accountId,

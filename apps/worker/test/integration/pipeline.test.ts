@@ -81,7 +81,7 @@ describe.skipIf(baseUrl === undefined)('inbound pipeline (PST-T-2.7, PST-T-2.11)
     expect(copies).toHaveLength(1);
     const [copy] = copies;
     expect(copy?.mailbox).toMatchObject({ accountId: operatorId, name: 'INBOX', specialUse: 'inbox' });
-    expect(copy).toMatchObject({ subject: 'Plain one', fromAddress: 'alice@example.org', blobSha256: sha256, flags: ['$People'] });
+    expect(copy).toMatchObject({ subject: 'Plain one', fromAddress: 'alice@example.org', blobSha256: sha256, flags: ['$NewSender', '$People'] });
     expect(copy?.messageIdHeader).toMatch(/@example\.org$/);
     expect(copy?.sentAt?.toISOString()).toBe('2026-09-25T12:00:00.000Z');
     expect(copy?.verdict?.bucket).toBe('people');
