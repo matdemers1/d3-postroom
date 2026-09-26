@@ -125,3 +125,10 @@ these are reported as `uninspectable-archive` (no-history severity) rather than 
 The OLE/CFB walker reads the header's own 109-entry DIFAT table but does not follow additional
 DIFAT sectors, which is enough for every real Office document (they need far fewer than 109 FAT
 sectors) but would miss a macro storage in a pathologically fragmented compound file.
+
+
+## Depth limit
+
+Nested archives are inspected to a depth of 3. Anything nested deeper is reported as
+`uninspectable-archive` and **always** quarantined, whatever the sender's history: an executable
+could sit below the depth we look at, and legitimate mail almost never nests archives that deep.
