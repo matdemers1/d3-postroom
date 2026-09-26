@@ -1,0 +1,288 @@
+// The OpenAPI 3.1 document, generated from the zod schemas the routes validate with (PST-REQ-085).
+// OpenAPI 3.1 uses JSON Schema 2020-12, which is what `z.toJSONSchema()` emits, so no translation
+// layer sits between what the server checks and what the spec says.
+//
+// Named response/event schemas become components (via a zod registry, so shared shapes are $refs);
+// params, queries and request bodies are emitted inline in their *input* form (defaults optional).
+// `serializeSpec` is deterministic: the same schemas always give byte-identical JSON, which is what
+// lets `openapi:check` fail CI on any drift.
+import { z } from 'zod';
+import { SESSION_COOKIE } from '../auth/sessions.js';
+import * as S from '../mail/schemas.js';
+
+type Json = Record<string, unknown>;
+
+export interface ResponseSpec {
+  description: string;
+  /** A component name, for JSON bodies. */
+  schema?: string;
+  /** Non-JSON bodies, by media type (e.g. text/event-stream). */
+  content?: Record<string, Json>;
+  headers?: Record<string, Json>;
+}
+
+export interface RouteSpec {
+  method: 'get' | 'post' | 'patch' | 'delete';
+  /** OpenAPI path, `{param}` style. */
+  path: string;
+  operationId: string;
+  tag: string;
+  summary: string;
+  description?: string;
+  params?: z.ZodObject;
+  query?: z.ZodObject;
+  body?: z.ZodType;
+  headers?: { name: string; required: boolean; description: string }[];
+  responses: Record<string, ResponseSpec>;
+}
+
+/** Every schema published under components.schemas, by name. */
+export const COMPONENTS: Record<string, z.ZodType> = {
+  Error: S.ErrorBody,
+  Mailbox: S.Mailbox,
+  MailboxList: S.MailboxList,
+  MessageSummary: S.MessageSummary,
+  MessageList: S.MessageList,
+  MessageDetail: S.MessageDetail,
+  Attachment: S.Attachment,
+  MessageBody: S.MessageBody,
+  ThreadDetail: S.ThreadDetail,
+  MailboxChangedEvent: S.MailboxChangedEvent,
+  MessageNewEvent: S.MessageNewEvent,
+};
+
+const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
+const COMMON = { '401': err('No session.'), '400': err('The request failed validation.') };
+const ETAG = { ETag: { description: 'The message MODSEQ, quoted: "<modseq>".', schema: { type: 'string' } } };
+
+export const ROUTES: RouteSpec[] = [
+  {
+    method: 'get',
+    path: '/api/mailboxes',
+    operationId: 'listMailboxes',
+    tag: 'Mailboxes',
+    summary: "The caller's mailboxes with counters.",
+    responses: { '200': { description: 'Mailboxes, INBOX first.', schema: 'MailboxList' }, '401': err('No session.') },
+  },
+  {
+    method: 'get',
+    path: '/api/mailboxes/{id}/messages',
+    operationId: 'listMessages',
+    tag: 'Mailboxes',
+    summary: 'One page of a mailbox, newest UID first.',
+    params: S.IdParams,
+    query: S.MessageListQuery,
+    responses: { '200': { description: 'A page; nextCursor is null on the last.', schema: 'MessageList' }, ...COMMON, '404': err('Not a mailbox of the caller.') },
+  },
+  {
+    method: 'get',
+    path: '/api/messages/{id}',
+    operationId: 'getMessage',
+    tag: 'Messages',
+    summary: 'One message: summary, threading headers and verdict.',
+    params: S.IdParams,
+    responses: { '200': { description: 'The message.', schema: 'MessageDetail', headers: ETAG }, ...COMMON, '404': err('Not a message of the caller.') },
+  },
+  {
+    method: 'patch',
+    path: '/api/messages/{id}',
+    operationId: 'updateMessage',
+    tag: 'Messages',
+    summary: 'Add/remove flags and/or move to another mailbox.',
+    description:
+      'Requires If-Match with the ETag from GET. A move creates the message in the target with a new UID (and a new id), removes it from the source, and bumps both mailboxes\' HIGHESTMODSEQ. Audited. Needs x-postroom-csrf: 1.',
+    params: S.IdParams,
+    body: S.MessagePatch,
+    headers: [
+      { name: 'If-Match', required: true, description: 'The ETag of the version being changed, or *.' },
+      { name: 'x-postroom-csrf', required: true, description: 'Must be 1.' },
+    ],
+    responses: {
+      '200': { description: 'The message after the change (a new id after a move).', schema: 'MessageDetail', headers: ETAG },
+      ...COMMON,
+      '403': err('Missing CSRF header.'),
+      '404': err('Not a message (or target mailbox) of the caller.'),
+      '412': { description: 'If-Match is stale; the current ETag is returned.', schema: 'Error', headers: ETAG },
+      '428': err('If-Match missing.'),
+    },
+  },
+  {
+    method: 'get',
+    path: '/api/messages/{id}/raw',
+    operationId: 'getMessageRaw',
+    tag: 'Messages',
+    summary: 'The RFC 5322 source, streamed as a text/plain download.',
+    params: S.IdParams,
+    responses: {
+      '200': { description: 'The message source.', content: { 'text/plain': { schema: { type: 'string' } } } },
+      ...COMMON,
+      '404': err('Not a message of the caller.'),
+    },
+  },
+  {
+    method: 'get',
+    path: '/api/messages/{id}/body',
+    operationId: 'getMessageBody',
+    tag: 'Messages',
+    summary: 'The parsed message: headers, text, raw html and the attachment list.',
+    params: S.IdParams,
+    responses: { '200': { description: 'The parsed body.', schema: 'MessageBody' }, ...COMMON, '404': err('Not a message of the caller.') },
+  },
+  {
+    method: 'get',
+    path: '/api/messages/{id}/attachments/{partId}',
+    operationId: 'getAttachment',
+    tag: 'Messages',
+    summary: 'One MIME leaf part, decoded and streamed as a download (never inline).',
+    params: S.AttachmentParams,
+    responses: {
+      '200': {
+        description: 'application/octet-stream with Content-Disposition: attachment; the declared type is in X-Postroom-Content-Type.',
+        content: { 'application/octet-stream': { schema: { type: 'string', contentEncoding: 'binary' } } },
+      },
+      ...COMMON,
+      '404': err('No such message or leaf part.'),
+    },
+  },
+  {
+    method: 'get',
+    path: '/api/threads/{id}',
+    operationId: 'getThread',
+    tag: 'Threads',
+    summary: "A thread and the caller's messages in it, oldest first.",
+    params: S.IdParams,
+    responses: { '200': { description: 'The thread.', schema: 'ThreadDetail' }, ...COMMON, '404': err('Not a thread of the caller.') },
+  },
+  {
+    method: 'get',
+    path: '/api/search',
+    operationId: 'search',
+    tag: 'Search',
+    summary: 'Full-text search over the caller’s mail.',
+    query: S.SearchQuery,
+    responses: { '200': { description: 'Matching messages.', schema: 'MessageList' }, ...COMMON, '501': err('Search is not built yet (PST-T-3.7).') },
+  },
+  {
+    method: 'get',
+    path: '/api/events',
+    operationId: 'events',
+    tag: 'Events',
+    summary: 'Live updates as server-sent events.',
+    description:
+      'Starts with one mailbox.changed per mailbox, then message.new (MessageNewEvent) and mailbox.changed (MailboxChangedEvent) as mail arrives or changes. A comment heartbeat every 25 s. Only the caller\'s mailboxes.',
+    responses: {
+      '200': { description: 'An event stream.', content: { 'text/event-stream': { schema: { type: 'string' } } } },
+      '401': err('No session.'),
+      '503': err('Events are not configured.'),
+    },
+  },
+];
+
+function strip(schema: Json): Json {
+  const out: Json = { ...schema };
+  delete out['$schema'];
+  delete out['$id'];
+  return out;
+}
+
+function inputSchema(schema: z.ZodType): Json {
+  return strip(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }));
+}
+
+function componentSchemas(components: Record<string, z.ZodType>): Record<string, Json> {
+  const registry = z.registry<{ id: string }>();
+  for (const [name, schema] of Object.entries(components)) registry.add(schema, { id: name });
+  const out = z.toJSONSchema(registry, { uri: (id) => `#/components/schemas/${id}`, unrepresentable: 'any' }) as { schemas: Record<string, Json> };
+  const sorted: Record<string, Json> = {};
+  for (const name of Object.keys(out.schemas).sort()) {
+    const schema = out.schemas[name];
+    if (schema !== undefined) sorted[name] = strip(schema);
+  }
+  return sorted;
+}
+
+function parameters(route: RouteSpec): Json[] {
+  const out: Json[] = [];
+  const add = (where: 'path' | 'query', obj: z.ZodObject | undefined): void => {
+    if (obj === undefined) return;
+    const json = inputSchema(obj) as { properties?: Record<string, Json>; required?: string[] };
+    for (const [name, schema] of Object.entries(json.properties ?? {})) {
+      const description = typeof schema['description'] === 'string' ? schema['description'] : undefined;
+      out.push({
+        name,
+        in: where,
+        required: where === 'path' || (json.required ?? []).includes(name),
+        ...(description !== undefined ? { description } : {}),
+        schema,
+      });
+    }
+  };
+  add('path', route.params);
+  add('query', route.query);
+  for (const h of route.headers ?? []) out.push({ name: h.name, in: 'header', required: h.required, description: h.description, schema: { type: 'string' } });
+  return out;
+}
+
+function responses(route: RouteSpec): Json {
+  const out: Json = {};
+  for (const code of Object.keys(route.responses).sort()) {
+    const r = route.responses[code];
+    if (r === undefined) continue;
+    const content = r.schema !== undefined ? { 'application/json': { schema: { $ref: `#/components/schemas/${r.schema}` } } } : r.content;
+    out[code] = { description: r.description, ...(r.headers !== undefined ? { headers: r.headers } : {}), ...(content !== undefined ? { content } : {}) };
+  }
+  return out;
+}
+
+export function buildOpenApiDocument(routes: readonly RouteSpec[] = ROUTES, components: Record<string, z.ZodType> = COMPONENTS): Json {
+  const paths: Record<string, Record<string, Json>> = {};
+  for (const route of [...routes].sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))) {
+    for (const r of Object.values(route.responses)) {
+      if (r.schema !== undefined && !(r.schema in components)) throw new Error(`${route.operationId}: unknown component ${r.schema}`);
+    }
+    const op: Json = {
+      operationId: route.operationId,
+      tags: [route.tag],
+      summary: route.summary,
+      ...(route.description !== undefined ? { description: route.description } : {}),
+    };
+    const params = parameters(route);
+    if (params.length > 0) op['parameters'] = params;
+    if (route.body !== undefined) op['requestBody'] = { required: true, content: { 'application/json': { schema: inputSchema(route.body) } } };
+    op['responses'] = responses(route);
+    (paths[route.path] ??= {})[route.method] = op;
+  }
+  return {
+    openapi: '3.1.1',
+    info: {
+      title: 'Postroom API',
+      version: '0.1.0',
+      description: 'REST/JSON under /api for the Postroom webmail. Generated from the zod schemas that validate requests (PST-REQ-085); regenerate with `pnpm --filter @postroom/api openapi`.',
+      license: { name: 'Apache-2.0', identifier: 'Apache-2.0' },
+    },
+    servers: [{ url: '/' }],
+    components: {
+      schemas: componentSchemas(components),
+      securitySchemes: { session: { type: 'apiKey', in: 'cookie', name: SESSION_COOKIE } },
+    },
+    security: [{ session: [] }],
+    paths,
+  };
+}
+
+/** Stable text: 2-space JSON and a trailing newline. */
+export function serializeSpec(doc: Json): string {
+  return `${JSON.stringify(doc, null, 2)}\n`;
+}
+
+/** null when `committed` matches what the schemas generate now; otherwise a short description of the first difference. */
+export function specDrift(committed: string, generated: string): string | null {
+  if (committed === generated) return null;
+  const a = committed.split('\n');
+  const b = generated.split('\n');
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    if (a[i] !== b[i]) return `line ${i + 1}:\n  committed: ${a[i] ?? '<end of file>'}\n  generated: ${b[i] ?? '<end of file>'}`;
+  }
+  return 'files differ';
+}

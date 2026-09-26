@@ -11,7 +11,9 @@
     "test": "vitest run --project unit --passWithNoTests",
     "start": "node dist/main.js",
     "dev": "node --conditions=source --import tsx --watch src/main.ts",
-    "test:integration": "vitest run --project integration --passWithNoTests"
+    "test:integration": "vitest run --project integration --passWithNoTests",
+    "openapi": "node --conditions=source --import tsx src/openapi/generate.ts",
+    "openapi:check": "node --conditions=source --import tsx src/openapi/generate.ts --check"
   },
   "dependencies": {
     "@d3cloudio/auth-client": "0.1.1",
