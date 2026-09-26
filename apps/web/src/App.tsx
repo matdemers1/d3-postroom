@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Alert, AuthLayout, Spinner, ThemeProvider } from '@d3cloud/ui';
 import { api, redirectFor, type AuthState } from './api';
+import { MailProvider } from './mail/MailContext';
 import { AdminSessions } from './screens/AdminSessions';
 import { AppPasswords } from './screens/AppPasswords';
 import { Mail } from './screens/Mail';
@@ -53,8 +54,18 @@ function Gate() {
     <Routes>
       <Route path="/setup" element={<Setup onDone={refresh} />} />
       <Route path="/signin" element={<SignIn state={state} onSignedIn={refresh} />} />
-      <Route element={<Shell state={state} onSignedOut={refresh} />}>
-        <Route index element={<Mail />} />
+      <Route
+        element={
+          <MailProvider me={state.account?.address ?? null}>
+            <Shell state={state} onSignedOut={refresh} />
+          </MailProvider>
+        }
+      >
+        {/* One layout route for every mail URL, so moving between them never remounts the view. */}
+        <Route element={<Mail />}>
+          <Route index element={null} />
+          <Route path="/mail/*" element={null} />
+        </Route>
         <Route path="/app-passwords" element={<AppPasswords />} />
         <Route path="/admin/sessions" element={<AdminSessions />} />
         <Route path="*" element={<Navigate to="/" replace />} />

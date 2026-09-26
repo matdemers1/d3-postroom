@@ -13,3 +13,6 @@ services:
       D3AUTH_ISSUER: http://127.0.0.1:1
       D3AUTH_CLIENT_ID: postroom
       D3AUTH_CLIENT_SECRET: e2e-client-secret
+      # POST /api/admin/dev/seed (admin-only, audited) files synthetic mail for e2e/tests/mail.spec.ts.
+      # Never set anywhere else: without it the route is not mounted at all.
+      POSTROOM_E2E_SEED: "1"
