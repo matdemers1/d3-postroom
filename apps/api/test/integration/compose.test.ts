@@ -16,7 +16,7 @@ import { fileLocalMessage } from '@postroom/dsn';
 import { ensureDkimKeys } from '@postroom/submission/dkim';
 import { assignThread } from '@postroom/threading';
 import type { Express } from 'express';
-import request from 'supertest';
+import { request } from '../loopback.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { buildOutgoingStream, buildTextMessage, bracketMsgId, parseRecipients, textPart, type OutgoingMessage } from '../../src/compose/message.js';
