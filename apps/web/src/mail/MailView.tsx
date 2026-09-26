@@ -8,6 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, 
 import { Link as RouterLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Alert, Button, EmptyState, Input, Link, Skeleton, Stack } from '@d3cloud/ui';
 import { api, ApiError, type Mailbox, type MessageDetail, type MessageSummary } from '../api';
+import { CommandPalette } from './CommandPalette';
 import { Composer } from './Composer';
 import { draftFor } from './compose';
 import { findSpecial, mailboxLabel } from './format';
@@ -67,6 +68,7 @@ function MailPanes({ route }: { route: MailRoute }) {
   const [open, setOpen] = useState<OpenMessage | null>(null);
   const [openReload, setOpenReload] = useState(0);
   const [overlay, setOverlay] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -416,6 +418,9 @@ function MailPanes({ route }: { route: MailRoute }) {
       case 'help':
         setOverlay((v) => !v);
         return;
+      case 'commandPalette':
+        setPaletteOpen((v) => !v);
+        return;
     }
   };
 
@@ -423,6 +428,8 @@ function MailPanes({ route }: { route: MailRoute }) {
   performRef.current = perform;
   const overlayRef = useRef(overlay);
   overlayRef.current = overlay;
+  const paletteOpenRef = useRef(paletteOpen);
+  paletteOpenRef.current = paletteOpen;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -432,9 +439,10 @@ function MailPanes({ route }: { route: MailRoute }) {
       const { action, pending } = resolveKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, ...describeTarget(e.target) }, pendingKey.current);
       pendingKey.current = pending;
       if (action === null) return;
-      // Behind a dialog (the overlay, the navigation drawer, a menu) only ? does anything.
-      if ((inDialog !== null || overlayRef.current) && action !== 'help') return;
-      if (inDialog !== null && !overlayRef.current) return;
+      // Behind a dialog (the overlay, the navigation drawer, a menu) only ? and the ⌘K chord do
+      // anything — the chord still toggles the palette shut when it is what is open.
+      if ((inDialog !== null || overlayRef.current) && action !== 'help' && action !== 'commandPalette') return;
+      if (inDialog !== null && !overlayRef.current && !paletteOpenRef.current) return;
       e.preventDefault();
       performRef.current(action);
     };
@@ -625,6 +633,17 @@ function MailPanes({ route }: { route: MailRoute }) {
       <h1 className="pr-vh">Mail</h1>
       {content}
       <ShortcutsOverlay open={overlay} onOpenChange={setOverlay} />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        mailboxes={mailboxes}
+        target={target()}
+        onAction={perform}
+        onMove={move}
+        onNavigate={(path) => {
+          void navigate(path);
+        }}
+      />
     </div>
   );
 }
