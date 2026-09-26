@@ -1,0 +1,89 @@
+{
+  "$schema": "./targets.schema.json",
+  "_comment": "Registry for PST-T-4.2 / PST-REQ-088. Every parser gets one row: `active` rows have a jazzer target, a corpus and a fixtures dir; `pending` rows name the package that does not exist yet. scripts/fuzz-smoke.mjs fails CI if a pending package grows a src/ without also growing a target here.",
+  "targets": [
+    {
+      "name": "smtp-proto",
+      "status": "active",
+      "package": "packages/smtp-proto",
+      "target": "fuzz/smtp-proto/target.mjs",
+      "corpus": "fuzz/smtp-proto/corpus",
+      "fixtures": "fuzz/smtp-proto/fixtures"
+    },
+    {
+      "name": "mime",
+      "status": "active",
+      "package": "packages/mime",
+      "target": "fuzz/mime/target.mjs",
+      "corpus": "fuzz/mime/corpus",
+      "fixtures": "fuzz/mime/fixtures"
+    },
+    {
+      "name": "imap-proto",
+      "status": "active",
+      "package": "packages/imap-proto",
+      "target": "fuzz/imap-proto/target.mjs",
+      "corpus": "fuzz/imap-proto/corpus",
+      "fixtures": "fuzz/imap-proto/fixtures"
+    },
+    {
+      "name": "dns",
+      "status": "active",
+      "package": "packages/dns",
+      "target": "fuzz/dns/target.mjs",
+      "corpus": "fuzz/dns/corpus",
+      "fixtures": "fuzz/dns/fixtures"
+    },
+    {
+      "name": "proxy-protocol",
+      "status": "active",
+      "package": "packages/proxy-protocol",
+      "target": "fuzz/proxy-protocol/target.mjs",
+      "corpus": "fuzz/proxy-protocol/corpus",
+      "fixtures": "fuzz/proxy-protocol/fixtures"
+    },
+    {
+      "name": "auth-checks",
+      "status": "active",
+      "package": "packages/auth-checks",
+      "target": "fuzz/auth-checks/target.mjs",
+      "corpus": "fuzz/auth-checks/corpus",
+      "fixtures": "fuzz/auth-checks/fixtures",
+      "note": "DKIM-Signature tag-list, DMARC policy record and SPF record/term parsers"
+    },
+    {
+      "name": "attachments",
+      "status": "active",
+      "package": "packages/attachments",
+      "target": "fuzz/attachments/target.mjs",
+      "corpus": "fuzz/attachments/corpus",
+      "fixtures": "fuzz/attachments/fixtures",
+      "note": "ZIP central-directory / local-header listing and bounded inflate"
+    },
+    {
+      "name": "rfc5322",
+      "status": "pending: packages/rfc5322 not built",
+      "package": "packages/rfc5322"
+    },
+    {
+      "name": "ical",
+      "status": "pending: packages/ical not built",
+      "package": "packages/ical"
+    },
+    {
+      "name": "vcard",
+      "status": "pending: packages/vcard not built",
+      "package": "packages/vcard"
+    },
+    {
+      "name": "sieve",
+      "status": "pending: packages/sieve not built",
+      "package": "packages/sieve"
+    },
+    {
+      "name": "dmarc-report",
+      "status": "pending: packages/reports not built",
+      "package": "packages/reports"
+    }
+  ]
+}
