@@ -87,7 +87,7 @@ describe.skipIf(baseUrl === undefined)('inbound pipeline (PST-T-2.7, PST-T-2.11)
     expect(copy?.verdict?.bucket).toBe('people');
     expect(copy?.verdict?.auth).toMatchObject({ spf: { result: 'pass' }, dmarc: { result: 'pass' } });
     expect(copy?.verdict?.reasons).toEqual(
-      expect.arrayContaining(['delivered to matt@d3cloud.io', 'no sieve script (Sieve arrives in PST-P-6)', 'filed to INBOX']),
+      expect.arrayContaining(['delivered to matt@d3cloud.io', 'sieve: no active script', 'filed to INBOX']),
     );
     // The spool row keeps its reference; the copy took its own.
     expect(await refcount(sha256)).toBe(2);

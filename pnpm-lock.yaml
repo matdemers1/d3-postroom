@@ -77,6 +77,9 @@ importers:
       '@postroom/dsn':
         specifier: workspace:*
         version: link:../../packages/dsn
+      '@postroom/managesieve':
+        specifier: workspace:*
+        version: link:../managesieve
       '@postroom/mime':
         specifier: workspace:*
         version: link:../../packages/mime
@@ -266,6 +269,34 @@ importers:
         specifier: ^4.23.13
         version: 4.23.13
 
+  apps/managesieve:
+    dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@postroom/auth-throttle':
+        specifier: workspace:*
+        version: link:../../packages/auth-throttle
+      '@postroom/credentials':
+        specifier: workspace:*
+        version: link:../../packages/credentials
+      '@postroom/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/proxy-protocol':
+        specifier: workspace:*
+        version: link:../../packages/proxy-protocol
+      '@postroom/sieve':
+        specifier: workspace:*
+        version: link:../../packages/sieve
+    devDependencies:
+      tsx:
+        specifier: ^4.23.13
+        version: 4.23.13
+
   apps/smtp-in:
     dependencies:
       '@postroom/attachments':
@@ -427,6 +458,12 @@ importers:
       '@postroom/search':
         specifier: workspace:*
         version: link:../../packages/search
+      '@postroom/sieve':
+        specifier: workspace:*
+        version: link:../../packages/sieve
+      '@postroom/submission':
+        specifier: workspace:*
+        version: link:../submission
       '@postroom/threading':
         specifier: workspace:*
         version: link:../../packages/threading

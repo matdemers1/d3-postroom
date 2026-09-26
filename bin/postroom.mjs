@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DAEMONS = ['smtp-in', 'submission', 'imap', 'delivery', 'dav', 'api', 'worker', 'edge'];
+const DAEMONS = ['smtp-in', 'submission', 'imap', 'managesieve', 'delivery', 'dav', 'api', 'worker', 'edge'];
 const [command, ...rest] = process.argv.slice(2);
 
 function run(cmd, args, cwd) {

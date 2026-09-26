@@ -12,6 +12,7 @@ import { ChangePassword } from './screens/ChangePassword';
 import { DeviceSetup } from './screens/DeviceSetup';
 import { Import } from './screens/Import';
 import { Mail } from './screens/Mail';
+import { Rules } from './screens/Rules';
 import { Sessions } from './screens/Sessions';
 import { Setup } from './screens/Setup';
 import { Shell } from './screens/Shell';
@@ -78,6 +79,7 @@ function Gate() {
         <Route path="/account/sessions" element={<Sessions />} />
         <Route path="/account/import" element={<Import />} />
         <Route path="/account/device-setup" element={<DeviceSetup />} />
+        <Route path="/account/rules" element={<Rules />} />
         <Route path="/admin/sessions" element={<AdminSessions />} />
         <Route path="/admin/health" element={<AdminHealth />} />
         <Route path="/admin/jobs" element={<AdminJobs />} />

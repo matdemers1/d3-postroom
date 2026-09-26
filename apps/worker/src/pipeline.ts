@@ -14,6 +14,7 @@
 // State on the spool row: spooled → processing (a job is working on it) → filed; or failed.
 import { randomUUID } from 'node:crypto';
 import type { BlobStore } from '@postroom/blobstore';
+import type { Kek } from '@postroom/crypto';
 import { InboundState, type Db, type InboundMessage, type Job, type Prisma } from '@postroom/db';
 import { enqueue, type Handler } from '@postroom/queue';
 import { classifyStage } from './stages/classify.js';
@@ -49,6 +50,10 @@ export interface PipelineOptions {
   log?: Log;
   now?: () => Date;
   faults?: PipelineFaults;
+  /** The KEK, so the sieve stage can DKIM-sign a vacation reply (PST-T-9.5); without it none is sent. */
+  kek?: () => Kek;
+  /** Vacation replies per account per 24 hours (default 200). */
+  vacationDailyCap?: number;
 }
 
 export interface RunOptions {
@@ -91,7 +96,15 @@ export function createInboundPipeline(options: PipelineOptions): InboundPipeline
   const { db, blobs } = options;
   const log = options.log ?? ((): void => undefined);
   const now = options.now ?? ((): Date => new Date());
-  const deps: StageDeps = { db, blobs, log, now, ...(options.faults === undefined ? {} : { faults: options.faults }) };
+  const deps: StageDeps = {
+    db,
+    blobs,
+    log,
+    now,
+    ...(options.faults === undefined ? {} : { faults: options.faults }),
+    ...(options.kek === undefined ? {} : { kek: options.kek }),
+    ...(options.vacationDailyCap === undefined ? {} : { vacationDailyCap: options.vacationDailyCap }),
+  };
 
   const record = async (id: string, stage: StageName, result: Json): Promise<void> => {
     await db.$transaction(async (tx) => {
@@ -123,7 +136,11 @@ export function createInboundPipeline(options: PipelineOptions): InboundPipeline
         return r;
       }
       case 'sieve': {
-        const r = sieveStage();
+        const r = await sieveStage(input, deps, {
+          parse: need(results, 'parse') as unknown as ParseResult,
+          classify: need(results, 'classify') as unknown as ClassifyResult,
+          recipients: parseRecipients(inbound.recipients),
+        });
         await record(inbound.id, stage, r);
         return r;
       }

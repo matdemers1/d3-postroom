@@ -13,6 +13,7 @@ import * as E from '../export/schemas.js';
 import * as SP from '../senders/schemas.js';
 import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
 import { MOBILECONFIG_ROUTES } from '../mobileconfig/openapi.js';
+import { SIEVE_COMPONENTS, SIEVE_ROUTES } from '../sieve/openapi.js';
 
 type Json = Record<string, unknown>;
 
@@ -59,6 +60,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   SenderPin: SP.SenderPinView,
   SenderScreenResult: SP.SenderScreenResult,
   ...COMPOSE_COMPONENTS,
+  ...SIEVE_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -291,6 +293,7 @@ export const ROUTES: RouteSpec[] = [
   },
   ...COMPOSE_ROUTES,
   ...MOBILECONFIG_ROUTES,
+  ...SIEVE_ROUTES,
 ];
 
 function strip(schema: Json): Json {

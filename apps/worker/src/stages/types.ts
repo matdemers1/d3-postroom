@@ -16,6 +16,7 @@
 // same transaction that clears the markers, so a retried replay job does not clear them again.
 import type { Blob as BlobRow, Db, InboundMessage, Prisma } from '@postroom/db';
 import type { BlobStore } from '@postroom/blobstore';
+import type { Kek } from '@postroom/crypto';
 
 export const STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify'] as const;
 export type StageName = (typeof STAGES)[number];
@@ -136,9 +137,61 @@ export interface ClassifyResult {
   readonly [key: string]: Json;
 }
 
+/** One keep or fileinto the script decided on (PST-T-9.5). `keep` files into the account's INBOX bucket. */
+export interface SieveDeliveryJson {
+  readonly kind: 'keep' | 'fileinto';
+  readonly mailbox: string;
+  /** imap4flags flags for this copy, or null when the script does not use imap4flags. */
+  readonly flags: string[] | null;
+  /** RFC 5490 :create. */
+  readonly create: boolean;
+  readonly implicit: boolean;
+  readonly line: number;
+  readonly [key: string]: Json;
+}
+
+export interface SieveRedirectJson {
+  readonly address: string;
+  /** Only to an address the account owns (PST-REQ-053); delivered to the account itself, never relayed. */
+  readonly allowed: boolean;
+  readonly reason: string | null;
+  readonly line: number;
+  readonly [key: string]: Json;
+}
+
+export interface SieveVacationJson {
+  readonly to: string;
+  readonly handle: string;
+  readonly days: number;
+  /** The interpreter (or this stage's own rules) wanted a reply. */
+  readonly respond: boolean;
+  /** A reply is queued for this message (now, or by an earlier run). */
+  readonly sent: boolean;
+  readonly reason: string;
+  readonly outboundMessageId: string | null;
+  readonly [key: string]: Json;
+}
+
+/** What one account's active script decided, with its reasons (PST-T-9.5, PST-REQ-148). */
+export interface SieveAccountOutcome {
+  script: string;
+  deliveries: SieveDeliveryJson[];
+  discard: boolean;
+  redirects: SieveRedirectJson[];
+  /** vnd.postroom.bucket: overrides the classifier's bucket for a keep. */
+  bucket: string | null;
+  vacation: SieveVacationJson | null;
+  error: string | null;
+  reasons: string[];
+  /** "line:column event", bounded. */
+  trace: string[];
+}
+
 export interface SieveResult {
   readonly applied: boolean;
   readonly reasons: string[];
+  /** Per recipient account WITH an active script, keyed by account id (a marker from before PST-T-9.5 has none). */
+  readonly accounts: { readonly [accountId: string]: Json };
   readonly [key: string]: Json;
 }
 
@@ -183,6 +236,10 @@ export interface StageDeps {
   readonly log: Log;
   readonly now: () => Date;
   readonly faults?: PipelineFaults;
+  /** The KEK, for DKIM-signing a Sieve vacation reply (PST-T-9.5). Without it no reply is sent, and the reason says so. */
+  readonly kek?: () => Kek;
+  /** Vacation replies one account may send per rolling 24 hours (default 200). */
+  readonly vacationDailyCap?: number;
 }
 
 /** What a stage sees: the spool row and the results of the stages before it. */

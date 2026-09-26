@@ -32,10 +32,11 @@ services:
       # The admin Health screen's daemon tiles (PST-T-7.6, PST-REQ-127). smtp-in/submission/imap/
       # delivery share the wireguard sidecar's network namespace (docker-compose.yml), so their
       # health ports are reached at that hostname; dav and worker keep their own.
-      DAEMON_HEALTH_URLS: "smtp-in=http://wireguard:9101/health,submission=http://wireguard:9102/health,imap=http://wireguard:9103/health,delivery=http://wireguard:9104/health,dav=http://dav:9105/health,worker=http://worker:9106/health"
+      DAEMON_HEALTH_URLS: "smtp-in=http://wireguard:9101/health,submission=http://wireguard:9102/health,imap=http://wireguard:9103/health,managesieve=http://wireguard:9107/health,delivery=http://wireguard:9104/health,dav=http://dav:9105/health,worker=http://worker:9106/health"
   smtp-in: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9101" } }
   submission: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9102" } }
   imap: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9103" } }
+  managesieve: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9107" } }
   delivery: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9104" } }
   dav: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9105" } }
   worker: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9106" } }

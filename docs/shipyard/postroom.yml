@@ -18,6 +18,7 @@ services:
   smtp-in: { image: ghcr.io/matdemers1/d3-postroom/server }
   submission: { image: ghcr.io/matdemers1/d3-postroom/server }
   imap: { image: ghcr.io/matdemers1/d3-postroom/server }
+  managesieve: { image: ghcr.io/matdemers1/d3-postroom/server }
   delivery: { image: ghcr.io/matdemers1/d3-postroom/server }
   dav: { image: ghcr.io/matdemers1/d3-postroom/server }
   wireguard: { image: ghcr.io/matdemers1/d3-postroom/wireguard }
