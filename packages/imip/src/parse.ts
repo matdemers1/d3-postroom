@@ -23,6 +23,8 @@ export type ImipMethod = (typeof IMIP_METHODS)[number];
 
 export type Partstat = 'ACCEPTED' | 'DECLINED' | 'TENTATIVE';
 
+export type OrganizerStatus = 'valid' | 'invalid' | 'missing';
+
 export interface InviteOrganizer {
   readonly email: string | null;
   readonly cn: string | null;
@@ -51,6 +53,12 @@ export interface ParsedInvite {
   readonly start: string | null;
   readonly end: string | null;
   readonly organizer: InviteOrganizer;
+  /**
+   * `valid` when ORGANIZER decodes to exactly one mailbox; `invalid` when it is present but does not
+   * (a CR/LF, a list, angle brackets, not `mailto:` …); `missing` when there is none. Only a `valid`
+   * organizer can be replied to — an invalid address never reaches an envelope or a header.
+   */
+  readonly organizerStatus: OrganizerStatus;
   readonly attendees: readonly InviteAttendee[];
   /** The RECURRENCE-ID value, when this invite is about one instance of a series. */
   readonly recurrenceId: string | null;
@@ -131,9 +139,22 @@ export function parseInvite(input: string | Uint8Array): ParsedInvite {
     start: start.value,
     end: end.value,
     organizer: organizerOf(component),
+    organizerStatus: getProperty(component, 'ORGANIZER') === undefined ? 'missing' : organizerOf(component).email === null ? 'invalid' : 'valid',
     attendees: attendeesOf(component),
     recurrenceId: getProperty(component, 'RECURRENCE-ID')?.value.trim() ?? null,
     component,
     calendar,
   };
+}
+
+/** Why this invite cannot be replied to, in words for the card; null when it can. */
+export function replyBlockReason(invite: Pick<ParsedInvite, 'organizerStatus'>): string | null {
+  switch (invite.organizerStatus) {
+    case 'valid':
+      return null;
+    case 'invalid':
+      return 'Can’t reply: the organizer address is invalid.';
+    case 'missing':
+      return 'Can’t reply: this invitation names no organizer.';
+  }
 }

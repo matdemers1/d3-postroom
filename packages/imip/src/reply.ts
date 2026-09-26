@@ -3,7 +3,7 @@
 // invite was for one instance of a series) RECURRENCE-ID travel through unchanged.
 import { escapeText, formatDateTime, serializeICalendar, type Component, type Property } from '@postroom/ical';
 import { ImipError } from './errors.js';
-import type { InviteAttendee, ParsedInvite, Partstat } from './parse.js';
+import { replyBlockReason, type InviteAttendee, type ParsedInvite, type Partstat } from './parse.js';
 
 function prop(name: string, value: string, params: Record<string, string[]> = {}): Property {
   return { name, params, value };
@@ -40,7 +40,8 @@ export function matchAttendee(invite: ParsedInvite, accountAddresses: readonly s
 export function buildReply(invite: ParsedInvite, accountAddresses: readonly string[], partstat: Partstat, now: Date): Component {
   const attendee = matchAttendee(invite, accountAddresses);
   if (attendee === null) throw new ImipError('none of this account’s addresses is an attendee of this invitation');
-  if (invite.organizer.email === null) throw new ImipError('this invitation has no ORGANIZER to reply to');
+  const blocked = replyBlockReason(invite);
+  if (blocked !== null || invite.organizer.email === null) throw new ImipError(blocked ?? 'this invitation has no ORGANIZER to reply to');
 
   const props: Property[] = [
     prop('ORGANIZER', `mailto:${invite.organizer.email}`, invite.organizer.cn === null ? {} : { CN: [invite.organizer.cn] }),

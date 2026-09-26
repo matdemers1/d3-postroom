@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ImipError, parseInvite } from '../../src/index.js';
+import { buildReply, ImipError, parseInvite, replyBlockReason } from '../../src/index.js';
 
 const fixtures = join(import.meta.dirname, '..', 'fixtures');
 const load = (name: string): Buffer => readFileSync(join(fixtures, name));
@@ -83,5 +83,59 @@ describe('parseInvite (PST-T-8.4)', () => {
     expect(invite.allDay).toBe(true);
     expect(invite.start).toBe('20261225');
     expect(invite.end).toBe('20261226');
+  });
+
+  describe('an ORGANIZER that is not one valid mailbox is not replyable (verifier PoC)', () => {
+    const withOrganizer = (organizerLine: string | null): string =>
+      [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'METHOD:REQUEST',
+        'BEGIN:VEVENT',
+        'UID:poc@example.com',
+        'DTSTAMP:20260101T000000Z',
+        'DTSTART:20261005T180000Z',
+        ...(organizerLine === null ? [] : [organizerLine]),
+        'ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:reader@d3cloud.io',
+        'SUMMARY:Totally legit',
+        'END:VEVENT',
+        'END:VCALENDAR',
+        '',
+      ].join('\r\n');
+
+    const hostile = [
+      'ORGANIZER;CN=Priya Patel:mailto:evil%40attacker.example%0d%0aRCPT%20TO:%3cvictim%40external.example%3e',
+      'ORGANIZER;CN=Priya Patel:mailto:evil@attacker.example%0aBcc:victim@external.example',
+      'ORGANIZER;CN=Priya Patel:mailto:evil@attacker.example%0d',
+      'ORGANIZER;CN=Priya Patel:mailto:a@example.com,b@example.com',
+      'ORGANIZER;CN=Priya Patel:mailto:%3Cevil@attacker.example%3E',
+      'ORGANIZER;CN=Priya Patel:https://attacker.example/',
+    ];
+
+    it.each(hostile)('%s', (line) => {
+      const invite = parseInvite(withOrganizer(line));
+      expect(invite.organizer.email).toBeNull();
+      expect(invite.organizer.cn).toBe('Priya Patel');
+      expect(invite.organizerStatus).toBe('invalid');
+      expect(replyBlockReason(invite)).toBe('Can’t reply: the organizer address is invalid.');
+      expect(() => buildReply(invite, ['reader@d3cloud.io'], 'ACCEPTED', new Date())).toThrow(/organizer address is invalid/);
+    });
+
+    it('a missing ORGANIZER says so, and a valid one is replyable', () => {
+      const missing = parseInvite(withOrganizer(null));
+      expect(missing.organizerStatus).toBe('missing');
+      expect(replyBlockReason(missing)).toMatch(/names no organizer/);
+      const ok = parseInvite(withOrganizer('ORGANIZER;CN=Priya:mailto:priya@example.com'));
+      expect(ok.organizerStatus).toBe('valid');
+      expect(replyBlockReason(ok)).toBeNull();
+    });
+
+    it('an ATTENDEE with an injected address is dropped, never matched', () => {
+      const ics = withOrganizer('ORGANIZER:mailto:priya@example.com').replace(
+        'ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:reader@d3cloud.io',
+        'ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:reader@d3cloud.io%0d%0aRCPT%20TO:%3cvictim@external.example%3e',
+      );
+      expect(parseInvite(ics).attendees).toEqual([]);
+    });
   });
 });

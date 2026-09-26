@@ -9,15 +9,25 @@
 //      and the webmail's own calendar API write through — encrypted, etagged, sync-token bumped,
 //      and audited (dav.resource.create/update) inside that write's own transaction.
 // A CANCEL offers "Remove from calendar" instead: RFC 5546 has no reply for a cancellation, so only
-// the stored event (when there is one) is marked STATUS:CANCELLED.
+// the stored event (when there is one) is marked STATUS:CANCELLED — and only when the CANCEL comes,
+// authenticated, from the organizer of record with a SEQUENCE not older than the stored one
+// (./cancel.ts).
+//
+// The reply's only recipient is the ORGANIZER, which @postroom/ical has already validated as exactly
+// one RFC 5321 mailbox (no CR/LF, list, or brackets); an invite whose ORGANIZER fails is refused
+// before anything is built. The recipient cap is the composer's own (PST-REQ-043): the same
+// createWebmailCapsEnforcer, with the same env, inside the accepting transaction.
 //
 // Isolation: a message that is not the caller's own answers 404 — the same rule as every other mail
 // route (apps/api/src/mail/index.ts).
 import { getAuditContext } from '@postroom/audit';
+import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
-import { buildReply, matchAttendee, parseInvite, serializeReply, type ParsedInvite, type Partstat } from '@postroom/imip';
+import { envInt, envString } from '@postroom/daemon';
+import { buildReply, matchAttendee, parseInvite, replyBlockReason, serializeReply, type ParsedInvite, type Partstat } from '@postroom/imip';
 import { parseICalendar, serializeICalendar, type Component } from '@postroom/ical';
 import { acceptSubmission, sendableAddresses, type AcceptOutcome, type SubmissionStorage } from '@postroom/submission';
+import { createWebmailCapsEnforcer } from '@postroom/submission/caps';
 import { Router, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
@@ -27,7 +37,8 @@ import { davFor } from '../contacts/dav.js';
 import type { ApiDeps } from '../deps.js';
 import { DEFAULT_BLOB_ROOT } from '../mail/index.js';
 import { findOwnMessage } from '../mail/store.js';
-import { attendeePartstat, isCancelled, withAttendeePartstat, withCancelled } from './event.js';
+import { cancelEligibility } from './cancel.js';
+import { attendeePartstat, isCancelled, storedOrganizer, storedSequence, withAttendeePartstat, withCancelled } from './event.js';
 import { buildReplyStream } from './message.js';
 import { findCalendarPart } from './store.js';
 import { IdParams, InviteView, RespondBody, type InviteViewJson } from './schemas.js';
@@ -51,6 +62,12 @@ function tryParse(data: Buffer): Component | null {
   } catch {
     return null;
   }
+}
+
+/** A display name safe for a header: control characters (RFC 6868 `^n` decodes to LF) become spaces. */
+function displayName(cn: string | null): string {
+  // eslint-disable-next-line no-control-regex -- stripping control characters is the point
+  return (cn ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu, ' ').trim();
 }
 
 const REPLY_LABEL: Record<Partstat, string> = { ACCEPTED: 'Accepted', DECLINED: 'Declined', TENTATIVE: 'Tentative' };
@@ -78,6 +95,18 @@ export function invitesRoutes(deps: ApiDeps): Router {
     process.stdout.write(`${JSON.stringify({ daemon: 'api', component: 'invites', event, ...fields })}\n`);
   };
 
+  // The composer's cap enforcer (compose/index.ts), built from the same factory and the same env.
+  const webmailCaps = createWebmailCapsEnforcer({
+    db,
+    hourlyDefault: envInt(deps.env, 'SUBMISSION_CAP_HOURLY', 100),
+    dailyDefault: envInt(deps.env, 'SUBMISSION_CAP_DAILY', 500),
+    sendAlert: createAlertSender(
+      { url: envString(deps.env, 'MAIL_RELAY_URL', ''), token: envString(deps.env, 'MAIL_RELAY_TOKEN', ''), to: envString(deps.env, 'ALERT_TO', '') },
+      { log },
+    ),
+    log,
+  });
+
   let storage: SubmissionStorage | null = null;
   const storageFor = (res: Response): SubmissionStorage | null => {
     if (storage !== null) return storage;
@@ -92,7 +121,10 @@ export function invitesRoutes(deps: ApiDeps): Router {
   const blobStore = (res: Response): BlobStore | null => storageFor(res)?.blobs ?? null;
 
   /** The caller's own message's invite, and the addresses it may reply/organize as; answers 404/409/503 on failure. */
-  const loadInvite = async (req: Request, res: Response): Promise<{ accountId: string; addresses: string[]; invite: ParsedInvite } | null> => {
+  const loadInvite = async (
+    req: Request,
+    res: Response,
+  ): Promise<{ accountId: string; addresses: string[]; invite: ParsedInvite; message: NonNullable<Awaited<ReturnType<typeof findOwnMessage>>> } | null> => {
     const params = parse(IdParams, req.params, res);
     if (params === null) return null;
     const accountId = currentSession(req).accountId;
@@ -114,7 +146,7 @@ export function invitesRoutes(deps: ApiDeps): Router {
       res.status(409).json({ error: 'unreadable_invite', message: 'This message’s calendar part cannot be parsed.' });
       return null;
     }
-    return { accountId, addresses, invite };
+    return { accountId, addresses, invite, message };
   };
 
   function tryParseInvite(raw: Buffer): ParsedInvite | null {
@@ -194,10 +226,12 @@ export function invitesRoutes(deps: ApiDeps): Router {
         res.status(403).json({ error: 'not_invited', message: 'None of your addresses is invited to this event.' });
         return;
       }
-      if (invite.organizer.email === null) {
-        res.status(409).json({ error: 'no_organizer', message: 'This invitation has no ORGANIZER to reply to.' });
+      const blocked = replyBlockReason(invite);
+      if (blocked !== null || invite.organizer.email === null) {
+        res.status(409).json({ error: invite.organizerStatus === 'invalid' ? 'invalid_organizer' : 'no_organizer', message: blocked ?? 'This invitation has no ORGANIZER to reply to.' });
         return;
       }
+      const organizerEmail = invite.organizer.email;
       const store = storageFor(res);
       if (store === null) return;
       const dav = davFor(deps, res);
@@ -218,7 +252,7 @@ export function invitesRoutes(deps: ApiDeps): Router {
       const domain = mine.email.slice(mine.email.lastIndexOf('@') + 1);
       const outboundStream = buildReplyStream({
         from: { name: '', address: mine.email },
-        to: { name: invite.organizer.cn ?? '', address: invite.organizer.email },
+        to: { name: displayName(invite.organizer.cn), address: organizerEmail },
         subject: `${REPLY_LABEL[partstat]}: ${invite.summary}`,
         text: `${REPLY_LABEL[partstat]}.`,
         ics: serializeReply(reply),
@@ -230,10 +264,10 @@ export function invitesRoutes(deps: ApiDeps): Router {
         {
           submitter: { accountId: me.accountId, addresses: new Set(addresses) },
           envelopeFrom: mine.email,
-          recipients: [{ address: invite.organizer.email }],
+          recipients: [{ address: organizerEmail }],
           sessionId: ctx.requestId,
           submittedVia: 'webmail',
-          enforceCaps: () => Promise.resolve(),
+          enforceCaps: (tx, recipients, at) => webmailCaps(tx, me.accountId, recipients, at),
           auditContext: ctx,
         },
         { db, storage: () => store, now: rt.now, log },
@@ -273,7 +307,7 @@ export function invitesRoutes(deps: ApiDeps): Router {
     handle(async (req, res) => {
       const found = await loadInvite(req, res);
       if (found === null) return;
-      const { accountId, invite } = found;
+      const { accountId, invite, message } = found;
       if (invite.method !== 'CANCEL') {
         res.status(409).json({ error: 'not_a_cancel', message: 'Only a CANCEL offers Remove from calendar.' });
         return;
@@ -292,7 +326,24 @@ export function invitesRoutes(deps: ApiDeps): Router {
         return;
       }
       const [resource] = await dav.store.getResources(calendar.id, [name]);
-      const base = resource === undefined ? invite.calendar : (tryParse(resource.data) ?? invite.calendar);
+      const stored = resource === undefined ? null : tryParse(resource.data);
+      if (stored === null) {
+        res.status(409).json({ error: 'calendar_unreadable', message: 'Not removed: the event in your calendar cannot be read.' });
+        return;
+      }
+      const eligible = cancelEligibility({
+        cancelOrganizer: invite.organizer.email,
+        cancelSequence: invite.sequence,
+        storedOrganizer: storedOrganizer(stored),
+        storedSequence: storedSequence(stored),
+        auth: message.verdict?.auth ?? null,
+        fromAddress: message.fromAddress,
+      });
+      if (!eligible.ok) {
+        res.status(eligible.status).json({ error: eligible.error, message: eligible.message });
+        return;
+      }
+      const base = stored;
       const data = Buffer.from(serializeICalendar(withCancelled(base)), 'utf8');
       const ctx = getAuditContext(req);
       const putOutcome = await dav.store.putResource({ accountId, context: ctx }, calendar, { name, uid: invite.uid, componentType: 'VEVENT', data, preconditions: { ifMatch: `"${existing.etag}"` } });

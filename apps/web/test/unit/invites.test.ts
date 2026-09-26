@@ -9,6 +9,9 @@ import {
   offersResponse,
   organizerLabel,
   partstatLabel,
+  replyBlockedReason,
+  replyTarget,
+  replyTargetNote,
   responseAnnouncement,
 } from '../../src/invites/view';
 
@@ -54,10 +57,26 @@ describe('invite view logic (PST-T-8.4)', () => {
     expect(inviteWhen({ allDay: false, start: null, end: null })).toBe('');
   });
 
-  it('names the organizer by CN, falling back to their address', () => {
-    expect(organizerLabel(base)).toBe('Priya Patel');
+  it('names the organizer by CN AND their actual address, so the reader sees where a reply goes', () => {
+    expect(organizerLabel(base)).toBe('Priya Patel <priya@example.com>');
     expect(organizerLabel({ organizer: { email: 'x@example.com', cn: null } })).toBe('x@example.com');
+    expect(organizerLabel({ organizer: { email: 'x@example.com', cn: 'X@Example.com' } })).toBe('x@example.com');
+    // A CN that impersonates someone else still shows the real address beside it.
+    expect(organizerLabel({ organizer: { email: 'evil@attacker.example', cn: 'CEO <ceo@d3cloud.io>' } })).toBe('CEO <ceo@d3cloud.io> <evil@attacker.example>');
+    expect(organizerLabel({ organizer: { email: null, cn: 'Priya Patel' } })).toBe('Priya Patel (invalid address)');
     expect(organizerLabel({ organizer: { email: null, cn: null } })).toBe('Unknown organizer');
+  });
+
+  it('names the reply target, and says why a REQUEST with an invalid organizer cannot be answered', () => {
+    expect(replyTarget(base)).toBe('priya@example.com');
+    expect(replyTargetNote(base)).toBe('Your reply is sent to priya@example.com.');
+    expect(replyBlockedReason(base)).toBeNull();
+    const invalid = { ...base, organizer: { email: null, cn: 'Priya Patel' } };
+    expect(replyTarget(invalid)).toBeNull();
+    expect(replyTargetNote(invalid)).toBe('');
+    expect(replyBlockedReason(invalid)).toBe('Can’t reply: the organizer address is invalid.');
+    expect(offersResponse(invalid)).toBe(false);
+    expect(replyBlockedReason({ ...invalid, method: 'CANCEL', cancelled: true })).toBeNull();
   });
 
   it('counts attendees without listing them', () => {
@@ -72,10 +91,11 @@ describe('invite view logic (PST-T-8.4)', () => {
   });
 
   it('offers Accept/Maybe/Decline only for a live REQUEST', () => {
-    expect(offersResponse({ method: 'REQUEST', cancelled: false })).toBe(true);
-    expect(offersResponse({ method: 'REQUEST', cancelled: true })).toBe(false);
-    expect(offersResponse({ method: 'CANCEL', cancelled: true })).toBe(false);
-    expect(offersResponse({ method: 'REPLY', cancelled: false })).toBe(false);
+    const organizer = base.organizer;
+    expect(offersResponse({ method: 'REQUEST', cancelled: false, organizer })).toBe(true);
+    expect(offersResponse({ method: 'REQUEST', cancelled: true, organizer })).toBe(false);
+    expect(offersResponse({ method: 'CANCEL', cancelled: true, organizer })).toBe(false);
+    expect(offersResponse({ method: 'REPLY', cancelled: false, organizer })).toBe(false);
   });
 
   it('offers Remove from calendar only for a CANCEL', () => {
@@ -87,5 +107,6 @@ describe('invite view logic (PST-T-8.4)', () => {
     expect(responseAnnouncement('ACCEPTED')).toBe('Accepted.');
     expect(responseAnnouncement('DECLINED')).toBe('Declined.');
     expect(responseAnnouncement('TENTATIVE')).toBe('Marked maybe.');
+    expect(responseAnnouncement('ACCEPTED', 'priya@example.com')).toBe('Accepted. Reply sent to priya@example.com.');
   });
 });
