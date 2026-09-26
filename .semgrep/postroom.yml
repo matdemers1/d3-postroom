@@ -93,6 +93,9 @@ rules:
           - pattern: $RES.$M(..., <... $REQ.cookies ...>, ...)
           - pattern: $RES.$M(..., <... $REQ.get(...) ...>, ...)
           - pattern: $RES.$M(..., <... $REQ.originalUrl ...>, ...)
+      # A structured log line is not a response body.
+      - pattern-not: process.stdout.write(...)
+      - pattern-not: process.stderr.write(...)
 
   - id: postroom.secret-in-log
     languages: [typescript, javascript]

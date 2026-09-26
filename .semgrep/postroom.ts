@@ -51,6 +51,8 @@ res.end('agent: ' + req.get('user-agent'));
 res.json({ name: req.body.name });
 // ok: postroom.reflected-user-input
 res.send('<p>fixed text</p>');
+// ok: postroom.reflected-user-input
+process.stderr.write(`${JSON.stringify({ event: 'csrf-refused', origin: req.get('origin') ?? null })}\n`);
 
 // ─── postroom.secret-in-log ──────────────────────────────────────────────────
 // ruleid: postroom.secret-in-log
