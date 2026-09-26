@@ -1,7 +1,7 @@
-// What a new reply, reply-all, forward or blank message starts with. PST-T-3.11 builds the real
-// composer (sending, drafts, attachments) on top of this — the prefill rules live here, pure and
-// unit-tested, so the composer and the keyboard shortcuts agree on them.
-import type { MessageBody, MessageDetail } from '../api';
+// What a new reply, reply-all, forward or blank message starts with, and what the composer sends
+// and saves (PST-T-3.11) — the rules live here, pure and unit-tested, so the composer and the
+// keyboard shortcuts agree on them.
+import { ApiError, type ComposeFields, type MessageBody, type MessageDetail, type SavedDraft } from '../api';
 import type { ComposeMode } from './route';
 import { addressOf, displayName, fullDate, header, splitAddresses } from './format';
 
@@ -107,4 +107,91 @@ export function draftFor(mode: ComposeMode, source: ComposeSource | null, me: st
     body: text === '' ? '' : `\n\nOn ${when}, ${sender} wrote:\n${quote(text)}`,
     sourceId: detail.id,
   };
+}
+
+/** What the composer's fields hold. */
+export interface ComposeState {
+  to: string;
+  cc: string;
+  bcc: string;
+  subject: string;
+  text: string;
+  inReplyTo: string | null;
+  references: string[];
+  forwardOf: string | null;
+}
+
+export function initialState(draft: ComposeDraft): ComposeState {
+  return {
+    to: draft.to,
+    cc: draft.cc,
+    bcc: '',
+    subject: draft.subject,
+    text: draft.body,
+    inReplyTo: draft.inReplyTo,
+    references: draft.references,
+    forwardOf: draft.mode === 'forward' ? draft.sourceId : null,
+  };
+}
+
+/** The request body: address fields split into one entry per address. */
+export function fieldsOf(state: ComposeState): ComposeFields {
+  return {
+    to: splitAddresses(state.to),
+    cc: splitAddresses(state.cc),
+    bcc: splitAddresses(state.bcc),
+    subject: state.subject.replace(/[\r\n]+/g, ' '),
+    text: state.text,
+    inReplyTo: state.inReplyTo,
+    references: state.references,
+    forwardOf: state.forwardOf,
+  };
+}
+
+export function hasRecipients(state: ComposeState): boolean {
+  return splitAddresses(state.to).length + splitAddresses(state.cc).length + splitAddresses(state.bcc).length > 0;
+}
+
+/** A saved draft, back in the composer's fields. */
+export function stateFromSaved(saved: SavedDraft): ComposeState {
+  return {
+    to: saved.to.join(', '),
+    cc: saved.cc.join(', '),
+    bcc: saved.bcc.join(', '),
+    subject: saved.subject,
+    text: saved.text,
+    inReplyTo: saved.inReplyTo,
+    references: saved.references,
+    forwardOf: saved.forwardOf,
+  };
+}
+
+/** The saved draft this composer should pick up again: the same kind of answer to the same message. */
+export function resumableDraft(drafts: readonly SavedDraft[], draft: ComposeDraft): SavedDraft | null {
+  if (draft.sourceId === null) return null;
+  return drafts.find((d) => d.sourceId === draft.sourceId && d.mode === draft.mode) ?? null;
+}
+
+/** A refused send, in words the person can act on. */
+export function sendErrorText(error: unknown): string {
+  if (!(error instanceof ApiError)) return 'Postroom did not answer, so nothing was sent. Check your connection and try again.';
+  const message = typeof error.body === 'object' && error.body !== null && typeof (error.body as { message?: unknown }).message === 'string' ? (error.body as { message: string }).message : null;
+  switch (error.code) {
+    case 'no_recipients':
+      return 'Add at least one recipient.';
+    case 'invalid_recipient':
+      return message ?? 'One of the addresses is not one Postroom can send to.';
+    case 'too_many_recipients':
+      return message ?? 'That is too many recipients for one message.';
+    case 'from_not_owned':
+      return 'You can only send from your own addresses.';
+    case 'dkim_unconfigured':
+      return 'Your domain has no DKIM keys yet, and Postroom never sends unsigned mail. Ask the operator to create them.';
+    case 'recipient_cap':
+      return 'You have reached your sending limit for now. Nothing was sent; try again later.';
+    case 'blobstore_not_configured':
+      return 'Postroom is not set up to store mail yet, so nothing was sent.';
+    default:
+      return `Nothing was sent (${error.code}). Try again.`;
+  }
 }

@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import { SESSION_COOKIE } from '../auth/sessions.js';
 import * as S from '../mail/schemas.js';
+import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
 
 type Json = Record<string, unknown>;
 
@@ -22,7 +23,7 @@ export interface ResponseSpec {
 }
 
 export interface RouteSpec {
-  method: 'get' | 'post' | 'patch' | 'delete';
+  method: 'get' | 'post' | 'put' | 'patch' | 'delete';
   /** OpenAPI path, `{param}` style. */
   path: string;
   operationId: string;
@@ -51,6 +52,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   SearchResponse: S.SearchResponse,
   MailboxChangedEvent: S.MailboxChangedEvent,
   MessageNewEvent: S.MessageNewEvent,
+  ...COMPOSE_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -195,6 +197,7 @@ export const ROUTES: RouteSpec[] = [
       '503': err('Events are not configured.'),
     },
   },
+  ...COMPOSE_ROUTES,
 ];
 
 function strip(schema: Json): Json {
