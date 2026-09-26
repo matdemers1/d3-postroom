@@ -169,6 +169,43 @@ export function zipWithNestedArchiveAndExecutable(): Buffer {
   ]);
 }
 
+/** A ZIP whose only dangerous content is two levels down: outer -> level1.zip -> payload.exe. The
+ * executable does not appear anywhere in the outer archive's own entry list. */
+export function zipWithExecutableTwoLevelsDeep(): Buffer {
+  const inner = buildZip([{ name: 'payload.exe', data: mzExecutable(), stored: true }]);
+  return buildZip([
+    { name: 'readme.txt', data: Buffer.from('hi') },
+    { name: 'level1.zip', data: inner, stored: true },
+  ]);
+}
+
+/** A ZIP nested MAX_DEPTH+1 levels deep, to exercise the depth limit rather than the executable
+ * detection itself: outer -> a.zip -> b.zip -> c.zip -> d.zip -> payload.exe. */
+export function zipNestedBeyondDepthLimit(levels: number): Buffer {
+  let current = buildZip([{ name: 'payload.exe', data: mzExecutable(), stored: true }]);
+  for (let i = 0; i < levels; i++) {
+    current = buildZip([{ name: `level${String(i)}.zip`, data: current, stored: true }]);
+  }
+  return current;
+}
+
+/** Corrupts a well-formed ZIP's EOCD central-directory offset so the official directory can never
+ * be trusted, while leaving the local file headers (and therefore the real entries) intact. */
+export function corruptZipCentralDirectoryOffset(zip: Buffer): Buffer {
+  const buf = Buffer.from(zip);
+  const eocdOffset = buf.length - 22;
+  buf.writeUInt32LE(0xffffff00, eocdOffset + 16); // wildly out of range
+  return buf;
+}
+
+/** A ZIP whose single entry is a raw-deflate stream that expands far beyond any reasonable cap —
+ * built from real repetitive data (never a hand-crafted deflate "quine"), so it exercises the same
+ * decompression path a hostile attachment would. */
+export function zipBomb(expandedBytes: number): Buffer {
+  const zeros = Buffer.alloc(expandedBytes, 0);
+  return buildZip([{ name: 'bomb.bin', data: zeros }]);
+}
+
 // --- OLE/CFB construction ----------------------------------------------------------------------
 
 const OLE_SIG = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);

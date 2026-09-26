@@ -50,9 +50,44 @@ The worker-facing entry point. `collected` is `@postroom/mime`'s `collectMessage
 > are quarantined **only for a sender without prior history**. A known sender's invoice-as-a-macro
 > is unusual but not unprecedented; a stranger's is not worth the risk.
 >
-> An executable found *inside* an archive (by extension, or by decompressing the entry and sniffing
-> its own magic bytes) is always quarantined, on the same reasoning as a bare executable — nesting
-> it inside an archive is exactly the disguise the always-quarantine rule exists to defeat.
+> An executable found *inside* an archive — at any nesting depth up to the recursion limit, by
+> extension or by decompressing the entry and sniffing its own magic bytes — is always quarantined,
+> on the same reasoning as a bare executable — nesting it inside one or more archives is exactly the
+> disguise the always-quarantine rule exists to defeat.
+>
+> A ZIP whose central directory is missing, corrupt, or points out of range is **always
+> quarantined** as `malformed-archive`, regardless of sender history. A broken container is itself
+> a strong evasion signal — real mail clients do not produce ZIPs with an unparseable directory —
+> so this is treated the same as a bare executable rather than relaxed for a known sender. We still
+> recover what we can via a local-file-header fallback scan (see below), so a genuinely malicious
+> payload behind a corrupted directory is still named in the reasons, not just quarantined blind.
+
+### Nested archives, recursion and decompression bombs
+
+`inspectZip` recurses into any entry that looks like an archive (by extension or by sniffing its
+decompressed content), not just the outer ZIP's own entry list — a ZIP containing a ZIP containing
+an executable is found and always-quarantined, the same as a bare one. Recursion is bounded two
+ways:
+
+- **Depth**: capped at 3 nested archives. An archive nested deeper than that is reported as
+  `uninspectable-archive` (no-history severity) rather than either recursed into unboundedly or
+  silently ignored.
+- **A shared decompression budget** (25 MiB by default, matching the outer per-attachment cap):
+  every byte decompressed across the whole recursion — sniffing an entry's magic, or fully
+  decompressing a nested archive to read its own central directory — is deducted from one budget.
+  An archive that would need more than the remaining budget to inspect fully is reported as
+  `uninspectable-archive` rather than partially trusted.
+
+Decompression itself never allocates unboundedly regardless of what an entry claims or contains:
+`readEntryBytes` feeds the compressed bytes through a persistent raw-inflate stream in small (4 KiB)
+input slices, checking after every slice whether the requested output cap has been reached, and
+discards the rest the moment it has — so a compressed stream that would inflate to hundreds of
+megabytes never causes more than a `cap`-sized allocation. Independently, and cheaply (no
+decompression required), a declared compression ratio over 100:1 or a declared uncompressed size
+over 100 MiB is itself flagged as `suspicious-compression-ratio` (no-history severity) from the
+central-directory metadata alone — a static check that catches an honestly-labelled bomb before we
+even try to decompress it, alongside (not instead of) the bounded decompression itself, since the
+declared size is attacker-controlled and cannot be the only defence.
 
 Every `Finding` carries its own `severity: 'always' | 'no-history'`, and `attachmentPolicy` applies
 the rule per-attachment; `inspectAttachment`'s own `verdict` is always the no-history (worst) case,
@@ -68,9 +103,12 @@ Windows `.lnk` header, ISO 9660 (`CD001` at offset `0x8001`), OLE2/CFB compound 
 
 Structural: a hand-rolled ZIP central-directory walker (`src/zip.ts`) reads entry names, the
 per-entry encryption bit, and — for entries whose name doesn't already give it away — decompresses
-just that entry to sniff its own magic bytes, to catch a nested archive or executable renamed to
-look innocent. A hand-rolled OLE/CFB directory walker (`src/ole.ts`) follows the FAT sector chain to
-read every stream/storage name and flags one containing `VBA`, `_VBA_PROJECT` or `Macros`.
+just that entry (bounded; see below) to sniff its own magic bytes, to catch a nested archive or
+executable renamed to look innocent, recursing into nested archives up to a depth limit. When the
+central directory itself can't be trusted, it falls back to scanning local file headers directly
+(bounded to 5000 entries) so a real macro or executable behind a corrupted directory is still
+found. A hand-rolled OLE/CFB directory walker (`src/ole.ts`) follows the FAT sector chain to read
+every stream/storage name and flags one containing `VBA`, `_VBA_PROJECT` or `Macros`.
 
 Filename-only: a right-to-left override character (`U+202E`), and a double extension where the
 final one is dangerous and the one before it looks like an ordinary document
