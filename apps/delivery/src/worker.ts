@@ -37,6 +37,12 @@ export interface DeliveryWorkerOptions {
   db: Db;
   /** Keyed by OutboundRecipient.transport ('direct', 'ses'). */
   transports: Record<string, Transport>;
+  /**
+   * Which transport a recipient is attempted through, chosen at each attempt (PST-REQ-045). Default
+   * `routeByClaims`: a transport that claims the domain (SES for DELIVERY_SES_DOMAINS), else the
+   * one the recipient was enqueued with, else 'direct'.
+   */
+  route?: (domain: string, enqueued: string) => string;
   /** Stream a message's bytes (the blob store's get). Never buffered whole. */
   openMessage: (sha256: string) => Promise<Readable>;
   /** DSN generation (PST-T-1.7). Its resolution is what marks a DSN sent; default: log it. */
@@ -79,6 +85,21 @@ function parsePayload(job: Job): Group {
   return { messageId: p.messageId, domain: p.domain };
 }
 
+/**
+ * The default route. A claim wins (so setting DELIVERY_SES_DOMAINS moves already-queued mail too);
+ * a transport that is not configured (SES without credentials) is not selectable, and its
+ * recipients go direct, because a fallback that is switched off must not strand the queue.
+ */
+export function routeByClaims(transports: Record<string, Transport>): (domain: string, enqueued: string) => string {
+  return (domain, enqueued) => {
+    for (const [name, transport] of Object.entries(transports)) {
+      if (transport.claims?.(domain) === true) return name;
+    }
+    if (transports[enqueued] !== undefined) return enqueued;
+    return transports['direct'] === undefined ? enqueued : 'direct';
+  };
+}
+
 function errorText(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
@@ -90,6 +111,7 @@ export function createDeliveryWorker(options: DeliveryWorkerOptions): DeliveryWo
   const leaseMs = options.leaseMs ?? 300_000;
   const attemptTimeoutMs = options.attemptTimeoutMs ?? 240_000;
   const log: Log = options.log ?? (() => undefined);
+  const route = options.route ?? routeByClaims(options.transports);
   const onDsn: DsnHook = options.onDsn ?? ((intent) => {
     log('dsn-intent', { kind: intent.kind, recipientId: intent.recipientId, address: intent.address, note: 'DSN generation is PST-T-1.7' });
     return Promise.resolve();
@@ -131,7 +153,7 @@ export function createDeliveryWorker(options: DeliveryWorkerOptions): DeliveryWo
   };
 
   /** Mark the group's due recipients attempting and open their attempts, in one commit. */
-  const begin = async (group: Group, now: Date): Promise<{ recipient: OutboundRecipient; attemptId: string }[]> => {
+  const begin = async (group: Group, now: Date): Promise<{ recipient: OutboundRecipient; attemptId: string; transport: string }[]> => {
     return db.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string }[]>`
         UPDATE outbound_recipient
@@ -143,13 +165,15 @@ export function createDeliveryWorker(options: DeliveryWorkerOptions): DeliveryWo
         RETURNING id::text AS id`;
       if (rows.length === 0) return [];
       const recipients = await tx.outboundRecipient.findMany({ where: { id: { in: rows.map((r) => r.id) } }, orderBy: { address: 'asc' } });
-      const out: { recipient: OutboundRecipient; attemptId: string }[] = [];
+      const out: { recipient: OutboundRecipient; attemptId: string; transport: string }[] = [];
       for (const recipient of recipients) {
+        const transport = route(group.domain, recipient.transport);
+        if (transport !== recipient.transport) log('transport-routed', { recipientId: recipient.id, domain: group.domain, enqueued: recipient.transport, transport });
         const attempt = await tx.deliveryAttempt.create({
-          data: { recipientId: recipient.id, startedAt: now, transport: recipient.transport, outcome: 'error', error: IN_FLIGHT },
+          data: { recipientId: recipient.id, startedAt: now, transport, outcome: 'error', error: IN_FLIGHT },
           select: { id: true },
         });
-        out.push({ recipient, attemptId: attempt.id });
+        out.push({ recipient, attemptId: attempt.id, transport });
       }
       return out;
     });
@@ -223,7 +247,7 @@ export function createDeliveryWorker(options: DeliveryWorkerOptions): DeliveryWo
 
     const claimed = await begin(group, startedAt);
     const byTransport = new Map<string, typeof claimed>();
-    for (const c of claimed) byTransport.set(c.recipient.transport, [...(byTransport.get(c.recipient.transport) ?? []), c]);
+    for (const c of claimed) byTransport.set(c.transport, [...(byTransport.get(c.transport) ?? []), c]);
 
     for (const [transportName, batch] of byTransport) {
       const result = await runTransport(options.transports[transportName], {

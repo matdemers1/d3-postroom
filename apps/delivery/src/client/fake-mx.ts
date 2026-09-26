@@ -23,6 +23,19 @@ export interface FakeMxScript {
   throttleMs?: number;
   /** Keep at most this many body bytes as text (the byte count is always exact). Default 1 MiB. */
   keepBodyBytes?: number;
+  /** Smarthost mode (the SES fallback): AUTH is advertised and required before MAIL. */
+  auth?: FakeMxAuth;
+}
+
+export interface FakeMxAuth {
+  user: string;
+  password: string;
+  /** Default ['PLAIN', 'LOGIN']. */
+  mechanisms?: string[];
+  /** Also advertise AUTH before STARTTLS (as a careless server might), to prove the client still waits. */
+  advertiseInPlaintext?: boolean;
+  /** Reply to a correct credential instead of '235 2.7.0 Authentication successful' (e.g. a 454). */
+  reply?: string;
 }
 
 export interface FakeMxTls {
@@ -45,6 +58,11 @@ export interface FakeMxSession {
   body: string;
   /** True once the terminating '.' line was received. */
   dataComplete: boolean;
+  /** The user that authenticated (smarthost mode), and whether any AUTH command arrived before TLS. */
+  authUser: string | null;
+  authInPlaintext: boolean;
+  /** Body bytes exactly as received after unstuffing (up to keepBodyBytes), for byte comparisons. */
+  bodyBuffer: () => Buffer;
   closed: Promise<void>;
 }
 
@@ -63,6 +81,11 @@ export async function startFakeMx(script: FakeMxScript = {}, tlsConfig?: FakeMxT
 
   const server = net.createServer((plain) => {
     sockets.add(plain);
+    const bodyChunks: Buffer[] = [];
+    let bodyKept = 0;
+    /** AUTH LOGIN in progress: the next line is the username, then the password. */
+    let loginStep: 'user' | 'password' | null = null;
+    let loginUser = '';
     let closedResolve: () => void = () => undefined;
     const session: FakeMxSession = {
       remoteAddress: plain.remoteAddress,
@@ -74,6 +97,9 @@ export async function startFakeMx(script: FakeMxScript = {}, tlsConfig?: FakeMxT
       bodyBytes: 0,
       body: '',
       dataComplete: false,
+      authUser: null,
+      authInPlaintext: false,
+      bodyBuffer: () => Buffer.concat(bodyChunks),
       closed: new Promise<void>((resolve) => { closedResolve = resolve; }),
     };
     sessions.push(session);
@@ -107,12 +133,39 @@ export async function startFakeMx(script: FakeMxScript = {}, tlsConfig?: FakeMxT
           return;
         }
         const text = line.startsWith('.') ? line.slice(1) : line;
+        if (bodyKept < keep) {
+          const bytes = Buffer.concat([raw.subarray(line.startsWith('.') ? 1 : 0), CRLF]);
+          bodyChunks.push(bytes);
+          bodyKept += bytes.length;
+        }
         session.bodyBytes += text.length + 2;
         if (session.body.length < keep) session.body += `${text}\r\n`;
         return;
       }
       const line = raw.toString('utf8');
       session.transcript.push(`C: ${line}`);
+      const auth = script.auth;
+      const finishAuth = (user: string, password: string): void => {
+        if (auth !== undefined && user === auth.user && password === auth.password) {
+          const reply = auth.reply ?? '235 2.7.0 Authentication successful';
+          if (reply.startsWith('235')) session.authUser = user;
+          later('mail', [reply]);
+        } else {
+          later('mail', ['535 5.7.8 Authentication credentials invalid']);
+        }
+      };
+      if (loginStep !== null) {
+        const decoded = Buffer.from(line, 'base64').toString('utf8');
+        if (loginStep === 'user') {
+          loginUser = decoded;
+          loginStep = 'password';
+          later('mail', ['334 UGFzc3dvcmQ6']);
+        } else {
+          loginStep = null;
+          finishAuth(loginUser, decoded);
+        }
+        return;
+      }
       const verb = line.split(' ', 1)[0]?.toUpperCase() ?? '';
       if (verb === 'EHLO') {
         if (script.ehloReply !== undefined) {
@@ -121,6 +174,7 @@ export async function startFakeMx(script: FakeMxScript = {}, tlsConfig?: FakeMxT
         }
         const caps = [...(script.capabilities?.(session.secure) ?? ['8BITMIME'])];
         if (tlsConfig !== undefined && !session.secure) caps.push('STARTTLS');
+        if (script.auth !== undefined && (session.secure || script.auth.advertiseInPlaintext === true)) caps.push(`AUTH ${(script.auth.mechanisms ?? ['PLAIN', 'LOGIN']).join(' ')}`);
         const lines = ['fake.mx.test hello', ...caps];
         later('ehlo', lines.map((l, i) => `250${i === lines.length - 1 ? ' ' : '-'}${l}`));
       } else if (verb === 'HELO') {
@@ -145,6 +199,21 @@ export async function startFakeMx(script: FakeMxScript = {}, tlsConfig?: FakeMxT
           socket = secure;
           pending = Buffer.alloc(0);
         });
+      } else if (verb === 'AUTH' && auth !== undefined) {
+        if (!session.secure) session.authInPlaintext = true;
+        const [, mechanism = '', initial] = line.split(' ');
+        const offered = (auth.mechanisms ?? ['PLAIN', 'LOGIN']).map((m) => m.toUpperCase());
+        if (!offered.includes(mechanism.toUpperCase())) {
+          later('mail', ['504 5.5.4 mechanism not supported']);
+        } else if (mechanism.toUpperCase() === 'PLAIN') {
+          const [, user = '', password = ''] = Buffer.from(initial ?? '', 'base64').toString('utf8').split('\0');
+          finishAuth(user, password);
+        } else {
+          loginStep = 'user';
+          later('mail', ['334 VXNlcm5hbWU6']);
+        }
+      } else if (verb === 'MAIL' && auth !== undefined && session.authUser === null) {
+        later('mail', ['530 5.7.0 Authentication required']);
       } else if (verb === 'MAIL') {
         session.mailFrom = line;
         later('mail', [script.mail?.(line) ?? '250 2.1.0 ok']);

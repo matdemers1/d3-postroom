@@ -13,6 +13,7 @@ import { DAEMON } from './daemon.js';
 import { drillHandler } from './drill/drill.js';
 import { inboundHealth, maintenanceHealth } from './health.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
+import { sweepUnthreaded } from './sweep/thread-sweep.js';
 
 await runDaemon({
   name: DAEMON,
@@ -62,9 +63,21 @@ await runDaemon({
       times: { backupAt: envString(ctx.env, 'BACKUP_AT', '03:00'), drillAt: envString(ctx.env, 'DRILL_AT', '04:30') },
       log: ctx.log,
     });
+    // Repairs a Message left with threadId NULL by a crash between the file stage's commit and its
+    // post-commit assignThread call (PST-T-3.14, PST-REQ-078): once at start, then on an interval.
+    const threadSweepMs = envInt(ctx.env, 'THREAD_SWEEP_MS', 60_000);
+    const runThreadSweep = (): void => {
+      sweepUnthreaded({ db, blobs: lazyBlobs, log: ctx.log, now: () => new Date() }).catch((err: unknown) => {
+        ctx.log('thread-sweep-error', { error: err instanceof Error ? err.message : String(err) });
+      });
+    };
+    runThreadSweep();
+    const threadSweepTimer = setInterval(runThreadSweep, threadSweepMs);
+
     ctx.addHealth(async () => ({ inbound: await inboundHealth(db), ...(await maintenanceHealth(db)) }));
-    ctx.log('inbound-worker', { leaseMs, blobRoot, backupsConfigured: maintenance.backup.config.s3 !== null });
+    ctx.log('inbound-worker', { leaseMs, blobRoot, backupsConfigured: maintenance.backup.config.s3 !== null, threadSweepMs });
     ctx.onShutdown(async () => {
+      clearInterval(threadSweepTimer);
       nightly.stop();
       await maintenanceWorker.stop();
       await worker.stop();
