@@ -19,7 +19,7 @@ import { untaggedStatus, writeResponse } from '@postroom/imap-proto';
 import { isTrustedProxyPeer, readProxyHeader } from '@postroom/proxy-protocol';
 import { CapabilityRegistry } from './capabilities.js';
 import { createStructureCache, type StructureCache } from './content.js';
-import { EXTENSIONS } from './extensions/index.js';
+import { createExtensions, NullMailboxNotifier, PgMailboxNotifier, type MailboxNotifier } from './extensions/index.js';
 import { SocketDuplex, upgradeToTls } from './io.js';
 import { ImapSession, type Authenticator, type Log } from './session.js';
 import { MailStore } from './store.js';
@@ -40,6 +40,14 @@ export interface ImapServerOptions {
   readonly throttle?: AuthThrottle;
   readonly registry?: CapabilityRegistry;
   readonly log?: Log;
+  /** For the one LISTEN connection IDLE is pushed from (PST-REQ-073). */
+  readonly databaseUrl?: string;
+  /** Replaces the LISTEN connection (tests); without either, IDLE polls every `idlePollMs`. */
+  readonly notifier?: MailboxNotifier;
+  /** IDLE without DONE ends after this long (default 29 minutes). */
+  readonly maxIdleMs?: number;
+  /** IDLE's safety poll (default 60 s; 1 s without a notifier). */
+  readonly idlePollMs?: number;
 }
 
 export interface ImapListeners {
@@ -49,6 +57,7 @@ export interface ImapListeners {
   readonly imap: Server;
   readonly store: MailStore;
   readonly structures: StructureCache;
+  readonly notifier: MailboxNotifier;
   listen(server: Server, port: number, host: string): Promise<AddressInfo>;
   close(): Promise<void>;
   activeSessions(): number;
@@ -96,7 +105,22 @@ export function createImapListeners(o: ImapServerOptions): ImapListeners {
   const log: Log = o.log ?? (() => undefined);
   const store = new MailStore(o.db, o.blobs);
   const structures = createStructureCache(o.blobs, o.structureCacheEntries ?? 1000);
-  const registry = o.registry ?? new CapabilityRegistry(EXTENSIONS);
+  const notifier: MailboxNotifier =
+    o.notifier ??
+    (o.databaseUrl === undefined || o.databaseUrl === ''
+      ? new NullMailboxNotifier()
+      : new PgMailboxNotifier({ connectionString: o.databaseUrl, log }));
+  const pushed = !(notifier instanceof NullMailboxNotifier);
+  const registry =
+    o.registry ??
+    new CapabilityRegistry(
+      createExtensions({
+        notifier,
+        log,
+        pollIntervalMs: o.idlePollMs ?? (pushed ? 60_000 : 1_000),
+        ...(o.maxIdleMs === undefined ? {} : { maxIdleMs: o.maxIdleMs }),
+      }),
+    );
   const authenticate = imapAuthenticator(o.db, o.pepper, o.throttle ?? createAuthThrottle({ db: o.db }));
   const secureContext: SecureContext | null = o.tls === null ? null : createSecureContext({ key: o.tls.key, cert: o.tls.cert, minVersion: 'TLSv1.2' });
   const maxPerIp = o.maxConnectionsPerIp ?? 20;
@@ -220,6 +244,7 @@ export function createImapListeners(o: ImapServerOptions): ImapListeners {
     imaps,
     store,
     structures,
+    notifier,
     listen: (server, port, host) =>
       new Promise((resolve, reject) => {
         server.once('error', reject);
@@ -236,6 +261,7 @@ export function createImapListeners(o: ImapServerOptions): ImapListeners {
       }, 1_000).unref();
       for (const s of sockets) s.destroy();
       await Promise.all(closing);
+      await notifier.close();
     },
     activeSessions: () => sessions.size,
   };

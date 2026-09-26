@@ -1,7 +1,7 @@
 // What the server advertises, and the seam extensions plug into (PST-REQ-070).
 //
-// Core capabilities are listed here with the state they appear in. An extension (PST-T-3.3:
-// IDLE, CONDSTORE, QRESYNC, …) is an `ImapExtension` registered in extensions/index.ts: it adds
+// Core capabilities are listed here with the state they appear in. An extension (IDLE, CONDSTORE,
+// QRESYNC) is an `ImapExtension` registered in extensions/index.ts: it adds
 // capability names, may accept names in ENABLE, and may take over whole commands. The session
 // consults the registry for all three, so adding an extension never edits the session.
 import type { Command, CommandName, Response } from '@postroom/imap-proto';
@@ -55,6 +55,10 @@ export interface ExtensionSession {
   syncSelected(allowExpunge: boolean): Promise<void>;
   /** Read one raw line from the client (IDLE's DONE); null at end of stream. */
   readRawLine(timeoutMs: number): Promise<Buffer | null>;
+  /** The session has ended (LOGOUT, BYE, the connection went). */
+  readonly closed: boolean;
+  /** End the session (no tagged response follows). */
+  close(): void;
 }
 
 export interface CommandOutcome {

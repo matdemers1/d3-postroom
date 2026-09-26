@@ -213,7 +213,13 @@ importers:
       '@postroom/search':
         specifier: workspace:*
         version: link:../../packages/search
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
     devDependencies:
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
       tsx:
         specifier: ^4.23.13
         version: 4.23.13

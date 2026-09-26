@@ -72,6 +72,7 @@ export async function startHarness(prefix: string): Promise<Harness> {
     edgePeers: ['10.255.255.254'],
     throttle: createAuthThrottle({ db, sleep: () => Promise.resolve(), sourceCeiling: 10_000 }),
     log: (event, fields = {}) => logs.push({ event, fields }),
+    databaseUrl: t.url,
   };
   const open: ImapListeners[] = [];
   const start = async (o: ImapServerOptions): Promise<{ listeners: ImapListeners; port: number; tlsPort: number }> => {
