@@ -290,6 +290,99 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* --- The thread (PST-T-3.15) --------------------------------------------------------------------- */
+
+.pr-thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pr-thread__item {
+  border-top: var(--border-width) solid var(--color-border);
+  padding-top: var(--space-12);
+}
+
+.pr-thread__item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.pr-thread__collapsed {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-12);
+  width: 100%;
+  padding: var(--space-8) 0;
+  background: transparent;
+  border: 0;
+  color: var(--color-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pr-thread__collapsed:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-thread__collapsed:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+.pr-thread__collapsed-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-14);
+}
+
+/* --- The delivery timeline (PST-T-6.4) ------------------------------------------------------------ */
+
+.pr-delivery {
+  border-top: var(--border-width) solid var(--color-border);
+  padding-top: var(--space-12);
+}
+
+.pr-delivery__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.pr-delivery__recipient {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.pr-delivery__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.pr-delivery__address {
+  font-size: var(--text-14);
+  overflow-wrap: anywhere;
+}
+
+.pr-delivery__attempts {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
+}
+
 .pr-back {
   margin-bottom: var(--space-4);
   font-size: var(--text-14);
