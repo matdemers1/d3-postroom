@@ -11,6 +11,7 @@ import { SESSION_COOKIE } from '../auth/sessions.js';
 import * as S from '../mail/schemas.js';
 import * as E from '../export/schemas.js';
 import * as SP from '../senders/schemas.js';
+import { ALIASES_COMPONENTS, ALIASES_ROUTES } from '../aliases/openapi.js';
 import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
 import { MOBILECONFIG_ROUTES } from '../mobileconfig/openapi.js';
 import { INSPECT_COMPONENTS, INSPECT_ROUTES } from '../mail/inspect.js';
@@ -64,6 +65,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   SenderPin: SP.SenderPinView,
   SenderScreenResult: SP.SenderScreenResult,
   ...INSPECT_COMPONENTS,
+  ...ALIASES_COMPONENTS,
   ...COMPOSE_COMPONENTS,
   ...SIEVE_COMPONENTS,
   ...CALENDAR_COMPONENTS,
@@ -309,6 +311,7 @@ export const ROUTES: RouteSpec[] = [
     headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
     responses: { '200': { description: 'The screen decision after the change.', schema: 'SenderScreenResult' }, ...COMMON, '403': err('Missing CSRF header.') },
   },
+  ...ALIASES_ROUTES,
   ...COMPOSE_ROUTES,
   ...MOBILECONFIG_ROUTES,
   ...INSPECT_ROUTES,

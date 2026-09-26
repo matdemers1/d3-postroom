@@ -52,6 +52,7 @@ describe.skipIf(baseUrl === undefined)('inbound pipeline (PST-T-2.7, PST-T-2.11)
     matt: (): TestRecipient => ({ rcpt: 'matt@d3cloud.io', address: 'matt@d3cloud.io', accountIds: [operatorId], kind: 'mailbox' }),
     team: (): TestRecipient => ({ rcpt: 'team@d3cloud.io', address: 'team@d3cloud.io', accountIds: [youId, otherId], kind: 'alias' }),
     youGithub: (): TestRecipient => ({ rcpt: 'you+github@d3cloud.io', address: 'you@d3cloud.io', accountIds: [youId], kind: 'plus', tag: 'github' }),
+    youReceipts: (): TestRecipient => ({ rcpt: 'you+receipts@d3cloud.io', address: 'you@d3cloud.io', accountIds: [youId], kind: 'plus', tag: 'receipts' }),
   };
 
   beforeAll(async () => {
@@ -127,6 +128,24 @@ describe.skipIf(baseUrl === undefined)('inbound pipeline (PST-T-2.7, PST-T-2.11)
         'tag "github" from you+github@d3cloud.io: keyword $Postroom.tag.github',
       ]),
     );
+  });
+
+  it('you+receipts@ overrides the classifier and files to Receipts (PST-REQ-111)', async () => {
+    const { id } = await spool(db, blobs, { recipients: [to.youReceipts()] });
+    await worker.drain();
+    const copies = await copiesOf(id);
+    expect(copies).toHaveLength(1);
+    expect(copies[0]?.mailbox).toMatchObject({ accountId: youId, name: 'Receipts' });
+    expect(copies[0]?.verdict?.bucket).toBe('receipts');
+    expect(copies[0]?.verdict?.reasons).toEqual(expect.arrayContaining(['plus-address tag receipts']));
+  });
+
+  it('a quarantined message still quarantines even with a bucket-named tag (PST-REQ-111)', async () => {
+    const { id } = await spool(db, blobs, { recipients: [to.youReceipts()], disposition: 'quarantine' });
+    await worker.drain();
+    const [copy] = await copiesOf(id);
+    expect(copy?.mailbox).toMatchObject({ accountId: youId, name: 'Junk' });
+    expect(copy?.verdict?.bucket).toBe('junk');
   });
 
   it('an account reached twice (plus address and alias) still gets one copy, with the tag', async () => {

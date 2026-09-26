@@ -225,6 +225,36 @@ export function decisionForBucket(bucket: Bucket, base: AccountDecision, reason:
 /** On a copy's verdict when its account has no active Sieve script. */
 export const NO_SCRIPT_REASON = 'sieve: no active script';
 
+// ─── Plus-address tag routing (PST-T-5.7, PST-REQ-111) ──────────────────────────────────────────
+//
+// A plus tag that spells one of the bucket folder names routes the copy there — you+receipts@
+// files to Receipts — overriding the classifier's own decision, but never a junk/quarantine rule
+// (classify.ts already decided junk before file.ts ever sees the account; that decision is left
+// alone here). Any other tag stays keyword-only, as it already was.
+const ROUTABLE_TAG_BUCKETS: ReadonlySet<Bucket> = new Set(['newsletters', 'updates', 'receipts', 'notifications']);
+
+/** The bucket a plus tag names, case-insensitively, when it is one of the sorting folders. */
+function tagBucket(tag: string): Bucket | null {
+  const lower = tag.trim().toLowerCase();
+  return (ROUTABLE_TAG_BUCKETS as ReadonlySet<string>).has(lower) ? (lower as Bucket) : null;
+}
+
+/**
+ * A plus-address tag equal to a bucket name overrides the classifier's decision for this account's
+ * copy — the first matching tag among the recipients that reached it wins. Junk is never
+ * overridden: the classifier only decides junk for a whole-message rule (quarantine, a blocked
+ * sender, a quarantined attachment), and that call stands.
+ */
+export function applyTagRouting(decision: AccountDecision, tags: readonly string[]): AccountDecision {
+  if (decision.bucket === 'junk') return decision;
+  for (const tag of tags) {
+    const bucket = tagBucket(tag);
+    if (bucket === null) continue;
+    return decisionForBucket(bucket, decision, `plus-address tag ${bucket}`);
+  }
+  return decision;
+}
+
 export interface FileTarget {
   readonly mailbox: string;
   /** The decision recorded on the copy's verdict (the classifier's, or the one a sieve bucket chose). */
@@ -393,7 +423,7 @@ export async function fileStage(
         }
         continue;
       }
-      const classifierDecision = decisionFor(prior.classify, plan.accountId);
+      const classifierDecision = applyTagRouting(decisionFor(prior.classify, plan.accountId), plan.tags);
       const outcome = sieveOutcomeFor(prior.sieve, plan.accountId);
       // $NewSender marks a first-time human sender (PST-REQ-106) so every IMAP client sees the badge,
       // not only the webmail; Allow/Block in the webmail clears it.
