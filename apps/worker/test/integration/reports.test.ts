@@ -7,12 +7,14 @@ import { randomInt } from 'node:crypto';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { generateKek } from '@postroom/crypto';
 import { AccountKind, AddressKind, DEFAULT_MAILBOXES, randomUidValidity, seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { startWorker, type RunningWorker } from '@postroom/queue';
+import { serializeDmarcAggregate, type DmarcAggregateReport } from '@postroom/reports';
 import { createInboundPipeline, INBOUND_QUEUE } from '../../src/pipeline.js';
 import { createReportSweeper, reportAddresses, resolveReportMailboxes } from '../../src/reports/index.js';
 import { Clock, messageWithAttachment, spool, type TestRecipient } from './helpers.js';
@@ -144,12 +146,65 @@ describe.skipIf(baseUrl === undefined)('report ingest (PST-T-7.1, PST-REQ-122)',
     expect(await createReportSweeper({ db, blobs, env }).drain()).toEqual([]);
   });
 
+  it('a report for a domain that is not ours is recorded foreign, audited, and never re-classified retroactively (PST-T-7.9, PST-REQ-122)', async () => {
+    const foreign: DmarcAggregateReport = {
+      version: null,
+      orgName: 'reports.example.net',
+      email: null,
+      extraContactInfo: null,
+      reportId: 'foreign-report-0001',
+      begin: 1_790_000_000,
+      end: 1_790_086_400,
+      errors: [],
+      policy: { domain: 'example.org', adkim: null, aspf: null, p: 'none', sp: null, pct: null, fo: null },
+      records: [
+        {
+          sourceIp: '203.0.113.9',
+          count: 4,
+          disposition: 'none',
+          dkim: 'pass',
+          spf: 'pass',
+          reasons: [],
+          headerFrom: 'example.org',
+          envelopeFrom: null,
+          envelopeTo: null,
+          authDkim: [],
+          authSpf: [],
+        },
+      ],
+    };
+    const gz = gzipSync(Buffer.from(serializeDmarcAggregate(foreign)));
+    await spool(db, blobs, {
+      recipients: [toReports()],
+      message: messageWithAttachment({ from: 'noreply@reports.example.net', filename: 'example.org!reports.example.net!1790000000!1790086400.xml.gz', contentType: 'application/gzip', data: gz }),
+    });
+    expect(await worker.drain()).toBe(1);
+    const swept = await createReportSweeper({ db, blobs, env }).drain();
+    expect(swept).toHaveLength(1);
+    expect(swept[0]?.outcome).toBe('ingested');
+    expect(swept[0]?.results[0]).toMatchObject({ kind: 'dmarc', org: 'reports.example.net', result: 'ingested' });
+
+    const stored = await db.dmarcReport.findUniqueOrThrow({ where: { orgName_reportId: { orgName: 'reports.example.net', reportId: 'foreign-report-0001' } } });
+    expect(stored.status).toBe('foreign');
+    expect(stored.reason).toContain('example.org');
+    expect(stored.reason).toContain('not one of our domains');
+
+    // Every existing (d3cloud.io) row is unaffected and still defaults to "ours".
+    const ours = await db.dmarcReport.findMany({ where: { domain: 'd3cloud.io' } });
+    expect(ours.length).toBeGreaterThan(0);
+    expect(ours.every((r) => r.status === 'ours' && r.reason === null)).toBe(true);
+
+    const audit = await db.auditEvent.findFirst({ where: { action: 'reports.dmarc.ingest', entityId: stored.id } });
+    expect(audit?.actorKind).toBe('system');
+    expect((audit?.after as { status?: string } | null)?.status).toBe('foreign');
+  });
+
   it('two sweepers racing on the same messages record each once', async () => {
     await deliver('noreply-dmarc-support@google.com', '.zip', 'application/zip');
     await deliver('dmarcreport@microsoft.com', '.xml.gz', 'application/gzip');
     expect(await worker.drain()).toBe(2);
     const [a, b] = await Promise.all([createReportSweeper({ db, blobs, env }).drain(), createReportSweeper({ db, blobs, env }).drain()]);
     expect(a.length + b.length).toBe(2);
-    expect(await db.reportIngest.count()).toBe(8); // 3 + 1 + 2 before, 2 here
+    expect(await db.reportIngest.count()).toBe(9); // 3 + 1 + 2 + 1 (foreign) before, 2 here
   });
 });

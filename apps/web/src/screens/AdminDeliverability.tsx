@@ -18,7 +18,7 @@ import {
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
-import { api, type Deliverability, type DeliverabilitySource } from '../api';
+import { api, evidenceRowText, proposalSummary, type Deliverability, type DeliverabilitySource, type ProposalEvidenceDay, type ProposalResult } from '../api';
 
 const RANGES = [
   { value: '7', label: 'Last 7 days' },
@@ -154,6 +154,69 @@ function rateBadge(rate: number) {
 }
 
 /**
+ * One domain's DMARC progression proposal (PST-T-7.2, PST-REQ-123): the 14-day evidence and the
+ * exact TXT value to publish, with a copy button — Postroom never publishes DNS itself, so this is
+ * as far as it goes.
+ */
+function ProposalCard({ result }: { result: ProposalResult }) {
+  const [copied, setCopied] = useState(false);
+  const { proposal } = result;
+
+  const copy = (value: string): void => {
+    navigator.clipboard
+      .writeText(value)
+      .then(() => {
+        setCopied(true);
+      })
+      .catch(() => {
+        setCopied(false);
+      });
+  };
+
+  const evidenceColumns: TableColumn<ProposalEvidenceDay>[] = [
+    { key: 'day', header: 'Day (UTC)', cell: (d) => d.day },
+    { key: 'reports', header: 'Reports', align: 'end', cell: (d) => count(d.reports) },
+    { key: 'messages', header: 'Messages', align: 'end', cell: (d) => count(d.messages) },
+    { key: 'sources', header: 'Sources', cell: (d) => evidenceRowText(d).sources },
+    { key: 'orgs', header: 'Reported by', cell: (d) => evidenceRowText(d).orgs },
+  ];
+
+  return (
+    <Card as="li" data-proposal={result.domain}>
+      <CardBody>
+        <CardTitle as="h3">{result.domain}</CardTitle>
+        {result.eligible && proposal !== null ? (
+          <Stack gap="12">
+            <p>{proposalSummary(proposal)}</p>
+            <Cluster gap="8">
+              <code data-txt-value>{proposal.txtValue}</code>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  copy(proposal.txtValue);
+                }}
+              >
+                {copied ? 'Copied' : 'Copy TXT record'}
+              </Button>
+            </Cluster>
+            <Table
+              caption={`14-day evidence for ${result.domain}`}
+              captionHidden
+              columns={evidenceColumns}
+              rows={proposal.evidence.days}
+              rowKey={(d) => d.day}
+              density="compact"
+            />
+          </Stack>
+        ) : (
+          <p data-proposal-reason>{result.reason ?? 'Not eligible yet.'}</p>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+/**
  * PST-REQ-122: DMARC aggregate and TLS-RPT reports mailed to the report mailbox, charted — pass and
  * fail by day, every sending source with its pass rate, each reporting organization, and TLS
  * session success and failure by policy.
@@ -162,6 +225,7 @@ export function AdminDeliverability() {
   const [days, setDays] = useState('30');
   const [data, setData] = useState<Deliverability | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [proposals, setProposals] = useState<ProposalResult[] | null>(null);
 
   const load = useCallback(async (range: string) => {
     try {
@@ -172,9 +236,21 @@ export function AdminDeliverability() {
     }
   }, []);
 
+  const loadProposals = useCallback(async () => {
+    try {
+      setProposals((await api.adminDeliverabilityProposals()).proposals);
+    } catch {
+      setProposals(null);
+    }
+  }, []);
+
   useEffect(() => {
     void load(days);
   }, [load, days]);
+
+  useEffect(() => {
+    void loadProposals();
+  }, [loadProposals]);
 
   const sourceColumns: TableColumn<DeliverabilitySource>[] = [
     { key: 'sourceIp', header: 'Source', cell: (s) => (s.reverseDns === null ? s.sourceIp : `${s.sourceIp} (${s.reverseDns})`) },
@@ -218,6 +294,19 @@ export function AdminDeliverability() {
           </Button>
         }
       />
+      {proposals !== null && proposals.length > 0 ? (
+        <Section
+          title="DMARC progression"
+          description="PST-REQ-123: 14 consecutive UTC days of only aligned passes from authorized sources earn a proposal to tighten the policy, with the evidence attached. Postroom never publishes DNS itself."
+        >
+          <Grid as="ul" minItemWidth="md" aria-label="DMARC progression proposals">
+            {proposals.map((p) => (
+              <ProposalCard key={p.domain} result={p} />
+            ))}
+          </Grid>
+        </Section>
+      ) : null}
+
       <FormField label="Range" width="sm">
         <Select options={RANGES} value={days} onValueChange={setDays} />
       </FormField>
