@@ -27,7 +27,7 @@ import {
   type ServerSession,
   type SmtpReply,
 } from '@postroom/smtp-proto';
-import { allowAllCaps, type CheckCaps } from './caps-seam.js';
+import { allowAllCaps, allowAllEnforcement, CapExceededError, type CheckCaps, type EnforceCaps } from './caps-seam.js';
 import { isCredentialFrozen } from './caps/index.js';
 import { loadSigningKeys } from './dkim.js';
 import { inspectHeaders, rewriteHeaders } from './headers.js';
@@ -76,7 +76,10 @@ export interface SubmissionOptions {
   /** PEM key + certificate. Null: 587 serves without STARTTLS, so AUTH (and so MAIL) is impossible. */
   readonly tls: { readonly key: string | Buffer; readonly cert: string | Buffer } | null;
   readonly throttle?: AuthThrottle;
+  /** RCPT-time, best-effort (see caps-seam.ts). Not what makes the cap correct under concurrency. */
   readonly checkCaps?: CheckCaps;
+  /** Authoritative: run inside the accepting transaction, before the insert (see caps-seam.ts). */
+  readonly enforceCaps?: EnforceCaps;
   readonly log?: (event: string, fields?: Record<string, unknown>) => void;
   readonly faults?: SubmissionFaults;
   readonly idleTimeoutMs?: number;
@@ -113,6 +116,7 @@ function errorText(err: unknown): string {
 export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: string | undefined, o: SubmissionOptions): ServerSession {
   const throttle = o.throttle ?? new AuthThrottle();
   const checkCaps = o.checkCaps ?? allowAllCaps;
+  const enforceCaps = o.enforceCaps ?? allowAllEnforcement;
   const log = o.log ?? noLog;
   const now = o.now ?? ((): Date => new Date());
   const ip = remoteAddress ?? 'unknown';
@@ -294,66 +298,77 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
       const signatures = await signMessage(spool.open(), { domain: signingDomain, keys, now: now() });
 
       const recipients = env.recipients.map((r) => r.address);
-      const caps = await checkCaps({ accountId: env.login.accountId, appPasswordId: env.login.appPasswordId }, recipients);
-      if (caps.action === 'reject') {
-        log('caps-refused', { session: env.sessionId, accountId: env.login.accountId });
-        return caps.reply;
-      }
+      const credential = { accountId: env.login.accountId, appPasswordId: env.login.appPasswordId };
 
-      // Pass 3, inside the one accepting transaction: signatures + spool → the final blob
-      // (fsynced before put() returns), the queue rows and jobs, the audit row. Commit, then 250.
-      const accepted = await o.db.$transaction(async (dbTx) => {
-        const blob = await storage.blobs.put(
-          Readable.from(
-            (async function* signed(): AsyncGenerator<Buffer> {
-              for (const s of signatures) yield Buffer.from(s, 'latin1');
-              for await (const chunk of spool.open()) yield chunk as Buffer;
-            })(),
-          ),
-          { tx: dbTx },
-        );
-        const queued = await enqueueOutbound(dbTx, {
-          accountId: env.login.accountId,
-          appPasswordId: env.login.appPasswordId,
-          envelopeFrom: env.envelopeFrom,
-          headerFrom,
-          messageId: fixed.messageId,
-          ...(headers.subject === undefined ? {} : { subject: headers.subject.slice(0, 998) }),
-          blobSha256: blob.sha256,
-          size: blob.size,
-          ...(env.dsnRet === undefined ? {} : { dsnRet: env.dsnRet }),
-          ...(env.dsnEnvid === undefined ? {} : { dsnEnvid: env.dsnEnvid }),
-          submittedVia: 'submission',
-          recipients: env.recipients,
-        });
-        await recordAudit(dbTx, {
-          actor: { kind: 'account', accountId: env.login.accountId },
-          action: 'submission.accept',
-          entityType: 'outbound_message',
-          entityId: queued.message.id,
-          before: null,
-          after: {
+      // Pass 3, inside the one accepting transaction: the authoritative cap check (PST-REQ-043/044
+      // — advisory-locked, recounted against whatever is actually persisted, so a concurrent
+      // submission for the same credential cannot both pass it), then signatures + spool → the
+      // final blob (fsynced before put() returns), the queue rows and jobs, the audit row. Commit,
+      // then 250.
+      try {
+        const accepted = await o.db.$transaction(async (dbTx) => {
+          await enforceCaps(dbTx, credential, recipients, now());
+          const blob = await storage.blobs.put(
+            Readable.from(
+              (async function* signed(): AsyncGenerator<Buffer> {
+                for (const s of signatures) yield Buffer.from(s, 'latin1');
+                for await (const chunk of spool.open()) yield chunk as Buffer;
+              })(),
+            ),
+            { tx: dbTx },
+          );
+          const queued = await enqueueOutbound(dbTx, {
+            accountId: env.login.accountId,
             appPasswordId: env.login.appPasswordId,
             envelopeFrom: env.envelopeFrom,
             headerFrom,
             messageId: fixed.messageId,
+            ...(headers.subject === undefined ? {} : { subject: headers.subject.slice(0, 998) }),
             blobSha256: blob.sha256,
             size: blob.size,
-            recipients: queued.recipients,
-            domains: queued.domains,
-            dkim: keys.map((k) => `${k.algorithm}:${k.selector}`),
-            addedMessageId: fixed.addedMessageId,
-            addedDate: fixed.addedDate,
-            strippedBcc: fixed.strippedBcc,
-          },
-          context: { requestId: randomUUID(), ip: remoteAddress ?? null },
-        });
-        await o.faults?.beforeCommit?.(dbTx);
-        return queued.message.id;
-      }, TX_OPTIONS);
+            ...(env.dsnRet === undefined ? {} : { dsnRet: env.dsnRet }),
+            ...(env.dsnEnvid === undefined ? {} : { dsnEnvid: env.dsnEnvid }),
+            submittedVia: 'submission',
+            recipients: env.recipients,
+          });
+          await recordAudit(dbTx, {
+            actor: { kind: 'account', accountId: env.login.accountId },
+            action: 'submission.accept',
+            entityType: 'outbound_message',
+            entityId: queued.message.id,
+            before: null,
+            after: {
+              appPasswordId: env.login.appPasswordId,
+              envelopeFrom: env.envelopeFrom,
+              headerFrom,
+              messageId: fixed.messageId,
+              blobSha256: blob.sha256,
+              size: blob.size,
+              recipients: queued.recipients,
+              domains: queued.domains,
+              dkim: keys.map((k) => `${k.algorithm}:${k.selector}`),
+              addedMessageId: fixed.addedMessageId,
+              addedDate: fixed.addedDate,
+              strippedBcc: fixed.strippedBcc,
+            },
+            context: { requestId: randomUUID(), ip: remoteAddress ?? null },
+          });
+          await o.faults?.beforeCommit?.(dbTx);
+          return queued.message.id;
+        }, TX_OPTIONS);
 
-      log('accepted', { session: env.sessionId, accountId: env.login.accountId, outboundMessageId: accepted, recipients: recipients.length });
-      return reply(250, '2.0.0', `Queued as ${accepted}`);
+        log('accepted', { session: env.sessionId, accountId: env.login.accountId, outboundMessageId: accepted, recipients: recipients.length });
+        return reply(250, '2.0.0', `Queued as ${accepted}`);
+      } catch (err) {
+        if (err instanceof CapExceededError) {
+          log('caps-refused', { session: env.sessionId, accountId: env.login.accountId, stage: 'data' });
+          // Only after the transaction has rolled back: alerting is a network call and must not
+          // hold the advisory lock (or the row lock backing it) open.
+          await err.alert?.();
+          return err.reply;
+        }
+        throw err;
+      }
     } finally {
       await spool.dispose();
     }
