@@ -121,7 +121,9 @@ function collectFindings(input: InspectInput, findings: Finding[]): void {
       findings.push({
         kind: 'uninspectable-archive',
         reason: `nested archive ("${zip.depthExceededEntry}") exceeds the maximum inspection depth and was not inspected further`,
-        severity: 'no-history',
+        // Always: an executable could sit below the depth we inspect, and legitimate mail almost
+        // never nests archives this deep, so history is no reason to let it through.
+        severity: 'always',
       });
     }
     if (zip.truncatedEntry !== null) {

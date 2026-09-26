@@ -298,6 +298,15 @@ describe('regression: nested-ZIP evasion, malformed central directory, zip bombs
     expect(result.reasons.some((r) => r.includes('maximum inspection depth'))).toBe(true);
   });
 
+  it('quarantines an archive nested past the depth limit even for a sender with history', async () => {
+    const bytes = zipNestedBeyondDepthLimit(4);
+    const policy = await attachmentPolicy(
+      { attachments: [{ partId: '2', contentType: 'application/zip', filename: 'deep.zip', disposition: 'attachment', contentId: null, encoding: 'base64', charset: null, size: bytes.length, sha256: '', firstBytes: bytes.subarray(0, 512), inMessage: false }] } as unknown as Parameters<typeof attachmentPolicy>[0],
+      { senderHasHistory: true, openPart: () => Readable.from([bytes]) },
+    );
+    expect(policy.quarantine).toBe(true);
+  });
+
   it('never returns benign for a ZIP with a corrupted/out-of-range central directory offset, even when it truly contains a macro', () => {
     const good = ooxmlWithMacro();
     const corrupted = corruptZipCentralDirectoryOffset(good);
