@@ -15,7 +15,7 @@ import { generateKek, type Kek } from '@postroom/crypto';
 import { AddressKind, seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createCapsChecker } from '../../src/caps/index.js';
+import { createCapsChecker, createCapsEnforcer } from '../../src/caps/index.js';
 import { ensureDkimKeys } from '../../src/dkim.js';
 import { createSubmissionListeners, type SubmissionListeners } from '../../src/server.js';
 import { AuthThrottle } from '../../src/throttle.js';
@@ -73,12 +73,14 @@ describe.skipIf(baseUrl === undefined)('per-credential recipient caps (PST-T-1.1
       alerts.push({ message: { subject: body.subject, text: body.text }, result: { sent: true } });
       return Promise.resolve(new Response(null, { status: 200 }));
     };
-    const checkCaps = createCapsChecker({
+    const capsOptions = {
       db,
       hourlyDefault: 100,
       dailyDefault: CAP,
       sendAlert: createAlertSender({ url: 'https://relay.test/send', token: 'tok', to: 'ops@d3cloud.io', fetch: relayFetch }),
-    });
+    };
+    const checkCaps = createCapsChecker(capsOptions);
+    const enforceCaps = createCapsEnforcer(capsOptions);
 
     listeners = createSubmissionListeners({
       db,
@@ -90,6 +92,7 @@ describe.skipIf(baseUrl === undefined)('per-credential recipient caps (PST-T-1.1
       tls: { key: await readFile(join(dir, 'key.pem')), cert: await readFile(join(dir, 'cert.pem')) },
       throttle: new AuthThrottle({ baseDelayMs: 0, maxDelayMs: 0, lockoutFailures: 1000 }),
       checkCaps,
+      enforceCaps,
     });
     const s465 = listeners.submissions;
     if (s465 === null) throw new Error('465 listener missing');
@@ -135,12 +138,12 @@ describe.skipIf(baseUrl === undefined)('per-credential recipient caps (PST-T-1.1
     expect(alerts).toHaveLength(1);
     expect(alerts[0]?.message.subject).toContain(acct.label);
 
-    // The message still queues its three accepted recipients.
+    // The credential froze before DATA (checkCaps caught it eagerly at RCPT); the authoritative
+    // check inside the accepting transaction refuses the message too — nothing queued from it.
+    const before = await db.outboundRecipient.count();
     const { final } = await c.data(message(acct.address));
-    expect(final?.code).toBe(250);
-    const id = /Queued as ([0-9a-f-]{36})/.exec(final?.lines[0] ?? '')?.[1] ?? '';
-    const queued = await db.outboundRecipient.findMany({ where: { outboundMessageId: id } });
-    expect(queued.map((r) => r.address).sort()).toEqual(['r1@example.com', 'r2@example.com', 'r3@example.com']);
+    expect(final).toMatchObject({ code: 452, enhanced: '4.7.0' });
+    expect(await db.outboundRecipient.count()).toBe(before);
 
     // A later message in the same session, from the now-frozen credential, is refused at MAIL.
     expect(await c.send(`MAIL FROM:<${acct.address}>`)).toMatchObject({ code: 452, enhanced: '4.7.0' });
@@ -169,5 +172,46 @@ describe.skipIf(baseUrl === undefined)('per-credential recipient caps (PST-T-1.1
     expect(frozen.frozenAt).not.toBeNull();
     expect(alerts).toHaveLength(1);
     c2.close();
+  });
+
+  // Regression for the refuted gap: createCapsChecker's plain SELECT COUNT, with no lock spanning
+  // count-then-insert, let concurrent sessions each read "under cap" and both persist — the cap
+  // enforced only against already-committed rows, never against what a sibling session was about to
+  // commit. `enforceCaps`'s advisory-locked recount, run inside the accepting transaction itself,
+  // is what a race like this cannot slip past.
+  it('concurrency: five simultaneous submissions whose total exceeds the cap persist at most the cap, freeze once, alert once', async () => {
+    alerts.length = 0;
+    const acct = await makeAccount();
+
+    async function attemptOneMessage(n: number): Promise<{ code: number; enhanced: string | undefined }> {
+      const c = await connect();
+      await authPlain(c, acct.address, acct.appPassword);
+      await c.send(`MAIL FROM:<${acct.address}>`);
+      for (const r of [0, 1, 2]) await c.send(`RCPT TO:<race${String(n)}-${String(r)}@example.com>`);
+      const { final } = await c.data(message(acct.address));
+      c.close();
+      return { code: final?.code ?? 0, enhanced: final?.enhanced };
+    }
+
+    // Five sessions, each offering 3 recipients against a cap of 3: fired together so their
+    // accepting transactions race for the advisory lock rather than running one after another.
+    const results = await Promise.all([1, 2, 3, 4, 5].map((n) => attemptOneMessage(n)));
+
+    const succeeded = results.filter((r) => r.code === 250);
+    const refused = results.filter((r) => r.code === 452);
+    expect(succeeded.length).toBeLessThanOrEqual(1); // cap 3, 3 recipients per message: at most one message fits
+    expect(refused.length).toBeGreaterThanOrEqual(1);
+    expect(refused.every((r) => r.enhanced === '4.5.3' || r.enhanced === '4.7.0')).toBe(true);
+
+    const persisted = await db.outboundRecipient.count({ where: { message: { appPasswordId: acct.appPasswordId } } });
+    expect(persisted).toBeLessThanOrEqual(CAP);
+
+    const frozen = await db.appPassword.findUniqueOrThrow({ where: { id: acct.appPasswordId } });
+    expect(frozen.frozenAt).not.toBeNull();
+
+    const audits = await db.auditEvent.findMany({ where: { action: 'app_password.freeze', entityId: acct.appPasswordId } });
+    expect(audits).toHaveLength(1); // the updateMany guard means only one racer's freeze ever commits
+
+    expect(alerts).toHaveLength(1);
   });
 });
