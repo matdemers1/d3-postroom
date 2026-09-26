@@ -37,6 +37,7 @@ import {
   DraftQuery,
   DraftRequest,
   MAX_AHEAD_MS,
+  MAX_MARKDOWN_CHARS,
   MdnParams,
   PendingParams,
   PendingPatch,
@@ -214,6 +215,12 @@ export function composeRoutes(deps: ApiDeps): Router {
         const { inReplyTo, references } = threading(body.inReplyTo, body.references);
         // PST-T-9.2: Markdown is rendered to sanitized HTML and sent multipart/alternative
         // (PST-REQ-145); "Request read receipt" adds Disposition-Notification-To (PST-REQ-146).
+        // A cap ahead of rendering bounds the worst-case work regardless of how fast the renderer
+        // is: past 256 KiB the send is refused (413) rather than rendered — send it as plain text
+        // instead.
+        if (body.format === 'markdown' && body.text.length > MAX_MARKDOWN_CHARS) {
+          throw new HttpRefusal(413, 'markdown_too_large', `Markdown body exceeds ${String(MAX_MARKDOWN_CHARS)} characters; send it as plain text instead.`);
+        }
         const html = body.format === 'markdown' ? renderMarkdownDocument(body.text) : null;
         const extraHeaders: [string, string][] = body.requestReceipt ? [['Disposition-Notification-To', from.address]] : [];
         const message: OutgoingMessage = {
@@ -834,6 +841,22 @@ export function mdnRoutes(deps: ApiDeps): Router {
             enforceCaps: (tx, recipients, at) => webmailCaps(tx, me.accountId, recipients, at),
             auditContext: ctx,
             withinTransaction: async (tx, accepted) => {
+              // Exactly once under concurrency (PST-REQ-146): claim the message with a row lock
+              // held for the rest of THIS transaction, before doing any of the work below. Two
+              // concurrent POSTs for the same message both pass the unlocked pre-check above, but
+              // here the second one blocks on FOR UPDATE until the first commits (adding
+              // $MDNSent), then re-reads the now-current flags and is refused — so at most one
+              // withinTransaction ever reaches enqueueOutbound's commit, and at most one MDN is
+              // ever queued. The lock is on the message row itself (not the mailbox
+              // `updateMessage` locks afterwards), so this is always acquired before it and never
+              // races against it for a different lock order.
+              const claim = await tx.$queryRaw<{ flags: string[] }[]>`
+                SELECT flags FROM message WHERE id = ${found.id}::uuid FOR UPDATE`;
+              const claimed = claim[0];
+              if (claimed === undefined) throw new HttpRefusal(404, 'not_found', 'no such message');
+              if (claimed.flags.includes('$MDNSent')) {
+                throw new HttpRefusal(409, 'already_sent', 'A read receipt for this message was already sent.');
+              }
               const copy = await fileCopy(tx, {
                 accountId: me.accountId,
                 use: 'sent',

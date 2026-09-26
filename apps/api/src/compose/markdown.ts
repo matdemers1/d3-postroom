@@ -28,60 +28,138 @@ function safeHref(url: string): string | null {
   return null;
 }
 
-const AUTOLINK = /\b(?:https?:\/\/|mailto:)[^\s<>()[\]"']+[^\s<>()[\].,!?;:"']/gi;
+// Sticky (never re-slicing) autolink matcher: `lastIndex` is set to the position under test and a
+// sticky ("y") match must start exactly there, so a miss costs O(1) instead of scanning forward.
+const AUTOLINK = /(?:https?:\/\/|mailto:)[^\s<>()[\]"']+[^\s<>()[\].,!?;:"']/iy;
 
-/** Inline spans: emphasis, strong, inline code, links, autolinks. Everything else is escaped text. */
-function renderInline(text: string): string {
-  // Tokens: `code`, [text](url), **strong**, *em*, autolinks, or plain runs. Processed left to right,
-  // non-overlapping, and each token's own text content is itself recursively rendered (except code,
-  // which is always literal) — so nesting like **_x_** or [**bold**](url) works, and nothing raw
-  // ever reaches the output un-escaped.
+/** A run of whitespace characters, used only to build the "next stop" table below. */
+const WHITESPACE = /\s/;
+
+/**
+ * For every position `0..text.length`, the index of the next occurrence of `ch` at or after that
+ * position (or -1). Built once per `renderInline` call in a single backward pass, so every lookup
+ * used while scanning is O(1) — the fix for the confirmed quadratic blowup where bracket/delimiter
+ * matching re-slicing and re-scanning `text` from every position made a 100 KB adversarial input
+ * take seconds.
+ */
+function nextOccurrenceTable(text: string, ch: string): Int32Array {
+  const n = text.length;
+  const table = new Int32Array(n + 1);
+  table[n] = -1;
+  for (let i = n - 1; i >= 0; i -= 1) table[i] = text[i] === ch ? i : (table[i + 1] as number);
+  return table;
+}
+
+/** Like {@link nextOccurrenceTable}, but for the next `)` or whitespace character (a link destination's end). */
+function nextParenStopTable(text: string): Int32Array {
+  const n = text.length;
+  const table = new Int32Array(n + 1);
+  table[n] = -1;
+  for (let i = n - 1; i >= 0; i -= 1) table[i] = text[i] === ')' || WHITESPACE.test(text[i] as string) ? i : (table[i + 1] as number);
+  return table;
+}
+
+/** Like {@link nextOccurrenceTable}, but for the next place two `ch` characters occur back to back (`**` or `__`). */
+function nextDoubledTable(text: string, ch: string): Int32Array {
+  const n = text.length;
+  const table = new Int32Array(n + 1);
+  table[n] = -1;
+  for (let i = n - 1; i >= 0; i -= 1) table[i] = text[i] === ch && text[i + 1] === ch ? i : (table[i + 1] as number);
+  return table;
+}
+
+const MAX_INLINE_DEPTH = 32;
+
+/**
+ * Inline spans: emphasis, strong, inline code, links, autolinks. Everything else is escaped text.
+ *
+ * Every character is visited a bounded number of times: six lookup tables (one backward O(n) pass
+ * each) answer "where does the next `]`/`` ` ``/`**`/`__`/`*`/`_` occur" in O(1), so bracket matching,
+ * delimiter-run scanning and link-destination scanning never rescan `text` from the current
+ * position the way naive regex-on-a-shrinking-slice did. Recursion into a matched span's own
+ * content is capped at {@link MAX_INLINE_DEPTH} — beyond it the remaining text is escaped literally
+ * rather than re-parsed, bounding worst-case nesting.
+ */
+function renderInline(text: string, depth = 0): string {
+  const n = text.length;
+  if (n === 0) return '';
+  if (depth >= MAX_INLINE_DEPTH) return escapeHtml(text);
+
+  const nextBacktick = nextOccurrenceTable(text, '`');
+  const nextCloseBracket = nextOccurrenceTable(text, ']');
+  const nextParenStop = nextParenStopTable(text);
+  const nextStarStar = nextDoubledTable(text, '*');
+  const nextUnderUnder = nextDoubledTable(text, '_');
+  const nextStar = nextOccurrenceTable(text, '*');
+  const nextUnder = nextOccurrenceTable(text, '_');
+
   const out: string[] = [];
   let i = 0;
-  const n = text.length;
   while (i < n) {
-    const rest = text.slice(i);
+    const ch = text[i] as string;
 
-    // Inline code: `...` — contents are never interpreted further, only escaped.
-    const code = /^`([^`]+)`/.exec(rest);
-    if (code !== null) {
-      out.push(`<code>${escapeHtml(code[1] ?? '')}</code>`);
-      i += code[0].length;
-      continue;
+    // Inline code: `...` — contents are never interpreted further, only escaped. The closing
+    // backtick must not be immediately adjacent (the content is at least one character, and never
+    // itself contains a backtick, exactly like the original `` `([^`]+)` `` ).
+    if (ch === '`') {
+      const close = nextBacktick[i + 1] ?? -1;
+      if (close > i + 1) {
+        out.push(`<code>${escapeHtml(text.slice(i + 1, close))}</code>`);
+        i = close + 1;
+        continue;
+      }
     }
 
     // Link: [text](https://... | mailto:...)
-    const link = /^\[([^\]]*)\]\(([^)\s]+)\)/.exec(rest);
-    if (link !== null) {
-      const href = safeHref(link[2] ?? '');
-      if (href !== null) {
-        out.push(`<a href="${escapeHtml(href)}">${renderInline(link[1] ?? '')}</a>`);
-        i += link[0].length;
+    if (ch === '[') {
+      const closeBracket = nextCloseBracket[i + 1] ?? -1;
+      if (closeBracket !== -1 && text[closeBracket + 1] === '(') {
+        const urlStart = closeBracket + 2;
+        const stop = nextParenStop[urlStart] ?? -1;
+        if (stop > urlStart && text[stop] === ')') {
+          const href = safeHref(text.slice(urlStart, stop));
+          if (href !== null) {
+            out.push(`<a href="${escapeHtml(href)}">${renderInline(text.slice(i + 1, closeBracket), depth + 1)}</a>`);
+            i = stop + 1;
+            continue;
+          }
+        }
+      }
+      // No safe, well-formed destination found: render `[` as literal text, not a link.
+    }
+
+    // Strong: **...** or __...__ — content is at least one character (an immediately-adjacent
+    // closing pair, i.e. empty content, is skipped in favour of the next one, exactly like the
+    // original lazy `[\s\S]+?` backtracking past a zero-length match).
+    if ((ch === '*' || ch === '_') && text[i + 1] === ch) {
+      const table = ch === '*' ? nextStarStar : nextUnderUnder;
+      let close = table[i + 2] ?? -1;
+      if (close === i + 2) close = table[i + 3] ?? -1;
+      if (close !== -1 && close > i + 2) {
+        out.push(`<strong>${renderInline(text.slice(i + 2, close), depth + 1)}</strong>`);
+        i = close + 2;
         continue;
       }
-      // Not a safe destination: render as literal escaped text, not a link.
     }
 
-    // Strong: **...** or __...__
-    const strong = /^(\*\*|__)([\s\S]+?)\1/.exec(rest);
-    if (strong !== null) {
-      out.push(`<strong>${renderInline(strong[2] ?? '')}</strong>`);
-      i += strong[0].length;
-      continue;
+    // Emphasis: *...* or _..._ (single; the first content character may not be whitespace, `*` or `_`).
+    if (ch === '*' || ch === '_') {
+      const firstContent = text[i + 1];
+      if (firstContent !== undefined && firstContent !== '*' && firstContent !== '_' && !WHITESPACE.test(firstContent)) {
+        const table = ch === '*' ? nextStar : nextUnder;
+        const close = table[i + 2] ?? -1;
+        if (close !== -1) {
+          out.push(`<em>${renderInline(text.slice(i + 1, close), depth + 1)}</em>`);
+          i = close + 1;
+          continue;
+        }
+      }
     }
 
-    // Emphasis: *...* or _..._ (single, not immediately re-matching strong's delimiter run)
-    const em = /^(\*|_)([^\s*_][\s\S]*?)\1/.exec(rest);
-    if (em !== null) {
-      out.push(`<em>${renderInline(em[2] ?? '')}</em>`);
-      i += em[0].length;
-      continue;
-    }
-
-    // A bare autolink at this position.
-    AUTOLINK.lastIndex = 0;
-    const auto = AUTOLINK.exec(rest);
-    if (auto !== null && auto.index === 0) {
+    // A bare autolink at this position — sticky, so a miss is O(1), never a forward scan.
+    AUTOLINK.lastIndex = i;
+    const auto = AUTOLINK.exec(text);
+    if (auto !== null) {
       const href = safeHref(auto[0]);
       if (href !== null) {
         out.push(`<a href="${escapeHtml(href)}">${escapeHtml(auto[0])}</a>`);
@@ -94,7 +172,7 @@ function renderInline(text: string): string {
     // is what guarantees termination and what guarantees nothing un-escaped ever survives: every
     // branch above either matches a whole safe construct or we fall through to here one char at a
     // time.
-    out.push(escapeHtml(rest[0] ?? ''));
+    out.push(escapeHtml(ch));
     i += 1;
   }
   return out.join('');

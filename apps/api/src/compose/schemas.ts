@@ -26,6 +26,14 @@ export const ComposeMode = z.enum(['new', 'reply', 'replyall', 'forward']);
 /** PST-T-9.2: plain text as always, or Markdown rendered to sanitized HTML and sent multipart/alternative. */
 export const ComposeFormat = z.enum(['plain', 'markdown']);
 
+/**
+ * The largest Markdown body `renderMarkdown` will ever be asked to render (PST-T-9.2). Rendering is
+ * now near-linear, but a cap keeps the worst-case work bounded regardless: a `format: 'markdown'`
+ * send whose text exceeds this is refused (413) rather than rendered, so plain text (no size cap
+ * beyond the existing 1,000,000-character field limit) is always the fallback for anything larger.
+ */
+export const MAX_MARKDOWN_CHARS = 256 * 1024;
+
 const Fields = {
   to: AddressField,
   cc: AddressField,

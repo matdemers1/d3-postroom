@@ -141,6 +141,14 @@ describe.skipIf(!baseUrl)('Markdown compose and MDNs (PST-T-9.2)', () => {
     expect(hrefs).toEqual(['https://example.com/']);
   });
 
+  it('a Markdown send over 256 KiB is refused before rendering, not silently truncated or accepted', async () => {
+    const me = await person();
+    const tooBig = '['.repeat(256 * 1024 + 1);
+    const res = await send(me, { to: ['bob@example.org'], subject: 'Too big', text: tooBig, format: 'markdown' });
+    expect(res.status).toBe(413);
+    expect((res.body as { error: string }).error).toBe('markdown_too_large');
+  });
+
   it('a plain send stays single-part text/plain, unaffected', async () => {
     const me = await person();
     const res = await send(me, { to: ['bob@example.org'], subject: 'Plain test', text: 'Just text.' });
@@ -191,6 +199,29 @@ describe.skipIf(!baseUrl)('Markdown compose and MDNs (PST-T-9.2)', () => {
     // Sending it again is refused: at most one MDN per message.
     const second = await request(app).post(`/api/messages/${original.id}/mdn`).set(CSRF).set('cookie', me.cookie);
     expect(second.status).toBe(409);
+  });
+
+  it('sends an MDN exactly once under concurrency: five simultaneous requests yield one 201 and four 409s', async () => {
+    const me = await person();
+    const original = await inbound(me, { messageId: 'race-receipt@example.org', subject: 'Race me', requestReceipt: true, replyTo: 'alice@example.org' });
+
+    const responses = await Promise.all(
+      Array.from({ length: 5 }, () => request(app).post(`/api/messages/${original.id}/mdn`).set(CSRF).set('cookie', me.cookie)),
+    );
+    const statuses = responses.map((r) => r.status).sort((a, b) => a - b);
+    expect(statuses).toEqual([201, 409, 409, 409, 409]);
+
+    // Exactly one outbound MDN was actually queued and sent: exactly one Sent copy with this
+    // subject, and the original marked $MDNSent exactly once (flags is a set, but the audit trail
+    // below double-checks only one compose.mdn mutation landed).
+    const okBody = responses.find((r) => r.status === 201)?.body as { sentMessageId: string } | undefined;
+    if (okBody === undefined) throw new Error('no successful response');
+    const sentCopies = await db.message.findMany({ where: { mailbox: { accountId: me.id, specialUse: 'sent' }, subject: 'Read: Race me' } });
+    expect(sentCopies).toHaveLength(1);
+    expect(sentCopies[0]?.id).toBe(okBody.sentMessageId);
+
+    const updated = await db.message.findUniqueOrThrow({ where: { id: original.id } });
+    expect(updated.flags.filter((f) => f === '$MDNSent')).toHaveLength(1);
   });
 
   it('refuses an MDN for a message that never asked for one', async () => {
