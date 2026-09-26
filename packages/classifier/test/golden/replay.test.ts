@@ -54,7 +54,9 @@ function pct(n: number): string {
 }
 
 describe('golden replay (PST-REQ-107)', () => {
-  it('holdout meets every bucket\'s recorded precision/recall threshold', () => {
+  // A child process that loads the classifier from TypeScript source: on a cold CI runner with
+  // nothing built, compiling alone can take several seconds (95 ms warm, 6.3 s seen in CI).
+  it('holdout meets every bucket\'s recorded precision/recall threshold', { timeout: 60_000 }, () => {
     let summary: ReplaySummary;
     try {
       summary = runReplay();
