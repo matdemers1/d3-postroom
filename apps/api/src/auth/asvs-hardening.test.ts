@@ -1,6 +1,6 @@
 // Unit proofs for the fixes the ASVS 5.0 L2 self-assessment made (PST-T-4.3, PST-REQ-091;
 // docs/security/asvs-l2.md). The database-backed routes are covered by apps/api's integration suite.
-import request from 'supertest';
+import { request } from '../../test/loopback.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { Db } from '@postroom/db';
 import { createApp, HSTS } from '../app.js';
