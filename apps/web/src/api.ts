@@ -173,6 +173,11 @@ export const api = {
   reschedule: (id: string, sendAt: string) => call<PendingSend>('PATCH', `/api/compose/pending/${encodeURIComponent(id)}`, { sendAt }),
   snoozeThread: (threadId: string, until: string) => call<Snooze>('POST', `/api/threads/${encodeURIComponent(threadId)}/snooze`, { until }),
   unsnoozeThread: (threadId: string) => call<Snooze>('DELETE', `/api/threads/${encodeURIComponent(threadId)}/snooze`),
+
+  // --- iMIP invitations (PST-T-8.4) -------------------------------------------------------------
+  invite: (messageId: string) => call<InviteView>('GET', `/api/messages/${encodeURIComponent(messageId)}/invite`),
+  respondToInvite: (messageId: string, partstat: Partstat) => call<InviteRespondResult>('POST', `/api/messages/${encodeURIComponent(messageId)}/invite/respond`, { partstat }),
+  removeInviteFromCalendar: (messageId: string) => call<InviteRemoveResult>('POST', `/api/messages/${encodeURIComponent(messageId)}/invite/remove`, {}),
 };
 
 /** The render-ticket request: remote images only when the reader chose to load them (PST-REQ-082). */
@@ -1116,4 +1121,50 @@ export function proposalSummary(p: Pick<DmarcProposal, 'currentStage' | 'current
 /** One evidence day's source/org lists, joined the way the table's columns render them. */
 export function evidenceRowText(day: ProposalEvidenceDay): { sources: string; orgs: string } {
   return { sources: day.sources.join(', '), orgs: day.orgs.join(', ') };
+}
+
+// ─── iMIP invitations (PST-T-8.4, PST-REQ-134) ────────────────────────────────────────────────────
+
+export type ImipMethod = 'PUBLISH' | 'REQUEST' | 'REPLY' | 'ADD' | 'CANCEL' | 'REFRESH' | 'COUNTER' | 'DECLINECOUNTER';
+export type Partstat = 'ACCEPTED' | 'TENTATIVE' | 'DECLINED';
+
+export interface InviteOrganizer {
+  email: string | null;
+  cn: string | null;
+}
+
+export interface InviteAttendee {
+  email: string;
+  cn: string | null;
+  role: string | null;
+  rsvp: boolean;
+  partstat: string;
+}
+
+export interface InviteView {
+  method: ImipMethod;
+  uid: string;
+  sequence: number;
+  summary: string;
+  location: string;
+  allDay: boolean;
+  start: string | null;
+  end: string | null;
+  organizer: InviteOrganizer;
+  attendees: InviteAttendee[];
+  recurrenceId: string | null;
+  you: { email: string; partstat: string } | null;
+  cancelled: boolean;
+  inCalendar: boolean;
+}
+
+export interface InviteRespondResult {
+  ok: true;
+  partstat: Partstat;
+  calendarName: string;
+}
+
+export interface InviteRemoveResult {
+  ok: true;
+  removed: boolean;
 }
