@@ -34,6 +34,8 @@ export interface FetchContext {
   readonly blobs: BlobReader;
   readonly view: MailboxView;
   readonly utf8: boolean;
+  /** The session is CONDSTORE-aware: an implicit \\Seen change carries MODSEQ (RFC 7162 §3.1.4.1). */
+  readonly condstore?: boolean;
   readonly saved: readonly number[] | null;
   write(response: Response): Promise<void>;
 }
@@ -233,6 +235,7 @@ export async function runFetch(ctx: FetchContext, cmd: FetchCommand): Promise<Fe
       }
     }
     if (seenSet.has(uid) && !includeFlags) out.push({ name: 'FLAGS', flags: row.flags });
+    if (seenSet.has(uid) && ctx.condstore === true && !items.some((i) => i.type === 'MODSEQ')) out.push({ name: 'MODSEQ', value: row.modseq });
     if (includeFlags || seenSet.has(uid)) view.noteModseq(uid, row.modseq);
     await ctx.write(fetchResponse(seq, out, { utf8: ctx.utf8 }));
   }
