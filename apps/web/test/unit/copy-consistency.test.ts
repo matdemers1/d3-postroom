@@ -19,7 +19,8 @@ function tsxFiles(dir: string): string[] {
 const COPY_PROP = /(?:\blabel|\btitle|\bhelp|aria-label|placeholder|\bdescription|\bheading)\s*=\s*"([^"]*)"/g;
 // A JSX text node: `>...<` on one line, with no braces or angle brackets inside (so it is not
 // itself markup or an expression container).
-const JSX_TEXT = />([^<>{}\n][^<>{}]*)</g;
+// Text between tags, including text on its own line(s) between an opening and a closing tag.
+const JSX_TEXT = />([^<>{}]+)</g;
 
 const RETIRED: { pattern: RegExp; why: string }[] = [
   { pattern: /\bKill\b|\bRevive\b|\bKilled\b/, why: "verb-of-violence copy (COPY-05) — use 'Turn off' / 'Turn on' / 'Off'" },

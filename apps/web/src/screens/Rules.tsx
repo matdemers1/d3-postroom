@@ -556,7 +556,7 @@ export function Rules() {
                     Check syntax
                   </Button>
                   <Button type="submit" disabled={busy}>
-                    Save
+                    Save without turning on
                   </Button>
                   <Button variant="primary" loading={busy} onClick={() => {
                       save(true)();

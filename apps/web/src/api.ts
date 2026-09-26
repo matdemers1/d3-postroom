@@ -934,7 +934,7 @@ function describeWeakPassword(body: unknown): string {
  * do about it, or what didn't happen as a result; it defaults to the plain retry.
  */
 export function serverUnreachable(next = 'Check your connection and try again.'): string {
-  return `Postroom did not answer. ${next}`;
+  return `Postroom didn’t answer. ${next}`;
 }
 
 /** A human sentence for an API refusal on the sign-in, setup and account-security screens. */
@@ -942,19 +942,19 @@ export function describeError(error: unknown): string {
   if (!(error instanceof ApiError)) return serverUnreachable();
   switch (error.code) {
     case 'invalid_credentials':
-      return 'Those details did not match.';
+      return 'That address and password don’t match.';
     case 'invalid_code':
-      return 'That code did not match. Try the current one.';
+      return 'That code didn’t match. Try the current one.';
     case 'challenge_expired':
       return 'That took too long. Sign in again.';
     case 'too_many_attempts':
       return 'Too many attempts. Wait a moment and try again.';
     case 'totp_not_enrolled':
-      return 'This account has no authenticator enrolled, so it cannot finish signing in. If Sign in with D3 Auth is set up for it, use that instead.';
+      return 'This account has no authenticator enrolled, so it can’t finish signing in. If Sign in with D3 Auth is set up for it, use that instead.';
     case 'setup_complete':
       return 'Setup is already complete. Sign in instead.';
     case 'setup_token_required':
-      return 'That setup token did not match. Copy SETUP_TOKEN from the server\'s env file.';
+      return 'That setup token didn’t match. Copy SETUP_TOKEN from the server\'s env file.';
     case 'setup_expired':
       return 'Setup took too long. Start again.';
     case 'login_taken':
@@ -962,7 +962,7 @@ export function describeError(error: unknown): string {
     case 'invalid_request':
       return 'The server refused part of the form. Check each field and try again.';
     case 'auth_not_configured':
-      return 'Sign-in is not configured on this server yet.';
+      return 'Sign-in isn’t configured on this server yet.';
     case 'weak_password':
       return describeWeakPassword(error.body);
     case 'no_password':
@@ -970,7 +970,7 @@ export function describeError(error: unknown): string {
     case 'step_up_required':
       return 'That needs a fresh authentication code.';
     default:
-      return 'Something went wrong. Try again.';
+      return 'Something went wrong on the server. Try again, and if it keeps happening, check Health.';
   }
 }
 

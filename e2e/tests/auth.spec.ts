@@ -99,7 +99,7 @@ test('a wrong password is refused without saying which half was wrong', async ({
   await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
   await page.getByLabel('Password', { exact: true }).fill('not the password at all');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page.getByText('Those details did not match.')).toBeVisible();
+  await expect(page.getByText('That address and password don’t match.')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Authentication code' })).toBeHidden();
 });
 

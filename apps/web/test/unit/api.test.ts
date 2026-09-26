@@ -93,12 +93,12 @@ describe('queuePath (PST-T-6.6)', () => {
 
 describe('serverUnreachable (PST-DA-050, COPY-18)', () => {
   it('gives one default sentence for "the server did not answer at all"', () => {
-    expect(serverUnreachable()).toBe('Postroom did not answer. Check your connection and try again.');
+    expect(serverUnreachable()).toBe('Postroom didn’t answer. Check your connection and try again.');
   });
 
   it('lets a caller name a consequence or next step, without inventing its own wording for the shared part', () => {
-    expect(serverUnreachable('Nothing changed.')).toBe('Postroom did not answer. Nothing changed.');
-    expect(serverUnreachable('Try again.')).toBe('Postroom did not answer. Try again.');
+    expect(serverUnreachable('Nothing changed.')).toBe('Postroom didn’t answer. Nothing changed.');
+    expect(serverUnreachable('Try again.')).toBe('Postroom didn’t answer. Try again.');
   });
 
   it('is what describeError falls back to for a non-ApiError failure, so the two never drift apart', () => {
@@ -108,8 +108,8 @@ describe('serverUnreachable (PST-DA-050, COPY-18)', () => {
 
 describe('describeError', () => {
   it('gives one message for every credential failure', () => {
-    expect(describeError(new ApiError(401, 'invalid_credentials', null))).toBe('Those details did not match.');
-    expect(describeError(new Error('network'))).toMatch(/did not answer/);
+    expect(describeError(new ApiError(401, 'invalid_credentials', null))).toBe('That address and password don’t match.');
+    expect(describeError(new Error('network'))).toMatch(/didn’t answer/);
   });
 
   it('names which password rule failed (PST-T-4.9, PST-REQ-091)', () => {

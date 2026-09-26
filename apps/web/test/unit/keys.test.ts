@@ -85,7 +85,7 @@ describe('refusals read as sentences', () => {
     expect(sendErrorText(e)).toContain('bob@example.test');
     expect(sendErrorText(new ApiError(409, 'signing_key_missing', {}))).toMatch(/no key of your own to sign/);
     expect(keyErrorText(new ApiError(400, 'bad_passphrase', { message: 'That passphrase does not unlock the key.' }))).toBe('That passphrase does not unlock the key.');
-    expect(keyErrorText(new Error('network'))).toMatch(/did not answer/);
+    expect(keyErrorText(new Error('network'))).toMatch(/didn’t answer/);
   });
 });
 

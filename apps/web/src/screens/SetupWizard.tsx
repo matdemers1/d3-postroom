@@ -361,7 +361,7 @@ function DnsStep({ domain, busy, onNext }: { domain: string; busy: boolean; onNe
     >
       <Stack gap="16">
         {failed ? (
-          <Alert tone="danger">The DNS check did not answer. Try again.</Alert>
+          <Alert tone="danger">The DNS check didn’t answer. Try again.</Alert>
         ) : report === null ? (
           <Skeleton variant="block" />
         ) : (
