@@ -48,3 +48,22 @@ export async function maintenanceHealth(db: Db): Promise<MaintenanceHealth> {
   const [lastBackup, lastDrill] = await Promise.all([readLastBackup(db), readLastDrill(db)]);
   return { lastBackup, lastDrill };
 }
+
+// The health-alert monitors (PST-T-4.7): tunnel, backlog, cert expiry, disk, blocklist, backup/drill
+// and NTP skew. These shapes describe what /health reports; `src/monitors/` builds and runs them.
+export interface MonitorHealth {
+  /** e.g. 'tunnel', 'backlog', 'cert-expiry', 'disk', 'blocklist', 'backup-drill', 'ntp'. */
+  readonly name: string;
+  readonly ok: boolean;
+  readonly detail: string;
+  /** When this ok/firing state began (ISO 8601). */
+  readonly since: string;
+}
+
+/** Whether the host clock is NTP-synchronized (PST-REQ-100), independent of the alert cadence. */
+export interface NtpHealth {
+  readonly synchronized: boolean;
+  readonly offsetMs: number;
+  readonly server: string;
+  readonly checkedAt: string;
+}

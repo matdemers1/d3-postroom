@@ -346,6 +346,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@postroom/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
       '@postroom/attachments':
         specifier: workspace:*
         version: link:../../packages/attachments
@@ -364,6 +367,9 @@ importers:
       '@postroom/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@postroom/dnsbl':
+        specifier: workspace:*
+        version: link:../../packages/dnsbl
       '@postroom/dsn':
         specifier: workspace:*
         version: link:../../packages/dsn
