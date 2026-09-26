@@ -218,8 +218,28 @@ describe.skipIf(OPENSSL === null)('openssl cms reads what Postroom writes', () =
     expect(openssl(['cms', '-verify', '-in', file, '-noverify', '-out', join(dir, 'out')]).status).not.toBe(0);
   });
 
+  /**
+   * Whether this openssl can verify Ed25519 CMS at all: it signs and verifies one of its own. Some
+   * 3.x releases (CI runners' 3.0.x among them) pass the RFC 8419 SHA-512 digest into EdDSA verify
+   * and fail with "invalid digest" on correct input, so Postroom's output is only checked where
+   * openssl can check its own.
+   */
+  const opensslVerifiesEd25519Cms = (): boolean => {
+    const dir = scratch();
+    const key = join(dir, 'k.pem');
+    const crt = join(dir, 'c.pem');
+    const msg = join(dir, 'm.txt');
+    writeFileSync(msg, 'probe\r\n');
+    if (openssl(['genpkey', '-algorithm', 'ed25519', '-out', key]).status !== 0) return false;
+    if (openssl(['req', '-x509', '-new', '-key', key, '-subj', '/CN=probe', '-days', '1', '-out', crt]).status !== 0) return false;
+    if (openssl(['cms', '-sign', '-in', msg, '-signer', crt, '-inkey', key, '-md', 'sha512', '-out', join(dir, 's.eml')]).status !== 0) return false;
+    return openssl(['cms', '-verify', '-in', join(dir, 's.eml'), '-noverify', '-out', join(dir, 'o')]).status === 0;
+  };
+
   it('openssl cms -verify -noverify accepts ECDSA P-256 and Ed25519 signatures', () => {
-    for (const keyType of ['p256', 'ed25519'] as const) {
+    const ed25519 = opensslVerifiesEd25519Cms();
+    if (!ed25519) console.warn('openssl cannot verify its own Ed25519 CMS here; checking ECDSA P-256 only');
+    for (const keyType of ed25519 ? (['p256', 'ed25519'] as const) : (['p256'] as const)) {
       const f = forgeCert({ keyType });
       const [cert] = certificatesFromPem(f.pem);
       if (cert === undefined) throw new Error('cert');
