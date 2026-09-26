@@ -448,11 +448,18 @@ function emePkcs1(m: Buffer, k: number): Buffer {
   return Buffer.concat([Buffer.of(0, 2), ps, Buffer.of(0), m]);
 }
 
-/** One PKESK v3 body for `recipient` carrying `sessionKey` = algo || key || checksum. */
-function pkesk(recipient: KeyMaterial, sessionKey: Buffer): Buffer {
+/** RFC 9580 §5.1: a v3 PKESK whose key ID is all zeros names no one (the "wildcard" or anonymous recipient). */
+export const WILDCARD_KEY_ID = '0000000000000000';
+
+/**
+ * One PKESK v3 body for `recipient` carrying `sessionKey` = algo || key || checksum. With `hidden`,
+ * the key ID written is the wildcard (all zeros): the packet does not say whose it is, and the
+ * recipient's implementation tries its secret keys (gpg: "anonymous recipient; trying secret key").
+ */
+function pkesk(recipient: KeyMaterial, sessionKey: Buffer, hidden = false): Buffer {
   const pub = recipient.publicKey;
   if (pub === null) throw new UnsupportedError(recipient.unsupported ?? 'key-unusable');
-  const head = Buffer.concat([Buffer.of(3), Buffer.from(recipient.keyId, 'hex'), Buffer.of(recipient.algorithm)]);
+  const head = Buffer.concat([Buffer.of(3), Buffer.from(hidden ? WILDCARD_KEY_ID : recipient.keyId, 'hex'), Buffer.of(recipient.algorithm)]);
   if (recipient.algorithm === 1 || recipient.algorithm === 2) {
     const k = Math.ceil((recipient.bits ?? 0) / 8);
     // RSA without padding (node:crypto does the modular exponentiation); the padding is written here.
@@ -491,8 +498,20 @@ function seipdV1(packets: Buffer, key: Buffer): Buffer {
 
 export interface EncryptedRecipient {
   fingerprint: string;
+  /** The key ID the PKESK names: the key's own, or the wildcard (all zeros) for a hidden recipient. */
   keyId: string;
   algorithm: string;
+  /** True when the PKESK carries the wildcard key ID (PST-T-12.6: a Bcc recipient). */
+  hidden?: boolean;
+}
+
+export interface EncryptOptions {
+  now?: Date;
+  /**
+   * Recipients whose PKESKs carry the wildcard key ID (RFC 9580 §5.1), so the other recipients learn
+   * nothing about them but that the packet exists — how an OpenPGP message hides its Bcc recipients.
+   */
+  hidden?: readonly OpenPgpKey[];
 }
 
 export interface EncryptResult {
@@ -506,22 +525,25 @@ export interface EncryptResult {
  * key each block allows (validity.ts encryptionMaterials), then SEIPD v1 under a fresh AES-256
  * session key. Throws when a key has nothing to encrypt to — never silently drops a recipient.
  */
-export function encryptMessage(keys: readonly OpenPgpKey[], plaintext: Uint8Array, opts: { now?: Date } = {}): EncryptResult {
-  if (keys.length === 0) throw new PgpError('no-recipients');
+export function encryptMessage(keys: readonly OpenPgpKey[], plaintext: Uint8Array, opts: EncryptOptions = {}): EncryptResult {
+  const hidden = opts.hidden ?? [];
+  if (keys.length === 0 && hidden.length === 0) throw new PgpError('no-recipients');
   const now = opts.now ?? new Date();
   const session = randomBytes(32);
   const sk = Buffer.concat([Buffer.of(9), session, u16(checksum16(session))]);
   const out: Buffer[] = [];
   const recipients: EncryptedRecipient[] = [];
   const seen = new Set<string>();
-  for (const key of keys) {
+  // Named recipients first; a key that is both named and hidden stays named (it is visible anyway).
+  const all = [...keys.map((key) => ({ key, hide: false })), ...hidden.map((key) => ({ key, hide: true }))];
+  for (const { key, hide } of all) {
     const { materials, reason } = encryptionMaterials(key, now);
     if (materials.length === 0) throw new UnsupportedError('recipient-cannot-encrypt', `${key.primary.fingerprint}: ${reason ?? 'no encryption key'}`);
     for (const m of materials) {
       if (seen.has(m.fingerprint)) continue;
       seen.add(m.fingerprint);
-      out.push(encodePacket(Tag.PKESK, pkesk(m, sk)));
-      recipients.push({ fingerprint: m.fingerprint, keyId: m.keyId, algorithm: m.algorithmName });
+      out.push(encodePacket(Tag.PKESK, pkesk(m, sk, hide)));
+      recipients.push({ fingerprint: m.fingerprint, keyId: hide ? WILDCARD_KEY_ID : m.keyId, algorithm: m.algorithmName, ...(hide ? { hidden: true } : {}) });
     }
   }
   out.push(seipdV1(literalPacket(plaintext, now), session));
