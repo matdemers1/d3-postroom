@@ -34,6 +34,9 @@ backups/
 !packages/pgp/test/fixtures/smime-root.pem
 !packages/pgp/test/fixtures/smime-intermediate.pem
 keys/
+# …but not the source directories for the Keys feature (PST-T-12.2).
+!apps/api/src/keys/
+!apps/web/src/keys/
 edge/*.wg.conf
 
 # The private calibration corpus is real mail. It is never committed (PST-REQ-108).

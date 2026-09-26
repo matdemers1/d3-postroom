@@ -7045,7 +7045,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "Invalid request, including crypto_mixed (sign and encrypt must use the same scheme).",
             "content": {
               "application/json": {
                 "schema": {
@@ -7084,8 +7084,18 @@
               }
             }
           },
+          "409": {
+            "description": "Sign/encrypt could not be done (PST-T-12.2): recipient_keys_missing (the `recipients` without a key; nothing is sent in plaintext), signing_key_missing, own_key_missing, or recipient_key_unusable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "413": {
-            "description": "The header block is too large.",
+            "description": "The header block is too large, or the Markdown body is over 256 KiB.",
             "content": {
               "application/json": {
                 "schema": {
