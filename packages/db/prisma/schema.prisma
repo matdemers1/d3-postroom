@@ -97,6 +97,13 @@ enum AppPasswordScope {
   @@map("app_password_scope")
 }
 
+enum DavCollectionKind {
+  calendar
+  addressbook
+
+  @@map("dav_collection_kind")
+}
+
 enum ActorKind {
   account
   system
@@ -145,6 +152,9 @@ model Account {
   retentionPolicies RetentionPolicy[]
   // PST-T-5.4: sender pins and the new-sender screen (Allow/Block).
   senderPins SenderPin[]
+
+  // PST-T-8.2: CalDAV calendars and CardDAV address books.
+  davCollections DavCollection[]
 
   @@map("account")
 }
@@ -798,4 +808,88 @@ model BayesBucketTotal {
 
   @@id([accountId, bucket])
   @@map("bayes_bucket_total")
+}
+
+// ─── CalDAV / CardDAV (PST-T-8.2, PST-REQ-132, PST-REQ-133) ─────────────────
+
+/// A calendar (RFC 4791) or an address book (RFC 6352) of one account. Every person account gets a
+/// "Calendar" and a "Contacts" collection when it is created (a trigger on account, which also
+/// covers accounts created before this table existed via the migration's backfill).
+model DavCollection {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String            @map("account_id") @db.Uuid
+  kind        DavCollectionKind
+  /// The collection's URL segment under the account's home set (decoded; `calendar`, a client UUID).
+  slug        String
+  displayName String            @map("display_name")
+  description String?
+  /// Apple's calendar-color, e.g. `#FF2968FF`.
+  color       String?
+  /// Apple's calendar-order.
+  sortOrder   Int?              @map("sort_order")
+  /// Supported calendar components (VEVENT, VTODO, VJOURNAL); empty for an address book.
+  components  String[]          @default([])
+  /// Properties a client set that the server does not interpret (calendar-timezone, …), as
+  /// `{ "{ns}name": <element tree> }`. Size-capped by the daemon.
+  deadProps   Json              @default("{}") @map("dead_props")
+  /// The last change sequence number: the sync token (RFC 6578) and the getctag. Only grows.
+  syncSeq     BigInt            @default(0) @map("sync_seq")
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account   Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  resources DavResource[]
+  changes   DavChange[]
+
+  @@unique([accountId, kind, slug])
+  @@index([accountId])
+  @@map("dav_collection")
+}
+
+/// One calendar object resource (an .ics) or address object resource (a .vcf). The bytes the client
+/// PUT are stored verbatim but encrypted: `data` is AES-256-GCM under a per-resource DEK, and the DEK
+/// is wrapped by the KEK (PST-ADR-009). Deleting the row crypto-shreds it. The AAD of both is
+/// `dav-resource:<id>`, so a ciphertext cannot be moved to another row.
+model DavResource {
+  id            String   @id @db.Uuid
+  collectionId  String   @map("collection_id") @db.Uuid
+  /// The resource's URL segment within the collection (decoded).
+  name          String
+  /// The iCalendar/vCard UID: unique per collection (CALDAV:no-uid-conflict, CARDDAV:no-uid-conflict).
+  uid           String
+  /// VEVENT, VTODO or VJOURNAL for a calendar object; null for a vCard.
+  componentType String?  @map("component_type")
+  /// Strong entity tag (quoted on the wire). A fresh random value on every write.
+  etag          String
+  /// Plaintext size in bytes.
+  size          Int
+  wrappedDek    Bytes    @map("wrapped_dek")
+  kekId         String   @map("kek_id")
+  data          Bytes
+  /// The collection's syncSeq at this resource's last write.
+  modSeq        BigInt   @map("mod_seq")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  collection DavCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, name])
+  @@unique([collectionId, uid])
+  @@map("dav_resource")
+}
+
+/// The sync-collection change log (RFC 6578): one row per member change, tombstones included, so an
+/// incremental sync from any earlier token names every added, modified and removed href.
+model DavChange {
+  collectionId String   @map("collection_id") @db.Uuid
+  seq          BigInt
+  name         String
+  deleted      Boolean
+  at           DateTime @default(now()) @db.Timestamptz(6)
+
+  collection DavCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, seq])
+  @@index([collectionId, name])
+  @@map("dav_change")
 }

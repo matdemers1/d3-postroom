@@ -135,9 +135,33 @@ importers:
 
   apps/dav:
     dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@postroom/auth-throttle':
+        specifier: workspace:*
+        version: link:../../packages/auth-throttle
+      '@postroom/credentials':
+        specifier: workspace:*
+        version: link:../../packages/credentials
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/dav-proto':
+        specifier: workspace:*
+        version: link:../../packages/dav-proto
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/ical':
+        specifier: workspace:*
+        version: link:../../packages/ical
+      '@postroom/vcard':
+        specifier: workspace:*
+        version: link:../../packages/vcard
     devDependencies:
       tsx:
         specifier: ^4.23.13
@@ -511,6 +535,8 @@ importers:
         version: 0.45.1
 
   packages/daemon: {}
+
+  packages/dav-proto: {}
 
   packages/db:
     dependencies:

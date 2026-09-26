@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<B:calendar-multiget xmlns:B="urn:ietf:params:xml:ns:caldav">
+  <A:prop xmlns:A="DAV:">
+    <A:getcontenttype/>
+    <A:getetag/>
+    <B:calendar-data/>
+  </A:prop>
+  <A:href xmlns:A="DAV:">/dav/calendars/5b0d1f0e/calendar/0D2E1C0A-4E2B-4C8E-8E0A-1B7E6C2F9A01.ics</A:href>
+  <A:href xmlns:A="DAV:">/dav/calendars/5b0d1f0e/calendar/weekly%20standup.ics</A:href>
+</B:calendar-multiget>

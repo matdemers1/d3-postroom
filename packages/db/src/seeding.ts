@@ -23,6 +23,22 @@ export const DEFAULT_MAILBOXES: readonly { readonly name: string; readonly speci
   { name: 'Notifications', specialUse: null },
 ];
 
+/**
+ * The CalDAV/CardDAV collections every person account starts with (PST-T-8.2). The database creates
+ * them — a trigger on `account` (migration 20260926085534_dav), so every surface that creates an
+ * account gets them without knowing about DAV, and the same migration backfilled older accounts.
+ * This list mirrors the trigger for code that needs to name them (the seed's audit event, tests).
+ */
+export const DEFAULT_DAV_COLLECTIONS: readonly {
+  readonly kind: 'calendar' | 'addressbook';
+  readonly slug: string;
+  readonly displayName: string;
+  readonly components: readonly string[];
+}[] = [
+  { kind: 'calendar', slug: 'calendar', displayName: 'Calendar', components: ['VEVENT', 'VTODO'] },
+  { kind: 'addressbook', slug: 'contacts', displayName: 'Contacts', components: [] },
+];
+
 export interface SeedOptions {
   /** Display name of the operator account. */
   readonly operatorName: string;
@@ -62,6 +78,13 @@ export async function seed(db: Db, opts: SeedOptions): Promise<SeedResult> {
     if (!operator) {
       operator = await tx.account.create({ data: { displayName: opts.operatorName, isAdmin: true } });
       created['operator'] = { id: operator.id, displayName: operator.displayName, isAdmin: true };
+      // The trigger created the operator's calendar and address book with the row; say so here.
+      const collections = await tx.davCollection.findMany({
+        where: { accountId: operator.id },
+        select: { id: true, kind: true, slug: true },
+        orderBy: { kind: 'asc' },
+      });
+      if (collections.length > 0) created['davCollections'] = collections;
     }
 
     const existing = await tx.mailbox.findMany({ where: { accountId: operator.id }, select: { name: true } });
