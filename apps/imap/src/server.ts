@@ -23,10 +23,13 @@ import { createExtensions, NullMailboxNotifier, PgMailboxNotifier, type MailboxN
 import { SocketDuplex, upgradeToTls } from './io.js';
 import { ImapSession, type Authenticator, type Log } from './session.js';
 import { MailStore } from './store.js';
+import type { Kek } from '@postroom/crypto';
 
 export interface ImapServerOptions {
   readonly db: Db;
   readonly blobs: BlobStore;
+  /** The KEK, so a client's own \Sent APPEND can harvest contacts into the sealed address book (PST-T-8.8). */
+  readonly kek?: Kek;
   /** PASSWORD_PEPPER; without it every login is refused as temporarily unavailable. */
   readonly pepper: string | undefined;
   readonly tls: { readonly key: Buffer | string; readonly cert: Buffer | string } | null;
@@ -103,7 +106,7 @@ export function imapAuthenticator(db: Db, pepper: string | undefined, throttle: 
 
 export function createImapListeners(o: ImapServerOptions): ImapListeners {
   const log: Log = o.log ?? (() => undefined);
-  const store = new MailStore(o.db, o.blobs);
+  const store = new MailStore(o.db, o.blobs, o.kek);
   const structures = createStructureCache(o.blobs, o.structureCacheEntries ?? 1000);
   const notifier: MailboxNotifier =
     o.notifier ??

@@ -2,7 +2,7 @@
 // (PST-T-1.6). It lives in the wireguard sidecar's network namespace, so :25 leaves from the edge.
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
-import { createDb } from '@postroom/db';
+import { createDb, type Prisma } from '@postroom/db';
 import { envInt, envString, runDaemon } from '@postroom/daemon';
 import { startWorker } from '@postroom/queue';
 import { DAEMON } from './daemon.js';
@@ -32,7 +32,15 @@ await runDaemon({
 
     const delivery = createDeliveryWorker({
       db,
-      transports: transportsFromEnv(ctx.env, ctx.log),
+      transports: transportsFromEnv(ctx.env, ctx.log, {
+        findUnique: (args) => db.setting.findUnique(args),
+        upsert: (args) =>
+          db.setting.upsert({
+            where: args.where,
+            create: { key: args.create.key, value: args.create.value as Prisma.InputJsonValue },
+            update: { value: args.update.value as Prisma.InputJsonValue },
+          }),
+      }),
       openMessage,
       onDsn: (intent) => createDsnHook({ db, blobstore: getBlobs(), log: ctx.log })(intent),
       leaseMs,

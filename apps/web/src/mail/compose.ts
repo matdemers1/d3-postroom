@@ -1,9 +1,10 @@
 // What a new reply, reply-all, forward or blank message starts with, and what the composer sends
 // and saves (PST-T-3.11) — the rules live here, pure and unit-tested, so the composer and the
 // keyboard shortcuts agree on them.
-import { ApiError, type ComposeFields, type MessageBody, type MessageDetail, type SavedDraft } from '../api';
+import { ApiError, type ComposeFields, type MessageBody, type MessageDetail, type PendingSend, type SavedDraft, type SendResult } from '../api';
 import type { ComposeMode } from './route';
 import { addressOf, displayName, fullDate, header, splitAddresses } from './format';
+import { keyErrorText } from '../keys/format';
 
 export interface ComposeDraft {
   mode: ComposeMode;
@@ -119,6 +120,10 @@ export interface ComposeState {
   inReplyTo: string | null;
   references: string[];
   forwardOf: string | null;
+  /** PST-T-9.2, PST-REQ-145: Markdown, rendered to sanitized HTML and sent multipart/alternative. */
+  format: 'plain' | 'markdown';
+  /** PST-T-9.2, PST-REQ-146: adds Disposition-Notification-To on send. */
+  requestReceipt: boolean;
 }
 
 export function initialState(draft: ComposeDraft): ComposeState {
@@ -131,6 +136,8 @@ export function initialState(draft: ComposeDraft): ComposeState {
     inReplyTo: draft.inReplyTo,
     references: draft.references,
     forwardOf: draft.mode === 'forward' ? draft.sourceId : null,
+    format: 'plain',
+    requestReceipt: false,
   };
 }
 
@@ -148,6 +155,18 @@ export function fieldsOf(state: ComposeState): ComposeFields {
   };
 }
 
+/** PST-T-9.2: the two fields Send needs beyond ComposeFields. Merged into the SendInput sent to the
+ *  server (a variable of this widened type, not an inline object literal, so no change to api.ts's
+ *  SendInput is needed for these to reach the request body). */
+export interface ComposeSendExtra {
+  format: 'plain' | 'markdown';
+  requestReceipt: boolean;
+}
+
+export function sendExtra(state: ComposeState): ComposeSendExtra {
+  return { format: state.format, requestReceipt: state.requestReceipt };
+}
+
 export function hasRecipients(state: ComposeState): boolean {
   return splitAddresses(state.to).length + splitAddresses(state.cc).length + splitAddresses(state.bcc).length > 0;
 }
@@ -163,6 +182,8 @@ export function stateFromSaved(saved: SavedDraft): ComposeState {
     inReplyTo: saved.inReplyTo,
     references: saved.references,
     forwardOf: saved.forwardOf,
+    format: 'plain',
+    requestReceipt: false,
   };
 }
 
@@ -191,7 +212,167 @@ export function sendErrorText(error: unknown): string {
       return 'You have reached your sending limit for now. Nothing was sent; try again later.';
     case 'blobstore_not_configured':
       return 'Postroom is not set up to store mail yet, so nothing was sent.';
+    case 'send_at_past':
+      return 'Pick a time in the future to send it.';
+    case 'send_at_too_far':
+      return 'A message can be scheduled at most a year ahead.';
+    // PST-T-12.2: Sign / Encrypt refusals (never a plaintext send).
+    case 'recipient_keys_missing':
+    case 'signing_key_missing':
+    case 'own_key_missing':
+    case 'crypto_mixed':
+    case 'private_key_unavailable':
+    case 'recipient_key_unusable':
+    case 'signing_key_unusable':
+      return keyErrorText(error);
     default:
       return `Nothing was sent (${error.code}). Try again.`;
   }
+}
+
+// --- Undo send, send later, remind if no reply (PST-T-9.1) --------------------------------------------
+
+/** The undo window when the person has not chosen one (PST-REQ-140). 0 turns undo off. */
+export const UNDO_DEFAULT_SECONDS = 10;
+export const UNDO_MAX_SECONDS = 30;
+/** The choices the composer offers; 0 turns undo off. */
+export const UNDO_CHOICES: readonly number[] = [0, 5, 10, 20, 30];
+const UNDO_KEY = 'postroom.undoSeconds';
+
+/** The undo window this browser uses: a whole number of seconds, 0–30, default 10. */
+export function undoSeconds(storage: Pick<Storage, 'getItem'> | null): number {
+  const raw = storage?.getItem(UNDO_KEY) ?? null;
+  if (raw === null || !/^\d{1,3}$/.test(raw)) return UNDO_DEFAULT_SECONDS;
+  return Math.min(UNDO_MAX_SECONDS, Number(raw));
+}
+
+export function setUndoSeconds(storage: Pick<Storage, 'setItem'> | null, seconds: number): void {
+  storage?.setItem(UNDO_KEY, String(Math.max(0, Math.min(UNDO_MAX_SECONDS, Math.round(seconds)))));
+}
+
+/** Remind-if-no-reply choices, in seconds (null: no reminder). */
+export const REMIND_CHOICES: readonly { label: string; seconds: number | null }[] = [
+  { label: 'No reminder', seconds: null },
+  { label: 'If no reply in 1 day', seconds: 86_400 },
+  { label: 'If no reply in 3 days', seconds: 3 * 86_400 },
+  { label: 'If no reply in a week', seconds: 7 * 86_400 },
+];
+
+/** When to send: now (with the undo window), or at a chosen local time (a datetime-local value). */
+export type SendTiming = { kind: 'now' } | { kind: 'later'; local: string };
+
+export type SendOptions = { undoSeconds?: number; sendAt?: string; remindAfterSeconds?: number };
+
+/**
+ * The timing fields of the send request, or why they cannot be sent. A later time must be in the
+ * future; "now" sends the undo window (0 sends straight away).
+ */
+export function sendOptions(timing: SendTiming, undo: number, remindAfterSeconds: number | null, now: Date): { ok: true; options: SendOptions } | { ok: false; error: string } {
+  const remind = remindAfterSeconds === null ? {} : { remindAfterSeconds };
+  if (timing.kind === 'now') return { ok: true, options: { ...(undo > 0 ? { undoSeconds: undo } : {}), ...remind } };
+  const at = new Date(timing.local);
+  if (timing.local === '' || Number.isNaN(at.getTime())) return { ok: false, error: 'Choose when to send it.' };
+  if (at.getTime() <= now.getTime()) return { ok: false, error: 'Pick a time in the future to send it.' };
+  return { ok: true, options: { sendAt: at.toISOString(), ...remind } };
+}
+
+/** A Date as an <input type="datetime-local"> value, in local time, to the minute. */
+export function toLocalInput(d: Date): string {
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${String(d.getFullYear())}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** The answer to a send is held (202) rather than sent (201). */
+export function isHeld(result: SendResult | PendingSend): result is PendingSend {
+  return 'state' in result && 'releaseAt' in result;
+}
+
+/** Whole seconds left before a held send goes (never negative). */
+export function secondsLeft(releaseAt: string, now: Date): number {
+  return Math.max(0, Math.ceil((new Date(releaseAt).getTime() - now.getTime()) / 1000));
+}
+
+/** Snooze choices relative to `now`, in local time: later today, tomorrow morning, next week. */
+export function snoozeChoices(now: Date): { label: string; until: Date }[] {
+  const at = (days: number, hour: number): Date => {
+    const d = new Date(now);
+    d.setDate(d.getDate() + days);
+    d.setHours(hour, 0, 0, 0);
+    return d;
+  };
+  const choices: { label: string; until: Date }[] = [];
+  const later = new Date(now.getTime() + 3 * 3_600_000);
+  if (later.getDate() === now.getDate()) choices.push({ label: 'Later today', until: later });
+  choices.push({ label: 'Tomorrow morning', until: at(1, 8) });
+  // The next Monday, a week out at most.
+  const toMonday = ((8 - now.getDay()) % 7) || 7;
+  choices.push({ label: 'Next week', until: at(toMonday, 8) });
+  return choices;
+}
+
+/** The toast's state for a given moment: what it says and whether Undo is still offered. */
+export function toastState(pending: PendingSend, now: Date, locale?: string): { text: string; canUndo: boolean; done: boolean } {
+  const left = secondsLeft(pending.releaseAt, now);
+  if (pending.kind === 'scheduled') {
+    const when = new Date(pending.releaseAt).toLocaleString(locale, { weekday: 'short', hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+    return { text: `Scheduled for ${when}.`, canUndo: left > 0, done: false };
+  }
+  if (left > 0) return { text: `Sending… ${String(left)} s`, canUndo: true, done: false };
+  return { text: 'Sent.', canUndo: false, done: true };
+}
+
+// --- Saved templates: the ; shortcut and {{variables}} (PST-T-9.2, PST-REQ-144) ------------------
+
+export interface ComposeTemplateLike {
+  shortcut: string;
+  name: string;
+  subject: string | null;
+  body: string;
+}
+
+export interface TemplateVariables {
+  name?: string;
+  first_name?: string;
+  date?: string;
+}
+
+const VARIABLE = /\{\{\s*(\w+)\s*\}\}/g;
+
+/** {{name}}, {{first_name}}, {{date}} filled in; an unknown variable is left blank, not passed through. */
+export function fillTemplateText(body: string, vars: TemplateVariables): string {
+  return body.replace(VARIABLE, (_match, key: string) => {
+    if (key === 'date') return vars.date ?? new Date().toLocaleDateString();
+    if (key === 'name') return vars.name ?? '';
+    if (key === 'first_name') return vars.first_name ?? '';
+    return '';
+  });
+}
+
+/**
+ * Whether the text just before `cursor` is a `;shortcut` the composer should offer to expand: a `;`
+ * preceded by nothing or whitespace, followed by shortcut characters and nothing else up to the
+ * cursor. Returns what was typed after `;` (possibly empty, right after typing it) and the range in
+ * `text` a chosen template replaces.
+ */
+export function templateTrigger(text: string, cursor: number): { shortcut: string; start: number; end: number } | null {
+  const before = text.slice(0, cursor);
+  const match = /(?:^|[\s])(;([a-zA-Z0-9_-]*))$/.exec(before);
+  if (match === null) return null;
+  const whole = match[1] ?? '';
+  const shortcut = match[2] ?? '';
+  return { shortcut, start: cursor - whole.length, end: cursor };
+}
+
+/** Templates offered for what was typed after `;`, by shortcut prefix. */
+export function matchingTemplates<T extends ComposeTemplateLike>(templates: readonly T[], query: string): T[] {
+  const q = query.toLowerCase();
+  return templates.filter((t) => t.shortcut.toLowerCase().startsWith(q));
+}
+
+/** Replace the `;shortcut` trigger with the template's body, variables filled; the cursor lands
+ *  right after what was inserted. */
+export function applyTemplate(text: string, trigger: { start: number; end: number }, template: ComposeTemplateLike, vars: TemplateVariables): { text: string; cursor: number } {
+  const filled = fillTemplateText(template.body, vars);
+  const next = text.slice(0, trigger.start) + filled + text.slice(trigger.end);
+  return { text: next, cursor: trigger.start + filled.length };
 }

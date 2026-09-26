@@ -27,6 +27,7 @@ import { acceptSubmission, AcceptReplies, type SubmissionStorage } from './accep
 import { allowAllCaps, allowAllEnforcement, type CheckCaps, type EnforceCaps } from './caps-seam.js';
 import { isCredentialFrozen } from './caps/index.js';
 import { SASL_MECHANISMS, readCredentials } from './sasl.js';
+import { attachTranscriptTap, TranscriptRecorder } from './transcript.js';
 
 // The submission path, shared with the webmail's POST /api/compose/send (PST-T-3.11): the API
 // imports these from '@postroom/submission' rather than re-implementing them.
@@ -123,7 +124,13 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
 
   const owns = (address: string): boolean => login?.addresses.has(address.toLowerCase()) === true;
 
-  return createServerSession(socket, {
+  // PST-T-6.3: no InboundSession here, so the transcript's sessionId is just a random id (as the
+  // schema comment says) — attached before createServerSession so the greeting (its first write) is
+  // captured too.
+  const recorder = new TranscriptRecorder({ daemon: 'submission', sessionId: randomUUID(), clientIp: ip, db: o.db, log, now });
+  attachTranscriptTap(socket, recorder);
+
+  const session = createServerSession(socket, {
     hostname: o.hostname,
     maxSize: o.maxSize,
     maxRecipients: o.maxRecipients,
@@ -141,7 +148,16 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
       startTls: true,
     },
     hooks: {
-      ...(o.tls === null ? {} : { upgradeTls: tlsUpgrader({ key: o.tls.key, cert: o.tls.cert }) }),
+      ...(o.tls === null
+        ? {}
+        : {
+            upgradeTls: ((tls) => async (sock: Duplex) => {
+              const secured = await tlsUpgrader({ key: tls.key, cert: tls.cert })(sock);
+              // The tap was on the plaintext socket; STARTTLS hands the engine a new Duplex.
+              attachTranscriptTap(secured, recorder);
+              return secured;
+            })(o.tls),
+          }),
 
       onAuth: async (request, sasl, ctx): Promise<AuthResult> => {
         const creds = await readCredentials(request, sasl);
@@ -218,6 +234,21 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
       },
 
       onData: async (body, ctx): Promise<SmtpReply> => {
+        // PST-T-6.3: the body's octets are never buffered or published — a summary line stands in
+        // once the stream ends, however it ends ('close' always fires, so this runs exactly once).
+        recorder.beginBody();
+        let bodyBytes = 0;
+        let bodyEnded = false;
+        body.on('data', (chunk: Buffer) => {
+          bodyBytes += chunk.length;
+        });
+        const endBody = (): void => {
+          if (bodyEnded) return;
+          bodyEnded = true;
+          recorder.endBody(bodyBytes);
+        };
+        body.once('end', endBody);
+        body.once('close', endBody);
         const tx = ctx.transaction;
         const who = login;
         if (ctx.auth === null || who === null || tx === null || tx.from.kind === 'null') return SubmissionReplies.authRequired;
@@ -246,6 +277,10 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
       },
     },
   });
+  // The client already has its last reply once `done` resolves: finishing the transcript here
+  // delays nothing the protocol promised, and `finish()` itself never throws.
+  void session.done.then(() => recorder.finish());
+  return session;
 
   interface Envelope {
     readonly login: Login;

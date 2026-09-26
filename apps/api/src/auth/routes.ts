@@ -45,15 +45,35 @@ const Login = z.string().trim().min(1).max(320);
 const Password = z.string().min(1).max(1024);
 const Code = z.string().trim().min(6).max(10);
 
+/** Stands in for a login naming another domain, so the schema can refuse it by name. */
+const FOREIGN_DOMAIN_MARK = '\u0000foreign-domain';
+
 const SetupBegin = z.object({
   displayName: z.string().trim().min(1).max(200),
   login: z
     .string()
     .trim()
     .toLowerCase()
-    .regex(/^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/, 'letters, digits, dot, dash or underscore'),
+    .refine((v) => v !== FOREIGN_DOMAIN_MARK, 'foreign_domain')
+    .refine((v) => v === FOREIGN_DOMAIN_MARK || /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/.test(v), 'letters, digits, dot, dash or underscore'),
   password: z.string().min(MIN_PASSWORD_LENGTH).max(1024),
 });
+/**
+ * The setup login is a local part (PST-T-11.6). A full address at the primary domain is taken as
+ * its local part; an address at any other domain is refused with its own message, because that
+ * domain is not hosted here.
+ */
+export function setupLoginLocalPart(body: unknown, primaryDomain: string): unknown {
+  if (typeof body !== 'object' || body === null) return body;
+  const login = (body as { login?: unknown }).login;
+  if (typeof login !== 'string') return body;
+  const at = login.trim().lastIndexOf('@');
+  if (at < 0) return body;
+  const domain = login.trim().slice(at + 1).toLowerCase();
+  if (domain !== primaryDomain.toLowerCase()) return { ...body, login: FOREIGN_DOMAIN_MARK };
+  return { ...body, login: login.trim().slice(0, at) };
+}
+
 const SetupComplete = z.object({ enrolToken: z.string().min(1).max(200), code: Code });
 const SignIn = z.object({ login: Login, password: Password });
 const SignInTotp = z.object({ challenge: z.string().min(1).max(200), code: Code });
@@ -231,7 +251,7 @@ export function authRoutes(deps: ApiDeps): Router {
         return;
       }
       if (!(await setupAllowed(req, res))) return;
-      const parsed = SetupBegin.safeParse(req.body);
+      const parsed = SetupBegin.safeParse(setupLoginLocalPart(req.body, rt.domain));
       if (!parsed.success) {
         badRequest(res, parsed.error);
         return;

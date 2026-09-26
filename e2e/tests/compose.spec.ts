@@ -1,6 +1,7 @@
-// PST-T-3.11's exit demo, as a suite (PST-REQ-079): open a message, r, type, Send — the reply is in
-// the conversation and in Sent without a reload; a draft saved and closed comes back with its text
-// when the reply is reopened; a forward carries the original.
+// PST-T-3.11's exit demo, as a suite (PST-REQ-079): open a message, r, type, Send — the composer
+// closes back to the message it answered (PST-T-3.15) and the reply is in that open thread and in
+// Sent, without a reload; a draft saved and closed comes back with its text when the reply is
+// reopened; a forward carries the original.
 //
 // Sending needs DKIM keys (submission never sends unsigned), and the e2e stack has no operator step
 // that makes them, so the suite asks for them through the e2e-only POST /api/compose/dev/dkim-keys
@@ -67,6 +68,9 @@ test.afterAll(async () => {
 
 test.beforeEach(async ({ context }) => {
   await context.addCookies(cookies);
+  // These specs prove what a send does once it goes. The undo window (PST-T-9.1, default 10 s) is
+  // its own spec's subject, so it is off here: a send goes at once, as it did before undo existed.
+  await context.addInitScript({ content: "window.localStorage.setItem('postroom.undoSeconds', '0');" });
 });
 
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -120,29 +124,30 @@ test('doneWhen: r, type, Send — the reply is in the thread and in Sent, withou
   await expect(reply.getByRole('textbox', { name: 'Message' })).toBeFocused();
   await page.keyboard.type(`Friday works for me ${t}.`);
   await expectNoAxeViolations(page, 'composer');
-  await reply.getByRole('button', { name: 'Send' }).click();
+  await reply.getByRole('button', { name: 'Send', exact: true }).click();
 
-  // The receipt: the conversation as the server now has it — the original, then the reply.
-  const receipt = page.getByRole('region', { name: 'Message sent' });
-  await expect(receipt).toBeVisible();
-  const conversation = receipt.getByRole('list', { name: 'Conversation' });
-  await expect(conversation.getByRole('listitem')).toHaveCount(2);
-  await expect(conversation.getByRole('listitem').first()).toContainText(subject);
-  await expect(conversation.getByRole('listitem').last()).toContainText(`You · Re: ${subject}`);
+  // The composer closes back to the message it answered (PST-T-3.15), which is still open — and the
+  // reply is already in its thread, without a reload.
+  await expect(reply).toBeHidden();
+  await expect(page.getByRole('heading', { name: subject, level: 2 })).toBeVisible();
+  const conversation = page.getByRole('list', { name: 'Conversation' });
+  await expect(conversation.locator('> li')).toHaveCount(2);
+  await expect(conversation.locator('> li').first()).toContainText('Are you free for lunch?');
+  await expect(conversation.locator('> li').last()).toContainText(`Friday works for me ${t}.`);
   await remember(`Re: ${subject}`);
-  await expectNoAxeViolations(page, 'receipt');
+  await expectNoAxeViolations(page, 'thread');
 
   // The thread, from the API: the seeded original and the Sent copy.
-  const threadId = await receipt.getAttribute('data-thread-id');
-  expect(threadId).toMatch(/^[0-9a-f-]{36}$/);
-  const thread = (await (await api.get(`/api/threads/${threadId ?? ''}`)).json()) as { messages: { id: string; subject: string }[] };
+  const detail = (await (await api.get(`/api/messages/${original.id}`)).json()) as { threadId: string | null };
+  expect(detail.threadId).toMatch(/^[0-9a-f-]{36}$/);
+  const thread = (await (await api.get(`/api/threads/${detail.threadId ?? ''}`)).json()) as { messages: { id: string; subject: string }[] };
   expect(thread.messages.map((m) => m.subject)).toEqual([subject, `Re: ${subject}`]);
   expect(thread.messages[0]?.id).toBe(original.id);
 
-  // In Sent, without a reload: the link opens it there, in the list and in the reading pane.
-  await receipt.getByRole('link', { name: 'Open in Sent' }).click();
+  // In Sent: the list and the reading pane agree, with no reload needed to get there either.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Sent/ }).click();
   await expect(page.getByRole('listbox', { name: 'Messages in Sent' })).toBeVisible();
-  await expect(row(page, `Re: ${subject}`)).toBeVisible();
+  await row(page, `Re: ${subject}`).click();
   await expect(page.getByRole('heading', { name: `Re: ${subject}`, level: 2 })).toBeVisible();
   await expect(page.getByTestId('message-text')).toContainText(`Friday works for me ${t}.`);
   const ids = await mailboxIds();
@@ -195,12 +200,16 @@ test('a forward carries the original, attached whole', async ({ page }) => {
   await expect(forward).toBeVisible();
   await expect(forward.getByText('The original message is attached in full.')).toBeVisible();
   await forward.getByRole('textbox', { name: 'To' }).fill('Erin <erin@example.org>');
-  await forward.getByRole('button', { name: 'Send' }).click();
-  const receipt = page.getByRole('region', { name: 'Message sent' });
-  await expect(receipt).toBeVisible();
+  await forward.getByRole('button', { name: 'Send', exact: true }).click();
+
+  // The composer closes back to the forwarded message itself (the one it was opened from).
+  await expect(forward).toBeHidden();
+  await expect(page.getByRole('heading', { name: subject, level: 2 })).toBeVisible();
   await remember(`Fwd: ${subject}`);
 
-  await receipt.getByRole('link', { name: 'Open in Sent' }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Sent/ }).click();
+  await expect(page.getByRole('listbox', { name: 'Messages in Sent' })).toBeVisible();
+  await row(page, `Fwd: ${subject}`).click();
   await expect(page.getByRole('heading', { name: `Fwd: ${subject}`, level: 2 })).toBeVisible();
   const sentId = /\/mail\/[0-9a-f-]{36}\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
   const raw = await (await api.get(`/api/messages/${sentId}/raw`)).text();

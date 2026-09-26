@@ -1,0 +1,10 @@
+From: Pagewatch <alerts@pagewatch.example.net>
+To: dana@d3cloud.io
+Subject: Incident opened: checkout errors
+Date: Wed, 16 Sep 2026 10:36:08 +0000
+Message-ID: <golden-0236.20260926@pagewatch.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=pagewatch.example.net; dkim=pass header.d=pagewatch.example.net; dmarc=pass header.from=pagewatch.example.net
+
+Incident opened: checkout errors
+
+Details: https://pagewatch.example.net/m/2008

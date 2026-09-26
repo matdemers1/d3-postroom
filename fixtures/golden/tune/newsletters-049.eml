@@ -1,0 +1,14 @@
+From: Kitchen Table <editor@kitchentable.example.net>
+List-Id: Kitchen Table <bulk.kitchentable.example.net>
+List-Unsubscribe: <https://kitchentable.example.net/unsubscribe>, <mailto:unsubscribe@kitchentable.example.net>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Precedence: bulk
+To: dana@d3cloud.io
+Subject: A quieter kind of newsletter
+Date: Sun, 06 Sep 2026 23:13:07 +0000
+Message-ID: <golden-0089.20260926@kitchentable.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=kitchentable.example.net; dkim=pass header.d=kitchentable.example.net; dmarc=pass header.from=kitchentable.example.net
+
+A quieter kind of newsletter
+
+Read online: https://kitchentable.example.net/issues/9

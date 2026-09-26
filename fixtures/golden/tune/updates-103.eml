@@ -1,0 +1,10 @@
+From: Harbor Bank <security@harborbank.example.com>
+To: dana@d3cloud.io
+Subject: A new device signed in to your account
+Date: Mon, 14 Sep 2026 08:55:20 +0000
+Message-ID: <golden-0205.20260926@harborbank.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=harborbank.example.com; dkim=pass header.d=harborbank.example.com; dmarc=pass header.from=harborbank.example.com
+
+A new device signed in to your account
+
+Details: https://harborbank.example.com/m/2000

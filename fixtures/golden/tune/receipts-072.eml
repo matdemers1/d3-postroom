@@ -1,0 +1,12 @@
+From: Northbend Market <orders@northbendmarket.example.com>
+To: dana@d3cloud.io
+Subject: Order #1005 confirmed
+X-SES-Outgoing: 2026.09.06-10.0.0.1
+Feedback-ID: receipt:northbendmarket.example.com:esp
+Date: Thu, 10 Sep 2026 02:39:35 +0000
+Message-ID: <golden-0138.20260926@northbendmarket.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=northbendmarket.example.com; dkim=pass header.d=northbendmarket.example.com; dmarc=pass header.from=northbendmarket.example.com
+
+Order #1005 confirmed
+
+Order total: $24.99

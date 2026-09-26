@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<A:sync-collection xmlns:A="DAV:">
+  <A:sync-token>http://postroom.d3cloud.io/ns/sync/5b0d1f0e-8f5d-4b8e-9a51-0c7d2c3f7a10/12</A:sync-token>
+  <A:sync-level>1</A:sync-level>
+  <A:prop>
+    <A:getetag/>
+    <A:getcontenttype/>
+  </A:prop>
+</A:sync-collection>

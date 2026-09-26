@@ -1,0 +1,12 @@
+From: VaultKey <account@vaultkey.example.net>
+To: dana@d3cloud.io
+Subject: Your one-time code is 482913
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.10-10.0.0.1
+Date: Tue, 08 Sep 2026 16:21:29 +0000
+Message-ID: <golden-0116.20260926@vaultkey.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=vaultkey.example.net; dkim=pass header.d=vaultkey.example.net; dmarc=pass header.from=vaultkey.example.net
+
+Your one-time code is 482913
+
+More detail: https://vaultkey.example.net/status/1009

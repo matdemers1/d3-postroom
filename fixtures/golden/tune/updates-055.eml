@@ -1,0 +1,12 @@
+From: FreightWise <tracking@freightwise.example.net>
+To: dana@d3cloud.io
+Subject: Delivery scheduled for tomorrow
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.02-10.0.0.1
+Date: Tue, 08 Sep 2026 04:52:30 +0000
+Message-ID: <golden-0108.20260926@freightwise.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=freightwise.example.net; dkim=pass header.d=freightwise.example.net; dmarc=pass header.from=freightwise.example.net
+
+Delivery scheduled for tomorrow
+
+More detail: https://freightwise.example.net/status/1001

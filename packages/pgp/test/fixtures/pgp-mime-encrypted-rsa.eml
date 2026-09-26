@@ -1,0 +1,39 @@
+From: Alice Test <alice@example.test>
+To: Bob Test <bob@example.test>
+Subject: Encrypted to RSA
+Date: Sat, 26 Sep 2026 12:00:00 +0000
+Message-ID: <1517312817@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; boundary="enc-b"
+
+This is an OpenPGP/MIME encrypted message (RFC 4880 and 3156)
+--enc-b
+Content-Type: application/pgp-encrypted
+Content-Description: PGP/MIME version identification
+
+Version: 1
+
+--enc-b
+Content-Type: application/octet-stream; name="encrypted.asc"
+Content-Description: OpenPGP encrypted message
+Content-Disposition: inline; filename="encrypted.asc"
+
+-----BEGIN PGP MESSAGE-----
+
+hQGMA8ioEwde4OCQAQv6A22a/7ktOkdZoZ+bYIk+hzpJ9e8KLQCDVluTIh+sWoqS
+vTRqw4Mx/v+iwM4qgC7Y69w4JA3GGZ0ZQZwpjDC3iogWpv+1cb9ybcPVZiBMAu5w
+GLG3FvFmABBbVkkXq/p/TwsY5YC4cVmvEY7pt593CpGt7HUeUhggy7HoBRDTrG4R
+zR5468IExM8B4gmHDJ4v5kq0bpJLz+HJpNcKPNpeKSODCrZtoaV+A+2s5RgUdrth
+RNzl87gagCrV0OkoCsuuS8BANABJNf8RKfkLGhRTMNd+0WUp3sgUO3rs+29gtR1j
+10OJXhlj9p+aGEPWAd/gW/pNjqCY5DWcoWDHZoxpDM7QoLgEY9oUDB0xvfIt1IXh
+K0HsmRyiMY3ndMRb/dFAERVw5+1mdVFZurFV59SbjhYZnnBOTowVKqQrH4B4GdqQ
+HlMZEdVqLELsQrnJhMA0VR/VjRLXoSrVElVDrGukTd1f8cC6xeWuWlZqnGTz3gg/
+chiWTqEXGj5iEgc1uwD30rkBuqgPSXDz2C69qiBszve0VwvjLr+7haYW1ODPNMzv
+hnfsYriiWbqKjfjnKHny/RIbusZgLXt+/mdoO8dcyMpAZ4c+VdxJnWvHUKdl+Kh1
+2DXG5KfcSYpbUV140wGlDmcV778FzxekFe9tNA/yPmKj9AmlcJOzBVJceKeoZQxz
+e4nujUxO1xUPp4Ag4Zc+xxFKiTgbNzuILTTxR2f3T+a+RQQUrWiZLiCzzuNOXtUz
+JlZwiL7ZZ+5/fA==
+=tASr
+-----END PGP MESSAGE-----
+
+--enc-b--

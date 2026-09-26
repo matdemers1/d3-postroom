@@ -1,0 +1,12 @@
+From: Harborlight Goods <payments@harborlight.example.org>
+To: dana@d3cloud.io
+Subject: Thanks for your purchase
+X-MC-User: mandrill-1004
+Feedback-ID: receipt:harborlight.example.org:esp
+Date: Thu, 10 Sep 2026 01:06:41 +0000
+Message-ID: <golden-0137.20260926@harborlight.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=harborlight.example.org; dkim=pass header.d=harborlight.example.org; dmarc=pass header.from=harborlight.example.org
+
+Thanks for your purchase
+
+Order total: $23.99

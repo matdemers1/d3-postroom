@@ -8,8 +8,10 @@ import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, 
 import { Link as RouterLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Alert, Button, EmptyState, Input, Link, Skeleton, Stack } from '@d3cloud/ui';
 import { api, ApiError, type Mailbox, type MessageDetail, type MessageSummary } from '../api';
+import { CommandPalette } from './CommandPalette';
 import { Composer } from './Composer';
 import { draftFor } from './compose';
+import { Feed } from './Feed';
 import { findSpecial, mailboxLabel } from './format';
 import { ComposeIcon, mailboxIcon } from './icons';
 import { describeTarget, resolveKey, type MailAction } from './keys';
@@ -17,9 +19,11 @@ import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEE
 import { useMail } from './MailContext';
 import { MessageList, type MessageListHandle } from './MessageList';
 import { ReadingPane, type OpenMessage } from './ReadingPane';
+import { ScheduledSends, SnoozeControl, UndoSendToast } from './Scheduled';
 import { mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { SPLIT_QUERY, useMediaQuery } from './useMedia';
+import { SessionEnded } from '../screens/states';
 
 const PAGE = 50;
 
@@ -63,10 +67,12 @@ function MailPanes({ route }: { route: MailRoute }) {
   const [searchQuery, setSearchQuery] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [searchUnavailable, setSearchUnavailable] = useState(false);
+  const [listSignedOut, setListSignedOut] = useState(false);
   const [list, dispatch] = useReducer(listReducer, initialList);
   const [open, setOpen] = useState<OpenMessage | null>(null);
   const [openReload, setOpenReload] = useState(0);
   const [overlay, setOverlay] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -132,6 +138,7 @@ function MailPanes({ route }: { route: MailRoute }) {
       .catch((error: unknown) => {
         if (cancelled) return;
         if (error instanceof ApiError && error.status === 501) setSearchUnavailable(true);
+        setListSignedOut(error instanceof ApiError && error.status === 401);
         dispatch({ type: 'failed', mailboxId: listKey });
       });
     return () => {
@@ -223,8 +230,8 @@ function MailPanes({ route }: { route: MailRoute }) {
         if (!cancelled) setOpen((o) => (o === null || o.id !== messageId ? o : { ...o, status: 'ready', detail }));
       })
       .catch((error: unknown) => {
-        const missing = error instanceof ApiError && error.status === 404;
-        if (!cancelled) setOpen((o) => (o === null || o.id !== messageId ? o : { ...o, status: missing ? 'missing' : 'error' }));
+        const status = error instanceof ApiError && error.status === 404 ? 'missing' : error instanceof ApiError && error.status === 401 ? 'signed-out' : 'error';
+        if (!cancelled) setOpen((o) => (o === null || o.id !== messageId ? o : { ...o, status }));
       });
     api
       .messageBody(messageId)
@@ -416,6 +423,9 @@ function MailPanes({ route }: { route: MailRoute }) {
       case 'help':
         setOverlay((v) => !v);
         return;
+      case 'commandPalette':
+        setPaletteOpen((v) => !v);
+        return;
     }
   };
 
@@ -423,6 +433,8 @@ function MailPanes({ route }: { route: MailRoute }) {
   performRef.current = perform;
   const overlayRef = useRef(overlay);
   overlayRef.current = overlay;
+  const paletteOpenRef = useRef(paletteOpen);
+  paletteOpenRef.current = paletteOpen;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -432,9 +444,10 @@ function MailPanes({ route }: { route: MailRoute }) {
       const { action, pending } = resolveKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, ...describeTarget(e.target) }, pendingKey.current);
       pendingKey.current = pending;
       if (action === null) return;
-      // Behind a dialog (the overlay, the navigation drawer, a menu) only ? does anything.
-      if ((inDialog !== null || overlayRef.current) && action !== 'help') return;
-      if (inDialog !== null && !overlayRef.current) return;
+      // Behind a dialog (the overlay, the navigation drawer, a menu) only ? and the ⌘K chord do
+      // anything — the chord still toggles the palette shut when it is what is open.
+      if ((inDialog !== null || overlayRef.current) && action !== 'help' && action !== 'commandPalette') return;
+      if (inDialog !== null && !overlayRef.current && !paletteOpenRef.current) return;
       e.preventDefault();
       performRef.current(action);
     };
@@ -539,6 +552,9 @@ function MailPanes({ route }: { route: MailRoute }) {
         <div className="pr-notice" role="status" aria-live="polite">
           {notice?.tone === 'info' ? <span key={notice.key}>{notice.text}</span> : null}
         </div>
+        {/* PST-T-9.1: the undo-send toast, and scheduled sends above Drafts. */}
+        {split || view === 'list' ? <UndoSendToast /> : null}
+        {mailbox?.specialUse === 'drafts' && searchQuery === null ? <ScheduledSends drafts={mailbox} /> : null}
         {notice?.tone === 'danger' ? (
           <Alert key={notice.key} tone="danger" dynamic flush actions={<Button size="sm" variant="ghost" onClick={() => { setNotice(null); }}>Dismiss</Button>}>
             {notice.text}
@@ -552,6 +568,7 @@ function MailPanes({ route }: { route: MailRoute }) {
         openId={route.messageId}
         searching={searchQuery !== null}
         searchUnavailable={searchUnavailable}
+        signedOut={listSignedOut}
         onRetry={reloadList}
         onOpen={(m, index) => {
           dispatch({ type: 'cursor', index });
@@ -601,11 +618,39 @@ function MailPanes({ route }: { route: MailRoute }) {
         onAction={(a) => {
           perform(a);
         }}
-      />
+      >
+        {/* PST-T-9.1 (PST-REQ-142): snooze the open conversation, or bring it back. */}
+        {!split && view !== 'list' ? <UndoSendToast /> : null}
+        <SnoozeControl
+          threadId={open?.detail?.threadId ?? null}
+          inInbox={open?.detail?.mailboxId !== undefined && open.detail.mailboxId === inbox?.id}
+          snoozed={open?.detail?.mailboxId !== undefined && mailboxes?.find((m) => m.id === open.detail?.mailboxId)?.name === 'Snoozed'}
+          onDone={(text) => {
+            say('info', text);
+            void navigate(mailPath(route.mailboxId));
+          }}
+        />
+      </ReadingPane>
     );
 
+  // PST-T-5.6, PST-REQ-109: the Newsletters folder opens as a continuous-scroll feed of full bodies
+  // instead of the usual list + reader — there is no "one message open" here, so route.messageId
+  // and the reader pane are moot for it.
+  const isNewslettersFeed = mailbox !== null && mailbox.name === 'Newsletters' && route.compose === null && searchQuery === null;
+  const feedPane = mailbox === null ? null : (
+    <section className="pr-mail__feed" aria-labelledby="pr-list-title">
+      {!split ? backToList : null}
+      <h2 id="pr-list-title" className="pr-listhead__title" tabIndex={-1} ref={viewHeading}>
+        {title}
+      </h2>
+      <Feed mailbox={mailbox} />
+    </section>
+  );
+
   let content;
-  if (split) {
+  if (isNewslettersFeed) {
+    content = feedPane;
+  } else if (split) {
     content = (
       <>
         {listPane}
@@ -625,6 +670,28 @@ function MailPanes({ route }: { route: MailRoute }) {
       <h1 className="pr-vh">Mail</h1>
       {content}
       <ShortcutsOverlay open={overlay} onOpenChange={setOverlay} />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        mailboxes={mailboxes}
+        target={target()}
+        onAction={perform}
+        onMove={move}
+        onNavigate={(path) => {
+          void navigate(path);
+        }}
+        onSnooze={(m, until) => {
+          if (m.threadId === null) return;
+          api
+            .snoozeThread(m.threadId, until.toISOString())
+            .then(() => {
+              say('info', 'Snoozed. It comes back when the time comes.');
+              reloadList();
+              void refreshMailboxes();
+            })
+            .catch(recover);
+        }}
+      />
     </div>
   );
 }
@@ -636,6 +703,7 @@ function ListBody({
   openId,
   searching,
   searchUnavailable,
+  signedOut,
   onRetry,
   onOpen,
   onNearEnd,
@@ -646,6 +714,7 @@ function ListBody({
   openId: string | null;
   searching: boolean;
   searchUnavailable: boolean;
+  signedOut: boolean;
   onRetry: () => void;
   onOpen: (m: MessageSummary, index: number) => void;
   onNearEnd: () => void;
@@ -662,6 +731,13 @@ function ListBody({
     );
   }
   if (list.status === 'error') {
+    if (signedOut) {
+      return (
+        <div className="pr-list pr-list--state">
+          <SessionEnded headingLevel={3} size="inline" />
+        </div>
+      );
+    }
     if (searching && searchUnavailable) {
       return (
         <div className="pr-list pr-list--state">
@@ -701,7 +777,13 @@ function MailboxIndex({ mailboxes, headingRef }: { mailboxes: Mailbox[] | null; 
         </h2>
       </div>
       {mailboxes === null ? (
-        <Skeleton variant="text" lines={5} />
+        <div role="status" aria-label="Loading mailboxes" aria-busy="true">
+          <Skeleton variant="text" lines={5} />
+        </div>
+      ) : mailboxes.length === 0 ? (
+        <EmptyState kind="empty" heading="No mailboxes yet" size="inline" headingLevel={3}>
+          Your mailboxes appear here once the server has made them.
+        </EmptyState>
       ) : (
         <nav aria-label="Mailboxes">
           <ul className="pr-mailboxes__list">

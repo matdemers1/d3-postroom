@@ -5,16 +5,33 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { auditContext, mutationAuditGuard } from '@postroom/audit';
 import { schemaRevision } from '@postroom/db';
 import { adminDevEnabled, adminDevRoutes } from './admin-dev/index.js';
+import { adminHealthRoutes } from './admin-health/index.js';
+import { aliasRoutes } from './aliases/index.js';
 import { adminDnsRoutes } from './admin-dns/index.js';
 import { adminJobRoutes } from './admin-jobs/index.js';
+import { adminQueueRoutes } from './admin-queue/index.js';
+import { adminSmtpRoutes } from './admin-smtp/index.js';
 import { serviceAccountRoutes } from './admin-service/index.js';
 import { appPasswordRoutes } from './app-passwords/index.js';
 import { autoconfigRoutes } from './autoconfig/index.js';
+import { calendarRoutes } from './calendar/index.js';
 import { composeRoutes } from './compose/index.js';
+import { mdnRoutes } from './compose/index.js';
+import { contactsRoutes } from './contacts/index.js';
+import { templateRoutes } from './templates/index.js';
+import { invitesRoutes } from './invites/index.js';
+import { keyRoutes } from './keys/index.js';
 import { mailRoutes } from './mail/index.js';
 import { setupWizardRoutes } from './setup-wizard/index.js';
 import { usercontentConfig, usercontentDispatch } from './usercontent/index.js';
 import { deliveryRoutes } from './delivery/index.js';
+import { deliverabilityRoutes } from './deliverability/index.js';
+import { exportRoutes } from './export/index.js';
+import { senderRoutes } from './senders/index.js';
+import { unsubscribeRoutes } from './unsubscribe/index.js';
+import { sieveRoutes } from './sieve/index.js';
+import { importRoutes } from './import/index.js';
+import { mobileconfigRoutes } from './mobileconfig/index.js';
 import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import { isSecureOrigin } from './auth/sessions.js';
 import type { ApiDeps } from './deps.js';
@@ -92,14 +109,35 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api', noStore, auditContext(), express.json({ limit: '1mb' }), mutationAuditGuard(deps.db), csrfGuard(deps));
   app.use('/api/auth', authRoutes(deps));
   if (adminDevEnabled(deps.env)) app.use('/api/admin/dev', requireAdmin(deps), adminDevRoutes(deps));
+  app.use('/api/admin/health', requireAdmin(deps), adminHealthRoutes(deps));
   app.use('/api/admin/jobs', requireAdmin(deps), adminJobRoutes(deps));
+  app.use('/api/admin/queue', requireAdmin(deps), adminQueueRoutes(deps));
   app.use('/api/admin/service-accounts', requireAdmin(deps), serviceAccountRoutes(deps));
+  app.use('/api/admin/deliverability', requireAdmin(deps), deliverabilityRoutes(deps));
+  app.use('/api/admin/smtp', requireAdmin(deps), adminSmtpRoutes(deps));
   app.use('/api/admin/dns', requireAdmin(deps), adminDnsRoutes(deps));
   app.use('/api/admin/setup-wizard', requireAdmin(deps), setupWizardRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
   app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));
+  app.use('/api/aliases', requireSession(deps), aliasRoutes(deps));
+  app.use('/api/senders', requireSession(deps), senderRoutes(deps));
+  app.use('/api/sieve', requireSession(deps), sieveRoutes(deps));
   app.use('/api/messages', requireSession(deps), deliveryRoutes(deps));
+  // PST-T-5.6: one-click unsubscribe. Same prefix as deliveryRoutes above, disjoint paths (.../unsubscribe).
+  app.use('/api/messages', requireSession(deps), unsubscribeRoutes(deps));
+  app.use('/api/export', requireSession(deps), exportRoutes(deps));
   app.use('/api/compose', requireSession(deps), composeRoutes(deps));
+  // PST-T-9.2: RFC 8098 read receipts. Same prefix as deliveryRoutes/unsubscribeRoutes above, disjoint path (.../mdn).
+  app.use('/api/messages', requireSession(deps), mdnRoutes(deps));
+  app.use('/api/templates', requireSession(deps), templateRoutes(deps));
+  app.use('/api/import', requireSession(deps), importRoutes(deps));
+  app.use('/api/mobileconfig', requireSession(deps), mobileconfigRoutes(deps));
+  app.use('/api/calendar', requireSession(deps), calendarRoutes(deps));
+  app.use('/api/contacts', requireSession(deps), contactsRoutes(deps));
+  // PST-T-8.4: iMIP invitations. Same prefix as deliveryRoutes/unsubscribeRoutes above, disjoint paths (.../invite...).
+  app.use('/api/messages', requireSession(deps), invitesRoutes(deps));
+  // PST-T-12.2: OpenPGP keys and S/MIME certificates (PST-REQ-161).
+  app.use('/api/keys', requireSession(deps), keyRoutes(deps));
   app.use('/api', requireSession(deps), mailRoutes(deps));
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not_found' });

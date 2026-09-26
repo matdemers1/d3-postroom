@@ -1,0 +1,12 @@
+From: SecureLogin <hello@securelogin.example.com>
+To: sam@d3cloud.io
+Subject: Account activity you should know about
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.03-10.0.0.1
+Date: Wed, 09 Sep 2026 01:33:13 +0000
+Message-ID: <golden-0122.20260926@securelogin.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=securelogin.example.com; dkim=pass header.d=securelogin.example.com; dmarc=pass header.from=securelogin.example.com
+
+Account activity you should know about
+
+More detail: https://securelogin.example.com/status/1002

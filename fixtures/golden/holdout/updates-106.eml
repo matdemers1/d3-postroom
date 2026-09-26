@@ -1,0 +1,10 @@
+From: Bluejay Travel <reservations@mail.bluejay.example.net>
+To: sam@d3cloud.io
+Subject: Your booking is confirmed
+Date: Wed, 16 Sep 2026 21:44:15 +0000
+Message-ID: <golden-0242.20260926@mail.bluejay.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=mail.bluejay.example.net; dkim=pass header.d=mail.bluejay.example.net; dmarc=pass header.from=mail.bluejay.example.net
+
+Your booking is confirmed
+
+Details: https://mail.bluejay.example.net/m/2003

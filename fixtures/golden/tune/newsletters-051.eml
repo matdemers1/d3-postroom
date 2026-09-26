@@ -1,0 +1,13 @@
+From: Weekly Signal <newsletter@weeklysignal.example.com>
+Precedence: list
+List-Unsubscribe: <mailto:leave@weeklysignal.example.com>
+X-Mailgun-Variables: {}
+To: dana@d3cloud.io
+Subject: This week: five things worth your time
+Date: Mon, 07 Sep 2026 05:01:30 +0000
+Message-ID: <golden-0091.20260926@weeklysignal.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=weeklysignal.example.com; dkim=pass header.d=weeklysignal.example.com; dmarc=pass header.from=weeklysignal.example.com
+
+This week: five things worth your time
+
+Read online: https://weeklysignal.example.com/issues/11

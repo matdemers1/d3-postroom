@@ -1,0 +1,11 @@
+From: ClearanceBlast <deals@clearanceblast.example.net>
+To: dana@d3cloud.io
+Subject: You are pre-approved
+Date: Sun, 13 Sep 2026 16:05:42 +0000
+Message-ID: <golden-0194.20260926@clearanceblast.example.net>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=clearanceblast.example.net; dkim=none header.d=clearanceblast.example.net; dmarc=none header.from=clearanceblast.example.net
+Precedence: junk
+
+You are pre-approved
+
+Click here: https://clearanceblast.example.net/claim

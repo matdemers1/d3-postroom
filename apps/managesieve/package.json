@@ -1,0 +1,35 @@
+{
+  "name": "@postroom/managesieve",
+  "private": true,
+  "version": "0.0.0",
+  "description": "ManageSieve (RFC 5804) on :4190, and the Sieve script store the webmail shares",
+  "type": "module",
+  "exports": {
+    "./store": {
+      "source": "./src/store.ts",
+      "types": "./dist/store.d.ts",
+      "default": "./dist/store.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "start": "node dist/main.js",
+    "dev": "node --conditions=source --import tsx --watch src/main.ts",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/audit": "workspace:*",
+    "@postroom/auth-throttle": "workspace:*",
+    "@postroom/credentials": "workspace:*",
+    "@postroom/daemon": "workspace:*",
+    "@postroom/db": "workspace:*",
+    "@postroom/proxy-protocol": "workspace:*",
+    "@postroom/sieve": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.13"
+  }
+}

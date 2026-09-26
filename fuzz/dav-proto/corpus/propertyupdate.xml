@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<A:propertyupdate xmlns:A="DAV:" xmlns:D="http://apple.com/ns/ical/">
+  <A:set><A:prop><A:displayname>Renamed</A:displayname><D:calendar-color>#44A703FF</D:calendar-color></A:prop></A:set>
+  <A:remove><A:prop><D:calendar-order/></A:prop></A:remove>
+</A:propertyupdate>

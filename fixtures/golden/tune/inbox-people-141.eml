@@ -1,0 +1,14 @@
+From: Yuki Tanaka <yuki.tanaka@vendorco.example.com>
+To: dana@d3cloud.io
+Subject: Re: your order from last week
+Date: Sat, 19 Sep 2026 01:26:27 +0000
+Message-ID: <golden-0276.20260926@vendorco.example.com>
+In-Reply-To: <thread-276@d3cloud.io>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=vendorco.example.com; dkim=pass header.d=vendorco.example.com; dmarc=pass header.from=vendorco.example.com
+
+Hi,
+
+Re: your order from last week
+
+Thanks,
+Yuki Tanaka

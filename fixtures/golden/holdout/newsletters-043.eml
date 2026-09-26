@@ -1,0 +1,13 @@
+From: Field Notes <newsletter@fieldnotes.example.com>
+Precedence: list
+List-Unsubscribe: <mailto:leave@fieldnotes.example.com>
+X-Mailgun-Variables: {}
+To: sam@d3cloud.io
+Subject: A dispatch from the team
+Date: Mon, 07 Sep 2026 12:32:55 +0000
+Message-ID: <golden-0096.20260926@fieldnotes.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=fieldnotes.example.com; dkim=pass header.d=fieldnotes.example.com; dmarc=pass header.from=fieldnotes.example.com
+
+A dispatch from the team
+
+Read online: https://fieldnotes.example.com/issues/3

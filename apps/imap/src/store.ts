@@ -22,13 +22,23 @@
 //
 // Every transaction that changes a mailbox's messages ends with pg_notify('postroom_mailbox', id)
 // (`notifyMailbox`), so IDLE sessions — in this process and any other — and webmail tabs wake.
+//
+// Training (PST-T-5.3, PST-REQ-104): a MOVE between two sorting buckets (see @postroom/classifier's
+// trainingMove), and an EXPUNGE of a message whose copy already sits in a different bucket (the
+// COPY-then-EXPUNGE move older clients make), write a bayes_training_event in the same transaction.
+// The table is insert-only here and takes no lock of its own, so the locking order above is unchanged;
+// the worker applies the events later. Like the move itself, the event is its own record — not audited.
 import { randomInt, randomUUID } from 'node:crypto';
+import { DEFAULT_MAX_HEADER_BYTES, splitMessage } from '@postroom/auth-checks';
 import { recordAudit, type Actor } from '@postroom/audit';
 import type { BlobStore } from '@postroom/blobstore';
+import { trainingMove, type TrainingMove } from '@postroom/classifier';
+import type { Kek } from '@postroom/crypto';
+import { contactIndexFor, DavStore, DEFAULT_DAV_LIMITS, harvestRecipients, parseListPost } from '@postroom/dav-store';
 import { Prisma, randomUidValidity, type Db, type SpecialUse } from '@postroom/db';
 import { fileLocalMessage } from '@postroom/dsn';
 import type { StoreOperation } from '@postroom/imap-proto';
-import { parseDate, parseMailboxes, parseMessageId, parseMessageIdList, type HeaderList } from '@postroom/mime';
+import { parseDate, parseHeaderBlock, parseMailboxes, parseMessageId, parseMessageIdList, type HeaderList } from '@postroom/mime';
 import { applyFlags, DELETED, isKeyword, normalizeFlags, sameFlags, SEEN } from './flags.js';
 import { MAILBOX_CHANNEL } from './extensions/notify.js';
 import { isSelfOrChild, parentsOf } from './names.js';
@@ -84,6 +94,12 @@ export interface Denormalised {
   readonly sentAt: Date | null;
   readonly inReplyTo: string | null;
   readonly references: string[];
+  /** To/Cc addresses (lowercased local@domain), for the reply-graph harvest on a \Sent APPEND (PST-T-5.8). */
+  readonly recipientAddresses: string[];
+  /** To/Cc, name and address as the headers name them, for the contact harvest on a \Sent APPEND (PST-T-8.8). */
+  readonly recipientEntries: readonly { readonly name: string; readonly address: string }[];
+  /** The message's own List-Post header value, raw (e.g. `<mailto:list@example.org>`), or null. */
+  readonly listPost: string | null;
 }
 
 /** The same columns smtp-in and the worker fill at filing time, from a message's top-level headers. */
@@ -94,7 +110,19 @@ export function denormalise(headers: HeaderList): Denormalised {
   const date = headers.get('date');
   const irt = headers.get('in-reply-to');
   const refs = headers.get('references');
+  const to = headers.get('to');
+  const cc = headers.get('cc');
   const sent = date === null ? null : parseDate(date);
+  const recipients = new Set<string>();
+  const recipientEntries: { name: string; address: string }[] = [];
+  for (const field of [to, cc]) {
+    if (field === null) continue;
+    for (const m of parseMailboxes(field)) {
+      if (m.address === '') continue;
+      recipients.add(m.address.toLowerCase());
+      recipientEntries.push({ name: m.name, address: m.address });
+    }
+  }
   return {
     messageIdHeader: mid === null ? null : parseMessageId(mid),
     subject: subject === null ? null : subject.slice(0, 998),
@@ -102,6 +130,9 @@ export function denormalise(headers: HeaderList): Denormalised {
     sentAt: sent === null || Number.isNaN(sent.getTime()) ? null : sent,
     inReplyTo: irt === null ? null : (parseMessageIdList(irt)[0] ?? null),
     references: refs === null ? [] : parseMessageIdList(refs).slice(0, 100),
+    recipientAddresses: [...recipients],
+    recipientEntries,
+    listPost: headers.get('list-post'),
   };
 }
 
@@ -172,7 +203,9 @@ export interface CopyResult {
 export class MailStore {
   constructor(
     readonly db: Db,
-    private readonly blobs: Pick<BlobStore, 'release' | 'reap'>,
+    private readonly blobs: Pick<BlobStore, 'release' | 'reap' | 'get'>,
+    /** When present, a client's own \Sent APPEND also harvests contacts (PST-T-8.8, PST-REQ-138). */
+    private readonly kek?: Kek,
   ) {}
 
   // --- reads -----------------------------------------------------------------------------------
@@ -340,6 +373,7 @@ export class MailStore {
         DELETE FROM message WHERE mailbox_id = ${mailboxId}::uuid AND ${DELETED} = ANY(flags) ${only}
         RETURNING uid, blob_sha256`;
       if (rows.length === 0) return [];
+      await recordCopyMoves(tx, meta.accountId, mailboxId, rows.map((r) => r.blob_sha256));
       const modseq = hm.highestModseq + 1n;
       await tx.$executeRaw`UPDATE mailbox SET highest_modseq = ${modseq} WHERE id = ${mailboxId}::uuid`;
       released.push(...(await this.releaseBlobs(tx, rows.map((r) => r.blob_sha256))));
@@ -438,8 +472,8 @@ export class MailStore {
       const target = locked.get(targetId);
       const source = locked.get(sourceId);
       if (target === undefined || source === undefined) throw new MailboxGoneError();
-      const rows = await tx.$queryRaw<{ id: string; uid: number }[]>`
-        SELECT id::text AS id, uid FROM message
+      const rows = await tx.$queryRaw<{ id: string; uid: number; blob_sha256: string }[]>`
+        SELECT id::text AS id, uid, blob_sha256 FROM message
         WHERE mailbox_id = ${sourceId}::uuid AND uid = ANY(${[...uids]}::int[]) ORDER BY uid`;
       if (rows.length === 0) return { uidvalidity: target.uidvalidity, pairs: [] };
       const modseq = (target.highestModseq > source.highestModseq ? target.highestModseq : source.highestModseq) + 1n;
@@ -465,6 +499,10 @@ export class MailStore {
         pairs.map(([s]) => s),
         modseq,
       );
+      const training = trainingMove(source, target);
+      if (training !== null) {
+        await recordTraining(tx, source.accountId, training, 'imap-move', rows.map((r) => ({ messageId: r.id, blobSha256: r.blob_sha256 })));
+      }
       await notifyMailbox(tx, targetId);
       if (sourceId !== targetId) await notifyMailbox(tx, sourceId);
       return { uidvalidity: target.uidvalidity, pairs };
@@ -477,9 +515,9 @@ export class MailStore {
     mailboxId: string,
     input: { sha256: string; size: number; flags: readonly string[]; internalDate: Date; denorm: Denormalised | null },
   ): Promise<{ uid: number; uidvalidity: number }> {
-    return this.db.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ name: string; uidvalidity: number }[]>`
-        SELECT name, uidvalidity FROM mailbox WHERE id = ${mailboxId}::uuid AND account_id = ${accountId}::uuid FOR UPDATE`;
+    const { sentDenorm, ...result } = await this.db.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ name: string; uidvalidity: number; special_use: SpecialUse | null }[]>`
+        SELECT name, uidvalidity, special_use FROM mailbox WHERE id = ${mailboxId}::uuid AND account_id = ${accountId}::uuid FOR UPDATE`;
       const mb = rows[0];
       if (mb === undefined) throw new MailboxGoneError();
       const filed = await fileLocalMessage(tx, {
@@ -490,10 +528,90 @@ export class MailStore {
         internalDate: input.internalDate,
         flags: normalizeFlags(input.flags),
       });
-      if (input.denorm !== null) await tx.message.update({ where: { id: filed.id }, data: { ...input.denorm } });
+      let sentDenorm: Denormalised | null = null;
+      if (input.denorm !== null) {
+        const denorm = input.denorm;
+        await tx.message.update({
+          where: { id: filed.id },
+          data: {
+            messageIdHeader: denorm.messageIdHeader,
+            subject: denorm.subject,
+            fromAddress: denorm.fromAddress,
+            sentAt: denorm.sentAt,
+            inReplyTo: denorm.inReplyTo,
+            references: denorm.references,
+          },
+        });
+        // A client filing its own Sent copy (PST-T-5.8): harvest To/Cc into the reply graph too, the
+        // same table acceptSubmission maintains for messages sent through Postroom itself.
+        if (mb.special_use === 'sent' && denorm.recipientAddresses.length > 0) {
+          await harvestSentRecipients(tx, accountId, denorm.recipientAddresses, input.internalDate);
+          sentDenorm = denorm;
+        }
+      }
       await notifyMailbox(tx, mailboxId);
-      return { uid: filed.uid, uidvalidity: mb.uidvalidity };
+      return { uid: filed.uid, uidvalidity: mb.uidvalidity, sentDenorm };
     }, TX_OPTIONS);
+    // After the commit, like acceptSubmission: a failure here never undoes the APPEND (PST-T-8.8,
+    // PST-REQ-138). Only when a KEK was given (contact cards are encrypted) and the message really
+    // filed into \Sent.
+    if (sentDenorm !== null && this.kek !== undefined) {
+      await this.harvestSentContacts(accountId, sentDenorm, input.internalDate).catch(() => undefined);
+    }
+    return result;
+  }
+
+  /**
+   * The `List-Post` address of the account's own message that `In-Reply-To`/`References` name, or
+   * null (PST-T-8.8): its own posting address is never harvested as a new contact from a Reply-All.
+   * Reads only the bounded header block of the original's blob, never the whole message.
+   */
+  private async findRepliedListPost(accountId: string, inReplyTo: string | null, references: readonly string[]): Promise<string | null> {
+    const ids = new Set<string>([...(inReplyTo === null ? [] : [inReplyTo]), ...references]);
+    if (ids.size === 0) return null;
+    const original = await this.db.message.findFirst({
+      where: { messageIdHeader: { in: [...ids] }, mailbox: { accountId } },
+      select: { blobSha256: true },
+      orderBy: { receivedAt: 'desc' },
+    });
+    if (original === null) return null;
+    try {
+      const stream = await this.blobs.get(original.blobSha256);
+      const split = await splitMessage(stream, { maxHeaderBytes: DEFAULT_MAX_HEADER_BYTES });
+      const value = parseHeaderBlock(split.headerBlock).get('list-post');
+      return value === null ? null : parseListPost(value);
+    } catch {
+      // The original's blob is gone or unreadable: no address to exclude, never a reason to fail.
+      return null;
+    }
+  }
+
+  /**
+   * A client filing its own copy into \Sent still counts as writing to its To/Cc addresses as
+   * contacts (PST-T-8.8, PST-REQ-138): the same audited "Collected" write path acceptSubmission and
+   * the webmail composer use, with the same exclusions — the account's own addresses, no-reply
+   * addresses, mailing-list/role local parts, and the list's own posting address (its own
+   * List-Post header, or the message it replies to's).
+   */
+  private async harvestSentContacts(accountId: string, denorm: Denormalised, now: Date): Promise<void> {
+    if (denorm.recipientEntries.length === 0 || this.kek === undefined) return;
+    const kek = this.kek;
+    const excludedAddresses = new Set<string>();
+    if (denorm.listPost !== null) {
+      const address = parseListPost(denorm.listPost);
+      if (address !== null) excludedAddresses.add(address);
+    }
+    const repliedAddress = await this.findRepliedListPost(accountId, denorm.inReplyTo, denorm.references);
+    if (repliedAddress !== null) excludedAddresses.add(repliedAddress);
+
+    const store = new DavStore(this.db, kek, DEFAULT_DAV_LIMITS);
+    await harvestRecipients(this.db, store, contactIndexFor(this.db, kek), {
+      accountId,
+      recipients: denorm.recipientEntries,
+      context: { requestId: randomUUID(), ip: null },
+      now,
+      excludedAddresses,
+    });
   }
 
   // --- mailboxes --------------------------------------------------------------------------------
@@ -691,6 +809,7 @@ async function lockMailbox(tx: Tx, mailboxId: string): Promise<{ highestModseq: 
 interface LockedMailbox {
   readonly accountId: string;
   readonly name: string;
+  readonly specialUse: SpecialUse | null;
   readonly uidvalidity: number;
   readonly uidnext: number;
   readonly highestModseq: bigint;
@@ -698,13 +817,13 @@ interface LockedMailbox {
 
 async function lockMailboxes(tx: Tx, ids: readonly string[]): Promise<Map<string, LockedMailbox>> {
   const unique = [...new Set(ids)].sort();
-  const rows = await tx.$queryRaw<{ id: string; account_id: string; name: string; uidvalidity: number; uidnext: number; highest_modseq: bigint }[]>`
-    SELECT id::text AS id, account_id::text AS account_id, name, uidvalidity, uidnext, highest_modseq FROM mailbox
+  const rows = await tx.$queryRaw<{ id: string; account_id: string; name: string; special_use: SpecialUse | null; uidvalidity: number; uidnext: number; highest_modseq: bigint }[]>`
+    SELECT id::text AS id, account_id::text AS account_id, name, special_use, uidvalidity, uidnext, highest_modseq FROM mailbox
     WHERE id = ANY(${unique}::uuid[]) ORDER BY id FOR UPDATE`;
   return new Map(
     rows.map((r) => [
       r.id,
-      { accountId: r.account_id, name: r.name, uidvalidity: r.uidvalidity, uidnext: r.uidnext, highestModseq: r.highest_modseq },
+      { accountId: r.account_id, name: r.name, specialUse: r.special_use, uidvalidity: r.uidvalidity, uidnext: r.uidnext, highestModseq: r.highest_modseq },
     ]),
   );
 }
@@ -723,6 +842,38 @@ async function notifyMailbox(tx: Tx, mailboxId: string): Promise<void> {
 }
 
 /**
+ * Lowercase, strip a `+tag` from the local part, and strip a trailing dot from the domain — the same
+ * normalization @postroom/classifier's `normalizeAddress` applies (kept local to avoid a new
+ * workspace dependency; PST-T-5.8, PST-REQ-102).
+ */
+function normalizeCorrespondentAddress(address: string): string {
+  const trimmed = address.trim().toLowerCase();
+  const at = trimmed.lastIndexOf('@');
+  if (at < 0) return trimmed;
+  let local = trimmed.slice(0, at);
+  const plus = local.indexOf('+');
+  if (plus >= 0) local = local.slice(0, plus);
+  const domain = trimmed.slice(at + 1).replace(/\.+$/, '');
+  return `${local}@${domain}`;
+}
+
+/**
+ * A client filing its own copy into \Sent (rather than sending through acceptSubmission) still
+ * counts as writing to its To/Cc addresses (PST-T-5.8, PST-REQ-102): upsert the correspondent table
+ * the same way, in the same transaction as the APPEND.
+ */
+async function harvestSentRecipients(tx: Tx, accountId: string, addresses: readonly string[], sentAt: Date): Promise<void> {
+  const normalized = new Set(addresses.map(normalizeCorrespondentAddress).filter((a) => a !== ''));
+  for (const address of normalized) {
+    await tx.correspondent.upsert({
+      where: { accountId_address: { accountId, address } },
+      create: { accountId, address, firstWrittenAt: sentAt, lastWrittenAt: sentAt, count: 1 },
+      update: { lastWrittenAt: sentAt, count: { increment: 1 } },
+    });
+  }
+}
+
+/**
  * QRESYNC's VANISHED (EARLIER) record: the UIDs a transaction removed from a mailbox and the modseq
  * that removal was given, in expunged_message (primary key (mailbox_id, uid)).
  */
@@ -734,4 +885,44 @@ async function recordExpunged(tx: Tx, mailboxId: string, uids: readonly number[]
     data: uids.map((uid) => ({ mailboxId, uid, modseq })),
     skipDuplicates: true,
   });
+}
+
+/** One bayes_training_event per moved message (PST-REQ-104), in the move's transaction. */
+async function recordTraining(
+  tx: Tx,
+  accountId: string,
+  move: TrainingMove,
+  via: 'imap-move' | 'imap-copy-expunge',
+  messages: readonly { messageId: string; blobSha256: string }[],
+): Promise<void> {
+  if (messages.length === 0) return;
+  await tx.bayesTrainingEvent.createMany({
+    data: messages.map((m) => ({ accountId, messageId: m.messageId, blobSha256: m.blobSha256, fromBucket: move.fromBucket, toBucket: move.toBucket, via })),
+  });
+}
+
+/**
+ * COPY then EXPUNGE is how a client without MOVE moves a message: when an expunged message's bytes
+ * (the same blob — a COPY shares it) already sit in another mailbox of the account that is a
+ * different bucket, the user moved it there. The newest such copy is the one trained. A message
+ * expunged with no copy elsewhere, or whose copy is not in a bucket (Trash, Archive), teaches nothing.
+ */
+async function recordCopyMoves(tx: Tx, accountId: string, sourceId: string, blobs: readonly string[]): Promise<void> {
+  const src = await tx.$queryRaw<{ name: string; special_use: SpecialUse | null }[]>`
+    SELECT name, special_use FROM mailbox WHERE id = ${sourceId}::uuid`;
+  const source = src[0];
+  if (source === undefined || blobs.length === 0) return;
+  const copies = await tx.$queryRaw<{ id: string; blob_sha256: string; name: string; special_use: SpecialUse | null }[]>`
+    SELECT m.id::text AS id, m.blob_sha256, mb.name, mb.special_use
+    FROM message m JOIN mailbox mb ON mb.id = m.mailbox_id
+    WHERE mb.account_id = ${accountId}::uuid AND m.mailbox_id <> ${sourceId}::uuid AND m.blob_sha256 = ANY(${[...new Set(blobs)]}::text[])
+    ORDER BY m.received_at DESC, m.id`;
+  const done = new Set<string>();
+  for (const c of copies) {
+    if (done.has(c.blob_sha256)) continue;
+    const move = trainingMove({ name: source.name, specialUse: source.special_use }, { name: c.name, specialUse: c.special_use });
+    if (move === null) continue;
+    done.add(c.blob_sha256);
+    await recordTraining(tx, accountId, move, 'imap-copy-expunge', [{ messageId: c.id, blobSha256: c.blob_sha256 }]);
+  }
 }

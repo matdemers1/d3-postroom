@@ -9,8 +9,15 @@
 //     message, so the refcount is unchanged. The search row and the verdict follow the new id.
 // Each write ends with pg_notify('postroom_mailbox', id) for every mailbox it changed, inside the
 // same transaction, so it is delivered exactly when the change commits.
+// A move between two sorting buckets also writes a bayes_training_event in that transaction
+// (PST-T-5.3, PST-REQ-104) — the same event an IMAP MOVE writes; the worker trains on it.
+import type { BlobStore } from '@postroom/blobstore';
+import { trainingMove } from '@postroom/classifier';
 import type { Db, Message, MessageVerdict, Prisma } from '@postroom/db';
-import type { MailboxJson, MessageDetailJson, MessageSummaryJson } from './schemas.js';
+import { collectMessage, parseMailboxes } from '@postroom/mime';
+import { detectPhish, type PhishAuthVerdicts, type PhishLink } from '@postroom/phish';
+import { contactIndexOf } from '../contacts/dav.js';
+import type { MailboxJson, MessageDetailJson, MessageSummaryJson, PhishJson } from './schemas.js';
 
 export const MAILBOX_CHANNEL = 'postroom_mailbox';
 
@@ -60,9 +67,50 @@ export async function listMailboxes(db: Db, accountId: string): Promise<MailboxJ
     .sort((a, b) => rank(a.specialUse, a.name) - rank(b.specialUse, b.name) || a.name.localeCompare(b.name));
 }
 
-type MessageWithVerdict = Message & { verdict: Pick<MessageVerdict, 'bucket'> | null };
+type MessageWithVerdict = Message & { verdict: Pick<MessageVerdict, 'bucket' | 'scores'> | null };
 
-export function summaryJson(m: MessageWithVerdict): MessageSummaryJson {
+/** True when the classify stage marked this message with the new-sender badge (PST-REQ-106). */
+function newSenderOf(scores: MessageVerdict['scores'] | undefined): boolean {
+  if (typeof scores !== 'object' || scores === null || Array.isArray(scores)) return false;
+  return (scores as Record<string, unknown>)['newSender'] === 1;
+}
+
+// --- The Trash clock (PST-T-7.7, PST-REQ-129) ----------------------------------------------------
+//
+// A message in Trash carries trashedAt (stamped by a database trigger whenever a row enters a Trash
+// mailbox, from any surface) and expiresAt = trashedAt + the Trash mailbox's retention days, after
+// which the worker's retention sweep expunges it. The days are the mailbox's retention_policy row
+// when it has one (null there = kept forever, so no expiresAt), else the built-in Trash default —
+// a copy of DEFAULT_RETENTION_DAYS.trash in apps/worker/src/retention/policy.ts; keep them in step.
+
+/** Built-in Trash retention, in days (apps/worker/src/retention/policy.ts). */
+export const DEFAULT_TRASH_DAYS = 30;
+const DAY_MS = 86_400_000;
+
+/** Retention days per Trash mailbox among `mailboxIds` (null = kept forever). Non-Trash ids are absent. */
+export async function trashRetentionDays(db: Db | Tx, mailboxIds: readonly string[]): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  const ids = [...new Set(mailboxIds)];
+  if (ids.length === 0) return out;
+  const rows = await db.mailbox.findMany({
+    where: { id: { in: ids }, specialUse: 'trash' },
+    select: { id: true, retentionPolicy: { select: { days: true } } },
+  });
+  for (const r of rows) out.set(r.id, r.retentionPolicy === null ? DEFAULT_TRASH_DAYS : r.retentionPolicy.days);
+  return out;
+}
+
+/** trashedAt and expiresAt for the JSON; both null outside Trash. */
+function trashClock(m: Pick<Message, 'trashedAt'>, trashDays: number | null): { trashedAt: string | null; expiresAt: string | null } {
+  if (m.trashedAt === null) return { trashedAt: null, expiresAt: null };
+  return {
+    trashedAt: m.trashedAt.toISOString(),
+    expiresAt: trashDays === null ? null : new Date(m.trashedAt.getTime() + trashDays * DAY_MS).toISOString(),
+  };
+}
+
+/** `trashDays`: the retention of the message's mailbox when it is a Trash (see trashRetentionDays). */
+export function summaryJson(m: MessageWithVerdict, trashDays: number | null = DEFAULT_TRASH_DAYS): MessageSummaryJson {
   return {
     id: m.id,
     mailboxId: m.mailboxId,
@@ -76,17 +124,117 @@ export function summaryJson(m: MessageWithVerdict): MessageSummaryJson {
     size: m.size,
     flags: m.flags,
     bucket: m.verdict?.bucket ?? null,
+    ...trashClock(m, trashDays),
+    newSender: newSenderOf(m.verdict?.scores),
   };
 }
 
-export function detailJson(m: Message & { verdict: MessageVerdict | null }): MessageDetailJson {
+export function detailJson(m: Message & { verdict: MessageVerdict | null }, phish: PhishJson | null = null, trashDays: number | null = DEFAULT_TRASH_DAYS): MessageDetailJson {
   return {
-    ...summaryJson(m),
+    ...summaryJson(m, trashDays),
     messageIdHeader: m.messageIdHeader,
     inReplyTo: m.inReplyTo,
     references: m.references,
     verdict: m.verdict === null ? null : { bucket: m.verdict.bucket, reasons: m.verdict.reasons, auth: m.verdict.auth },
+    phish,
   };
+}
+
+// --- Phishing/lookalike warnings (PST-T-6.5, PST-REQ-120) ---------------------------------------
+//
+// Computed on read, not stored at filing time: the worker's file stage (PST-P-2) already runs
+// before this account's reply graph and known-sender history exist for *this* message, and storing
+// a verdict there would go stale as the account corresponds with more senders over time (the same
+// From address that looks brand-new today is a known sender next month). Computing it on
+// GET /messages/:id instead means every read sees the account's current view of the world, at the
+// cost of one more blob fetch — acceptable at Postroom's single-account, personal scale.
+//
+// The stored auth verdicts (message_verdict.auth: spf/dkim/dmarc/arc) are reused as-is; only the
+// display name, Reply-To, Return-Path and HTML links need a pass over the message's headers/body.
+
+function headerValue(headers: readonly { name: string; value: string }[], name: string): string | null {
+  const lower = name.toLowerCase();
+  return headers.find((h) => h.name.toLowerCase() === lower)?.value ?? null;
+}
+
+/** A minimal `<a href="...">text</a>` extractor: good enough for a mismatch heuristic, not a renderer. */
+function extractLinks(html: string | null): PhishLink[] {
+  if (html === null) return [];
+  const out: PhishLink[] = [];
+  const re = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) !== null) {
+    const href = match[1] ?? match[2] ?? match[3] ?? '';
+    const text = (match[4] ?? '').replace(/<[^>]*>/g, '').trim();
+    if (href !== '' && text !== '') out.push({ text, href });
+  }
+  return out;
+}
+
+/** Distinct From addresses/domains this account has already received mail from, before `before`. */
+export async function knownSenderContext(db: Db, accountId: string, opts: { excludeMessageId: string; before: Date }): Promise<{ addresses: string[]; domains: string[] }> {
+  const rows = await db.message.findMany({
+    where: { mailbox: { accountId }, fromAddress: { not: null }, id: { not: opts.excludeMessageId }, internalDate: { lt: opts.before } },
+    distinct: ['fromAddress'],
+    select: { fromAddress: true },
+    take: 2000,
+  });
+  const addresses = rows.map((r) => r.fromAddress).filter((a): a is string => a !== null);
+  const domains = [...new Set(addresses.map((a) => a.split('@')[1]?.toLowerCase()).filter((d): d is string => d !== undefined))];
+  return { addresses, domains };
+}
+
+/** Known senders plus the account's contact addresses (and their domains). */
+function mergeKnown(known: { addresses: string[]; domains: string[] }, contacts: readonly string[]): { addresses: string[]; domains: string[] } {
+  const addresses = [...new Set([...known.addresses, ...contacts.map((a) => a.trim().toLowerCase())])];
+  const domains = [...new Set([...known.domains, ...contacts.map((a) => a.split('@')[1]?.trim().toLowerCase()).filter((d): d is string => d !== undefined && d !== '')])];
+  return { addresses, domains };
+}
+
+/** The phishing/lookalike verdict for one message, or null when there is nothing stored to check
+ * (no message_verdict — e.g. this account's own Sent copy) or no blob store is configured. */
+/**
+ * The phishing verdict for a message, or null when it cannot be computed. A side signal: a blob that
+ * cannot be read here (moved, re-keyed, or a parse failure) must never take the message detail down
+ * with it, so any failure is logged and answers null.
+ */
+export async function messagePhish(db: Db, blobs: BlobStore | null, accountId: string, message: Message & { verdict: MessageVerdict | null }): Promise<PhishJson | null> {
+  try {
+    return await computeMessagePhish(db, blobs, accountId, message);
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({ event: 'phish-unavailable', messageId: message.id, error: error instanceof Error ? error.message : String(error) })}\n`);
+    return null;
+  }
+}
+
+async function computeMessagePhish(db: Db, blobs: BlobStore | null, accountId: string, message: Message & { verdict: MessageVerdict | null }): Promise<PhishJson | null> {
+  if (message.verdict === null || blobs === null) return null;
+  const stream = await blobs.get(message.blobSha256);
+  const summary = await collectMessage(stream);
+  const headers = summary.headers.fields;
+  const fromHeader = headerValue(headers, 'from');
+  const fromMailbox = fromHeader === null ? undefined : parseMailboxes(fromHeader)[0];
+  const fromAddress = fromMailbox?.address !== undefined && fromMailbox.address !== '' ? fromMailbox.address : (message.fromAddress ?? '');
+
+  const replyToHeader = headerValue(headers, 'reply-to');
+  const replyToMailbox = replyToHeader === null ? undefined : parseMailboxes(replyToHeader)[0];
+
+  const known = await knownSenderContext(db, accountId, { excludeMessageId: message.id, before: message.internalDate });
+  // The account's address books (PST-T-8.5): contacts are known senders too, and their names are what
+  // the display-name-spoofing rule compares against. Cached per account on the books' sync tokens.
+  const contacts = (await contactIndexOf(db)?.entries(accountId)) ?? [];
+  const context = contacts.length === 0 ? known : mergeKnown(known, contacts.map((c) => c.address));
+
+  const result = detectPhish({
+    from: { address: fromAddress, displayName: fromMailbox?.name ?? null },
+    replyTo: replyToMailbox === undefined ? null : { address: replyToMailbox.address, displayName: replyToMailbox.name },
+    returnPath: headerValue(headers, 'return-path'),
+    authVerdicts: message.verdict.auth as PhishAuthVerdicts,
+    account: { knownSenders: context, contacts: contacts.map((c) => ({ name: c.name, address: c.address })) },
+    subject: message.subject,
+    links: extractLinks(summary.html?.text ?? null),
+  });
+  return result;
 }
 
 export async function ownMailbox(db: Db | Tx, accountId: string, id: string): Promise<{ id: string } | null> {
@@ -103,11 +251,12 @@ export async function listMessages(
     where: { mailboxId, ...(opts.cursor !== undefined ? { uid: { lt: opts.cursor } } : {}) },
     orderBy: { uid: 'desc' },
     take: opts.limit + 1,
-    include: { verdict: { select: { bucket: true } } },
+    include: { verdict: { select: { bucket: true, scores: true } } },
   });
   const page = rows.slice(0, opts.limit);
   const last = page[page.length - 1];
-  return { messages: page.map(summaryJson), nextCursor: rows.length > opts.limit && last !== undefined ? String(last.uid) : null };
+  const days = await trashRetentionDays(db, [mailboxId]);
+  return { messages: page.map((m) => summaryJson(m, days.get(m.mailboxId) ?? null)), nextCursor: rows.length > opts.limit && last !== undefined ? String(last.uid) : null };
 }
 
 export async function findOwnMessage(db: Db | Tx, accountId: string, id: string): Promise<(Message & { verdict: MessageVerdict | null }) | null> {
@@ -119,7 +268,7 @@ export async function findOwnThread(db: Db, accountId: string, id: string) {
   if (thread === null) return null;
   const messages = await db.message.findMany({
     where: { threadId: id, mailbox: { accountId } },
-    include: { verdict: { select: { bucket: true } } },
+    include: { verdict: { select: { bucket: true, scores: true } } },
   });
   messages.sort((a, b) => (a.sentAt ?? a.internalDate).getTime() - (b.sentAt ?? b.internalDate).getTime() || a.id.localeCompare(b.id));
   return { thread, messages };
@@ -241,6 +390,15 @@ export async function updateMessage(tx: Tx, input: UpdateInput): Promise<{ befor
   await tx.messageSearch.updateMany({ where: { messageId: message.id }, data: { messageId: moved.id } });
   await tx.messageVerdict.updateMany({ where: { messageId: message.id }, data: { messageId: moved.id } });
   await tx.message.delete({ where: { id: message.id } });
+  const buckets = await tx.mailbox.findMany({ where: { id: { in: [source.id, target.id] } }, select: { id: true, name: true, specialUse: true } });
+  const from = buckets.find((b) => b.id === source.id);
+  const to = buckets.find((b) => b.id === target.id);
+  const training = from === undefined || to === undefined ? null : trainingMove(from, to);
+  if (training !== null) {
+    await tx.bayesTrainingEvent.create({
+      data: { accountId: input.accountId, messageId: moved.id, blobSha256: message.blobSha256, fromBucket: training.fromBucket, toBucket: training.toBucket, via: 'web' },
+    });
+  }
   // The expunge is a change in the source too: IMAP clients syncing with CONDSTORE must see it.
   await tx.mailbox.update({ where: { id: source.id }, data: { highestModseq: source.highestModseq + 1n } });
   for (const id of lockOrder) await notifyMailbox(tx, id);

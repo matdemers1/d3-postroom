@@ -1,0 +1,12 @@
+From: Fernwood Coffee <billing@fernwood.example.net>
+To: dana@d3cloud.io
+Subject: Payment received — thank you
+X-SES-Outgoing: 2026.09.03-10.0.0.1
+Feedback-ID: receipt:fernwood.example.net:esp
+Date: Wed, 09 Sep 2026 23:23:02 +0000
+Message-ID: <golden-0135.20260926@fernwood.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=fernwood.example.net; dkim=pass header.d=fernwood.example.net; dmarc=pass header.from=fernwood.example.net
+
+Payment received — thank you
+
+Order total: $21.99

@@ -71,10 +71,51 @@ export const api = {
   endSession: (id: string) => call<{ ok: true }>('DELETE', `/api/auth/sessions/${encodeURIComponent(id)}`),
   adminSessions: () => call<{ sessions: AdminSession[] }>('GET', '/api/admin/sessions'),
   revokeSession: (id: string) => call<{ ok: true }>('DELETE', `/api/admin/sessions/${encodeURIComponent(id)}`),
+  adminHealth: () => call<{ tiles: HealthTile[] }>('GET', '/api/admin/health'),
+  // PST-T-6.3 (PST-REQ-117, PST-REQ-118): the SMTP transcript browser.
+  adminSmtpTranscripts: (opts: { daemon?: 'smtp-in' | 'submission'; clientIp?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.daemon !== undefined) q.set('daemon', opts.daemon);
+    if (opts.clientIp !== undefined) q.set('clientIp', opts.clientIp);
+    if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+    const qs = q.toString();
+    return call<{ transcripts: SmtpTranscriptSummary[] }>('GET', `/api/admin/smtp/transcripts${qs === '' ? '' : `?${qs}`}`);
+  },
+  adminSmtpTranscript: (id: string) => call<SmtpTranscriptDetail>('GET', `/api/admin/smtp/transcripts/${encodeURIComponent(id)}`),
+  // PST-T-7.1 (PST-REQ-122): DMARC aggregate and TLS-RPT reports, charted on Deliverability.
+  adminDeliverability: (days: number) => call<Deliverability>('GET', `/api/admin/deliverability?days=${String(days)}`),
+  // PST-T-7.2 (PST-REQ-123): a 14-day-clean-streak DMARC progression proposal, per our domain.
+  adminDeliverabilityProposals: () => call<{ proposals: ProposalResult[] }>('GET', '/api/admin/deliverability/proposals'),
+  adminJobs: (opts: { status?: string; queue?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.status !== undefined) q.set('status', opts.status);
+    if (opts.queue !== undefined) q.set('queue', opts.queue);
+    const qs = q.toString();
+    return call<{ jobs: AdminJob[] }>('GET', `/api/admin/jobs${qs === '' ? '' : `?${qs}`}`);
+  },
+  replayJob: (id: string) => call<{ ok: true }>('POST', `/api/admin/jobs/${encodeURIComponent(id)}/replay`),
+  replayInbound: (inboundMessageId: string, fromStage: InboundStage) =>
+    call<{ ok: true; jobId: string; fromStage: InboundStage }>('POST', `/api/admin/jobs/inbound/${encodeURIComponent(inboundMessageId)}/replay`, { fromStage }),
+  adminQueue: (opts: { domain?: string; state?: QueueStateFilter; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.domain !== undefined) q.set('domain', opts.domain);
+    if (opts.state !== undefined) q.set('state', opts.state);
+    if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+    const qs = q.toString();
+    return call<{ messages: AdminQueueMessage[]; sesConfigured: boolean }>('GET', `/api/admin/queue${qs === '' ? '' : `?${qs}`}`);
+  },
+  queueRetry: (scope: QueueScope) => call<{ ok: true; count: number }>('POST', `${queuePath(scope)}/retry`),
+  queueForceSes: (scope: QueueScope) => call<{ ok: true; count: number; transport: 'ses' }>('POST', `${queuePath(scope)}/force-ses`),
+  queueBounce: (scope: QueueScope) => call<{ ok: true; count: number }>('POST', `${queuePath(scope)}/bounce`),
+  queueDelete: (scope: QueueScope, reason: string) => call<{ ok: true; count: number }>('DELETE', queuePath(scope), { reason }),
   appPasswords: () => call<{ appPasswords: AppPassword[] }>('GET', '/api/app-passwords'),
   createAppPassword: (input: { label: string; scopes: AppPasswordScope[] }) =>
     call<AppPassword & { password: string }>('POST', '/api/app-passwords', input),
   revokeAppPassword: (id: string) => call<{ ok: true }>('DELETE', `/api/app-passwords/${encodeURIComponent(id)}`),
+  aliases: () => call<{ aliases: Alias[] }>('GET', '/api/aliases'),
+  createAlias: (input: { site: string }) => call<{ alias: Alias }>('POST', '/api/aliases', input),
+  killAlias: (id: string) => call<{ alias: Alias }>('POST', `/api/aliases/${encodeURIComponent(id)}/kill`),
+  reviveAlias: (id: string) => call<{ alias: Alias }>('POST', `/api/aliases/${encodeURIComponent(id)}/revive`),
 
   // --- Mail (PST-T-3.9's API) ---------------------------------------------------------------
   mailboxes: () => call<{ mailboxes: Mailbox[] }>('GET', '/api/mailboxes'),
@@ -89,16 +130,39 @@ export const api = {
   messageBody: (id: string) => call<MessageBody>('GET', `/api/messages/${encodeURIComponent(id)}/body`),
   /** A short-lived URL of the sanitised HTML on the usercontent origin (PST-T-3.12). 503 when that origin is not configured. */
   renderMessage: (id: string, images: boolean) => call<RenderTicket>('GET', renderPath(id, images)),
+  /** Everything Postroom knows about one message, with its reasons — the Inspect drawer (PST-T-6.1, PST-REQ-114). */
+  inspectMessage: (id: string) => call<MessageInspect>('GET', `/api/messages/${encodeURIComponent(id)}/inspect`),
   /** Flags and/or a move. `modseq` is the row's current MODSEQ: the server answers 412 if it moved on. A move returns a NEW id. */
   patchMessage: (id: string, modseq: string, patch: MessagePatch) =>
     call<MessageDetail>('PATCH', `/api/messages/${encodeURIComponent(id)}`, patch, { 'if-match': `"${modseq}"` }),
   thread: (id: string) => call<ThreadDetail>('GET', `/api/threads/${encodeURIComponent(id)}`),
+  /** The caller's outbound queue rows, newest first (PST-T-1.13) — keyed by OutboundMessage.id,
+   *  which is NOT a mailbox message's own id; ReadingPane matches one to the other by Message-ID
+   *  header (see mail/delivery.ts's matchingOutbound). */
+  outboundMessages: (opts: { limit?: number; cursor?: string | null } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+    if (opts.cursor !== undefined && opts.cursor !== null) q.set('cursor', opts.cursor);
+    const qs = q.toString();
+    return call<{ messages: OutboundListItem[]; nextCursor: string | null }>('GET', `/api/messages/outbound${qs === '' ? '' : `?${qs}`}`);
+  },
+  /** Per-recipient delivery state and attempt log for one outbound message (PST-T-6.4, PST-REQ-119). */
+  messageDelivery: (outboundId: string) => call<DeliveryDetail>('GET', `/api/messages/${encodeURIComponent(outboundId)}/delivery`),
+  /** A mailbox message's own OutboundMessage id, or null (PST-T-6.7, PST-REQ-119) — an indexed
+   *  server-side lookup by Message-ID header, replacing the client-side scan over recent sends. */
+  messageOutbound: (id: string) => call<{ outboundId: string | null }>('GET', `/api/messages/${encodeURIComponent(id)}/outbound`),
   search: (q: string, opts: { mailboxId?: string; cursor?: string | null } = {}) => {
     const params = new URLSearchParams({ q });
     if (opts.mailboxId !== undefined) params.set('mailboxId', opts.mailboxId);
     if (opts.cursor !== undefined && opts.cursor !== null) params.set('cursor', opts.cursor);
     return call<MessagePage>('GET', `/api/search?${params.toString()}`);
   },
+
+  // --- Senders (PST-T-5.6, PST-REQ-113/110) ---------------------------------------------------
+  /** The sender profile: message history, buckets, pin/screen, unsubscribe status, auth summary. */
+  senderProfile: (address: string) => call<SenderProfile>('GET', `/api/senders/${encodeURIComponent(address)}/profile`),
+  /** RFC 8058 one-click unsubscribe for a message that offers it. `offered: false` when it does not. */
+  unsubscribe: (messageId: string) => call<UnsubscribeResult>('POST', `/api/messages/${encodeURIComponent(messageId)}/unsubscribe`),
 
   // --- Compose (PST-T-3.11) -------------------------------------------------------------------
   /** Through the submission path; filed in Sent and threaded before it answers. */
@@ -111,6 +175,19 @@ export const api = {
     call<{ drafts: SavedDraft[] }>('GET', `/api/compose/drafts${opts.inReplyTo === undefined ? '' : `?${new URLSearchParams({ inReplyTo: opts.inReplyTo }).toString()}`}`),
   deleteDraft: (id: string) => call<null>('DELETE', `/api/compose/drafts/${encodeURIComponent(id)}`),
 
+  // --- Held sends and snooze (PST-T-9.1) ------------------------------------------------------------
+  /** With undoSeconds > 0 or sendAt the answer is a held send (202), not a SendResult. */
+  sendOrHold: (input: SendInput) => call<SendResult | PendingSend>('POST', '/api/compose/send', input),
+  pendingSends: () => call<{ pending: PendingSend[] }>('GET', '/api/compose/pending'),
+  undoSend: (id: string) => call<PendingSend>('POST', `/api/compose/pending/${encodeURIComponent(id)}/undo`, {}),
+  reschedule: (id: string, sendAt: string) => call<PendingSend>('PATCH', `/api/compose/pending/${encodeURIComponent(id)}`, { sendAt }),
+  snoozeThread: (threadId: string, until: string) => call<Snooze>('POST', `/api/threads/${encodeURIComponent(threadId)}/snooze`, { until }),
+  unsnoozeThread: (threadId: string) => call<Snooze>('DELETE', `/api/threads/${encodeURIComponent(threadId)}/snooze`),
+
+  // --- iMIP invitations (PST-T-8.4) -------------------------------------------------------------
+  invite: (messageId: string) => call<InviteView>('GET', `/api/messages/${encodeURIComponent(messageId)}/invite`),
+  respondToInvite: (messageId: string, partstat: Partstat) => call<InviteRespondResult>('POST', `/api/messages/${encodeURIComponent(messageId)}/invite/respond`, { partstat }),
+  removeInviteFromCalendar: (messageId: string) => call<InviteRemoveResult>('POST', `/api/messages/${encodeURIComponent(messageId)}/invite/remove`, {}),
   // --- Delivery timeline (PST-T-1.13's API) --------------------------------------------------
   delivery: (outboundId: string) => call<DeliveryView>('GET', `/api/messages/${encodeURIComponent(outboundId)}/delivery`),
 
@@ -309,6 +386,36 @@ export interface SendInput extends ComposeFields {
   from: string;
   /** The draft this send replaces; removed from Drafts with the send. */
   draftId: string | null;
+  /** Undo send: hold this many seconds (0–30) before queueing (PST-T-9.1). */
+  undoSeconds?: number;
+  /** Scheduled send: an ISO time in the future. */
+  sendAt?: string;
+  /** Remind if no reply after this many seconds. */
+  remindAfterSeconds?: number;
+}
+
+/** A held send: undo window or scheduled (PST-T-9.1). */
+export interface PendingSend {
+  id: string;
+  kind: 'undo' | 'scheduled';
+  state: 'held' | 'released' | 'cancelled' | 'failed';
+  releaseAt: string;
+  draftId: string | null;
+  subject: string;
+  to: string;
+  messageId: string;
+  remindAfterSeconds: number | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface Snooze {
+  id: string;
+  threadId: string;
+  until: string;
+  state: 'snoozed' | 'returned' | 'unsnoozed';
+  mailboxId: string;
+  messageIds: string[];
 }
 
 export interface SendResult {
@@ -377,11 +484,24 @@ export interface MessagePage {
   nextCursor: string | null;
 }
 
+/** One phishing/lookalike warning (PST-T-6.5, PST-REQ-120): `reason` is the full, human-readable text to show — never just the kind. */
+export interface PhishWarning {
+  kind: 'display-name-spoofing' | 'lookalike-domain' | 'punycode-domain' | 'first-time-brand-sender' | 'auth-failure' | 'link-mismatch';
+  severity: 'low' | 'medium' | 'high';
+  reason: string;
+}
+
+export interface Phish {
+  warnings: PhishWarning[];
+}
+
 export interface MessageDetail extends MessageSummary {
   messageIdHeader: string | null;
   inReplyTo: string | null;
   references: string[];
   verdict: { bucket: string | null; reasons: string[]; auth: unknown } | null;
+  /** Null when there is nothing to check yet (no stored auth verdict). */
+  phish: Phish | null;
 }
 
 export interface MessageAttachment {
@@ -407,6 +527,55 @@ export interface MessageBody {
   warnings: { code: string; message: string; partId: string | null }[];
 }
 
+// --- Senders (PST-T-5.6) ------------------------------------------------------------------------
+
+export interface SenderProfileMessage {
+  id: string;
+  subject: string | null;
+  date: string;
+  bucket: string | null;
+}
+
+export interface SenderUnsubscribeStatus {
+  attempted: boolean;
+  at: string | null;
+  method: string | null;
+  result: string | null;
+  detail: string | null;
+}
+
+export interface SenderAuthSummary {
+  dkimDomains: string[];
+  sampleSize: number;
+  dkimPassRate: number | null;
+  spfPassRate: number | null;
+  dmarcPassRate: number | null;
+}
+
+export interface SenderProfile {
+  address: string;
+  messageCount: number;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  buckets: { bucket: string; count: number }[];
+  recentMessages: SenderProfileMessage[];
+  pin: string | null;
+  screen: 'allow' | 'block' | null;
+  unsubscribe: SenderUnsubscribeStatus;
+  auth: SenderAuthSummary;
+  wroteTo: string[];
+}
+
+export interface UnsubscribeResult {
+  ok: boolean;
+  detail: string;
+  offered: boolean;
+  mailto: string | null;
+}
+
+/** Where the reading pane's From line links, and where Feed's per-item link goes too. */
+export const senderProfilePath = (address: string): string => `/senders/${encodeURIComponent(address)}`;
+
 /** Where a message's HTML is rendered: a capability URL on the usercontent origin, for a sandboxed frame. */
 export interface RenderTicket {
   url: string;
@@ -414,6 +583,81 @@ export interface RenderTicket {
   images: boolean;
   /** Remote images in the message; above 0 with images false means they are blocked. */
   remoteImages: number;
+  /** Known tracking pixels removed before rendering (PST-REQ-116); never loaded, even with images on. */
+  trackersBlocked: number;
+  /** Links whose tracking parameters were stripped or whose click-redirect wrapper was unwrapped. */
+  linksCleaned: number;
+}
+
+/** Matches apps/api/src/mail/inspect.ts's MessageInspect (PST-T-6.1, PST-REQ-114). */
+export interface InspectAlignment {
+  aligned: boolean;
+  mode: 'relaxed' | 'strict' | null;
+}
+
+export interface InspectAuth {
+  source: 'verdict' | 'inbound' | 'none';
+  spf: { result: string; domain: string | null; scope: string | null; mechanism: string | null; alignment: InspectAlignment | null; reasons: string[] } | null;
+  dkim: { result: string; domain: string | null; selector: string | null; algorithm: string | null; testing: boolean; alignment: InspectAlignment | null; reasons: string[] }[];
+  dmarc: { result: string; disposition: string | null; fromDomain: string | null; policy: string | null; policySource: string | null; recordDomain: string | null; reasons: string[] } | null;
+  arc: { result: string; instances: number | null; sealerDomains: string[]; reasons: string[] } | null;
+  arcOverride: string[] | null;
+  dnsbl: { listed: boolean; zone: string | null; reason: string | null } | null;
+  authenticationResults: string[];
+}
+
+export interface ReceivedHop {
+  raw: string;
+  from: string | null;
+  fromRdns: string | null;
+  fromIp: string | null;
+  by: string | null;
+  via: string | null;
+  with: string | null;
+  id: string | null;
+  for: string | null;
+  tls: { encrypted: boolean; version: string | null; cipher: string | null };
+  timestamp: string | null;
+  delaySeconds: number | null;
+  ours: boolean;
+}
+
+export interface InboundReceipt {
+  sessionId: string | null;
+  clientIp: string | null;
+  proxied: boolean;
+  helo: string | null;
+  rdns: string | null;
+  tls: string | null;
+  sessionStartedAt: string | null;
+  receivedAt: string;
+  envelopeFrom: string;
+  disposition: string;
+  dispositionReason: string | null;
+  smtpReply: string | null;
+  decision: { action: string; rule: string | null; reasons: string[] } | null;
+}
+
+export interface InspectScore {
+  name: string;
+  value: number;
+}
+
+export interface MessageInspect {
+  id: string;
+  auth: InspectAuth;
+  received: ReceivedHop[];
+  receipt: InboundReceipt | null;
+  bucket: { bucket: string | null; reasons: string[]; scores: InspectScore[] } | null;
+  spam: {
+    signals: InspectScore[];
+    bayes: { probabilities: { bucket: string; probability: number }[]; trainingDocs: number | null; topTokens: string[]; reason: string | null } | null;
+    attachments: { partId: string; filename: string | null; verdict: string; kind: string | null; reasons: string[] }[];
+  };
+  trackers: { html: boolean; remoteImages: number; trackersBlocked: number; linksCleaned: number };
+  mdn: { requested: boolean; to: string[]; header: string | null; options: string | null; returnPath: string | null; returnPathMatches: boolean | null; sent: boolean };
+  headers: { name: string; value: string }[];
+  raw: { url: string; size: number };
 }
 
 export interface MessagePatch {
@@ -427,6 +671,66 @@ export interface ThreadDetail {
   messageCount: number;
   lastMessageAt: string;
   messages: MessageSummary[];
+}
+
+/** Matches apps/api/src/delivery/index.ts's attemptJson (PST-T-6.4). */
+export interface DeliveryAttemptView {
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  transport: string;
+  mxHost: string | null;
+  mxIp: string | null;
+  localIp: string | null;
+  tls: { version: string | null; cipher: string | null; peer: string | null };
+  remote: { code: number | null; enhanced: string | null; text: string | null };
+  outcome: string;
+  error: string | null;
+}
+
+/** Matches @postroom/db's RecipientState enum. */
+export type DeliveryState = 'queued' | 'attempting' | 'deferred' | 'delivered' | 'bounced' | 'cancelled';
+
+/** Matches apps/api/src/delivery/index.ts's recipientJson. */
+export interface DeliveryRecipient {
+  id: string;
+  address: string;
+  state: DeliveryState;
+  attempts: number;
+  nextAttemptAt: string;
+  lastCode: number | null;
+  lastEnhanced: string | null;
+  lastText: string | null;
+  deliveredAt: string | null;
+  dsn: { delaySentAt: string | null; failureSentAt: string | null };
+  transport: string;
+  attemptsLog: DeliveryAttemptView[];
+}
+
+/** Matches apps/api/src/delivery/index.ts's messageJson. */
+export interface DeliveryMessage {
+  id: string;
+  subject: string | null;
+  headerFrom: string;
+  messageId: string | null;
+  createdAt: string;
+  size: number;
+}
+
+export interface DeliveryDetail {
+  message: DeliveryMessage;
+  recipients: DeliveryRecipient[];
+}
+
+/** Matches GET /api/messages/outbound's row shape (apps/api/src/delivery/index.ts). */
+export interface OutboundListItem {
+  id: string;
+  subject: string | null;
+  headerFrom: string;
+  messageId: string | null;
+  createdAt: string;
+  size: number;
+  recipients: { id: string; address: string; state: DeliveryState; lastText: string | null }[];
 }
 
 export interface MailboxChangedEvent {
@@ -463,6 +767,17 @@ export interface AppPassword {
   frozenAt: string | null;
 }
 
+/** A masked alias (PST-REQ-112): a random address handed to one site, killable without warning it. */
+export interface Alias {
+  id: string;
+  address: string;
+  site: string;
+  createdAt: string;
+  killedAt: string | null;
+  lastUsedAt: string | null;
+  receivedCount: number;
+}
+
 /** One of the caller's own live sessions, as GET /api/auth/sessions lists it (PST-REQ-091). */
 export interface AccountSession {
   id: string;
@@ -485,13 +800,74 @@ export interface AdminSession {
   current: boolean;
 }
 
+export type HealthTileState = 'ok' | 'warn' | 'down' | 'unknown';
+
+export interface HealthTile {
+  id: string;
+  label: string;
+  state: HealthTileState;
+  detail: string;
+  since: string | null;
+}
+
+/** Matches apps/api/src/admin-jobs/index.ts's STAGES. */
+export const INBOUND_STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify'] as const;
+export type InboundStage = (typeof INBOUND_STAGES)[number];
+
+/** Matches apps/api/src/admin-queue/index.ts's ListQuery. */
+export type QueueStateFilter = 'pending' | 'deferred' | 'held' | 'failed';
+
+export type QueueScope = { kind: 'recipient' | 'message'; id: string } | { kind: 'domain'; domain: string };
+
+export function queuePath(scope: QueueScope): string {
+  if (scope.kind === 'domain') return `/api/admin/queue/domains/${encodeURIComponent(scope.domain)}`;
+  return `/api/admin/queue/${scope.kind === 'recipient' ? 'recipients' : 'messages'}/${encodeURIComponent(scope.id)}`;
+}
+
+export interface AdminQueueRecipient {
+  id: string;
+  outboundMessageId: string;
+  address: string;
+  domain: string;
+  state: string;
+  transport: string;
+  attempts: number;
+  nextAttemptAt: string;
+  lastCode: number | null;
+  lastEnhanced: string | null;
+  lastText: string | null;
+  updatedAt: string;
+  lastAttempt: { startedAt: string; outcome: string; error: string | null } | null;
+}
+
+export interface AdminQueueMessage {
+  id: string;
+  subject: string | null;
+  headerFrom: string;
+  envelopeFrom: string;
+  createdAt: string;
+  recipients: AdminQueueRecipient[];
+}
+
+export interface AdminJob {
+  id: string;
+  queue: string;
+  status: string;
+  payload: unknown;
+  attempts: number;
+  maxAttempts: number;
+  runAt: string;
+  lastError: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
 /** Where a path must go for this auth state, or null to render it. Pure, so it is unit-tested. */
 export function redirectFor(state: AuthState, pathname: string): string | null {
   if (state.setupRequired) return pathname === '/setup' ? null : '/setup';
   if (pathname === '/setup') return '/signin';
   if (!state.signedIn) return pathname === '/signin' ? null : '/signin';
   if (pathname === '/signin') return '/';
-  if (pathname.startsWith('/admin') && state.account?.isAdmin !== true) return '/';
   return null;
 }
 
@@ -538,7 +914,7 @@ export function describeError(error: unknown): string {
     case 'login_taken':
       return 'That login is already an address here. Choose another.';
     case 'invalid_request':
-      return 'Check the highlighted fields.';
+      return 'The server refused part of the form. Check each field and try again.';
     case 'auth_not_configured':
       return 'Sign-in is not configured on this server yet.';
     case 'weak_password':
@@ -549,5 +925,533 @@ export function describeError(error: unknown): string {
       return 'That needs a fresh authentication code.';
     default:
       return 'Something went wrong. Try again.';
+  }
+}
+
+// --- IMAP import (PST-T-10.2, PST-REQ-152) ---------------------------------------------------
+
+export type ImportStatusName = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface ImportFolderStatus {
+  name: string;
+  target: string;
+  total: number;
+  imported: number;
+  duplicates: number;
+  done: boolean;
+}
+
+export interface ImportStatus {
+  id: string;
+  status: ImportStatusName;
+  host: string;
+  port: number;
+  username: string;
+  pinned: boolean;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string | null;
+  cancelRequested: boolean;
+  folders: ImportFolderStatus[];
+  totals: { folders: number; foldersDone: number; total: number; imported: number; duplicates: number };
+}
+
+export interface StartImportInput {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  trustFingerprint?: string;
+  folders?: string[];
+}
+
+export const importApi = {
+  /** The latest import of the caller's, or null. */
+  latest: () => call<{ import: ImportStatus | null }>('GET', '/api/import'),
+  get: (id: string) => call<ImportStatus>('GET', `/api/import/${encodeURIComponent(id)}`),
+  /** Needs a fresh step-up: 403 step_up_required otherwise. 409 import_active while another runs. */
+  start: (input: StartImportInput) => call<ImportStatus>('POST', '/api/import', input),
+  cancel: (id: string) => call<ImportStatus>('POST', `/api/import/${encodeURIComponent(id)}/cancel`),
+};
+
+// --- Mobileconfig (PST-T-8.6) ------------------------------------------------------------------
+
+export interface MobileconfigResult {
+  blob: Blob;
+  filename: string;
+  /** Whether MOBILECONFIG_SIGNING_CERT_FILE was configured on the server: iOS shows Verified vs Unverified. */
+  signed: boolean;
+}
+
+const FILENAME_RE = /filename="?([^";]+)"?/;
+
+/** Needs a fresh step-up: throws ApiError('step_up_required') otherwise. The body is not JSON, so
+ *  this bypasses `call()` to keep it as a Blob rather than trying (and failing) to parse it. */
+export async function generateMobileconfig(): Promise<MobileconfigResult> {
+  const res = await fetch('/api/mobileconfig', {
+    method: 'POST',
+    headers: { 'x-postroom-csrf': '1' },
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let parsed: unknown;
+    try {
+      parsed = text === '' ? null : JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+    const code =
+      typeof parsed === 'object' && parsed !== null && typeof (parsed as { error?: unknown }).error === 'string' ? (parsed as { error: string }).error : `http_${String(res.status)}`;
+    throw new ApiError(res.status, code, parsed);
+  }
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const filename = FILENAME_RE.exec(disposition)?.[1] ?? 'postroom.mobileconfig';
+  const signed = res.headers.get('x-postroom-mobileconfig-signed') === '1';
+  const blob = await res.blob();
+  return { blob, filename, signed };
+}
+
+// --- Sieve rules (PST-T-9.5, PST-REQ-150) ------------------------------------------------------
+
+export interface SieveScriptSummary {
+  name: string;
+  active: boolean;
+  size: number;
+  updatedAt: string;
+}
+
+export interface SieveScript extends SieveScriptSummary {
+  content: string;
+}
+
+/** A compile error: 1-based line and column, and the message (which starts "line L, column C: "). */
+export interface SieveCompileError {
+  line: number;
+  column: number;
+  message: string;
+}
+
+export interface SieveScriptList {
+  scripts: SieveScriptSummary[];
+  extensions: string[];
+  maxScripts: number;
+  maxScriptBytes: number;
+}
+
+const scriptPath = (name: string): string => `/api/sieve/scripts/${encodeURIComponent(name)}`;
+
+export const sieveApi = {
+  list: () => call<SieveScriptList>('GET', '/api/sieve/scripts'),
+  get: (name: string) => call<SieveScript>('GET', scriptPath(name)),
+  /** 422 invalid_script (body.compileError has the line) when it does not compile. */
+  put: (name: string, content: string) => call<SieveScriptSummary>('PUT', scriptPath(name), { content }),
+  /** 409 script_active for the active script. */
+  remove: (name: string) => call<{ ok: true }>('DELETE', scriptPath(name)),
+  activate: (name: string) => call<{ ok: true }>('POST', `${scriptPath(name)}/activate`),
+  deactivate: () => call<{ ok: true }>('POST', '/api/sieve/deactivate'),
+  check: (content: string) => call<{ valid: boolean; error: SieveCompileError | null }>('POST', '/api/sieve/check', { content }),
+};
+
+/** The compile error in a refused save, if that is why it was refused. */
+export function compileErrorOf(error: unknown): SieveCompileError | null {
+  if (!(error instanceof ApiError) || error.code !== 'invalid_script') return null;
+  const body = error.body as { compileError?: SieveCompileError } | null;
+  return body?.compileError ?? null;
+}
+
+// --- Calendar and contacts (PST-T-8.5) --------------------------------------------------------
+// Writes go through the same DAV store an iPhone syncs with. Edits carry the etag last read as
+// If-Match: a 412 means the phone changed it since, and the screen reloads rather than overwrite.
+
+export type Weekday = 'MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU';
+export type Frequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+
+export interface Calendar {
+  id: string;
+  displayName: string;
+  color: string | null;
+  components: string[];
+  canHoldEvents: boolean;
+}
+
+export interface RecurrenceInput {
+  freq: Frequency;
+  interval: number;
+  byDay: Weekday[];
+  count: number | null;
+  until: string | null;
+}
+
+export interface EventInput {
+  summary: string;
+  description: string;
+  location: string;
+  allDay: boolean;
+  start: string;
+  end: string;
+  timezone: string;
+  /** Omitted on an update: keep the series' rule as stored. */
+  recurrence?: RecurrenceInput | null;
+}
+
+export interface EventInstance {
+  calendarId: string;
+  name: string;
+  etag: string;
+  uid: string;
+  recurrenceId: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  startDay: string | null;
+  endDay: string | null;
+  summary: string;
+  location: string;
+  recurring: boolean;
+  override: boolean;
+}
+
+export interface EventDetail {
+  calendarId: string;
+  name: string;
+  etag: string;
+  uid: string;
+  summary: string;
+  description: string;
+  location: string;
+  allDay: boolean;
+  start: string;
+  end: string;
+  timezone: string | null;
+  recurrence: { freq: string; interval: number; byDay: string[]; count: number | null; until: string | null; rule: string; editable: boolean } | null;
+  overrides: string[];
+  exdates: string[];
+}
+
+export interface EventSaved {
+  calendarId: string;
+  name: string;
+  uid: string;
+  etag: string;
+}
+
+const eventPath = (calendarId: string, name: string): string =>
+  `/api/calendar/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(name)}`;
+const ifMatch = (etag: string): Record<string, string> => ({ 'if-match': `"${etag}"` });
+
+export const calendarApi = {
+  calendars: () => call<{ calendars: Calendar[] }>('GET', '/api/calendar/calendars'),
+  events: (range: { start: string; end: string; tz: string; calendarId?: string }) =>
+    call<{ instances: EventInstance[]; truncated: boolean }>('GET', `/api/calendar/events?${new URLSearchParams(range).toString()}`),
+  event: (calendarId: string, name: string) => call<EventDetail>('GET', eventPath(calendarId, name)),
+  create: (calendarId: string, input: EventInput) => call<EventSaved>('POST', `/api/calendar/calendars/${encodeURIComponent(calendarId)}/events`, input),
+  update: (calendarId: string, name: string, etag: string, input: EventInput) => call<EventSaved>('PUT', eventPath(calendarId, name), input, ifMatch(etag)),
+  remove: (calendarId: string, name: string, etag: string) => call<null>('DELETE', eventPath(calendarId, name), undefined, ifMatch(etag)),
+  updateInstance: (calendarId: string, name: string, recurrenceId: string, etag: string, input: Omit<EventInput, 'recurrence'>) =>
+    call<EventSaved>('PUT', `${eventPath(calendarId, name)}/instances/${encodeURIComponent(recurrenceId)}`, input, ifMatch(etag)),
+  removeInstance: (calendarId: string, name: string, recurrenceId: string, etag: string) =>
+    call<EventSaved>('DELETE', `${eventPath(calendarId, name)}/instances/${encodeURIComponent(recurrenceId)}`, undefined, ifMatch(etag)),
+};
+
+export interface AddressBook {
+  id: string;
+  displayName: string;
+  slug: string;
+  count: number;
+}
+
+export interface ContactSummary {
+  addressBookId: string;
+  name: string;
+  etag: string;
+  uid: string;
+  displayName: string;
+  emails: string[];
+  org: string;
+  hasPhoto: boolean;
+}
+
+export interface ContactInput {
+  fn: string;
+  given: string;
+  family: string;
+  emails: { address: string; type: string | null }[];
+  tels: { value: string; type: string | null }[];
+  org: string;
+  note: string;
+}
+
+export interface ContactDetail extends ContactInput {
+  addressBookId: string;
+  name: string;
+  etag: string;
+  uid: string;
+  displayName: string;
+  hasPhoto: boolean;
+}
+
+export interface ContactSaved {
+  addressBookId: string;
+  name: string;
+  uid: string;
+  etag: string;
+}
+
+const cardPath = (addressBookId: string, name: string): string =>
+  `/api/contacts/address-books/${encodeURIComponent(addressBookId)}/cards/${encodeURIComponent(name)}`;
+
+export const contactsApi = {
+  addressBooks: () => call<{ addressBooks: AddressBook[] }>('GET', '/api/contacts/address-books'),
+  list: (opts: { q?: string; addressBookId?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.q !== undefined && opts.q.trim() !== '') q.set('q', opts.q.trim());
+    if (opts.addressBookId !== undefined) q.set('addressBookId', opts.addressBookId);
+    const qs = q.toString();
+    return call<{ contacts: ContactSummary[]; truncated: boolean }>('GET', `/api/contacts${qs === '' ? '' : `?${qs}`}`);
+  },
+  lookup: (address: string) =>
+    call<{ contact: { addressBookId: string; name: string; displayName: string } | null }>('GET', `/api/contacts/lookup?${new URLSearchParams({ address }).toString()}`),
+  get: (addressBookId: string, name: string) => call<ContactDetail>('GET', cardPath(addressBookId, name)),
+  create: (addressBookId: string, input: ContactInput) =>
+    call<ContactSaved>('POST', `/api/contacts/address-books/${encodeURIComponent(addressBookId)}/cards`, input),
+  update: (addressBookId: string, name: string, etag: string, input: ContactInput) => call<ContactSaved>('PUT', cardPath(addressBookId, name), input, ifMatch(etag)),
+  remove: (addressBookId: string, name: string, etag: string) => call<null>('DELETE', cardPath(addressBookId, name), undefined, ifMatch(etag)),
+};
+
+/** The contacts screen's URL for one card (the reading pane's sender link). */
+export const contactPath = (addressBookId: string, name: string): string =>
+  `/contacts/${encodeURIComponent(addressBookId)}/${encodeURIComponent(name)}`;
+
+// ─── Deliverability (PST-T-7.1, PST-REQ-122) ─────────────────────────────────────────────────────
+
+export interface DeliverabilitySource {
+  sourceIp: string;
+  reverseDns: string | null;
+  messages: number;
+  pass: number;
+  fail: number;
+  passRate: number;
+  dkimPass: number;
+  spfPass: number;
+  orgs: string[];
+  headerFrom: string[];
+}
+
+export interface Deliverability {
+  range: { from: string; to: string; days: number };
+  mailboxes: { dmarc: string | null };
+  dmarc: {
+    totals: { reports: number; messages: number; pass: number; fail: number; dkimPass: number; spfPass: number; dispositions: { none: number; quarantine: number; reject: number } };
+    byDay: { day: string; pass: number; fail: number }[];
+    bySource: DeliverabilitySource[];
+    byOrg: { org: string; reports: number; messages: number; pass: number; fail: number }[];
+    reports: { id: string; org: string; reportId: string; domain: string; begin: string; end: string; messages: number }[];
+  };
+  tlsrpt: {
+    totals: { reports: number; successful: number; failed: number };
+    byPolicy: { policyDomain: string; policyType: string; successful: number; failed: number }[];
+    byFailureType: { resultType: string; sessions: number }[];
+    reports: { id: string; org: string; reportId: string; begin: string; end: string; successful: number; failed: number }[];
+  };
+}
+
+// ─── DMARC progression proposals (PST-T-7.2, PST-REQ-123) ────────────────────────────────────────
+
+export interface ProposalEvidenceDay {
+  /** YYYY-MM-DD, UTC. */
+  day: string;
+  reports: number;
+  messages: number;
+  sources: string[];
+  orgs: string[];
+}
+
+export interface DmarcProposal {
+  domain: string;
+  currentStage: 'none' | 'quarantine' | 'reject';
+  currentPct: number;
+  proposedStage: 'none' | 'quarantine' | 'reject';
+  proposedPct: number;
+  /** The exact TXT value to publish at `_dmarc.<domain>`. Postroom never publishes it itself. */
+  txtValue: string;
+  evidence: { from: string; to: string; days: ProposalEvidenceDay[] };
+}
+
+export interface ProposalResult {
+  domain: string;
+  eligible: boolean;
+  proposal: DmarcProposal | null;
+  /** Why there is no proposal. Null when `eligible`. */
+  reason: string | null;
+}
+
+/** The sentence describing what a proposal moves, for AdminDeliverability's ProposalCard — kept
+ * here (rather than in the .tsx) so it is unit-testable without pulling in `@d3cloud/ui`. */
+export function proposalSummary(p: Pick<DmarcProposal, 'currentStage' | 'currentPct' | 'proposedStage' | 'proposedPct'>): string {
+  return `14 consecutive clean UTC days: propose moving from p=${p.currentStage}; pct=${String(p.currentPct)} to p=${p.proposedStage}; pct=${String(p.proposedPct)}.`;
+}
+
+/** One evidence day's source/org lists, joined the way the table's columns render them. */
+export function evidenceRowText(day: ProposalEvidenceDay): { sources: string; orgs: string } {
+  return { sources: day.sources.join(', '), orgs: day.orgs.join(', ') };
+}
+
+// ─── iMIP invitations (PST-T-8.4, PST-REQ-134) ────────────────────────────────────────────────────
+
+export type ImipMethod = 'PUBLISH' | 'REQUEST' | 'REPLY' | 'ADD' | 'CANCEL' | 'REFRESH' | 'COUNTER' | 'DECLINECOUNTER';
+export type Partstat = 'ACCEPTED' | 'TENTATIVE' | 'DECLINED';
+
+export interface InviteOrganizer {
+  email: string | null;
+  cn: string | null;
+}
+
+export interface InviteAttendee {
+  email: string;
+  cn: string | null;
+  role: string | null;
+  rsvp: boolean;
+  partstat: string;
+}
+
+export interface InviteView {
+  method: ImipMethod;
+  uid: string;
+  sequence: number;
+  summary: string;
+  location: string;
+  allDay: boolean;
+  start: string | null;
+  end: string | null;
+  organizer: InviteOrganizer;
+  attendees: InviteAttendee[];
+  recurrenceId: string | null;
+  you: { email: string; partstat: string } | null;
+  cancelled: boolean;
+  inCalendar: boolean;
+}
+
+export interface InviteRespondResult {
+  ok: true;
+  partstat: Partstat;
+  calendarName: string;
+}
+
+export interface InviteRemoveResult {
+  ok: true;
+  removed: boolean;
+}
+
+/** Matches apps/api/src/mail/inspect.ts's InspectCrypto (PST-T-12.1, PST-REQ-160). */
+export interface InspectCryptoSigner {
+  keyId: string | null;
+  fingerprint: string | null;
+  algorithm: string | null;
+  hash: string | null;
+  userIds: string[];
+  addresses: string[];
+  fromMatches: boolean | null;
+  createdAt: string | null;
+  keySource: 'account' | 'message' | 'none';
+  knownKeyId: string | null;
+  owner: 'own' | 'contact' | null;
+}
+
+export interface InspectCertificate {
+  subject: string;
+  issuer: string;
+  fingerprint: string;
+  serial: string;
+  notBefore: string;
+  notAfter: string;
+  rfc822Names: string[];
+  selfSigned: boolean;
+  signatureVerified: boolean;
+}
+
+export interface InspectCrypto {
+  signature: {
+    /** 'verified-known-key' | 'valid-signature-unknown-key' | 'bad-signature' | 'not-signed' | 'unsupported:<reason>' */
+    status: string;
+    format: 'pgp-mime' | 'pgp-inline' | 'pgp-encrypted' | 'smime' | 'smime-opaque' | null;
+    reasons: string[];
+    signer: InspectCryptoSigner | null;
+    certificates: InspectCertificate[];
+    chain: { verified: boolean; endsAtSelfSigned: boolean; reason: string } | null;
+  };
+  encryption: {
+    /** 'decrypted' | 'no-key' | 'not-encrypted' | 'failed:<reason>' */
+    status: string;
+    format: 'pgp-mime' | 'pgp-inline' | 'smime' | null;
+    reasons: string[];
+    recipients: { id: string; algorithm: string | null; matchedKeyId: string | null }[];
+    cipher: string | null;
+    integrity: string | null;
+    openedWithKeyId: string | null;
+    plaintextBytes: number | null;
+  };
+}
+
+// Declaration merge (PST-T-12.1): the Inspect payload's signature and encryption section. Optional
+// so a drawer talking to an older server still renders.
+export interface MessageInspect {
+  crypto?: InspectCrypto;
+}
+
+// ─── SMTP session transcripts and live view (PST-T-6.3, PST-REQ-117, PST-REQ-118) ─────────────────
+
+export interface SmtpTranscriptSummary {
+  id: string;
+  daemon: string;
+  sessionId: string;
+  clientIp: string;
+  startedAt: string;
+  endedAt: string | null;
+  lineCount: number;
+  rawBytes: number;
+  compressedBytes: number;
+  createdAt: string;
+}
+
+export interface SmtpTranscriptLine {
+  at: string;
+  dir: 'C' | 'S';
+  line: string;
+}
+
+export interface SmtpTranscriptDetail extends SmtpTranscriptSummary {
+  lines: SmtpTranscriptLine[];
+}
+
+export interface SmtpLiveLine {
+  daemon: string;
+  sessionId: string;
+  dir: 'C' | 'S';
+  line: string;
+  at: string;
+}
+
+/** Parses one `EventSource`/SSE block (`event:`/`data:` lines up to the blank line) into a typed
+ * live line, or null for anything else (comments, unknown events) — kept in plain .ts so it is
+ * testable without pulling in `@d3cloud/ui` (apps/web unit tests run in plain Node). */
+export function parseSmtpLiveBlock(block: string): SmtpLiveLine | null {
+  let event = 'message';
+  const data: string[] = [];
+  for (const line of block.split('\n')) {
+    if (line.startsWith('event: ')) event = line.slice(7);
+    else if (line.startsWith('data: ')) data.push(line.slice(6));
+  }
+  if (event !== 'line' || data.length === 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(data.join('\n'));
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const v = parsed as Record<string, unknown>;
+    if (typeof v['daemon'] !== 'string' || typeof v['sessionId'] !== 'string' || typeof v['line'] !== 'string' || typeof v['at'] !== 'string') return null;
+    if (v['dir'] !== 'C' && v['dir'] !== 'S') return null;
+    return { daemon: v['daemon'], sessionId: v['sessionId'], dir: v['dir'], line: v['line'], at: v['at'] };
+  } catch {
+    return null;
   }
 }

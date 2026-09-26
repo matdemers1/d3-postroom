@@ -1,0 +1,10 @@
+From: Greenleaf Market <hello@greenleaf.example.org>
+To: sam@d3cloud.io
+Subject: Your Greenleaf order receipt
+Date: Thu, 17 Sep 2026 17:46:56 +0000
+Message-ID: <golden-0257.20260926@greenleaf.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=greenleaf.example.org; dkim=pass header.d=greenleaf.example.org; dmarc=pass header.from=greenleaf.example.org
+
+Your Greenleaf order receipt
+
+Details: https://greenleaf.example.org/m/2007

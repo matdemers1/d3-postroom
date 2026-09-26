@@ -1,0 +1,10 @@
+From: Lumen Utilities <myaccount@lumen.example.net>
+To: dana@d3cloud.io
+Subject: Your statement is ready
+Date: Mon, 14 Sep 2026 19:31:36 +0000
+Message-ID: <golden-0210.20260926@lumen.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=lumen.example.net; dkim=pass header.d=lumen.example.net; dmarc=pass header.from=lumen.example.net
+
+Your statement is ready
+
+Details: https://lumen.example.net/m/2005

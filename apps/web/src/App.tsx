@@ -2,12 +2,26 @@ import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Alert, AuthLayout, Spinner, ThemeProvider } from '@d3cloud/ui';
 import { api, redirectFor, type AuthState } from './api';
+import { Calendar } from './calendar/Calendar';
+import { Contacts } from './contacts/Contacts';
+import { Keys } from './keys/Keys';
 import { MailProvider } from './mail/MailContext';
+import { TemplatesScreen } from './compose/TemplatesScreen';
+import { AdminDeliverability } from './screens/AdminDeliverability';
+import { AdminHealth } from './screens/AdminHealth';
+import { AdminJobs } from './screens/AdminJobs';
+import { AdminQueue } from './screens/AdminQueue';
 import { AdminDns } from './screens/AdminDns';
 import { AdminSessions } from './screens/AdminSessions';
+import { AdminSmtpViewer } from './admin/smtp-viewer/AdminSmtpViewer';
 import { AppPasswords } from './screens/AppPasswords';
+import { Aliases } from './screens/Aliases';
 import { ChangePassword } from './screens/ChangePassword';
+import { DeviceSetup } from './screens/DeviceSetup';
+import { Import } from './screens/Import';
 import { Mail } from './screens/Mail';
+import { Rules } from './screens/Rules';
+import { SenderProfile } from './screens/SenderProfile';
 import { Sessions } from './screens/Sessions';
 import { Setup } from './screens/Setup';
 import { SetupWizard } from './screens/SetupWizard';
@@ -70,10 +84,28 @@ function Gate() {
           <Route index element={null} />
           <Route path="/mail/*" element={null} />
         </Route>
+        <Route path="/calendar" element={<Calendar />} />
+        <Route path="/contacts" element={<Contacts />} />
+        <Route path="/contacts/new" element={<Contacts />} />
+        <Route path="/contacts/:addressBookId/:name" element={<Contacts />} />
+        {/* PST-T-5.6: the sender profile, linked from the reading pane's From line. */}
+        <Route path="/senders/:address" element={<SenderProfile />} />
         <Route path="/app-passwords" element={<AppPasswords />} />
+        <Route path="/account/aliases" element={<Aliases />} />
         <Route path="/account/password" element={<ChangePassword />} />
         <Route path="/account/sessions" element={<Sessions />} />
+        <Route path="/account/import" element={<Import />} />
+        <Route path="/account/device-setup" element={<DeviceSetup />} />
+        <Route path="/account/rules" element={<Rules />} />
+        <Route path="/account/templates" element={<TemplatesScreen />} />
+        {/* PST-T-12.2: OpenPGP keys and S/MIME certificates. */}
+        <Route path="/account/keys" element={<Keys />} />
         <Route path="/admin/sessions" element={<AdminSessions />} />
+        <Route path="/admin/health" element={<AdminHealth />} />
+        <Route path="/admin/jobs" element={<AdminJobs />} />
+        <Route path="/admin/queue" element={<AdminQueue />} />
+        <Route path="/admin/deliverability" element={<AdminDeliverability />} />
+        <Route path="/admin/smtp" element={<AdminSmtpViewer />} />
         <Route path="/admin/setup" element={<SetupWizard />} />
         <Route path="/admin/dns" element={<AdminDns />} />
         <Route path="*" element={<Navigate to="/" replace />} />

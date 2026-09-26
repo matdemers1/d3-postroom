@@ -25,6 +25,22 @@ export interface MessageListProps {
 
 export const rowId = (id: string): string => `pr-msg-${id}`;
 
+/**
+ * The Trash clock (PST-T-7.7, PST-REQ-129): the API sends expiresAt on a message in Trash — when the
+ * retention sweep will expunge it. Null (or absent) outside Trash, or when Trash keeps mail forever.
+ */
+type WithClock = MessageSummary & { expiresAt?: string | null };
+
+/** "Deletes in N days" for a Trash message, "Deletes today" on its last day; null when no clock. */
+export function deletesIn(expiresAt: string | null | undefined, now: Date): string | null {
+  if (expiresAt === null || expiresAt === undefined) return null;
+  const at = Date.parse(expiresAt);
+  if (Number.isNaN(at)) return null;
+  const days = Math.ceil((at - now.getTime()) / 86_400_000);
+  if (days <= 0) return 'Deletes today';
+  return days === 1 ? 'Deletes in 1 day' : `Deletes in ${days} days`;
+}
+
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
   { messages, cursor, openId, label, onOpen, onNearEnd },
   ref,
@@ -82,6 +98,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         const index = start + i;
         const unread = isUnread(m);
         const starred = isStarred(m);
+        const expiry = deletesIn((m as WithClock).expiresAt, now);
         return (
           <div
             key={m.id}
@@ -106,6 +123,12 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             </span>
             <span className="pr-row__subject">{m.subject === null || m.subject === '' ? '(no subject)' : m.subject}</span>
             <span className="pr-row__marks">
+              {expiry === null ? null : (
+                <span className="pr-row__expires" title={`Permanently deleted from Trash on ${new Date((m as WithClock).expiresAt ?? '').toLocaleDateString()}`}>
+                  <span className="pr-vh">, </span>
+                  {expiry}
+                </span>
+              )}
               {starred ? (
                 <span className="pr-row__star" title="Starred">
                   <StarIcon filled />

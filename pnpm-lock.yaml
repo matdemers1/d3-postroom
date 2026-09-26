@@ -56,6 +56,9 @@ importers:
       '@postroom/blobstore':
         specifier: workspace:*
         version: link:../../packages/blobstore
+      '@postroom/classifier':
+        specifier: workspace:*
+        version: link:../../packages/classifier
       '@postroom/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -68,6 +71,9 @@ importers:
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/dav-store':
+        specifier: workspace:*
+        version: link:../../packages/dav-store
       '@postroom/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -80,9 +86,24 @@ importers:
       '@postroom/dsn':
         specifier: workspace:*
         version: link:../../packages/dsn
+      '@postroom/ical':
+        specifier: workspace:*
+        version: link:../../packages/ical
+      '@postroom/imip':
+        specifier: workspace:*
+        version: link:../../packages/imip
+      '@postroom/managesieve':
+        specifier: workspace:*
+        version: link:../managesieve
       '@postroom/mime':
         specifier: workspace:*
         version: link:../../packages/mime
+      '@postroom/pgp':
+        specifier: workspace:*
+        version: link:../../packages/pgp
+      '@postroom/phish':
+        specifier: workspace:*
+        version: link:../../packages/phish
       '@postroom/queue':
         specifier: workspace:*
         version: link:../../packages/queue
@@ -95,6 +116,12 @@ importers:
       '@postroom/threading':
         specifier: workspace:*
         version: link:../../packages/threading
+      '@postroom/trackers':
+        specifier: workspace:*
+        version: link:../../packages/trackers
+      '@postroom/vcard':
+        specifier: workspace:*
+        version: link:../../packages/vcard
       argon2:
         specifier: ^0.45.1
         version: 0.45.1
@@ -132,9 +159,36 @@ importers:
 
   apps/dav:
     dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@postroom/auth-throttle':
+        specifier: workspace:*
+        version: link:../../packages/auth-throttle
+      '@postroom/credentials':
+        specifier: workspace:*
+        version: link:../../packages/credentials
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/dav-proto':
+        specifier: workspace:*
+        version: link:../../packages/dav-proto
+      '@postroom/dav-store':
+        specifier: workspace:*
+        version: link:../../packages/dav-store
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/ical':
+        specifier: workspace:*
+        version: link:../../packages/ical
+      '@postroom/vcard':
+        specifier: workspace:*
+        version: link:../../packages/vcard
     devDependencies:
       tsx:
         specifier: ^4.23.13
@@ -192,12 +246,18 @@ importers:
       '@postroom/audit':
         specifier: workspace:*
         version: link:../../packages/audit
+      '@postroom/auth-checks':
+        specifier: workspace:*
+        version: link:../../packages/auth-checks
       '@postroom/auth-throttle':
         specifier: workspace:*
         version: link:../../packages/auth-throttle
       '@postroom/blobstore':
         specifier: workspace:*
         version: link:../../packages/blobstore
+      '@postroom/classifier':
+        specifier: workspace:*
+        version: link:../../packages/classifier
       '@postroom/credentials':
         specifier: workspace:*
         version: link:../../packages/credentials
@@ -207,6 +267,9 @@ importers:
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/dav-store':
+        specifier: workspace:*
+        version: link:../../packages/dav-store
       '@postroom/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -232,6 +295,34 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
+      tsx:
+        specifier: ^4.23.13
+        version: 4.23.13
+
+  apps/managesieve:
+    dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@postroom/auth-throttle':
+        specifier: workspace:*
+        version: link:../../packages/auth-throttle
+      '@postroom/credentials':
+        specifier: workspace:*
+        version: link:../../packages/credentials
+      '@postroom/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/proxy-protocol':
+        specifier: workspace:*
+        version: link:../../packages/proxy-protocol
+      '@postroom/sieve':
+        specifier: workspace:*
+        version: link:../../packages/sieve
+    devDependencies:
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
@@ -311,12 +402,18 @@ importers:
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/dav-store':
+        specifier: workspace:*
+        version: link:../../packages/dav-store
       '@postroom/db':
         specifier: workspace:*
         version: link:../../packages/db
       '@postroom/delivery':
         specifier: workspace:*
         version: link:../delivery
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../../packages/mime
       '@postroom/smtp-proto':
         specifier: workspace:*
         version: link:../../packages/smtp-proto
@@ -367,12 +464,18 @@ importers:
       '@postroom/blobstore':
         specifier: workspace:*
         version: link:../../packages/blobstore
+      '@postroom/classifier':
+        specifier: workspace:*
+        version: link:../../packages/classifier
       '@postroom/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/dav-store':
+        specifier: workspace:*
+        version: link:../../packages/dav-store
       '@postroom/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -382,15 +485,27 @@ importers:
       '@postroom/dsn':
         specifier: workspace:*
         version: link:../../packages/dsn
+      '@postroom/imap-proto':
+        specifier: workspace:*
+        version: link:../../packages/imap-proto
       '@postroom/mime':
         specifier: workspace:*
         version: link:../../packages/mime
       '@postroom/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@postroom/reports':
+        specifier: workspace:*
+        version: link:../../packages/reports
       '@postroom/search':
         specifier: workspace:*
         version: link:../../packages/search
+      '@postroom/sieve':
+        specifier: workspace:*
+        version: link:../../packages/sieve
+      '@postroom/submission':
+        specifier: workspace:*
+        version: link:../submission
       '@postroom/threading':
         specifier: workspace:*
         version: link:../../packages/threading
@@ -471,6 +586,12 @@ importers:
         specifier: workspace:*
         version: link:../db
 
+  packages/classifier:
+    dependencies:
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
+
   packages/config: {}
 
   packages/credentials:
@@ -496,6 +617,29 @@ importers:
         version: 0.45.1
 
   packages/daemon: {}
+
+  packages/dav-proto: {}
+
+  packages/dav-store:
+    dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@postroom/dav-proto':
+        specifier: workspace:*
+        version: link:../dav-proto
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../db
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
+      '@postroom/vcard':
+        specifier: workspace:*
+        version: link:../vcard
 
   packages/db:
     dependencies:
@@ -533,9 +677,32 @@ importers:
         specifier: workspace:*
         version: link:../db
 
+  packages/ical: {}
+
   packages/imap-proto: {}
 
+  packages/imip:
+    dependencies:
+      '@postroom/ical':
+        specifier: workspace:*
+        version: link:../ical
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
+
   packages/mime: {}
+
+  packages/pgp:
+    dependencies:
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
+
+  packages/phish:
+    dependencies:
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
 
   packages/proxy-protocol: {}
 
@@ -552,11 +719,19 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
 
+  packages/reports: {}
+
   packages/search:
     dependencies:
       '@postroom/db':
         specifier: workspace:*
         version: link:../db
+
+  packages/sieve:
+    dependencies:
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
 
   packages/smtp-proto: {}
 
@@ -565,6 +740,10 @@ importers:
       '@postroom/db':
         specifier: workspace:*
         version: link:../db
+
+  packages/trackers: {}
+
+  packages/vcard: {}
 
   security/adversarial:
     dependencies:

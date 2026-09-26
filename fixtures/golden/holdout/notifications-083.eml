@@ -1,0 +1,11 @@
+From: Watchtower <monitoring@watchtower.example.net>
+To: sam@d3cloud.io
+Subject: A teammate tagged you
+List-Unsubscribe: <https://watchtower.example.net/notifications/unsubscribe>
+Date: Sat, 12 Sep 2026 12:48:16 +0000
+Message-ID: <golden-0175.20260926@watchtower.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=watchtower.example.net; dkim=pass header.d=watchtower.example.net; dmarc=pass header.from=watchtower.example.net
+
+A teammate tagged you
+
+Open Watchtower: https://watchtower.example.net/open

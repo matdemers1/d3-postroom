@@ -14,7 +14,25 @@ const MsgId = z
   .describe('A Message-ID, with or without angle brackets.');
 const AddressField = z.array(Line).max(100).default([]).describe('Address-field entries ("Name <a@b>" or a comma-separated list of them).');
 
+/** Undo send may hold a message at most this long (PST-REQ-140). */
+export const MAX_UNDO_SECONDS = 30;
+/** Scheduled sends at most a year out, snoozes too. */
+export const MAX_AHEAD_MS = 366 * 86_400_000;
+/** Remind-if-no-reply at most 90 days out. */
+export const MAX_REMIND_SECONDS = 90 * 86_400;
+
 export const ComposeMode = z.enum(['new', 'reply', 'replyall', 'forward']);
+
+/** PST-T-9.2: plain text as always, or Markdown rendered to sanitized HTML and sent multipart/alternative. */
+export const ComposeFormat = z.enum(['plain', 'markdown']);
+
+/**
+ * The largest Markdown body `renderMarkdown` will ever be asked to render (PST-T-9.2). Rendering is
+ * now near-linear, but a cap keeps the worst-case work bounded regardless: a `format: 'markdown'`
+ * send whose text exceeds this is refused (413) rather than rendered, so plain text (no size cap
+ * beyond the existing 1,000,000-character field limit) is always the fallback for anything larger.
+ */
+export const MAX_MARKDOWN_CHARS = 256 * 1024;
 
 const Fields = {
   to: AddressField,
@@ -25,12 +43,44 @@ const Fields = {
   inReplyTo: MsgId.nullable().optional(),
   references: z.array(MsgId).max(100).default([]),
   forwardOf: Uuid.nullable().optional().describe('Forward: the id of one of the caller’s messages, attached whole as message/rfc822.'),
+  format: ComposeFormat.default('plain').describe('markdown: text is Markdown, sent multipart/alternative with sanitized HTML (PST-REQ-145).'),
 };
+
+/**
+ * PST-T-12.2 (PST-REQ-161): sign with the sender's own key, and/or encrypt to every recipient's key
+ * and the sender's own. Both, when given, must be the same kind. Headers (Subject included) are not
+ * protected.
+ */
+export const SendCrypto = z
+  .object({
+    sign: z.enum(['pgp', 'smime']).optional().describe('PGP/MIME (RFC 3156) or S/MIME (RFC 8551) multipart/signed, with your own key for the From address.'),
+    encrypt: z.enum(['pgp', 'smime']).optional().describe('PGP/MIME multipart/encrypted or S/MIME enveloped-data, to every recipient and to you. A recipient without a key is 409 recipient_keys_missing, never a plaintext send.'),
+  })
+  .describe('Sign then encrypt when both are set.');
 
 export const SendRequest = z.object({
   from: Line.min(3).max(320).describe('One of the caller’s own addresses.'),
   ...Fields,
   draftId: Uuid.nullable().optional().describe('The draft this send replaces; it is removed from Drafts in the same transaction.'),
+  requestReceipt: z.boolean().default(false).describe('Add Disposition-Notification-To: the sender’s own address (PST-REQ-146).'),
+  // PST-T-9.1: undo send (PST-REQ-140), scheduled send (PST-REQ-141), remind-if-no-reply (PST-REQ-143).
+  undoSeconds: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_UNDO_SECONDS)
+    .optional()
+    .describe('Undo send: hold the message this many seconds before it is queued (0–30; the webmail sends its setting, default 10). Absent or 0 sends at once.'),
+  sendAt: Iso.optional().describe('Scheduled send: hold the message until this time, then queue it (within a minute). Not with undoSeconds.'),
+  remindAfterSeconds: z
+    .number()
+    .int()
+    .min(60)
+    .max(MAX_REMIND_SECONDS)
+    .optional()
+    .describe('Remind if no reply: when nobody else has written in the thread this long after it was sent, it comes back to INBOX.'),
+  // PST-T-12.2 (PST-REQ-161): sign and/or encrypt with the account's keys.
+  crypto: SendCrypto.optional(),
 });
 
 export const DraftRequest = z.object({
@@ -54,6 +104,7 @@ export const SendResponse = z.object({
   sentMessageId: Uuid.describe('The copy filed in Sent.'),
   sentMailboxId: Uuid,
   threadId: Uuid.nullable().describe('The thread the Sent copy joined (null only if threading failed; the sweep retries).'),
+  reminderId: Uuid.nullable().optional().describe('The remind-if-no-reply armed for it, when one was asked for.'),
 });
 
 export const DraftSaved = z.object({
@@ -82,6 +133,41 @@ export const Draft = z.object({
 
 export const DraftList = z.object({ drafts: z.array(Draft) });
 
+// PST-T-9.1: held (undo / scheduled) sends.
+
+export const PendingSendState = z.enum(['held', 'released', 'cancelled', 'failed']);
+
+export const PendingSend = z.object({
+  id: Uuid,
+  kind: z.enum(['undo', 'scheduled']).describe('undo: held for the undo window; scheduled: a chosen send time.'),
+  state: PendingSendState,
+  releaseAt: Iso.describe('When the worker queues it (within a minute of this).'),
+  draftId: Uuid.nullable().describe('The copy in Drafts; it stays there while held, and after an undo.'),
+  subject: z.string(),
+  to: z.string().describe('The To and Cc addresses, space-separated.'),
+  messageId: z.string().describe('The Message-ID header it will be sent with.'),
+  remindAfterSeconds: z.number().int().nullable(),
+  reason: z.string().nullable().describe('Why it was cancelled or failed.'),
+  createdAt: Iso,
+});
+
+export const PendingSendList = z.object({ pending: z.array(PendingSend) });
+export const PendingParams = z.object({ id: Uuid });
+export const PendingPatch = z.object({ sendAt: Iso.describe('The new send time (in the future).') });
+
+export type PendingSendJson = z.infer<typeof PendingSend>;
 export type SendResponseJson = z.infer<typeof SendResponse>;
 export type DraftSavedJson = z.infer<typeof DraftSaved>;
 export type DraftJson = z.infer<typeof Draft>;
+
+// PST-T-9.2: RFC 8098 read receipts (MDNs).
+
+export const MdnParams = z.object({ id: Uuid });
+
+export const MdnResponse = z.object({
+  messageId: z.string().describe('The Message-ID header of the MDN that was sent.'),
+  outboundId: Uuid,
+  sentMessageId: Uuid.describe('The copy filed in Sent.'),
+});
+
+export type MdnResponseJson = z.infer<typeof MdnResponse>;

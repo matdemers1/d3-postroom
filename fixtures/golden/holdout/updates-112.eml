@@ -1,0 +1,10 @@
+From: Hopper Rides <rider-support@hopper.example.net>
+To: sam@d3cloud.io
+Subject: Your trip is starting
+Date: Thu, 17 Sep 2026 10:23:31 +0000
+Message-ID: <golden-0248.20260926@hopper.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=hopper.example.net; dkim=pass header.d=hopper.example.net; dmarc=pass header.from=hopper.example.net
+
+Your trip is starting
+
+Details: https://hopper.example.net/m/2009

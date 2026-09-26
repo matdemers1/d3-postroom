@@ -9,7 +9,18 @@
 import { z } from 'zod';
 import { SESSION_COOKIE } from '../auth/sessions.js';
 import * as S from '../mail/schemas.js';
+import * as E from '../export/schemas.js';
+import * as SP from '../senders/schemas.js';
+import { ALIASES_COMPONENTS, ALIASES_ROUTES } from '../aliases/openapi.js';
 import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
+import { MOBILECONFIG_ROUTES } from '../mobileconfig/openapi.js';
+import { INSPECT_COMPONENTS, INSPECT_ROUTES } from '../mail/inspect.js';
+import { SIEVE_COMPONENTS, SIEVE_ROUTES } from '../sieve/openapi.js';
+import { CALENDAR_COMPONENTS, CALENDAR_ROUTES } from '../calendar/openapi.js';
+import { CONTACTS_COMPONENTS, CONTACTS_ROUTES } from '../contacts/openapi.js';
+import { TEMPLATES_COMPONENTS, TEMPLATES_ROUTES } from '../templates/openapi.js';
+import { INVITES_COMPONENTS, INVITES_ROUTES } from '../invites/openapi.js';
+import { KEYS_COMPONENTS, KEYS_ROUTES } from '../keys/openapi.js';
 import { ADMIN_DNS_COMPONENTS, ADMIN_DNS_ROUTES } from '../admin-dns/openapi.js';
 import { SETUP_WIZARD_COMPONENTS, SETUP_WIZARD_ROUTES } from '../setup-wizard/openapi.js';
 
@@ -47,6 +58,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   MessageSummary: S.MessageSummary,
   MessageList: S.MessageList,
   MessageDetail: S.MessageDetail,
+  OutboundLookup: z.object({ outboundId: z.uuid().nullable() }),
   Attachment: S.Attachment,
   MessageBody: S.MessageBody,
   RenderTicket: S.RenderTicket,
@@ -54,7 +66,20 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   SearchResponse: S.SearchResponse,
   MailboxChangedEvent: S.MailboxChangedEvent,
   MessageNewEvent: S.MessageNewEvent,
+  ExportStatus: E.ExportStatus,
+  SenderPin: SP.SenderPinView,
+  SenderScreenResult: SP.SenderScreenResult,
+  ...INSPECT_COMPONENTS,
+  ...ALIASES_COMPONENTS,
+  SenderProfile: SP.SenderProfile,
+  UnsubscribeResult: SP.UnsubscribeResult,
   ...COMPOSE_COMPONENTS,
+  ...SIEVE_COMPONENTS,
+  ...CALENDAR_COMPONENTS,
+  ...CONTACTS_COMPONENTS,
+  ...TEMPLATES_COMPONENTS,
+  ...INVITES_COMPONENTS,
+  ...KEYS_COMPONENTS,
   ...ADMIN_DNS_COMPONENTS,
   ...SETUP_WIZARD_COMPONENTS,
 };
@@ -171,6 +196,17 @@ export const ROUTES: RouteSpec[] = [
   },
   {
     method: 'get',
+    path: '/api/messages/{id}/outbound',
+    operationId: 'getMessageOutbound',
+    tag: 'Messages',
+    summary: 'The caller\'s own OutboundMessage id for this mailbox message, or null (PST-T-6.7, PST-REQ-119).',
+    description:
+      "Looks up the message's Message-ID header and matches it against this account's outbound queue (an indexed lookup, never a scan). outboundId is null both when the message was never sent and when it was sent by another client, not through Postroom.",
+    params: S.IdParams,
+    responses: { '200': { description: 'outboundId, or null.', schema: 'OutboundLookup' }, ...COMMON, '404': err('Not a message of the caller.') },
+  },
+  {
+    method: 'get',
     path: '/api/threads/{id}',
     operationId: 'getThread',
     tag: 'Threads',
@@ -188,6 +224,47 @@ export const ROUTES: RouteSpec[] = [
     responses: { '200': { description: 'Matching messages, best rank first.', schema: 'SearchResponse' }, ...COMMON, '404': err('mailboxId is not the caller’s.') },
   },
   {
+    method: 'post',
+    path: '/api/export',
+    operationId: 'startExport',
+    tag: 'Export',
+    summary: 'Start a full-data export of the caller\'s account: mbox per folder + manifest.json in a ZIP (PST-REQ-151).',
+    description:
+      'Needs a fresh step-up and x-postroom-csrf: 1. One active export per account: a second call while one is pending or running is 409. The archive is deleted 24 h after it finishes.',
+    headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
+    responses: {
+      '202': { description: 'The export, just started.', schema: 'ExportStatus' },
+      ...COMMON,
+      '403': err('Missing CSRF header, or step-up required.'),
+      '409': err('An export is already pending or running for this account.'),
+    },
+  },
+  {
+    method: 'get',
+    path: '/api/export/{id}',
+    operationId: 'getExportStatus',
+    tag: 'Export',
+    summary: 'The status of one export of the caller\'s.',
+    params: E.IdParams,
+    responses: { '200': { description: 'pending | running | done | failed.', schema: 'ExportStatus' }, ...COMMON, '404': err('Not an export of the caller.') },
+  },
+  {
+    method: 'get',
+    path: '/api/export/{id}/download',
+    operationId: 'downloadExport',
+    tag: 'Export',
+    summary: 'The finished archive, streamed as application/zip.',
+    description: 'Needs a fresh step-up. 409 while the export is still pending/running; 404 once done but past its 24 h expiry (the archive was swept).',
+    params: E.IdParams,
+    responses: {
+      '200': { description: 'The ZIP archive.', content: { 'application/zip': { schema: { type: 'string', contentEncoding: 'binary' } } } },
+      ...COMMON,
+      '403': err('Step-up required.'),
+      '404': err('Not an export of the caller, or the archive has expired.'),
+      '409': err('The export is not finished yet.'),
+    },
+  },
+  {
     method: 'get',
     path: '/api/events',
     operationId: 'events',
@@ -201,7 +278,82 @@ export const ROUTES: RouteSpec[] = [
       '503': err('Events are not configured.'),
     },
   },
+  {
+    method: 'get',
+    path: '/api/senders/{address}/pin',
+    operationId: 'getSenderPin',
+    tag: 'Senders',
+    summary: 'The caller\'s pin for this sender address, if any (PST-REQ-105).',
+    params: SP.AddressParam,
+    responses: { '200': { description: 'The pin (bucket is null when there is none).', schema: 'SenderPin' }, ...COMMON },
+  },
+  {
+    method: 'put',
+    path: '/api/senders/{address}/pin',
+    operationId: 'setSenderPin',
+    tag: 'Senders',
+    summary: 'Pin this sender to a bucket — overrides the classifier for their mail (PST-REQ-105).',
+    description: 'A pin into Priority or People still requires the message to authenticate, exactly like the VIP rule. Audited. Needs x-postroom-csrf: 1.',
+    params: SP.AddressParam,
+    body: SP.SenderPinBody,
+    headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
+    responses: { '200': { description: 'The pin after the change.', schema: 'SenderPin' }, ...COMMON, '403': err('Missing CSRF header.') },
+  },
+  {
+    method: 'delete',
+    path: '/api/senders/{address}/pin',
+    operationId: 'clearSenderPin',
+    tag: 'Senders',
+    summary: 'Remove the bucket pin for this sender (a screen decision, if any, is unaffected).',
+    description: 'Audited. Needs x-postroom-csrf: 1.',
+    params: SP.AddressParam,
+    headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
+    responses: { '200': { description: 'ok: true.', content: { 'application/json': { schema: { type: 'object', properties: { ok: { const: true } } } } } }, ...COMMON, '403': err('Missing CSRF header.') },
+  },
+  {
+    method: 'get',
+    path: '/api/senders/{address}/profile',
+    operationId: 'getSenderProfile',
+    tag: 'Senders',
+    summary: 'The sender profile: message history, bucket distribution, pin/screen state, unsubscribe status and an authentication summary (PST-REQ-113).',
+    params: SP.AddressParam,
+    responses: { '200': { description: 'The sender profile.', schema: 'SenderProfile' }, ...COMMON },
+  },
+  {
+    method: 'post',
+    path: '/api/messages/{id}/unsubscribe',
+    operationId: 'unsubscribeMessage',
+    tag: 'Senders',
+    summary: 'One-click unsubscribe (RFC 8058) for a message that offers it (PST-REQ-110).',
+    description:
+      'Sends the List-Unsubscribe-Post over HTTPS to the message\'s List-Unsubscribe URL, server-side, only for a message whose DMARC passed. Records the result on the sender. A mailto: unsubscribe link is returned but never sent automatically. Audited. Needs x-postroom-csrf: 1.',
+    params: SP.MessageIdParams,
+    headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
+    responses: { '200': { description: 'Whether the message offered one-click, and the outcome.', schema: 'UnsubscribeResult' }, ...COMMON, '403': err('Missing CSRF header.'), '404': err('No such message.') },
+  },
+  {
+    method: 'post',
+    path: '/api/senders/{address}/screen',
+    operationId: 'screenSender',
+    tag: 'Senders',
+    summary: "Answer this sender's new-sender badge: Allow or Block (PST-REQ-106).",
+    description:
+      'Allow treats the sender as a known contact, so a directly-addressed message from them can reach Priority. Block routes their future mail to Junk. Either clears the $NewSender badge on their already-filed mail. Audited. Needs x-postroom-csrf: 1.',
+    params: SP.AddressParam,
+    body: SP.SenderScreenBody,
+    headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
+    responses: { '200': { description: 'The screen decision after the change.', schema: 'SenderScreenResult' }, ...COMMON, '403': err('Missing CSRF header.') },
+  },
+  ...ALIASES_ROUTES,
   ...COMPOSE_ROUTES,
+  ...MOBILECONFIG_ROUTES,
+  ...INSPECT_ROUTES,
+  ...SIEVE_ROUTES,
+  ...CALENDAR_ROUTES,
+  ...CONTACTS_ROUTES,
+  ...TEMPLATES_ROUTES,
+  ...INVITES_ROUTES,
+  ...KEYS_ROUTES,
   ...ADMIN_DNS_ROUTES,
   ...SETUP_WIZARD_ROUTES,
 ];

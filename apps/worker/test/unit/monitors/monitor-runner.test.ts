@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Db } from '@postroom/db';
 import { createAlertSender, type AlertMessage, type AlertResult } from '@postroom/alerts';
 import { createMonitorRunner } from '../../../src/monitors/runner.js';
+import { createBlocklistMonitor } from '../../../src/monitors/blocklist.js';
 import type { Monitor, MonitorCheckResult } from '../../../src/monitors/types.js';
 
 function fakeDb(): { db: Db; rows: Map<string, unknown> } {
@@ -268,5 +269,139 @@ describe('createMonitorRunner', () => {
     await runner.runOnce();
     expect(calls).toHaveLength(1);
     expect(calls[0]?.text).toMatch(/did not finish within 20ms/);
+  });
+
+  describe("a monitor's minIntervalMs (PST-T-7.3, PST-REQ-124)", () => {
+    const SIX_HOURS_MS = 6 * 3_600_000;
+
+    it('a still-undelivered alert is retried every tick regardless of minIntervalMs (PST-T-4.7 fix #1 stays unconditional)', async () => {
+      const { db } = fakeDb();
+      const { sendAlert, calls } = scriptedSendAlert([
+        { sent: false, reason: 'relay request failed' },
+        { sent: true },
+      ]);
+      let checkCalls = 0;
+      const monitor: Monitor = {
+        name: 'rate-limited',
+        minIntervalMs: SIX_HOURS_MS,
+        check: () => {
+          checkCalls += 1;
+          return Promise.resolve({ ok: false, detail: 'firing' });
+        },
+      };
+      let clock = new Date('2026-09-26T00:00:00.000Z');
+      const runner = createMonitorRunner({ db, monitors: [monitor], sendAlert, now: () => clock });
+
+      await runner.runOnce(); // ok -> firing: check runs (first ever), alert send fails
+      expect(checkCalls).toBe(1);
+      expect(calls).toHaveLength(1);
+
+      clock = new Date(clock.getTime() + 60_000); // 60s later — well within the 6h minInterval
+      await runner.runOnce(); // check must NOT re-run, but the pending alert must retry
+      expect(checkCalls).toBe(1); // the check itself is still rate-limited
+      expect(calls).toHaveLength(2); // the undelivered alert was retried anyway
+      expect(calls[1]?.key).toBe(calls[0]?.key); // same episode
+
+      // Now delivered: nothing further to send on the next tick, and the check is still not due.
+      clock = new Date(clock.getTime() + 60_000);
+      await runner.runOnce();
+      expect(checkCalls).toBe(1);
+      expect(calls).toHaveLength(2);
+    });
+
+    it('a changed inputKey (e.g. EDGE_PUBLIC_IP) forces an immediate re-check, ignoring minIntervalMs', async () => {
+      const { db } = fakeDb();
+      const alerts1 = fakeSendAlert();
+      const lookupA1 = vi.fn().mockResolvedValue([]); // IP A: clean
+      const monitorA = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus'], lookupA: lookupA1 });
+      expect(monitorA).not.toBeNull();
+      const clock = new Date('2026-09-26T00:00:00.000Z');
+      const runner1 = createMonitorRunner({ db, monitors: monitorA === null ? [] : [monitorA], sendAlert: alerts1.sendAlert, now: () => clock });
+      await runner1.runOnce(); // ok, clean — establishes checkedInput for IP A
+      expect(lookupA1).toHaveBeenCalledTimes(1);
+      expect(alerts1.calls).toHaveLength(0);
+
+      // A new monitor instance for a DIFFERENT IP, moments later — well within the 6h minInterval.
+      const alerts2 = fakeSendAlert();
+      const lookupB = vi.fn().mockResolvedValue(['127.0.0.4']); // IP B: listed (Spamhaus XBL)
+      const monitorB = createBlocklistMonitor({ ip: '203.0.113.99', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus'], lookupA: lookupB });
+      const soonAfter = new Date(clock.getTime() + 60_000);
+      const runner2 = createMonitorRunner({ db, monitors: monitorB === null ? [] : [monitorB], sendAlert: alerts2.sendAlert, now: () => soonAfter });
+      await runner2.runOnce();
+      expect(lookupB).toHaveBeenCalledTimes(1); // the changed target forced a real query
+      expect(alerts2.calls).toHaveLength(1); // ...and it found a listing, worth alerting on
+      expect(alerts2.calls[0]?.subject).toMatch(/FIRING: blocklist/);
+    });
+
+    it('still listed on the next ticks within 6h: no re-query and no new alert', async () => {
+      const { db } = fakeDb();
+      const { sendAlert, calls } = fakeSendAlert();
+      const lookupA = vi.fn().mockResolvedValue(['127.0.0.4']); // Spamhaus XBL: listed, every call
+      const monitor = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus'], lookupA });
+      expect(monitor).not.toBeNull();
+      let clock = new Date('2026-09-26T00:00:00.000Z');
+      const runner = createMonitorRunner({ db, monitors: monitor === null ? [] : [monitor], sendAlert, now: () => clock });
+
+      await runner.runOnce(); // ok -> firing: first real query
+      expect(calls).toHaveLength(1);
+      expect(lookupA).toHaveBeenCalledTimes(1);
+
+      clock = new Date(clock.getTime() + 60_000); // one more 60s tick, well within 6h
+      await runner.runOnce();
+      clock = new Date(clock.getTime() + 60_000);
+      await runner.runOnce();
+      expect(lookupA).toHaveBeenCalledTimes(1); // no re-query
+      expect(calls).toHaveLength(1); // no new alert — still "firing", nothing to say
+    });
+
+    it('after 6h a clean result fires exactly one recovery', async () => {
+      const { db } = fakeDb();
+      const { sendAlert, calls } = fakeSendAlert();
+      const listed = { current: true };
+      const lookupA = vi.fn(() => Promise.resolve(listed.current ? ['127.0.0.4'] : []));
+      const monitor = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus'], lookupA });
+      expect(monitor).not.toBeNull();
+      let clock = new Date('2026-09-26T00:00:00.000Z');
+      const runner = createMonitorRunner({ db, monitors: monitor === null ? [] : [monitor], sendAlert, now: () => clock });
+
+      await runner.runOnce(); // ok -> firing
+      expect(calls).toHaveLength(1);
+      expect(lookupA).toHaveBeenCalledTimes(1);
+
+      listed.current = false;
+      clock = new Date(clock.getTime() + 60_000); // well within 6h: no re-query, still "firing"
+      await runner.runOnce();
+      expect(lookupA).toHaveBeenCalledTimes(1);
+      expect(calls).toHaveLength(1);
+
+      clock = new Date(clock.getTime() + SIX_HOURS_MS + 1_000); // now due
+      await runner.runOnce(); // firing -> ok
+      expect(lookupA).toHaveBeenCalledTimes(2);
+      expect(calls).toHaveLength(2);
+      expect(calls[1]?.subject).toMatch(/RESOLVED: blocklist/);
+    });
+
+    it('a restart with a recent persisted check does not immediately re-query', async () => {
+      const { db } = fakeDb();
+      const alerts1 = fakeSendAlert();
+      const lookupA1 = vi.fn().mockResolvedValue(['127.0.0.4']);
+      const monitor1 = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus'], lookupA: lookupA1 });
+      expect(monitor1).not.toBeNull();
+      const clock = new Date('2026-09-26T00:00:00.000Z');
+      const runner1 = createMonitorRunner({ db, monitors: monitor1 === null ? [] : [monitor1], sendAlert: alerts1.sendAlert, now: () => clock });
+      await runner1.runOnce();
+      expect(lookupA1).toHaveBeenCalledTimes(1);
+      expect(alerts1.calls).toHaveLength(1);
+
+      // A brand-new runner/monitor instance (a worker restart), same database, moments later.
+      const alerts2 = fakeSendAlert();
+      const lookupA2 = vi.fn().mockResolvedValue(['127.0.0.4']);
+      const monitor2 = createBlocklistMonitor({ ip: '203.0.113.9', resolverServer: '10.0.0.1:53', zoneKeys: ['spamhaus'], lookupA: lookupA2 });
+      const soonAfter = new Date(clock.getTime() + 5_000);
+      const runner2 = createMonitorRunner({ db, monitors: monitor2 === null ? [] : [monitor2], sendAlert: alerts2.sendAlert, now: () => soonAfter });
+      await runner2.runOnce();
+      expect(lookupA2).not.toHaveBeenCalled();
+      expect(alerts2.calls).toHaveLength(0);
+    });
   });
 });

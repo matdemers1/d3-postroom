@@ -5,17 +5,24 @@ import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
 import { createDb } from '@postroom/db';
-import { envInt, envString, runDaemon } from '@postroom/daemon';
+import { envInt, envString, revision, runDaemon } from '@postroom/daemon';
 import { startWorker } from '@postroom/queue';
 import { backupHandler, BACKUP_QUEUE } from './backup/job.js';
 import { DRILL_QUEUE, startNightly } from './backup/schedule.js';
 import { maintenanceDeps } from './backup/wire.js';
 import { DAEMON } from './daemon.js';
 import { drillHandler } from './drill/drill.js';
+import { createExportSweeper, exportHandler, EXPORT_QUEUE } from './export/index.js';
 import { inboundHealth, maintenanceHealth } from './health.js';
+import { importHandler, IMPORT_QUEUE } from './import/index.js';
 import { buildMonitors, createMonitorRunner } from './monitors/index.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
+import { startReportLoop } from './reports/index.js';
 import { createThreadSweeper } from './sweep/thread-sweep.js';
+import { startTrainingLoop } from './training/index.js';
+import { startRetentionLoop } from './retention/index.js';
+import { startScheduledLoop } from './scheduled/index.js';
+import { createWebmailCapsEnforcer } from '@postroom/submission/caps';
 
 await runDaemon({
   name: DAEMON,
@@ -39,7 +46,14 @@ await runDaemon({
       verify: (sha256) => getBlobs().verify(sha256),
       gc: (opts) => getBlobs().gc(opts),
     };
-    const pipeline = createInboundPipeline({ db, blobs: lazyBlobs, log: ctx.log });
+    // The KEK signs Sieve vacation replies (PST-T-9.5); loaded on first use, like the blob store.
+    const pipeline = createInboundPipeline({
+      db,
+      blobs: lazyBlobs,
+      log: ctx.log,
+      kek: () => loadKek({ env: ctx.env }),
+      vacationDailyCap: envInt(ctx.env, 'SIEVE_VACATION_DAILY_CAP', 200),
+    });
     const leaseMs = envInt(ctx.env, 'INBOUND_LEASE_MS', 300_000);
     const worker = await startWorker({
       db,
@@ -76,6 +90,85 @@ await runDaemon({
     };
     runThreadSweep();
     const threadSweepTimer = setInterval(runThreadSweep, threadSweepMs);
+
+    // PST-T-5.3 (PST-REQ-104): train each account's naive Bayes on the moves users make, from any
+    // client. Its own block and its own shutdown hook, so it merges beside the other registrations.
+    const training = startTrainingLoop({ db, blobs: lazyBlobs, intervalMs: envInt(ctx.env, 'BAYES_TRAINING_MS', 5_000), log: ctx.log });
+    ctx.onShutdown(() => training.stop());
+
+    // PST-T-7.7 (PST-REQ-129, PST-REQ-130): retention — Junk (and any mailbox with a policy) moves
+    // to Trash, Trash and Rejects expire, the last reference to a blob crypto-shreds it, and a gc
+    // pass removes files a crash left without a row. Its own block and its own shutdown hook.
+    const retention = startRetentionLoop({ db, blobs: lazyBlobs, intervalMs: envInt(ctx.env, 'RETENTION_SWEEP_MS', 3_600_000), log: ctx.log });
+    ctx.onShutdown(() => retention.stop());
+
+    // PST-T-7.1 (PST-REQ-122): DMARC aggregate and TLS-RPT reports mailed to the report mailboxes
+    // (REPORTS_MAILBOX / TLSRPT_MAILBOX) become rows for the Deliverability screen. Its own block
+    // and its own shutdown hook, so it merges beside the other registrations.
+    const reports = startReportLoop({ db, blobs: lazyBlobs, env: ctx.env, intervalMs: envInt(ctx.env, 'REPORTS_SWEEP_MS', 10_000), log: ctx.log });
+    ctx.onShutdown(() => reports.stop());
+
+    // PST-T-10.1 (PST-REQ-151): the full-data export, on its own queue and worker (a 10 GB mailbox
+    // must not hold up inbound mail), plus a sweep that deletes an archive 24 h after it finishes.
+    // Its own block and its own shutdown hook, so it merges beside the other registrations.
+    const exportWorker = await startWorker({
+      db,
+      databaseUrl,
+      queues: { [EXPORT_QUEUE]: exportHandler({ db, blobs: lazyBlobs, revision: revision(ctx.env), log: ctx.log }) },
+      pollMs: 5_000,
+      leaseMs: envInt(ctx.env, 'EXPORT_LEASE_MS', 3_600_000),
+      log: ctx.log,
+    });
+    const exportSweepMs = envInt(ctx.env, 'EXPORT_SWEEP_MS', 60_000);
+    const exportSweep = createExportSweeper({ db, blobs: lazyBlobs, log: ctx.log });
+    const runExportSweep = (): void => {
+      exportSweep().catch((err: unknown) => {
+        ctx.log('export-sweep-error', { error: err instanceof Error ? err.message : String(err) });
+      });
+    };
+    runExportSweep();
+    const exportSweepTimer = setInterval(runExportSweep, exportSweepMs);
+    ctx.onShutdown(async () => {
+      clearInterval(exportSweepTimer);
+      await exportWorker.stop();
+    });
+
+    // PST-T-10.2 (PST-REQ-152): IMAP import from another server, on its own queue and worker (an
+    // import can run for hours; inbound mail never waits behind it). The handler heartbeats its
+    // lease and fences every commit on it, so a long import is never claimed twice. Its own block
+    // and its own shutdown hook, so it merges beside the other registrations.
+    const importLeaseMs = envInt(ctx.env, 'IMPORT_LEASE_MS', 600_000);
+    const importWorker = await startWorker({
+      db,
+      databaseUrl,
+      queues: { [IMPORT_QUEUE]: importHandler({ db, blobs: lazyBlobs, kek: () => loadKek({ env: ctx.env }), leaseMs: importLeaseMs, log: ctx.log }) },
+      pollMs: 5_000,
+      leaseMs: importLeaseMs,
+      log: ctx.log,
+    });
+    ctx.onShutdown(() => importWorker.stop());
+
+    // PST-T-9.1 (PST-REQ-140..143): held sends (undo, scheduled) released through the submission
+    // path exactly once, snoozed conversations returned to INBOX, remind-if-no-reply checked — every
+    // 15 s, so a due send goes out within a minute. Its own block and its own shutdown hook.
+    const scheduled = startScheduledLoop({
+      db,
+      blobs: lazyBlobs,
+      kek: () => loadKek({ env: ctx.env }),
+      caps: createWebmailCapsEnforcer({
+        db,
+        hourlyDefault: envInt(ctx.env, 'SUBMISSION_CAP_HOURLY', 100),
+        dailyDefault: envInt(ctx.env, 'SUBMISSION_CAP_DAILY', 500),
+        sendAlert: createAlertSender(
+          { url: envString(ctx.env, 'MAIL_RELAY_URL', ''), token: envString(ctx.env, 'MAIL_RELAY_TOKEN', ''), to: envString(ctx.env, 'ALERT_TO', '') },
+          { log: ctx.log },
+        ),
+        log: ctx.log,
+      }),
+      intervalMs: envInt(ctx.env, 'SCHEDULED_TICK_MS', 15_000),
+      log: ctx.log,
+    });
+    ctx.onShutdown(() => scheduled.stop());
 
     // Health alerts through the D3 Auth relay (PST-T-4.7, PST-REQ-096, PST-REQ-097): tunnel,
     // backlog, cert expiry, disk, blocklist, backup/drill and NTP skew, each alerting once on

@@ -1,0 +1,32 @@
+From: Bob Test <bob@example.test>
+To: Alice Test <alice@example.test>
+Subject: Encrypted to Curve25519
+Date: Sat, 26 Sep 2026 12:00:00 +0000
+Message-ID: <121031319@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; boundary="enc-b"
+
+This is an OpenPGP/MIME encrypted message (RFC 4880 and 3156)
+--enc-b
+Content-Type: application/pgp-encrypted
+Content-Description: PGP/MIME version identification
+
+Version: 1
+
+--enc-b
+Content-Type: application/octet-stream; name="encrypted.asc"
+Content-Description: OpenPGP encrypted message
+Content-Disposition: inline; filename="encrypted.asc"
+
+-----BEGIN PGP MESSAGE-----
+
+hF4DOZoYFaNPo1USAQdAkvySrPqQS9+u0Tmkhb0FpHVwpX7azK9/A74v9YVqunIw
+EqM/FuzC+nkEy15GWtCgzX5Ana5aXhnVkQkUqTBGsLtRMnD4WX0yA6CLDy6Uge73
+0rkBotIfEqAt9apq1D/MgX07KDwJ9EDOuGDcIYO8Ltwc301sLvlcAClqhVJpWpCW
+kExY+oB8zBkpj57ox+YrhF7LL3G7HGP4gfCrcB42quMogYOsuUsWP0BHW32vs+V6
+T1ACvbh9rg7U9yNq90vt/3u+fh9pnjFyUZbGgtXp/qQvE08FmvHUstUOeiXe1kE5
+UJ+OxGGm6dxpvXBnYBkXrmE9sLZfZroeJQLY6hq7NPEnep+t2KkUsRTUjQ==
+=1adf
+-----END PGP MESSAGE-----
+
+--enc-b--

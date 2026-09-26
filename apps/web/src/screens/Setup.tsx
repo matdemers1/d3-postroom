@@ -14,10 +14,10 @@ import {
   PasswordInput,
   Stack,
 } from '@d3cloud/ui';
-import { api, describeError } from '../api';
+import { api, ApiError, describeError } from '../api';
+import { DOMAIN, type Field, localPartOf, loginProblem, serverFieldErrors } from '../setup-login';
 
 const MIN_PASSWORD = 12;
-
 /**
  * First run, once (PST-REQ-006): name the operator, choose a login and password, then enrol an
  * authenticator. Setup is not complete — and nothing is saved — until a code proves it works.
@@ -33,22 +33,31 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<Field, string>>>({});
 
+  const loginError = loginProblem(login) ?? fieldErrors.login;
   const mismatch = confirm !== '' && confirm !== password;
   const tooShort = password !== '' && password.length < MIN_PASSWORD;
 
   const begin = (event: SyntheticEvent) => {
     event.preventDefault();
-    if (mismatch || tooShort) return;
+    if (mismatch || tooShort || loginProblem(login) !== null) return;
     setError(null);
+    setFieldErrors({});
     setBusy(true);
+    const local = localPartOf(login);
+    setLogin(local);
     api
-      .setupBegin({ setupToken, displayName, login, password })
+      .setupBegin({ setupToken, displayName, login: local, password })
       .then((result) => {
         setEnrol(result);
       })
       .catch((caught: unknown) => {
-        setError(describeError(caught));
+        const fields = serverFieldErrors(caught);
+        setFieldErrors(fields);
+        // The banner names the fields only when one of them is actually marked.
+        const named = Object.keys(fields).length > 0;
+        setError(named ? 'Fix the marked field and continue.' : caught instanceof ApiError && caught.code === 'invalid_request' ? 'The server refused the form. Check every field and try again.' : describeError(caught));
       })
       .finally(() => {
         setBusy(false);
@@ -90,7 +99,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
           )}
           {enrol === null ? (
             <Stack as="form" gap="16" onSubmit={begin} aria-label="Operator account">
-              <FormField label="Setup token" help="Printed in the server's env file (SETUP_TOKEN).">
+              <FormField label="Setup token" help="Printed in the server's env file (SETUP_TOKEN)." {...(fieldErrors.setupToken === undefined ? {} : { error: fieldErrors.setupToken })}>
                 <PasswordInput
                   name="setupToken"
                   autoComplete="off"
@@ -101,7 +110,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                   }}
                 />
               </FormField>
-              <FormField label="Display name">
+              <FormField label="Display name" {...(fieldErrors.displayName === undefined ? {} : { error: fieldErrors.displayName })}>
                 <Input
                   name="displayName"
                   autoComplete="name"
@@ -112,7 +121,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                   }}
                 />
               </FormField>
-              <FormField label="Login" help="Becomes your address: login@d3cloud.io.">
+              <FormField label="Login" help={`Just the name. It becomes your address: name@${DOMAIN}.`} {...(loginError === undefined ? {} : { error: loginError })}>
                 <Input
                   name="login"
                   autoComplete="username"
@@ -122,13 +131,17 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                   value={login}
                   onChange={(e) => {
                     setLogin(e.target.value.toLowerCase());
+                    setFieldErrors(({ login: _dropped, ...rest }) => rest);
+                  }}
+                  onBlur={() => {
+                    setLogin((v) => localPartOf(v));
                   }}
                 />
               </FormField>
               <FormField
                 label="Password"
                 help={`At least ${String(MIN_PASSWORD)} characters. Web sign-in only — mail apps use app passwords.`}
-                {...(tooShort ? { error: `Use at least ${String(MIN_PASSWORD)} characters.` } : {})}
+                {...(tooShort ? { error: `Use at least ${String(MIN_PASSWORD)} characters.` } : fieldErrors.password === undefined ? {} : { error: fieldErrors.password })}
               >
                 <PasswordInput
                   name="password"

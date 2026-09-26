@@ -1,0 +1,12 @@
+From: Deep Dive <issue@deepdive.example.net>
+X-SES-Outgoing: 2026.09.01-10.0.0.1
+Feedback-ID: bulk:deepdive.example.net:ses
+To: sam@d3cloud.io
+Subject: Things we noticed this week
+Date: Mon, 07 Sep 2026 13:36:36 +0000
+Message-ID: <golden-0097.20260926@deepdive.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=deepdive.example.net; dkim=pass header.d=deepdive.example.net; dmarc=pass header.from=deepdive.example.net
+
+Things we noticed this week
+
+Read online: https://deepdive.example.net/issues/4

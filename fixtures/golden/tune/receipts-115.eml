@@ -1,0 +1,10 @@
+From: Oakridge Outfitters <orders@oakridge.example.com>
+To: dana@d3cloud.io
+Subject: Thanks for your order!
+Date: Tue, 15 Sep 2026 05:49:48 +0000
+Message-ID: <golden-0217.20260926@oakridge.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=oakridge.example.com; dkim=pass header.d=oakridge.example.com; dmarc=pass header.from=oakridge.example.com
+
+Thanks for your order!
+
+Details: https://oakridge.example.com/m/2000

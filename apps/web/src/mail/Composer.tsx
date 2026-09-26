@@ -8,16 +8,50 @@
 // draft it left for the same message; pressing c (compose) with a draft open in Drafts resumes that
 // draft.
 //
-// After sending, the composer becomes a receipt: the conversation as the server now has it — the
-// reply in its thread — and a link to it in Sent. The mailbox list updates over SSE.
+// After sending, the composer closes back to the message it answered (PST-T-3.15): the server has
+// already filed and threaded the reply by the time send() resolves, so the open thread there shows
+// it without a reload — no separate "sent" screen needed to say so. The mailbox list updates over SSE.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link as RouterLink, useLocation } from 'react-router-dom';
-import { Alert, Button, FormActions, FormField, Input, Link, Stack, Textarea } from '@d3cloud/ui';
-import { api, ApiError, type DraftInput, type SendResult, type ThreadDetail } from '../api';
-import { fieldsOf, hasRecipients, initialState, resumableDraft, sendErrorText, stateFromSaved, type ComposeDraft, type ComposeState } from './compose';
-import { fullDate } from './format';
+import { useLocation } from 'react-router-dom';
+import { Alert, Button, Checkbox, FormActions, FormField, Input, Select, Stack, Textarea } from '@d3cloud/ui';
+import { api, ApiError, type DraftInput } from '../api';
+import { templatesApi, type TemplateJson } from '../compose/api';
+import { keysApi, type CryptoKeyJson, type KeyKind } from '../keys/api';
+import { cryptoAvailability, cryptoRequest, KIND_LABEL, recipientAddresses } from '../keys/format';
+import {
+  applyTemplate,
+  fieldsOf,
+  hasRecipients,
+  initialState,
+  isHeld,
+  matchingTemplates,
+  REMIND_CHOICES,
+  resumableDraft,
+  sendErrorText,
+  sendExtra,
+  sendOptions,
+  stateFromSaved,
+  templateTrigger,
+  toLocalInput,
+  undoSeconds,
+  setUndoSeconds,
+  UNDO_CHOICES,
+  type ComposeDraft,
+  type ComposeState,
+  type SendTiming,
+} from './compose';
 import { useMail } from './MailContext';
-import { mailPath, parseMailRoute } from './route';
+import { parseMailRoute } from './route';
+import { announceHeld } from './Scheduled';
+
+/** The browser's storage, or null where there is none (a locked-down profile). */
+function storage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
 
 const TITLES: Readonly<Record<ComposeDraft['mode'], string>> = {
   new: 'New message',
@@ -39,9 +73,22 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
   const [resumed, setResumed] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState<{ result: SendResult; thread: ThreadDetail | null } | null>(null);
+  // PST-T-9.1: send later (PST-REQ-141) and remind if no reply (PST-REQ-143).
+  const [timing, setTiming] = useState<SendTiming>({ kind: 'now' });
+  const [remind, setRemind] = useState<number | null>(null);
+  // PST-REQ-140: the undo window is the person's choice, remembered in this browser.
+  const [undo, setUndo] = useState<number>(() => undoSeconds(storage()));
+  // PST-T-12.2 (PST-REQ-161): Sign / Encrypt with the account's keys, offered when the keys exist.
+  const [keys, setKeys] = useState<CryptoKeyJson[] | null>(null);
+  const [cryptoKind, setCryptoKind] = useState<KeyKind>('pgp');
+  const [signOn, setSignOn] = useState(false);
+  const [encryptOn, setEncryptOn] = useState(false);
   const toRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  // PST-T-9.2: saved templates via the ; shortcut (PST-REQ-144).
+  const [templates, setTemplates] = useState<TemplateJson[] | null>(null);
+  const [picker, setPicker] = useState<{ start: number; end: number; shortcut: string } | null>(null);
 
   // Everything a timer, an unmount or a queued save needs, current.
   const latest = useRef(state);
@@ -58,6 +105,56 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
     version.current += 1;
     setState((s) => ({ ...s, ...patch }));
   };
+
+  /** The body changed: check whether the cursor now sits right after a `;shortcut` (PST-REQ-144). */
+  const onBodyChange = (text: string, cursor: number) => {
+    edit({ text });
+    const trigger = templateTrigger(text, cursor);
+    if (trigger === null) {
+      setPicker(null);
+      return;
+    }
+    setPicker(trigger);
+    if (templates === null) void templatesApi.list().then((r) => { setTemplates(r.templates); }).catch(() => { setTemplates([]); });
+  };
+
+  const chooseTemplate = (template: TemplateJson) => {
+    if (picker === null) return;
+    const displayName = me === null ? '' : me.split('@')[0] ?? '';
+    const vars = { name: displayName, first_name: displayName.split(/[.\s_-]/)[0] ?? displayName, date: new Date().toLocaleDateString() };
+    const result = applyTemplate(latest.current.text, picker, template, vars);
+    const patch: Partial<ComposeState> = { text: result.text };
+    if (template.subject !== null && latest.current.subject === '') patch.subject = template.subject;
+    edit(patch);
+    setPicker(null);
+    requestAnimationFrame(() => {
+      bodyRef.current?.focus();
+      bodyRef.current?.setSelectionRange(result.cursor, result.cursor);
+    });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    keysApi
+      .list()
+      .then(({ keys: list }) => {
+        if (cancelled) return;
+        setKeys(list);
+        // Offer the kind the person actually has a key of.
+        const ownKinds = new Set(list.filter((k) => k.owner === 'own' && k.revokedAt === null).map((k) => k.kind));
+        if (!ownKinds.has('pgp') && ownKinds.has('smime')) setCryptoKind('smime');
+      })
+      .catch(() => {
+        if (!cancelled) setKeys([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const recipients = recipientAddresses(state);
+  const availability = cryptoAvailability(keys ?? [], cryptoKind, recipients);
+
+  const templateMatches = picker === null || templates === null ? [] : matchingTemplates(templates, picker.shortcut);
 
   const draftInput = useCallback(
     (s: ComposeState): DraftInput => ({ ...fieldsOf(s), ...(me === null ? {} : { from: me }), mode: draft.mode, sourceId: draft.sourceId }),
@@ -174,16 +271,34 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
       setError('Your account has no address to send from.');
       return;
     }
+    const timed = sendOptions(timing, undo, remind, new Date());
+    if (!timed.ok) {
+      setError(timed.error);
+      return;
+    }
     setSending(true);
     cancelTimer();
     // Let a save in flight land first, so the draft it made is the one the send removes.
     await chain.current;
     try {
-      const result = await api.send({ ...fieldsOf(latest.current), from: me, draftId: draftId.current });
+      const crypto = cryptoRequest(cryptoKind, signOn, encryptOn, availability);
+      const body: Parameters<typeof api.sendOrHold>[0] & ReturnType<typeof sendExtra> & { crypto?: typeof crypto } = {
+        ...fieldsOf(latest.current),
+        from: me,
+        draftId: draftId.current,
+        ...timed.options,
+        ...sendExtra(latest.current),
+        ...(crypto === undefined ? {} : { crypto }),
+      };
+      const result = await api.sendOrHold(body);
+      // Held (undo window or scheduled): the toast outside the composer offers Undo (PST-REQ-140).
+      if (isHeld(result)) announceHeld(result);
       finished.current = true;
-      const thread = result.threadId === null ? null : await api.thread(result.threadId).catch(() => null);
-      setSent({ result, thread });
       void refreshMailboxes();
+      // The server has already filed and threaded the reply: closing back to the message it
+      // answered shows it there, in the open thread, without a reload (PST-T-3.15).
+      onDiscard();
+      return;
     } catch (e) {
       setError(sendErrorText(e));
     } finally {
@@ -203,47 +318,6 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
     });
     onDiscard();
   };
-
-  if (sent !== null) {
-    const { result, thread } = sent;
-    return (
-      <section className="pr-reader pr-composer" aria-labelledby="pr-composer-title" data-compose-state="sent" data-thread-id={result.threadId ?? ''}>
-        {back}
-        <Stack gap="16">
-          <h2 id="pr-composer-title" className="pr-reader__subject" tabIndex={-1} ref={(el) => el?.focus()}>
-            Message sent
-          </h2>
-          <Alert tone="success" dynamic>
-            Your message is on its way, and a copy is in Sent.
-          </Alert>
-          {thread !== null ? (
-            <Stack as="ol" gap="8" aria-label="Conversation">
-              {thread.messages.map((m) => (
-                <li key={m.id} data-message-id={m.id}>
-                  <strong>{m.id === result.sentMessageId ? 'You' : (m.from ?? 'Unknown sender')}</strong>
-                  {' · '}
-                  {m.subject ?? '(no subject)'}
-                  {' · '}
-                  <span className="pr-reader__note">{fullDate(m.date)}</span>
-                </li>
-              ))}
-            </Stack>
-          ) : null}
-          <FormActions
-            leading={
-              <Link asChild variant="standalone">
-                <RouterLink to={mailPath(result.sentMailboxId, result.sentMessageId)}>Open in Sent</RouterLink>
-              </Link>
-            }
-          >
-            <Button type="button" variant="primary" onClick={onDiscard}>
-              Done
-            </Button>
-          </FormActions>
-        </Stack>
-      </section>
-    );
-  }
 
   const status =
     saveStatus.kind === 'saving'
@@ -303,9 +377,103 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
         <FormField label="Subject">
           <Input value={state.subject} onChange={(e) => { edit({ subject: e.target.value }); }} />
         </FormField>
-        <FormField label="Message" {...(state.forwardOf !== null ? { help: 'The original message is attached in full.' } : {})}>
-          <Textarea ref={bodyRef} rows={12} value={state.text} onChange={(e) => { edit({ text: e.target.value }); }} />
+        <FormField
+          label="Message"
+          help={state.forwardOf !== null ? 'The original message is attached in full.' : 'Type ; to insert a saved template.'}
+        >
+          <Textarea
+            ref={bodyRef}
+            rows={12}
+            value={state.text}
+            onChange={(e) => { onBodyChange(e.target.value, e.target.selectionStart); }}
+          />
         </FormField>
+        {picker !== null && templateMatches.length > 0 ? (
+          <ul className="pr-composer__template-picker" role="listbox" aria-label="Matching templates">
+            {templateMatches.map((t) => (
+              <li key={t.id}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => { chooseTemplate(t); }}>
+                  ;{t.shortcut} — {t.name}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <FormField label="Format" help="Markdown is sent as sanitized HTML alongside the plain text (PST-REQ-145).">
+          <Select
+            options={[
+              { value: 'plain', label: 'Plain text' },
+              { value: 'markdown', label: 'Markdown' },
+            ]}
+            value={state.format}
+            onValueChange={(v) => { edit({ format: v === 'markdown' ? 'markdown' : 'plain' }); }}
+          />
+        </FormField>
+        <Checkbox
+          label="Request read receipt"
+          checked={state.requestReceipt}
+          onCheckedChange={(checked) => { edit({ requestReceipt: checked === true }); }}
+        />
+        <FormField
+          label="Sign and encrypt"
+          as="group"
+          optional
+          help={
+            keys === null
+              ? 'Checking your keys…'
+              : [signOn || availability.sign.available ? null : availability.sign.reason, availability.encrypt.available ? null : availability.encrypt.reason].filter((r): r is string => r !== null).join(' ') ||
+                `Headers, including the subject, are not encrypted. Encrypted mail is also encrypted to your own ${KIND_LABEL[cryptoKind]} key.`
+          }
+        >
+          <Stack gap="8">
+            <Select
+              aria-label="Key kind"
+              options={[
+                { value: 'pgp', label: 'OpenPGP (PGP/MIME)' },
+                { value: 'smime', label: 'S/MIME' },
+              ]}
+              value={cryptoKind}
+              onValueChange={(v) => { setCryptoKind(v === 'smime' ? 'smime' : 'pgp'); }}
+            />
+            <Checkbox
+              label="Sign"
+              checked={signOn}
+              disabled={!signOn && !availability.sign.available}
+              onCheckedChange={(checked) => { setSignOn(checked === true); }}
+            />
+            <Checkbox
+              label={availability.encrypt.missing.length > 0 && encryptOn ? `Encrypt — no key for ${availability.encrypt.missing.join(', ')}` : 'Encrypt'}
+              checked={encryptOn}
+              disabled={!encryptOn && !availability.encrypt.available}
+              onCheckedChange={(checked) => { setEncryptOn(checked === true); }}
+            />
+          </Stack>
+        </FormField>
+        <FormField label="Remind me" optional help="If nobody replies in time, the message comes back to your Inbox.">
+          <Select
+            options={REMIND_CHOICES.map((c) => ({ value: c.seconds === null ? 'none' : String(c.seconds), label: c.label }))}
+            value={remind === null ? 'none' : String(remind)}
+            onValueChange={(v) => { setRemind(v === 'none' ? null : Number(v)); }}
+          />
+        </FormField>
+        {timing.kind === 'now' ? (
+          <FormField label="Undo send" help="How long a sent message waits, so you can take it back.">
+            <Select
+              options={UNDO_CHOICES.map((seconds) => ({ value: String(seconds), label: seconds === 0 ? 'Off — send at once' : `${String(seconds)} seconds` }))}
+              value={String(undo)}
+              onValueChange={(v) => {
+                const seconds = Number(v);
+                setUndo(seconds);
+                setUndoSeconds(storage(), seconds);
+              }}
+            />
+          </FormField>
+        ) : null}
+        {timing.kind === 'later' ? (
+          <FormField label="Send at" help="It waits in Drafts until then; you can cancel it there.">
+            <Input type="datetime-local" value={timing.local} min={toLocalInput(new Date())} onChange={(e) => { setTiming({ kind: 'later', local: e.target.value }); }} />
+          </FormField>
+        ) : null}
         <FormActions
           leading={
             <Button type="button" variant="ghost" onClick={discard} disabled={sending}>
@@ -316,8 +484,19 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
           <Button type="button" variant="secondary" disabled={sending} onClick={() => void save(true)}>
             Save draft
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={sending}
+            pressed={timing.kind === 'later'}
+            onClick={() => {
+              setTiming(timing.kind === 'later' ? { kind: 'now' } : { kind: 'later', local: toLocalInput(new Date(Date.now() + 3_600_000)) });
+            }}
+          >
+            Send later
+          </Button>
           <Button type="submit" variant="primary" loading={sending}>
-            Send
+            {timing.kind === 'later' ? 'Schedule' : 'Send'}
           </Button>
         </FormActions>
         <p className="pr-reader__note" role="status" aria-live="polite">

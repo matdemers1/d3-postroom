@@ -7,6 +7,8 @@ import {
   Button,
   MenuItem,
   MenuSeparator,
+  Page,
+  PageHeader,
   SideNav,
   SideNavGroup,
   SideNavItem,
@@ -18,6 +20,7 @@ import { ComposeIcon, mailboxIcon } from '../mail/icons';
 import { useOptionalMail } from '../mail/MailContext';
 import { mailPath, parseMailRoute } from '../mail/route';
 import { WIDE_QUERY, useMediaQuery } from '../mail/useMedia';
+import { NoAccess } from './states';
 
 // Decorative marks, drawn in currentColor so they follow the theme.
 function MailIcon() {
@@ -47,11 +50,74 @@ function KeyIcon() {
   );
 }
 
+function MaskIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M4 10c2-3 6-4 8-4s6 1 8 4c0 5-3 9-8 9s-8-4-8-9Z" />
+      <circle cx="9" cy="11" r="1" />
+      <circle cx="15" cy="11" r="1" />
+    </svg>
+  );
+}
+
+function HeartbeatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M3 12h4l2-7 4 14 2-7h6" />
+    </svg>
+  );
+}
+
+function OutboxIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M12 3v11M12 3l-4 4M12 3l4 4" />
+      <path d="M4 13v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" />
+    </svg>
+  );
+}
+
+function ChartIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M4 20h16M7 16v-5M12 16V6M17 16v-8" />
+    </svg>
+  );
+}
+
+function TerminalIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M7 9l3 3-3 3M12 15h5" />
+    </svg>
+  );
+}
+
+function QueueIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <rect x="4" y="5" width="16" height="4" rx="1" />
+      <rect x="4" y="10" width="16" height="4" rx="1" />
+      <rect x="4" y="15" width="16" height="4" rx="1" />
+    </svg>
+  );
+}
+
 function LockIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
       <rect x="5" y="11" width="14" height="9" rx="2" />
       <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
+
+function ImportIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M12 3v11M8 10l4 4 4-4" />
+      <path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
     </svg>
   );
 }
@@ -65,11 +131,64 @@ function SetupIcon() {
   );
 }
 
+function DeviceSetupIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <rect x="7" y="2" width="10" height="20" rx="2" />
+      <path d="M11 18h2" />
+    </svg>
+  );
+}
+
 function GlobeIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
       <circle cx="12" cy="12" r="9" />
       <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <rect x="4" y="5" width="16" height="15" rx="2" />
+      <path d="M4 10h16M9 3v4M15 3v4" />
+    </svg>
+  );
+}
+
+function FilterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M4 5h16l-6 7v6l-4 2v-8z" />
+    </svg>
+  );
+}
+
+function TemplatesIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M6 4h9l4 4v12H6z" />
+      <path d="M9 12h6M9 16h6" />
+    </svg>
+  );
+}
+
+function ContactsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <circle cx="12" cy="9" r="3.5" />
+      <path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5" />
+    </svg>
+  );
+}
+
+function SealIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z" />
+      <path d="m9 12 2 2 4-4" />
     </svg>
   );
 }
@@ -161,15 +280,42 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
               ))
             )}
           </SideNavGroup>
+          <SideNavGroup title="Organise">
+            <SideNavItem asChild icon={<CalendarIcon />} label="Calendar" current={location.pathname === '/calendar'}>
+              <RouterLink to="/calendar" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<ContactsIcon />} label="Contacts" current={location.pathname.startsWith('/contacts')}>
+              <RouterLink to="/contacts" />
+            </SideNavItem>
+          </SideNavGroup>
           <SideNavGroup title="Account">
             <SideNavItem asChild icon={<KeyIcon />} label="App passwords" current={location.pathname === '/app-passwords'}>
               <RouterLink to="/app-passwords" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<MaskIcon />} label="Masked aliases" current={location.pathname === '/account/aliases'}>
+              <RouterLink to="/account/aliases" />
             </SideNavItem>
             <SideNavItem asChild icon={<LockIcon />} label="Change password" current={location.pathname === '/account/password'}>
               <RouterLink to="/account/password" />
             </SideNavItem>
             <SideNavItem asChild icon={<SessionsIcon />} label="Devices" current={location.pathname === '/account/sessions'}>
               <RouterLink to="/account/sessions" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<ImportIcon />} label="Import mail" current={location.pathname === '/account/import'}>
+              <RouterLink to="/account/import" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<DeviceSetupIcon />} label="Set up iPhone / Mac" current={location.pathname === '/account/device-setup'}>
+              <RouterLink to="/account/device-setup" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<FilterIcon />} label="Rules" current={location.pathname === '/account/rules'}>
+              <RouterLink to="/account/rules" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<TemplatesIcon />} label="Compose templates" current={location.pathname === '/account/templates'}>
+              <RouterLink to="/account/templates" />
+            </SideNavItem>
+            {/* PST-T-12.2: OpenPGP keys and S/MIME certificates. */}
+            <SideNavItem asChild icon={<SealIcon />} label="Keys" current={location.pathname === '/account/keys'}>
+              <RouterLink to="/account/keys" />
             </SideNavItem>
           </SideNavGroup>
           {account?.isAdmin === true ? (
@@ -181,6 +327,21 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
                 current={location.pathname === '/admin/sessions'}
               >
                 <RouterLink to="/admin/sessions" />
+              </SideNavItem>
+              <SideNavItem asChild icon={<HeartbeatIcon />} label="Health" current={location.pathname === '/admin/health'}>
+                <RouterLink to="/admin/health" />
+              </SideNavItem>
+              <SideNavItem asChild icon={<QueueIcon />} label="Jobs" current={location.pathname === '/admin/jobs'}>
+                <RouterLink to="/admin/jobs" />
+              </SideNavItem>
+              <SideNavItem asChild icon={<OutboxIcon />} label="Outbound queue" current={location.pathname === '/admin/queue'}>
+                <RouterLink to="/admin/queue" />
+              </SideNavItem>
+              <SideNavItem asChild icon={<ChartIcon />} label="Deliverability" current={location.pathname === '/admin/deliverability'}>
+                <RouterLink to="/admin/deliverability" />
+              </SideNavItem>
+              <SideNavItem asChild icon={<TerminalIcon />} label="SMTP sessions" current={location.pathname === '/admin/smtp'}>
+                <RouterLink to="/admin/smtp" />
               </SideNavItem>
               <SideNavItem
                 asChild
@@ -208,7 +369,16 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
         </AccountMenu>
       }
     >
-      <Outlet />
+      {/* PST-T-11.1: the server refuses every /api/admin call to a non-admin (403); the screen says
+          so itself rather than leaving each admin page to fail its own way. */}
+      {location.pathname.startsWith('/admin/') && account?.isAdmin !== true ? (
+        <Page>
+          <PageHeader title="Admin" />
+          <NoAccess />
+        </Page>
+      ) : (
+        <Outlet />
+      )}
     </AppShell>
   );
 }

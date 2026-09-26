@@ -4,11 +4,11 @@
 // Environment: DATABASE_URL, PASSWORD_PEPPER, POSTROOM_KEK, BLOB_ROOT, TLS_CERT_FILE, TLS_KEY_FILE,
 // IMAPS_PORT (993), IMAP_PORT (143; 0 disables), LISTEN_HOST, EDGE_PEER_ADDRESS, PROXY_TIMEOUT_MS,
 // IMAP_MAX_CONNECTIONS_PER_IP (20), IMAP_IDLE_TIMEOUT_MS (30 min, never less), IMAP_PREAUTH_TIMEOUT_MS
-// (60 s), IMAP_MAX_APPEND_SIZE (100 MB), IMAP_STRUCTURE_CACHE (1000), MANAGESIEVE_PORT, HEALTH_PORT.
+// (60 s), IMAP_MAX_APPEND_SIZE (100 MB), IMAP_STRUCTURE_CACHE (1000), HEALTH_PORT. (ManageSieve on 4190 is its own daemon, apps/managesieve.)
 import { readFileSync } from 'node:fs';
 import { createBlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
-import { envInt, envString, placeholderListener, runDaemon, type DaemonContext } from '@postroom/daemon';
+import { envInt, envString, runDaemon, type DaemonContext } from '@postroom/daemon';
 import { createDb } from '@postroom/db';
 import { loadConfig } from './config.js';
 import { DAEMON } from './daemon.js';
@@ -39,10 +39,12 @@ export async function start(ctx: DaemonContext): Promise<void> {
     }
   }
 
-  const blobs = createBlobStore({ root: config.blobRoot, db, kek: loadKek({ env: ctx.env }) });
+  const kek = loadKek({ env: ctx.env });
+  const blobs = createBlobStore({ root: config.blobRoot, db, kek });
   const listeners = createImapListeners({
     db,
     blobs,
+    kek,
     pepper: pepper === '' ? undefined : pepper,
     tls,
     edgePeers: config.edgePeers,
@@ -60,8 +62,6 @@ export async function start(ctx: DaemonContext): Promise<void> {
   if (config.imapPort > 0) listening.push((await listeners.listen(listeners.imap, config.imapPort, config.host)).port);
   ctx.onShutdown(() => listeners.close());
 
-  const sieve = await placeholderListener(envInt(ctx.env, 'MANAGESIEVE_PORT', 4190), config.host, 'BYE "Postroom ManageSieve is not open yet"');
-  ctx.onShutdown(() => new Promise<void>((resolve) => sieve.close(() => { resolve(); })));
 
   ctx.log('listening', { host: config.host, ports: listening, tls: tls !== null, edgePeers: config.edgePeers });
   ctx.addHealth(async () => {

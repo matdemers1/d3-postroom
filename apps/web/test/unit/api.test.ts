@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, describeError, redirectFor, type AuthState } from '../../src/api';
+import { ApiError, INBOUND_STAGES, describeError, queuePath, redirectFor, type AuthState } from '../../src/api';
 
 const base: AuthState = { setupRequired: false, oidcConfigured: false, oidcAvailable: false, signedIn: false };
 const signedIn = (isAdmin: boolean): AuthState => ({
@@ -28,9 +28,36 @@ describe('redirectFor', () => {
     expect(redirectFor(signedIn(false), '/')).toBeNull();
   });
 
-  it('keeps non-admins out of admin screens (PST-REQ-007)', () => {
-    expect(redirectFor(signedIn(false), '/admin/sessions')).toBe('/');
+  // A non-admin on /admin/* is not bounced to the inbox: the Shell renders the designed no-access
+  // state there (PST-T-11.1), and the server refuses every /api/admin call regardless (PST-REQ-007).
+  it('does not silently redirect non-admins away from admin screens (PST-REQ-007, PST-T-11.1)', () => {
+    expect(redirectFor(signedIn(false), '/admin/sessions')).toBeNull();
     expect(redirectFor(signedIn(true), '/admin/sessions')).toBeNull();
+  });
+
+  it('Health and Jobs likewise render no-access for a non-admin rather than redirecting (PST-REQ-127, PST-REQ-128)', () => {
+    expect(redirectFor(signedIn(false), '/admin/health')).toBeNull();
+    expect(redirectFor(signedIn(false), '/admin/jobs')).toBeNull();
+    expect(redirectFor(signedIn(true), '/admin/health')).toBeNull();
+    expect(redirectFor(signedIn(true), '/admin/jobs')).toBeNull();
+  });
+});
+
+describe('INBOUND_STAGES', () => {
+  it('matches the pipeline order the replay endpoint accepts (apps/api/src/admin-jobs/index.ts)', () => {
+    expect(INBOUND_STAGES).toEqual(['verify', 'parse', 'classify', 'sieve', 'file', 'notify']);
+  });
+});
+
+describe('queuePath (PST-T-6.6)', () => {
+  it('matches apps/api/src/admin-queue/index.ts one route per scope kind', () => {
+    expect(queuePath({ kind: 'recipient', id: 'r1' })).toBe('/api/admin/queue/recipients/r1');
+    expect(queuePath({ kind: 'message', id: 'm1' })).toBe('/api/admin/queue/messages/m1');
+    expect(queuePath({ kind: 'domain', domain: 'example.com' })).toBe('/api/admin/queue/domains/example.com');
+  });
+
+  it('encodes a domain with special characters', () => {
+    expect(queuePath({ kind: 'domain', domain: 'exämple.test' })).toBe('/api/admin/queue/domains/ex%C3%A4mple.test');
   });
 });
 
