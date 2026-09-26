@@ -1,0 +1,17 @@
+BEGIN:VCARD
+VERSION:2.1
+N;LANGUAGE=en-us:Sample;Riley
+FN:Riley Sample
+ORG:Example Holdings
+TITLE:Operations Lead
+TEL;WORK;VOICE:(555) 010-0300
+TEL;CELL;VOICE:(555) 010-0301
+ADR;WORK;PREF:;;100 Example Avenue;Metropolis;XX;00001;Exampleland
+LABEL;WORK;PREF;ENCODING=QUOTED-PRINTABLE:100 Example Avenue=0D=0AMetropolis, XX 00001=0D=0AExa=
+mpleland
+NOTE;ENCODING=QUOTED-PRINTABLE;CHARSET=utf-8:Prefers e-mail. Caf=C3=A9 meetings on Fri=
+days.
+EMAIL;PREF;INTERNET:riley@example.com
+EMAIL;INTERNET:r.sample@example.org
+REV:20260101T120000Z
+END:VCARD
