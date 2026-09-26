@@ -456,6 +456,12 @@ importers:
         specifier: workspace:*
         version: link:../db
 
+  packages/classifier:
+    dependencies:
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
+
   packages/config: {}
 
   packages/credentials:
