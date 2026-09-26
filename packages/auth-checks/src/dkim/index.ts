@@ -25,6 +25,7 @@ export {
 } from './keys.js';
 export {
   DEFAULT_MAX_HEADER_BYTES,
+  findSeparator,
   parseHeaderFields,
   selectHeaders,
   splitMessage,
@@ -49,3 +50,27 @@ export {
   type LocalVerifyResult,
   type ParsedSignature,
 } from './verify-local.js';
+export {
+  authResultsDkim,
+  createDkimVerifier,
+  createDkimVerifierStream,
+  fetchKey as fetchDkimKey,
+  type DkimDns,
+  type DkimResult,
+  type DkimResultCode,
+  type DkimSource,
+  type DkimVerifier,
+  type DkimVerifierOptions,
+  type DkimVerifierStream,
+  type KeyLookup as DkimKeyLookup,
+  type VerificationStats,
+} from './verify.js';
+export {
+  parseDkimKeyRecord,
+  parseDkimSignature,
+  type DkimKeyRecord,
+  type KeyRecordParse,
+  type SignatureIdentity,
+  type SignatureParse,
+  type VerifiableSignature,
+} from './verify-tags.js';

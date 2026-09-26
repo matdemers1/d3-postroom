@@ -1,0 +1,26 @@
+rfc7208-tests.upstream.json / rfc7208-tests.upstream.yml
+=========================================================
+
+These two files are the openspf.org RFC 7208 test suite, release 2014.04
+(http://www.openspf.org/Test_Suite), distributed with pyspf under the
+Python Software Foundation Licence.
+
+Contributors (per the suite's own header): Stuart D Gathman (90% of the
+tests), Julian Mehnle, Frank Ellermann, Scott Kitterman, Wayne Schlitt,
+Craig Whitmore, Norman Maurer, Mark Shewmaker, Philip Gladstone.
+
+rfc7208-tests.upstream.yml is the suite exactly as fetched.
+rfc7208-tests.upstream.json is a mechanical YAML->JSON conversion of the
+same file (same 16 sections, 203 tests, same zonedata), used because the
+Postroom test runner is TypeScript/Vitest and does not otherwise parse YAML.
+
+test/unit/spf-rfc7208-upstream.test.ts is Postroom's own driver, and
+test/unit/fixtures/spf/upstream-zone-dns.ts is Postroom's own translation
+of the suite's zonedata format into the evaluator's SpfDns interface -
+neither of those is upstream content.
+
+rfc7208-tests.authored.ts and macro-examples.ts, alongside this file, are
+Postroom's own fixtures, reconstructed from RFC 7208's text (not from this
+suite) before the real upstream file was available in this environment;
+they are kept for their own coverage (in particular the fast-check fuzz
+test and the DNS-adapter unit test both still use zone-dns.ts).

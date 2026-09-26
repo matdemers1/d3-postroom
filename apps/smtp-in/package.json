@@ -14,7 +14,20 @@
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
   "dependencies": {
-    "@postroom/daemon": "workspace:*"
+    "@postroom/daemon": "workspace:*",
+    "@postroom/db": "workspace:*",
+    "@postroom/smtp-proto": "workspace:*",
+    "@postroom/auth-checks": "workspace:*",
+    "@postroom/mime": "workspace:*",
+    "@postroom/dns": "workspace:*",
+    "@postroom/blobstore": "workspace:*",
+    "@postroom/crypto": "workspace:*",
+    "@postroom/queue": "workspace:*",
+    "@postroom/audit": "workspace:*",
+    "@postroom/proxy-protocol": "workspace:*",
+    "@postroom/attachments": "workspace:*",
+    "@postroom/dsn": "workspace:*",
+    "@postroom/dnsbl": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

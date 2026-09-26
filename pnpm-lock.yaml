@@ -62,6 +62,9 @@ importers:
       '@postroom/delivery':
         specifier: workspace:*
         version: link:../delivery
+      '@postroom/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
       argon2:
         specifier: ^0.45.1
         version: 0.45.1
@@ -157,9 +160,48 @@ importers:
 
   apps/smtp-in:
     dependencies:
+      '@postroom/attachments':
+        specifier: workspace:*
+        version: link:../../packages/attachments
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@postroom/auth-checks':
+        specifier: workspace:*
+        version: link:../../packages/auth-checks
+      '@postroom/blobstore':
+        specifier: workspace:*
+        version: link:../../packages/blobstore
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/dns':
+        specifier: workspace:*
+        version: link:../../packages/dns
+      '@postroom/dnsbl':
+        specifier: workspace:*
+        version: link:../../packages/dnsbl
+      '@postroom/dsn':
+        specifier: workspace:*
+        version: link:../../packages/dsn
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../../packages/mime
+      '@postroom/proxy-protocol':
+        specifier: workspace:*
+        version: link:../../packages/proxy-protocol
+      '@postroom/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
+      '@postroom/smtp-proto':
+        specifier: workspace:*
+        version: link:../../packages/smtp-proto
     devDependencies:
       tsx:
         specifier: ^4.23.13
@@ -232,9 +274,33 @@ importers:
 
   apps/worker:
     dependencies:
+      '@postroom/attachments':
+        specifier: workspace:*
+        version: link:../../packages/attachments
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@postroom/blobstore':
+        specifier: workspace:*
+        version: link:../../packages/blobstore
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/dsn':
+        specifier: workspace:*
+        version: link:../../packages/dsn
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../../packages/mime
+      '@postroom/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
     devDependencies:
       tsx:
         specifier: ^4.23.13
@@ -256,6 +322,12 @@ importers:
         version: 9.5.2
 
   packages/alerts: {}
+
+  packages/attachments:
+    dependencies:
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
 
   packages/audit:
     dependencies:
@@ -281,6 +353,12 @@ importers:
       '@postroom/crypto':
         specifier: workspace:*
         version: link:../crypto
+      '@postroom/dns':
+        specifier: workspace:*
+        version: link:../dns
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
 
   packages/blobstore:
     dependencies:
@@ -341,11 +419,19 @@ importers:
 
   packages/dns: {}
 
+  packages/dnsbl:
+    dependencies:
+      '@postroom/dns':
+        specifier: workspace:*
+        version: link:../dns
+
   packages/dsn:
     dependencies:
       '@postroom/db':
         specifier: workspace:*
         version: link:../db
+
+  packages/mime: {}
 
   packages/proxy-protocol: {}
 

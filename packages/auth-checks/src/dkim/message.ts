@@ -84,7 +84,7 @@ async function closeIterator(it: AsyncIterator<Uint8Array>): Promise<void> {
 }
 
 /** Where the header ends and the body starts, or undefined if the blank line is not in `buf`. */
-function findSeparator(buf: Buffer, from: number): { headEnd: number; bodyStart: number } | undefined {
+export function findSeparator(buf: Buffer, from: number): { headEnd: number; bodyStart: number } | undefined {
   // A message that starts with CRLF has an empty header block.
   if (buf.length >= 2 && buf[0] === 0x0d && buf[1] === 0x0a) return { headEnd: 0, bodyStart: 2 };
   const i = buf.indexOf(SEPARATOR, from);
