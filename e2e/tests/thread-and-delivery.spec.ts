@@ -65,6 +65,9 @@ test.afterAll(async () => {
 
 test.beforeEach(async ({ context }) => {
   await context.addCookies(cookies);
+  // These specs prove what a send does once it goes. The undo window (PST-T-9.1, default 10 s) is
+  // its own spec's subject, so it is off here: a send goes at once, as it did before undo existed.
+  await context.addInitScript({ content: "window.localStorage.setItem('postroom.undoSeconds', '0');" });
 });
 
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
