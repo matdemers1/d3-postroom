@@ -25,7 +25,7 @@ and what happened — never inferred from the code being correct.
 
 | Runbook | Last executed | By | Result |
 |---|---|---|---|
-| [`deploy.md`](deploy.md) | not yet executed | — | needs operator access to Shipyard (console/MCP token or Zima shell) and a green `main` build |
+| [`deploy.md`](deploy.md) | 2026-09-26 | Claude Code (fleet lead), Shipyard CLI on the Zima | `c989d2b` deployed: verify → migrate → pull → swap → check → soak succeeded; `/health` showed that revision and schema `20260925233943_inbound_spool`. The forced-failure rollback step was not run (it needs a production container stopped by the operator). |
 | [`edge-rebuild.md`](edge-rebuild.md) | not yet executed | — | needs operator AWS Lightsail access (`us-east-1`) |
 | [`kek-restore.md`](kek-restore.md) | not yet executed | — | needs a clean host, AWS backup-bucket access, and the operator's escrowed `BACKUP_KEK_PASSPHRASE` |
 | [`aws-port25.md`](aws-port25.md) | not yet executed | — | needs operator access to AWS Support Center and a live edge instance |
