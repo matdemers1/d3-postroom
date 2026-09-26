@@ -1,0 +1,14 @@
+From: The Commuter <newsletter@thecommuter.example.org>
+List-Id: The Commuter <bulk.thecommuter.example.org>
+List-Unsubscribe: <https://thecommuter.example.org/unsubscribe>, <mailto:unsubscribe@thecommuter.example.org>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Precedence: bulk
+To: sam@d3cloud.io
+Subject: Ten links, no ads
+Date: Mon, 07 Sep 2026 13:55:25 +0000
+Message-ID: <golden-0098.20260926@thecommuter.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=thecommuter.example.org; dkim=pass header.d=thecommuter.example.org; dmarc=pass header.from=thecommuter.example.org
+
+Ten links, no ads
+
+Read online: https://thecommuter.example.org/issues/5

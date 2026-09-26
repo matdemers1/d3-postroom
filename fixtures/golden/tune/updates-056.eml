@@ -1,0 +1,12 @@
+From: AccountGuard <hello@accountguard.example.org>
+To: dana@d3cloud.io
+Subject: Reset your password
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.03-10.0.0.1
+Date: Tue, 08 Sep 2026 05:28:47 +0000
+Message-ID: <golden-0109.20260926@accountguard.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=accountguard.example.org; dkim=pass header.d=accountguard.example.org; dmarc=pass header.from=accountguard.example.org
+
+Reset your password
+
+More detail: https://accountguard.example.org/status/1002

@@ -1,0 +1,12 @@
+From: ParcelHop <shipping@parcelhop.example.com>
+To: dana@d3cloud.io
+Subject: Delivery scheduled for tomorrow
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.06-10.0.0.1
+Date: Tue, 08 Sep 2026 09:31:55 +0000
+Message-ID: <golden-0112.20260926@parcelhop.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=parcelhop.example.com; dkim=pass header.d=parcelhop.example.com; dmarc=pass header.from=parcelhop.example.com
+
+Delivery scheduled for tomorrow
+
+More detail: https://parcelhop.example.com/status/1005

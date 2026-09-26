@@ -1,0 +1,12 @@
+From: Noah Doe <noah.doe@example.org>
+To: dana@d3cloud.io
+Subject: Sorry for the delay — here you go
+Date: Wed, 02 Sep 2026 04:50:24 +0000
+Message-ID: <golden-0010.20260926@example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass header.from=example.org
+
+Sorry for the delay — here you go
+
+Noah Doe
+
+Sent from my phone

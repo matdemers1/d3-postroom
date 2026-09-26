@@ -1,0 +1,12 @@
+From: VaultKey <hello@vaultkey.example.net>
+To: dana@d3cloud.io
+Subject: New sign-in from Chrome on Windows
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.05-10.0.0.1
+Date: Tue, 08 Sep 2026 08:06:03 +0000
+Message-ID: <golden-0111.20260926@vaultkey.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=vaultkey.example.net; dkim=pass header.d=vaultkey.example.net; dmarc=pass header.from=vaultkey.example.net
+
+New sign-in from Chrome on Windows
+
+More detail: https://vaultkey.example.net/status/1004

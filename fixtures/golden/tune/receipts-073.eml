@@ -1,0 +1,12 @@
+From: Anchorline Books <receipts@anchorline.example.org>
+To: dana@d3cloud.io
+Subject: Your subscription has renewed
+X-SG-EID: sg-eid-1006
+Feedback-ID: receipt:anchorline.example.org:esp
+Date: Thu, 10 Sep 2026 04:43:47 +0000
+Message-ID: <golden-0139.20260926@anchorline.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=anchorline.example.org; dkim=pass header.d=anchorline.example.org; dmarc=pass header.from=anchorline.example.org
+
+Your subscription has renewed
+
+Order total: $25.99

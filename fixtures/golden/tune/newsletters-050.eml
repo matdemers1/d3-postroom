@@ -1,0 +1,12 @@
+From: Trailhead Weekly <newsletter@trailhead.example.org>
+List-Id: trailhead.trailhead.example.org
+List-Unsubscribe: <https://trailhead.example.org/unsubscribe>
+To: dana@d3cloud.io
+Subject: What we launched this week
+Date: Mon, 07 Sep 2026 02:07:45 +0000
+Message-ID: <golden-0090.20260926@trailhead.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=trailhead.example.org; dkim=pass header.d=trailhead.example.org; dmarc=pass header.from=trailhead.example.org
+
+What we launched this week
+
+Read online: https://trailhead.example.org/issues/10

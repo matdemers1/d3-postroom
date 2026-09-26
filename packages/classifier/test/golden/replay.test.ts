@@ -1,7 +1,10 @@
-// The golden replay gate (PST-T-5.5): CI runs the ~200-message synthetic set in fixtures/golden/
-// through the classifier and fails if any bucket's precision or recall drops below the floor
-// recorded in fixtures/golden/thresholds.json (PST-REQ-107). This is what makes `pnpm test` fail on
-// a real regression, not just on the doneWhen check run by hand.
+// The golden replay gate (PST-T-5.5): CI runs fixtures/golden/holdout through the classifier and
+// fails if any bucket's precision or recall drops below the floor recorded in
+// fixtures/golden/thresholds.json (PST-REQ-107). fixtures/golden/tune is reported for visibility —
+// developers may look at it while changing heuristics — but never gates: `tune` and `holdout` are
+// generated from disjoint template pools precisely so a heuristic cannot be quietly shaped to fit
+// the messages this test reads. See docs/runbooks/calibration.md for the discipline that makes that
+// split meaningful (never edit heuristics while looking at a holdout failure).
 //
 // The actual classify/parse/metrics engine lives in scripts/golden/lib.mjs and is invoked here via
 // scripts/golden/replay.mjs, so `pnpm --filter @postroom/classifier test` (CI's unit stage) and a
@@ -20,6 +23,9 @@ interface BucketResult {
   fn: number;
   precision: number;
   recall: number;
+}
+
+interface HoldoutBucketResult extends BucketResult {
   thresholdPrecision: number | null;
   thresholdRecall: number | null;
   precisionOk: boolean;
@@ -28,13 +34,13 @@ interface BucketResult {
 
 interface ReplaySummary {
   ok: boolean;
-  buckets: BucketResult[];
-  total: number;
+  holdout: { buckets: HoldoutBucketResult[]; total: number };
+  tune: { buckets: BucketResult[]; total: number };
 }
 
 function runReplay(): ReplaySummary {
-  // replay.mjs exits 1 when a bucket is below threshold; execFileSync would throw on that exit
-  // code, so run it and read stdout off the result whichever way it exits, then assert in-test
+  // replay.mjs exits 1 when a holdout bucket is below threshold; execFileSync would throw on that
+  // exit code, so run it and read stdout off the result whichever way it exits, then assert in-test
   // (a thrown exit code without a message would tell the test "it failed" without saying why).
   const result = execFileSync(process.execPath, [replayScript, '--json'], {
     encoding: 'utf8',
@@ -48,7 +54,7 @@ function pct(n: number): string {
 }
 
 describe('golden replay (PST-REQ-107)', () => {
-  it('meets every bucket\'s recorded precision/recall threshold', () => {
+  it('holdout meets every bucket\'s recorded precision/recall threshold', () => {
     let summary: ReplaySummary;
     try {
       summary = runReplay();
@@ -59,14 +65,18 @@ describe('golden replay (PST-REQ-107)', () => {
       summary = JSON.parse(stdout.trim().split('\n').pop() as string) as ReplaySummary;
     }
 
-    const table = summary.buckets
+    const tuneTable = summary.tune.buckets.map((b) => `${b.bucket}: precision ${pct(b.precision)}, recall ${pct(b.recall)}`).join('\n');
+    console.log(`golden replay — tune, informational only (${summary.tune.total} messages):\n${tuneTable}`);
+
+    const holdoutTable = summary.holdout.buckets
       .map((b) => `${b.bucket}: precision ${pct(b.precision)} (>= ${pct(b.thresholdPrecision ?? 0)}), recall ${pct(b.recall)} (>= ${pct(b.thresholdRecall ?? 0)})`)
       .join('\n');
-    console.log(`golden replay (${summary.total} messages):\n${table}`);
+    console.log(`golden replay — holdout, gates CI (${summary.holdout.total} messages):\n${holdoutTable}`);
 
-    const failing = summary.buckets.filter((b) => !b.precisionOk || !b.recallOk);
-    expect(failing, `bucket(s) below threshold:\n${failing.map((b) => `  ${b.bucket}: precision ${pct(b.precision)}, recall ${pct(b.recall)}`).join('\n')}`).toEqual([]);
+    const failing = summary.holdout.buckets.filter((b) => !b.precisionOk || !b.recallOk);
+    expect(failing, `holdout bucket(s) below threshold:\n${failing.map((b) => `  ${b.bucket}: precision ${pct(b.precision)}, recall ${pct(b.recall)}`).join('\n')}`).toEqual([]);
     expect(summary.ok).toBe(true);
-    expect(summary.total).toBeGreaterThanOrEqual(200);
+    expect(summary.holdout.total).toBeGreaterThan(0);
+    expect(summary.tune.total).toBeGreaterThan(0);
   });
 });

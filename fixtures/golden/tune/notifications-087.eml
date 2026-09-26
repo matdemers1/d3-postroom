@@ -1,0 +1,11 @@
+From: Pingset <notifications@pingset.example.net>
+To: dana@d3cloud.io
+Subject: You were mentioned in #general
+List-Unsubscribe: <https://pingset.example.net/notifications/unsubscribe>
+Date: Fri, 11 Sep 2026 23:12:03 +0000
+Message-ID: <golden-0166.20260926@pingset.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=pingset.example.net; dkim=pass header.d=pingset.example.net; dmarc=pass header.from=pingset.example.net
+
+You were mentioned in #general
+
+Open Pingset: https://pingset.example.net/open

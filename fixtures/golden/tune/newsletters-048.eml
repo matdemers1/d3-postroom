@@ -1,0 +1,12 @@
+From: Founders Digest <newsletter@foundersdigest.example.com>
+X-SES-Outgoing: 2026.09.01-10.0.0.1
+Feedback-ID: bulk:foundersdigest.example.com:ses
+To: dana@d3cloud.io
+Subject: Notes from the field
+Date: Sun, 06 Sep 2026 20:46:43 +0000
+Message-ID: <golden-0088.20260926@foundersdigest.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=foundersdigest.example.com; dkim=pass header.d=foundersdigest.example.com; dmarc=pass header.from=foundersdigest.example.com
+
+Notes from the field
+
+Read online: https://foundersdigest.example.com/issues/8

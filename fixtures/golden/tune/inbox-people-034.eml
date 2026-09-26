@@ -1,0 +1,13 @@
+From: Marco Rossi <marco.rossi@example.org>
+To: team-list@example.org
+Cc: dana@d3cloud.io
+Subject: Loved your talk
+Date: Sat, 05 Sep 2026 00:36:43 +0000
+Message-ID: <golden-0054.20260926@example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass header.from=example.org
+
+Hello,
+
+Loved your talk
+
+Marco Rossi

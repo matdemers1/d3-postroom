@@ -1,0 +1,12 @@
+From: Maria Okafor <maria.okafor@corp.example.org>
+To: sam@d3cloud.io
+Subject: Your name came up in conversation
+Date: Sat, 05 Sep 2026 23:42:51 +0000
+Message-ID: <golden-0073.20260926@corp.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=corp.example.org; dkim=pass header.d=corp.example.org; dmarc=pass header.from=corp.example.org
+
+Hello,
+
+Your name came up in conversation
+
+Maria Okafor
