@@ -38,3 +38,36 @@ export {
   type SignatureStatus,
   type SignerReport,
 } from './analyze.js';
+// PST-T-12.2: the writing side — key generation, signatures, encryption, CMS, and MIME framing.
+export { publicPartLength } from './keys.js';
+export { canEncryptTo, encryptionMaterials, signingAuthority, signingMaterials } from './validity.js';
+export {
+  canonicalText,
+  encodeMpi,
+  encodeSubpacket,
+  encryptMessage,
+  generateKey,
+  isProtectedSecretBlock,
+  literalPacket,
+  makeSignature,
+  protectSecretKeyBlock,
+  publicKeyBlock,
+  revocationSignature,
+  RevocationReason,
+  s2kCount,
+  s2kDerive,
+  signDetached,
+  signDetachedPacket,
+  signerOf,
+  unlockSecretKeyBlock,
+  withKeySignature,
+  type DetachedOptions,
+  type EncryptedRecipient,
+  type EncryptResult,
+  type GeneratedKey,
+  type GenerateOptions,
+  type Signer,
+  type SignatureSpec,
+} from './write.js';
+export { derTime, encryptCmsEnveloped, signCmsDetached, type CmsSignOptions } from './cms-write.js';
+export { entityBytes, pgpMimeEncrypt, pgpMimeSign, smimeEncrypt, smimeSign, type MimeEntity, type SmimeSigner } from './mime-write.js';

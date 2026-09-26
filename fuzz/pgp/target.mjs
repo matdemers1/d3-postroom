@@ -2,7 +2,7 @@
 //
 // The same bytes go through every hand-written format reader in the package: OpenPGP packet
 // framing (old/new format, partial lengths), transferable keys, v4 signature packets, the whole
-// decrypt path with no keys (PKESK and SEIPD framing), ASCII armor and the cleartext framework,
+// decrypt path with no keys (PKESK and SEIPD framing), secret-key unlocking (PST-T-12.2), ASCII armor and the cleartext framework,
 // the DER reader in both modes (strict DER, and BER with indefinite lengths, padded lengths and
 // segmented OCTET STRINGs — PST-T-12.4), and the CMS ContentInfo / SignedData / EnvelopedData /
 // certificate readers (BER wrappers by default, and strict DER).
@@ -73,6 +73,11 @@ export function exercise(bytes) {
     const cert = pgp.parseCertificate(buf);
     pgp.chainOf(cert, [cert]);
   });
+  // PST-T-12.2: what the Keys screen runs on an imported key block — the secret-key protection
+  // reader (S2K usage, cipher, specifier, IV), and the secret → public conversion.
+  own(() => pgp.isProtectedSecretBlock(buf));
+  own(() => pgp.publicKeyBlock(buf));
+  own(() => pgp.unlockSecretKeyBlock(buf, 'fuzz'));
   const text = buf.toString('latin1');
   own(() => pgp.decodeArmors(text));
   own(() => pgp.parseCleartext(text));

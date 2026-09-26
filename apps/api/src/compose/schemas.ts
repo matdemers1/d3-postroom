@@ -46,6 +46,18 @@ const Fields = {
   format: ComposeFormat.default('plain').describe('markdown: text is Markdown, sent multipart/alternative with sanitized HTML (PST-REQ-145).'),
 };
 
+/**
+ * PST-T-12.2 (PST-REQ-161): sign with the sender's own key, and/or encrypt to every recipient's key
+ * and the sender's own. Both, when given, must be the same kind. Headers (Subject included) are not
+ * protected.
+ */
+export const SendCrypto = z
+  .object({
+    sign: z.enum(['pgp', 'smime']).optional().describe('PGP/MIME (RFC 3156) or S/MIME (RFC 8551) multipart/signed, with your own key for the From address.'),
+    encrypt: z.enum(['pgp', 'smime']).optional().describe('PGP/MIME multipart/encrypted or S/MIME enveloped-data, to every recipient and to you. A recipient without a key is 409 recipient_keys_missing, never a plaintext send.'),
+  })
+  .describe('Sign then encrypt when both are set.');
+
 export const SendRequest = z.object({
   from: Line.min(3).max(320).describe('One of the caller’s own addresses.'),
   ...Fields,
@@ -67,6 +79,8 @@ export const SendRequest = z.object({
     .max(MAX_REMIND_SECONDS)
     .optional()
     .describe('Remind if no reply: when nobody else has written in the thread this long after it was sent, it comes back to INBOX.'),
+  // PST-T-12.2 (PST-REQ-161): sign and/or encrypt with the account's keys.
+  crypto: SendCrypto.optional(),
 });
 
 export const DraftRequest = z.object({

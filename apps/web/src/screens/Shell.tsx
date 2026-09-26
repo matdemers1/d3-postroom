@@ -165,6 +165,15 @@ function ContactsIcon() {
   );
 }
 
+function SealIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
 /** The signed-in frame: sidebar (a drawer below `lg`), the account menu, and the page. */
 export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: () => Promise<void> }) {
   const location = useLocation();
@@ -261,6 +270,10 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
             </SideNavItem>
             <SideNavItem asChild icon={<TemplatesIcon />} label="Compose templates" current={location.pathname === '/account/templates'}>
               <RouterLink to="/account/templates" />
+            </SideNavItem>
+            {/* PST-T-12.2: OpenPGP keys and S/MIME certificates. */}
+            <SideNavItem asChild icon={<SealIcon />} label="Keys" current={location.pathname === '/account/keys'}>
+              <RouterLink to="/account/keys" />
             </SideNavItem>
           </SideNavGroup>
           {account?.isAdmin === true ? (

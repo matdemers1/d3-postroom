@@ -16,6 +16,8 @@ import { useLocation } from 'react-router-dom';
 import { Alert, Button, Checkbox, FormActions, FormField, Input, Select, Stack, Textarea } from '@d3cloud/ui';
 import { api, ApiError, type DraftInput } from '../api';
 import { templatesApi, type TemplateJson } from '../compose/api';
+import { keysApi, type CryptoKeyJson, type KeyKind } from '../keys/api';
+import { cryptoAvailability, cryptoRequest, KIND_LABEL, recipientAddresses } from '../keys/format';
 import {
   applyTemplate,
   fieldsOf,
@@ -76,6 +78,11 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
   const [remind, setRemind] = useState<number | null>(null);
   // PST-REQ-140: the undo window is the person's choice, remembered in this browser.
   const [undo, setUndo] = useState<number>(() => undoSeconds(storage()));
+  // PST-T-12.2 (PST-REQ-161): Sign / Encrypt with the account's keys, offered when the keys exist.
+  const [keys, setKeys] = useState<CryptoKeyJson[] | null>(null);
+  const [cryptoKind, setCryptoKind] = useState<KeyKind>('pgp');
+  const [signOn, setSignOn] = useState(false);
+  const [encryptOn, setEncryptOn] = useState(false);
   const toRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -125,6 +132,27 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
       bodyRef.current?.setSelectionRange(result.cursor, result.cursor);
     });
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    keysApi
+      .list()
+      .then(({ keys: list }) => {
+        if (cancelled) return;
+        setKeys(list);
+        // Offer the kind the person actually has a key of.
+        const ownKinds = new Set(list.filter((k) => k.owner === 'own' && k.revokedAt === null).map((k) => k.kind));
+        if (!ownKinds.has('pgp') && ownKinds.has('smime')) setCryptoKind('smime');
+      })
+      .catch(() => {
+        if (!cancelled) setKeys([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const recipients = recipientAddresses(state);
+  const availability = cryptoAvailability(keys ?? [], cryptoKind, recipients);
 
   const templateMatches = picker === null || templates === null ? [] : matchingTemplates(templates, picker.shortcut);
 
@@ -253,12 +281,14 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
     // Let a save in flight land first, so the draft it made is the one the send removes.
     await chain.current;
     try {
-      const body: Parameters<typeof api.sendOrHold>[0] & ReturnType<typeof sendExtra> = {
+      const crypto = cryptoRequest(cryptoKind, signOn, encryptOn, availability);
+      const body: Parameters<typeof api.sendOrHold>[0] & ReturnType<typeof sendExtra> & { crypto?: typeof crypto } = {
         ...fieldsOf(latest.current),
         from: me,
         draftId: draftId.current,
         ...timed.options,
         ...sendExtra(latest.current),
+        ...(crypto === undefined ? {} : { crypto }),
       };
       const result = await api.sendOrHold(body);
       // Held (undo window or scheduled): the toast outside the composer offers Undo (PST-REQ-140).
@@ -384,6 +414,41 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
           checked={state.requestReceipt}
           onCheckedChange={(checked) => { edit({ requestReceipt: checked === true }); }}
         />
+        <FormField
+          label="Sign and encrypt"
+          as="group"
+          optional
+          help={
+            keys === null
+              ? 'Checking your keys…'
+              : [signOn || availability.sign.available ? null : availability.sign.reason, availability.encrypt.available ? null : availability.encrypt.reason].filter((r): r is string => r !== null).join(' ') ||
+                `Headers, including the subject, are not encrypted. Encrypted mail is also encrypted to your own ${KIND_LABEL[cryptoKind]} key.`
+          }
+        >
+          <Stack gap="8">
+            <Select
+              aria-label="Key kind"
+              options={[
+                { value: 'pgp', label: 'OpenPGP (PGP/MIME)' },
+                { value: 'smime', label: 'S/MIME' },
+              ]}
+              value={cryptoKind}
+              onValueChange={(v) => { setCryptoKind(v === 'smime' ? 'smime' : 'pgp'); }}
+            />
+            <Checkbox
+              label="Sign"
+              checked={signOn}
+              disabled={!signOn && !availability.sign.available}
+              onCheckedChange={(checked) => { setSignOn(checked === true); }}
+            />
+            <Checkbox
+              label={availability.encrypt.missing.length > 0 && encryptOn ? `Encrypt — no key for ${availability.encrypt.missing.join(', ')}` : 'Encrypt'}
+              checked={encryptOn}
+              disabled={!encryptOn && !availability.encrypt.available}
+              onCheckedChange={(checked) => { setEncryptOn(checked === true); }}
+            />
+          </Stack>
+        </FormField>
         <FormField label="Remind me" optional help="If nobody replies in time, the message comes back to your Inbox.">
           <Select
             options={REMIND_CHOICES.map((c) => ({ value: c.seconds === null ? 'none' : String(c.seconds), label: c.label }))}

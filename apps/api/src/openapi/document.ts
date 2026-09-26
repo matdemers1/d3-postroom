@@ -20,6 +20,7 @@ import { CALENDAR_COMPONENTS, CALENDAR_ROUTES } from '../calendar/openapi.js';
 import { CONTACTS_COMPONENTS, CONTACTS_ROUTES } from '../contacts/openapi.js';
 import { TEMPLATES_COMPONENTS, TEMPLATES_ROUTES } from '../templates/openapi.js';
 import { INVITES_COMPONENTS, INVITES_ROUTES } from '../invites/openapi.js';
+import { KEYS_COMPONENTS, KEYS_ROUTES } from '../keys/openapi.js';
 
 type Json = Record<string, unknown>;
 
@@ -76,6 +77,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   ...CONTACTS_COMPONENTS,
   ...TEMPLATES_COMPONENTS,
   ...INVITES_COMPONENTS,
+  ...KEYS_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -347,6 +349,7 @@ export const ROUTES: RouteSpec[] = [
   ...CONTACTS_ROUTES,
   ...TEMPLATES_ROUTES,
   ...INVITES_ROUTES,
+  ...KEYS_ROUTES,
 ];
 
 function strip(schema: Json): Json {
