@@ -15,6 +15,7 @@ x-app: &app
       required: false
   environment: &app-env
     DATABASE_URL: ${DATABASE_URL:-postgres://postroom:${POSTGRES_PASSWORD:-postroom-dev}@postgres:5432/postroom}
+    DNS_RESOLVER: unbound:53
   restart: unless-stopped
   volumes:
     - blobs:/var/lib/postroom/blobs
@@ -61,6 +62,7 @@ services:
   delivery:
     <<: *app
     command: ["delivery"]
+    # Streams signed messages out of the blob store; the KEK comes from .env (POSTROOM_KEK).
     network_mode: "service:wireguard"
     environment: { <<: *app-env, HEALTH_PORT: "9104" }
     depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
@@ -88,8 +90,11 @@ services:
     profiles: [tools]
 
   unbound:
-    # Validating recursive resolver for DNSBL + DANE (PST-REQ-064); configured in PST-T-1.4.
+    # Our own DNSSEC-validating recursive resolver (PST-REQ-064): the only server whose AD bit the
+    # daemons trust, and the only one DNSBL queries go through (Spamhaus refuses public resolvers).
     image: mvance/unbound:1.22.0
+    volumes:
+      - ./deploy/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro
     restart: unless-stopped
 
   postgres:
