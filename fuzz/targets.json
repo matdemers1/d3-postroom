@@ -93,6 +93,15 @@
       "note": "Sieve lexer/parser/printer round trip, validator and interpreter (RFC 5228 + extensions)"
     },
     {
+      "name": "dav-proto",
+      "status": "active",
+      "package": "packages/dav-proto",
+      "target": "fuzz/dav-proto/target.mjs",
+      "corpus": "fuzz/dav-proto/corpus",
+      "fixtures": "fuzz/dav-proto/fixtures",
+      "note": "Strict XML parser (DTDs refused: no XXE, no entity expansion) + serializer round-trip, and the PROPFIND/PROPPATCH/MKCALENDAR/REPORT body parsers, path, Depth and entity-tag helpers"
+    },
+    {
       "name": "dmarc-report",
       "status": "pending: packages/reports not built",
       "package": "packages/reports"

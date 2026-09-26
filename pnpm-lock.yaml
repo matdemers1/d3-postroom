@@ -509,6 +509,8 @@ importers:
 
   packages/daemon: {}
 
+  packages/dav-proto: {}
+
   packages/db:
     dependencies:
       '@prisma/adapter-pg':
