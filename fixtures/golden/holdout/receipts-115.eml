@@ -1,0 +1,10 @@
+From: Parcelwise Store <sales@parcelwise.example.org>
+To: sam@d3cloud.io
+Subject: Your purchase is complete
+Date: Thu, 17 Sep 2026 11:39:27 +0000
+Message-ID: <golden-0251.20260926@parcelwise.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=parcelwise.example.org; dkim=pass header.d=parcelwise.example.org; dmarc=pass header.from=parcelwise.example.org
+
+Your purchase is complete
+
+Details: https://parcelwise.example.org/m/2001

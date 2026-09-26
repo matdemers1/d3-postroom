@@ -13,6 +13,16 @@ import { BUCKET_FOLDERS, type SortBucket } from './buckets.js';
 import { decide } from './decide.js';
 import { refineWithBayes, type BayesInput } from './bayes/refine.js';
 import type { HeaderLike, Signals } from './signals.js';
+import {
+  categoryOfWords,
+  knownNotifierDomain,
+  NOTIFICATION_SUBJECT,
+  RECEIPT_SUBJECT,
+  subdomainCue,
+  UPDATE_SUBJECT,
+  vocabularyWords,
+  type SenderCategory,
+} from './sender.js';
 
 /** The bucket a copy is filed into: INBOX's two halves, the four bucket folders, and Junk. */
 export const FILING_BUCKETS = ['priority', 'people', 'newsletters', 'updates', 'receipts', 'notifications', 'junk'] as const;
@@ -64,60 +74,45 @@ function domainOf(address: string | null): string {
   return at < 0 ? '' : address.slice(at + 1).toLowerCase().replace(/\.+$/, '');
 }
 
-function domainIs(domain: string, parent: string): boolean {
-  return domain === parent || domain.endsWith(`.${parent}`);
-}
-
-/** Senders whose mail is notifications (code hosts, calendars, monitoring, chat). */
-const NOTIFIER_DOMAINS = [
-  'github.com',
-  'gitlab.com',
-  'bitbucket.org',
-  'atlassian.net',
-  'linear.app',
-  'sentry.io',
-  'slack.com',
-  'discord.com',
-  'calendar.google.com',
-  'pagerduty.com',
-  'statuspage.io',
-  'uptimerobot.com',
-  'vercel.com',
-  'netlify.com',
-  'circleci.com',
-  'docker.com',
-  'foreman.d3cloud.io',
-  'shipyard.d3cloud.io',
-];
-
 /** Header names that only notification systems send. */
 const NOTIFIER_HEADERS = ['x-github-reason', 'x-github-sender', 'x-gitlab-', 'x-jira-', 'x-linear-', 'x-sentry-', 'x-google-calendar-'];
 
-const NOTIFIER_LOCAL = /(^|[._-])(notifications?|alerts?|calendar|calendar-notification|monitor(ing)?|builds?|ci|status)($|[._-])/i;
+const CATEGORY_BUCKET: Readonly<Record<Exclude<SenderCategory, 'role'>, Rule['bucket']>> = {
+  receipt: 'receipts',
+  update: 'updates',
+  notification: 'notifications',
+  newsletter: 'newsletters',
+};
 
-const RECEIPT_SUBJECT =
-  /\b(receipt|invoice|your order|order (confirmation|confirmed|#|number|no\.?)|order\s+\S*\d|purchase|payment (received|confirmation|successful|processed)|you paid|thanks for your (order|purchase|payment)|refund|billing statement|subscription (renewed|renewal|confirmation))\b/i;
-
-const UPDATE_SUBJECT =
-  /\b(password|security (alert|notice|code)|sign[- ]?in|log[- ]?in|new device|verify|verification|confirm your (email|account)|account (update|activity|change)|2fa|two[- ]factor|one[- ]time (code|password)|shipped|shipping|out for delivery|delivered|delivery (scheduled|update|window)|tracking|your (package|shipment|delivery|ride|driver|order status)|arriv(ing|es|ed)|minutes away|terms of (service|use)|privacy policy|policy update|statement is ready|reset)\b/i;
-
-/** Commerce senders whose From domain alone says "receipt" when the subject is not conclusive. */
-const RECEIPT_SENDER_LOCAL = /(^|[._-])(receipts?|orders?|order-update|billing|invoices?|payments?|purchases?)($|[._-])/i;
-
-const UPDATE_SENDER_LOCAL = /(^|[._-])(updates|security|account|accounts|verify|verification|shipping|shipment|tracking|delivery|auto-confirm)($|[._-])/i;
+const CATEGORY_LABEL: Readonly<Record<Exclude<SenderCategory, 'role'>, string>> = {
+  receipt: 'an order/billing address',
+  update: 'an account/security/shipping address',
+  notification: 'a notification address',
+  newsletter: 'a newsletter/marketing address',
+};
 
 interface Rule {
   readonly bucket: Exclude<FilingBucket, 'priority' | 'people' | 'junk'>;
   readonly reason: string;
 }
 
-/** The explainable heuristics for an Other message, first match wins. Always returns a rule. */
+/** The explainable heuristics for an Other message, first match wins. Always returns a rule.
+ *
+ * Order, and why: a notification system's own headers or domain are conclusive; then the subject
+ * (receipt wording beats an order/billing sender, which beats account/shipping wording, which beats
+ * notification wording, which beats the sender's other mailbox words) — the subject says what THIS
+ * message is, the sender only what that mailbox usually sends; then the sending subdomain; then
+ * Auto-Submitted and list/bulk markers; then automated; and finally Updates. */
 export function heuristicBucket(input: BucketForInput): Rule {
   const { signals, headers } = input;
   const subject = (input.subject ?? header(headers, 'subject') ?? '').trim();
   const from = signals.fromAddress;
   const domain = domainOf(from);
   const local = from === null ? '' : from.slice(0, Math.max(0, from.lastIndexOf('@'))).toLowerCase();
+  const senderWords = vocabularyWords(local);
+  const found = categoryOfWords(senderWords.filter((w) => categoryOfWords([w]) !== 'role'));
+  const senderCategory: Exclude<SenderCategory, 'role'> | null = found === 'role' ? null : found;
+  const sender = `${local}@${domain}`;
 
   // 1. Notification systems: their own headers or their domains, before the bulk rule (GitHub
   //    notifications carry List-Id and List-Unsubscribe too).
@@ -125,33 +120,48 @@ export function heuristicBucket(input: BucketForInput): Rule {
     const found = name.endsWith('-') ? hasHeaderPrefix(headers, name) : header(headers, name) !== null ? name : null;
     if (found !== null) return { bucket: 'notifications', reason: `notifications: ${found} header (notification system)` };
   }
-  const notifier = NOTIFIER_DOMAINS.find((d) => domainIs(domain, d));
-  if (notifier !== undefined) return { bucket: 'notifications', reason: `notifications: sender domain ${domain} is a notification system (${notifier})` };
+  const notifier = knownNotifierDomain(domain);
+  if (notifier !== null) return { bucket: 'notifications', reason: `notifications: sender domain ${domain} is a notification system (${notifier})` };
 
   // 2. Receipts: the subject says so, or a commerce sender's order/billing address.
   const receipt = RECEIPT_SUBJECT.exec(subject);
   if (receipt !== null) return { bucket: 'receipts', reason: `receipts: subject mentions "${receipt[0]}"` };
-  if (RECEIPT_SENDER_LOCAL.test(local)) return { bucket: 'receipts', reason: `receipts: sender "${local}@${domain}" is an order/billing address` };
+  if (senderCategory === 'receipt') return { bucket: 'receipts', reason: `receipts: sender "${sender}" is ${CATEGORY_LABEL.receipt} ("${senderWords.join('", "')}")` };
 
-  // 3. Updates: transactional account, security and shipping mail.
+  // 3. Updates by subject: transactional account, security, travel and shipping mail.
   const update = UPDATE_SUBJECT.exec(subject);
   if (update !== null) return { bucket: 'updates', reason: `updates: subject mentions "${update[0]}" (account, security or shipping)` };
-  if (UPDATE_SENDER_LOCAL.test(local)) return { bucket: 'updates', reason: `updates: sender "${local}@${domain}" is an account/security/shipping address` };
 
-  // 4. Auto-Submitted (RFC 3834) or a notification-style sender: machine-generated notifications.
+  // 4. Notifications by subject: mentions, comments, reminders, builds, incidents.
+  const notification = NOTIFICATION_SUBJECT.exec(subject);
+  if (notification !== null) return { bucket: 'notifications', reason: `notifications: subject mentions "${notification[0]}" (activity or alert)` };
+
+  // 5. The sender's mailbox words, then its sending subdomain (a newsletter-style mailbox waits
+  //    until after the list markers, so a real list is still explained by its List-Id).
+  if (senderCategory !== null && senderCategory !== 'newsletter') {
+    return { bucket: CATEGORY_BUCKET[senderCategory], reason: `${CATEGORY_BUCKET[senderCategory]}: sender "${sender}" is ${CATEGORY_LABEL[senderCategory]} ("${senderWords.join('", "')}")` };
+  }
+  const sub = subdomainCue(domain);
+  const subCategory = sub === null || sub.category === null || sub.category === 'role' ? null : sub.category;
+  if (sub !== null && subCategory !== null && subCategory !== 'newsletter') {
+    return { bucket: CATEGORY_BUCKET[subCategory], reason: `${CATEGORY_BUCKET[subCategory]}: sent from a ${subCategory} subdomain ("${sub.label}." of ${domain})` };
+  }
+
+  // 6. Auto-Submitted (RFC 3834): machine-generated notifications.
   const autoSubmitted = header(headers, 'auto-submitted');
   if (autoSubmitted !== null && autoSubmitted.trim().toLowerCase() !== 'no') {
     return { bucket: 'notifications', reason: `notifications: Auto-Submitted: ${autoSubmitted.trim()}` };
   }
-  if (NOTIFIER_LOCAL.test(local)) return { bucket: 'notifications', reason: `notifications: sender "${local}@${domain}" is a notification address` };
 
-  // 5. Newsletters: mailing-list and bulk-sender markers.
+  // 7. Newsletters: mailing-list and bulk-sender markers.
   if (header(headers, 'list-id') !== null || header(headers, 'list-unsubscribe') !== null) {
     return { bucket: 'newsletters', reason: 'newsletters: List-Id/List-Unsubscribe present (mailing list)' };
   }
   if (signals.bulk.value) return { bucket: 'newsletters', reason: `newsletters: bulk mail (${signals.bulk.reason})` };
+  if (senderCategory === 'newsletter') return { bucket: 'newsletters', reason: `newsletters: sender "${sender}" is ${CATEGORY_LABEL.newsletter} ("${senderWords.join('", "')}")` };
+  if (sub !== null && subCategory === 'newsletter') return { bucket: 'newsletters', reason: `newsletters: sent from a newsletter subdomain ("${sub.label}." of ${domain})` };
 
-  // 6. Anything else automated is a notification; anything else at all is an update.
+  // 8. Anything else automated is a notification; anything else at all is an update.
   if (signals.automated.value) return { bucket: 'notifications', reason: `notifications: automated sender (${signals.automated.reason})` };
   return { bucket: 'updates', reason: 'updates: non-personal sender with no finer signal' };
 }

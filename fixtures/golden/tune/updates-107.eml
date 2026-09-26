@@ -1,0 +1,10 @@
+From: Pinecone Pharmacy <rx-updates@pineconepharmacy.example.org>
+To: dana@d3cloud.io
+Subject: Your prescription is ready for pickup
+Date: Mon, 14 Sep 2026 16:37:13 +0000
+Message-ID: <golden-0209.20260926@pineconepharmacy.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=pineconepharmacy.example.org; dkim=pass header.d=pineconepharmacy.example.org; dmarc=pass header.from=pineconepharmacy.example.org
+
+Your prescription is ready for pickup
+
+Details: https://pineconepharmacy.example.org/m/2004

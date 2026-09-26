@@ -1,0 +1,14 @@
+From: Finance Team <billing@partnerco.example.com>
+To: dana@d3cloud.io
+Subject: Re: invoice 2291
+Date: Sat, 19 Sep 2026 03:24:16 +0000
+Message-ID: <golden-0277.20260926@partnerco.example.com>
+In-Reply-To: <thread-277@d3cloud.io>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=partnerco.example.com; dkim=pass header.d=partnerco.example.com; dmarc=pass header.from=partnerco.example.com
+
+Hi,
+
+Re: invoice 2291
+
+Thanks,
+Finance Team

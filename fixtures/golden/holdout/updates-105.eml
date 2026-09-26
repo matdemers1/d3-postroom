@@ -1,0 +1,10 @@
+From: Orbit Mobile <myaccount@orbitmobile.example.com>
+To: sam@d3cloud.io
+Subject: Your password was changed
+Date: Wed, 16 Sep 2026 20:33:46 +0000
+Message-ID: <golden-0241.20260926@orbitmobile.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=orbitmobile.example.com; dkim=pass header.d=orbitmobile.example.com; dmarc=pass header.from=orbitmobile.example.com
+
+Your password was changed
+
+Details: https://orbitmobile.example.com/m/2002

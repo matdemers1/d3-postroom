@@ -1,0 +1,10 @@
+From: Tickety <support-notifications@tickety.example.com>
+To: dana@d3cloud.io
+Subject: Ticket #3321 was updated
+Date: Wed, 16 Sep 2026 08:31:05 +0000
+Message-ID: <golden-0234.20260926@tickety.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=tickety.example.com; dkim=pass header.d=tickety.example.com; dmarc=pass header.from=tickety.example.com
+
+Ticket #3321 was updated
+
+Details: https://tickety.example.com/m/2006

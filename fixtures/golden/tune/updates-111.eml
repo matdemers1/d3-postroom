@@ -1,0 +1,10 @@
+From: Beacon Health <appointments@notify.beaconhealth.example.net>
+To: dana@d3cloud.io
+Subject: Your appointment is confirmed
+Date: Tue, 15 Sep 2026 00:53:39 +0000
+Message-ID: <golden-0213.20260926@notify.beaconhealth.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=notify.beaconhealth.example.net; dkim=pass header.d=notify.beaconhealth.example.net; dmarc=pass header.from=notify.beaconhealth.example.net
+
+Your appointment is confirmed
+
+Details: https://notify.beaconhealth.example.net/m/2008

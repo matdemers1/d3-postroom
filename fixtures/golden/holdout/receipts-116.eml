@@ -1,0 +1,10 @@
+From: Hearth Home <receipt@hearthhome.example.com>
+To: sam@d3cloud.io
+Subject: Receipt #88213
+Date: Thu, 17 Sep 2026 13:37:31 +0000
+Message-ID: <golden-0252.20260926@hearthhome.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=hearthhome.example.com; dkim=pass header.d=hearthhome.example.com; dmarc=pass header.from=hearthhome.example.com
+
+Receipt #88213
+
+Details: https://hearthhome.example.com/m/2002
