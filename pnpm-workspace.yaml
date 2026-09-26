@@ -3,6 +3,7 @@ packages:
   - packages/*
   - workers/*
   - e2e
+  - security/*
 
 # Supply-chain policy, as in Foreman, Shipyard and D3 Auth: nothing published in the last seven
 # days, no provenance downgrades, no exotic transitive sources.
