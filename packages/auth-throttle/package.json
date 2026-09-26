@@ -1,0 +1,26 @@
+{
+  "name": "@postroom/auth-throttle",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Authentication throttling with a tarpit and audit for IMAP, submission, DAV and ManageSieve",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/db": "workspace:*",
+    "@postroom/audit": "workspace:*"
+  },
+  "devDependencies": {}
+}

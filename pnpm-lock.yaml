@@ -360,6 +360,15 @@ importers:
         specifier: workspace:*
         version: link:../mime
 
+  packages/auth-throttle:
+    dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../db
+
   packages/blobstore:
     dependencies:
       '@postroom/crypto':
@@ -451,6 +460,8 @@ importers:
         version: 8.23.1
 
   packages/smtp-proto: {}
+
+  packages/threading: {}
 
 packages:
 
