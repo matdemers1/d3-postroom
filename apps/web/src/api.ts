@@ -130,6 +130,9 @@ export const api = {
   },
   /** Per-recipient delivery state and attempt log for one outbound message (PST-T-6.4, PST-REQ-119). */
   messageDelivery: (outboundId: string) => call<DeliveryDetail>('GET', `/api/messages/${encodeURIComponent(outboundId)}/delivery`),
+  /** A mailbox message's own OutboundMessage id, or null (PST-T-6.7, PST-REQ-119) — an indexed
+   *  server-side lookup by Message-ID header, replacing the client-side scan over recent sends. */
+  messageOutbound: (id: string) => call<{ outboundId: string | null }>('GET', `/api/messages/${encodeURIComponent(id)}/outbound`),
   search: (q: string, opts: { mailboxId?: string; cursor?: string | null } = {}) => {
     const params = new URLSearchParams({ q });
     if (opts.mailboxId !== undefined) params.set('mailboxId', opts.mailboxId);

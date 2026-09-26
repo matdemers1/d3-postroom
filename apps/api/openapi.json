@@ -1614,6 +1614,27 @@
         ],
         "additionalProperties": false
       },
+      "OutboundLookup": {
+        "type": "object",
+        "properties": {
+          "outboundId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "outboundId"
+        ],
+        "additionalProperties": false
+      },
       "RenderTicket": {
         "type": "object",
         "properties": {
@@ -5811,6 +5832,70 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MessageBody"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a message of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/outbound": {
+      "get": {
+        "operationId": "getMessageOutbound",
+        "tags": [
+          "Messages"
+        ],
+        "summary": "The caller's own OutboundMessage id for this mailbox message, or null (PST-T-6.7, PST-REQ-119).",
+        "description": "Looks up the message's Message-ID header and matches it against this account's outbound queue (an indexed lookup, never a scan). outboundId is null both when the message was never sent and when it was sent by another client, not through Postroom.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "outboundId, or null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboundLookup"
                 }
               }
             }

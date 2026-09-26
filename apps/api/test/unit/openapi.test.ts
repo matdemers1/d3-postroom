@@ -41,6 +41,8 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/messages/{id}/body',
         'GET /api/messages/{id}/raw',
         'GET /api/messages/{id}/render',
+        // PST-T-6.7: the reading pane's delivery timeline link.
+        'GET /api/messages/{id}/outbound',
         'GET /api/search',
         'GET /api/senders/{address}/pin',
         'GET /api/threads/{id}',

@@ -563,6 +563,9 @@ model OutboundMessage {
   recipients  OutboundRecipient[]
 
   @@index([accountId, createdAt])
+  /// PST-T-6.7 (PST-REQ-119): the mailbox message → outbound lookup joins on this pair — a Sent
+  /// copy's Message-ID header against this account's outbound rows, newest first.
+  @@index([accountId, messageId])
   @@map("outbound_message")
 }
 

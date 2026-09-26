@@ -2,7 +2,18 @@
 // sentence, the next-retry countdown and an attempt's summary are pure and tested here.
 import { describe, expect, it } from 'vitest';
 import type { DeliveryAttemptView, DeliveryRecipient } from '../../src/api';
-import { attemptRemoteText, attemptSummary, deferralReason, dsnFiledAt, isPending, relativeMinutes, STATE_LABEL, STATE_TONE } from '../../src/mail/delivery';
+import {
+  attemptRemoteText,
+  attemptSummary,
+  deferralReason,
+  deliveryPhase,
+  dsnFiledAt,
+  isPending,
+  NO_DELIVERY_RECORD_TEXT,
+  relativeMinutes,
+  STATE_LABEL,
+  STATE_TONE,
+} from '../../src/mail/delivery';
 
 function recipient(over: Partial<DeliveryRecipient> = {}): DeliveryRecipient {
   return {
@@ -129,6 +140,21 @@ describe('attemptRemoteText', () => {
 
   it('omits parts that are missing', () => {
     expect(attemptRemoteText(attempt({ remote: { code: null, enhanced: null, text: 'connection refused' } }))).toBe('connection refused');
+  });
+});
+
+describe('deliveryPhase (PST-T-6.7, PST-REQ-119)', () => {
+  it('shows the explicit no-record note when the lookup found nothing', () => {
+    expect(deliveryPhase(null)).toBe('no-record');
+  });
+
+  it('goes on to fetch the real timeline when the lookup found a linked row', () => {
+    expect(deliveryPhase('outbound-1')).toBe('lookup');
+  });
+
+  it('has a stated, non-empty no-record note', () => {
+    expect(NO_DELIVERY_RECORD_TEXT.length).toBeGreaterThan(0);
+    expect(NO_DELIVERY_RECORD_TEXT).toContain('No delivery record');
   });
 });
 

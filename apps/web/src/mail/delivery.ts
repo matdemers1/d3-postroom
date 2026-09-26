@@ -2,26 +2,7 @@
 // tones, the deferral sentence, the next-retry countdown, and one attempt's summary line. Kept
 // apart from ReadingPane.tsx (which imports @d3cloud/ui, and so its CSS) so this can be unit tested
 // directly under Node, the same way phish.ts and thread.ts are.
-import type { DeliveryAttemptView, DeliveryRecipient, DeliveryState, OutboundListItem } from '../api';
-
-/** A Message-ID header, with or without its angle brackets, folding-normalised for comparison.
- *  Message.messageIdHeader is stored WITHOUT brackets (packages/threading's normalizeMsgId);
- *  OutboundMessage.messageId is stored WITH them (apps/submission's headers.ts) — there is no
- *  column linking the two rows, so this is how ReadingPane finds a Sent copy's outbound queue row. */
-function normalizeMessageId(raw: string): string {
-  const unfolded = raw.replace(/\r?\n[ \t]+/g, ' ').trim();
-  const bracketed = /^<([^>]*)>$/.exec(unfolded);
-  return (bracketed?.[1] ?? unfolded).trim();
-}
-
-/** The outbound queue row for a mailbox message's own Message-ID header, or null when this account
- *  has no matching outbound row (never sent, or older than the page fetched). */
-export function matchingOutbound(rows: readonly OutboundListItem[], messageIdHeader: string | null): OutboundListItem | null {
-  if (messageIdHeader === null) return null;
-  const key = normalizeMessageId(messageIdHeader);
-  if (key === '') return null;
-  return rows.find((r) => r.messageId !== null && normalizeMessageId(r.messageId) === key) ?? null;
-}
+import type { DeliveryAttemptView, DeliveryRecipient, DeliveryState } from '../api';
 
 export const STATE_LABEL: Readonly<Record<DeliveryState, string>> = {
   queued: 'Queued',
@@ -90,4 +71,16 @@ export function attemptRemoteText(a: Pick<DeliveryAttemptView, 'remote'>): strin
  *  outcome — the reader is told where to find it, since there is no per-DSN id to link to directly. */
 export function dsnFiledAt(r: Pick<DeliveryRecipient, 'dsn'>): string | null {
   return r.dsn.failureSentAt ?? r.dsn.delaySentAt;
+}
+
+/** Shown when a message has no linked OutboundMessage row (PST-T-6.7, PST-REQ-119) — never sent
+ *  through Postroom at all, or a Sent copy another mail client APPENDed directly, which never went
+ *  through Postroom's queue either. */
+export const NO_DELIVERY_RECORD_TEXT = "No delivery record — this copy wasn't sent through Postroom.";
+
+/** Which of the section's two states to show, given the (already-fetched) outbound lookup: an
+ *  explicit note with no linked row, or 'lookup' to fetch and show the real timeline. */
+export type DeliveryPhase = 'no-record' | 'lookup';
+export function deliveryPhase(outboundId: string | null): DeliveryPhase {
+  return outboundId === null ? 'no-record' : 'lookup';
 }

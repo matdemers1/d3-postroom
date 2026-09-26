@@ -108,7 +108,9 @@ export function adminQueueRoutes(deps: ApiDeps): Router {
   // POST /api/admin/queue/dev-seed-deferred — e2e only (POSTROOM_E2E_SEED=1, the same gate as
   // admin-dev/index.ts's seed route and admin-jobs' dev-seed-failure): a deferred outbound
   // recipient for e2e/tests/admin-queue.spec.ts to act on, without a live SMTP submission path.
-  const DevSeedBody = z.object({ domain: z.string().trim().min(1).max(253).default('example.test') });
+  // messageId (PST-T-6.7): optional, so a caller that also filed the matching Sent copy can link
+  // the two and exercise the real /api/messages/:id/outbound lookup instead of intercepting it.
+  const DevSeedBody = z.object({ domain: z.string().trim().min(1).max(253).default('example.test'), messageId: z.string().trim().min(1).max(998).optional() });
   router.post(
     '/dev-seed-deferred',
     handle(async (req, res) => {
@@ -128,6 +130,7 @@ export function adminQueueRoutes(deps: ApiDeps): Router {
           accountId: me.accountId,
           envelopeFrom: `e2e-${randomUUID()}@d3cloud.io`,
           headerFrom: 'E2E Operator <e2e@d3cloud.io>',
+          messageId: parsed.data.messageId ?? null,
           subject: 'e2e deferred seed',
           blobSha256: randomUUID().replace(/-/g, '').padEnd(64, '0'),
           size: 1,
