@@ -11,6 +11,7 @@ import { AdminJobs } from './screens/AdminJobs';
 import { AdminQueue } from './screens/AdminQueue';
 import { AdminSessions } from './screens/AdminSessions';
 import { AppPasswords } from './screens/AppPasswords';
+import { Aliases } from './screens/Aliases';
 import { ChangePassword } from './screens/ChangePassword';
 import { DeviceSetup } from './screens/DeviceSetup';
 import { Import } from './screens/Import';
@@ -82,6 +83,7 @@ function Gate() {
         <Route path="/contacts/new" element={<Contacts />} />
         <Route path="/contacts/:addressBookId/:name" element={<Contacts />} />
         <Route path="/app-passwords" element={<AppPasswords />} />
+        <Route path="/account/aliases" element={<Aliases />} />
         <Route path="/account/password" element={<ChangePassword />} />
         <Route path="/account/sessions" element={<Sessions />} />
         <Route path="/account/import" element={<Import />} />

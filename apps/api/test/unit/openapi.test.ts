@@ -32,6 +32,11 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
     expect(ops.sort()).toEqual(
       [
         'GET /api/events',
+        // PST-T-5.7: masked aliases.
+        'GET /api/aliases',
+        'POST /api/aliases',
+        'POST /api/aliases/{id}/kill',
+        'POST /api/aliases/{id}/revive',
         'GET /api/export/{id}',
         'GET /api/export/{id}/download',
         'GET /api/mailboxes',

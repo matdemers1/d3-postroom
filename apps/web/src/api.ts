@@ -100,6 +100,10 @@ export const api = {
   createAppPassword: (input: { label: string; scopes: AppPasswordScope[] }) =>
     call<AppPassword & { password: string }>('POST', '/api/app-passwords', input),
   revokeAppPassword: (id: string) => call<{ ok: true }>('DELETE', `/api/app-passwords/${encodeURIComponent(id)}`),
+  aliases: () => call<{ aliases: Alias[] }>('GET', '/api/aliases'),
+  createAlias: (input: { site: string }) => call<{ alias: Alias }>('POST', '/api/aliases', input),
+  killAlias: (id: string) => call<{ alias: Alias }>('POST', `/api/aliases/${encodeURIComponent(id)}/kill`),
+  reviveAlias: (id: string) => call<{ alias: Alias }>('POST', `/api/aliases/${encodeURIComponent(id)}/revive`),
 
   // --- Mail (PST-T-3.9's API) ---------------------------------------------------------------
   mailboxes: () => call<{ mailboxes: Mailbox[] }>('GET', '/api/mailboxes'),
@@ -411,6 +415,17 @@ export interface AppPassword {
   revokedAt: string | null;
   dailyRecipientCap: number | null;
   frozenAt: string | null;
+}
+
+/** A masked alias (PST-REQ-112): a random address handed to one site, killable without warning it. */
+export interface Alias {
+  id: string;
+  address: string;
+  site: string;
+  createdAt: string;
+  killedAt: string | null;
+  lastUsedAt: string | null;
+  receivedCount: number;
 }
 
 /** One of the caller's own live sessions, as GET /api/auth/sessions lists it (PST-REQ-091). */

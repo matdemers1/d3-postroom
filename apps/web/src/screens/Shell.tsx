@@ -46,6 +46,16 @@ function KeyIcon() {
   );
 }
 
+function MaskIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M4 10c2-3 6-4 8-4s6 1 8 4c0 5-3 9-8 9s-8-4-8-9Z" />
+      <circle cx="9" cy="11" r="1" />
+      <circle cx="15" cy="11" r="1" />
+    </svg>
+  );
+}
+
 function HeartbeatIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -209,6 +219,9 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
           <SideNavGroup title="Account">
             <SideNavItem asChild icon={<KeyIcon />} label="App passwords" current={location.pathname === '/app-passwords'}>
               <RouterLink to="/app-passwords" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<MaskIcon />} label="Masked aliases" current={location.pathname === '/account/aliases'}>
+              <RouterLink to="/account/aliases" />
             </SideNavItem>
             <SideNavItem asChild icon={<LockIcon />} label="Change password" current={location.pathname === '/account/password'}>
               <RouterLink to="/account/password" />

@@ -6,6 +6,7 @@ import { auditContext, mutationAuditGuard } from '@postroom/audit';
 import { schemaRevision } from '@postroom/db';
 import { adminDevEnabled, adminDevRoutes } from './admin-dev/index.js';
 import { adminHealthRoutes } from './admin-health/index.js';
+import { aliasRoutes } from './aliases/index.js';
 import { adminJobRoutes } from './admin-jobs/index.js';
 import { adminQueueRoutes } from './admin-queue/index.js';
 import { serviceAccountRoutes } from './admin-service/index.js';
@@ -107,6 +108,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/admin/deliverability', requireAdmin(deps), deliverabilityRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
   app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));
+  app.use('/api/aliases', requireSession(deps), aliasRoutes(deps));
   app.use('/api/senders', requireSession(deps), senderRoutes(deps));
   app.use('/api/sieve', requireSession(deps), sieveRoutes(deps));
   app.use('/api/messages', requireSession(deps), deliveryRoutes(deps));
