@@ -89,7 +89,13 @@ await runDaemon({
       { log: ctx.log },
     );
     const { monitors, ntp } = buildMonitors({ db, env: ctx.env, backupsConfigured: maintenance.backup.config.s3 !== null });
-    const monitorRunner = createMonitorRunner({ db, monitors, sendAlert, log: ctx.log });
+    const monitorRunner = createMonitorRunner({
+      db,
+      monitors,
+      sendAlert,
+      log: ctx.log,
+      checkTimeoutMs: envInt(ctx.env, 'MONITOR_CHECK_TIMEOUT_MS', 30_000),
+    });
     const monitorIntervalMs = envInt(ctx.env, 'MONITOR_INTERVAL_MS', 60_000);
     const runMonitors = (): void => {
       monitorRunner.runOnce().catch((err: unknown) => {
@@ -103,7 +109,7 @@ await runDaemon({
       inbound: await inboundHealth(db),
       ...(await maintenanceHealth(db)),
       monitors: monitorRunner.statuses(),
-      ntp: ntp.getStatus(),
+      ntp: ntp === null ? ('not configured' as const) : (ntp.getStatus() ?? ('pending' as const)),
     }));
     ctx.log('inbound-worker', { leaseMs, blobRoot, backupsConfigured: maintenance.backup.config.s3 !== null, threadSweepMs, monitorIntervalMs });
     ctx.onShutdown(async () => {
