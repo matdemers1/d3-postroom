@@ -48,6 +48,22 @@ interface Screen {
   admin?: boolean;
   /** What the designed empty state is, when it is not an EmptyState. */
   emptyShows?: (page: Page) => ReturnType<Page['locator']>;
+  /** Below the mail view's split width (768 px) the screen is a different view with other data. */
+  narrow?: { data?: RegExp; empty?: ((body: Json) => Json) | false; session?: false };
+}
+
+/** The screen as it is at this viewport: below 768 px, its `narrow` overrides apply. */
+function atWidth(screen: Screen, page: Page): Screen {
+  const width = page.viewportSize()?.width ?? 1280;
+  if (width >= 768 || screen.narrow === undefined) return screen;
+  const { narrow, ...rest } = screen;
+  return { ...rest, ...(narrow.data === undefined ? {} : { data: narrow.data }), ...(narrow.empty === undefined ? {} : { empty: narrow.empty }) };
+}
+
+/** Whether moving to the screen in-app makes a fetch at all (the session-ended case needs one). */
+function fetchesOnArrival(screen: Screen, page: Page): boolean {
+  const width = page.viewportSize()?.width ?? 1280;
+  return !(width < 768 && screen.narrow?.session === false);
 }
 
 const h1 = (name: string | RegExp) => async (page: Page) => {
@@ -85,6 +101,9 @@ const SCREENS: Screen[] = [
     path: () => '/mail',
     ready: h1('Mail'),
     data: /\/api\/mailboxes\/[^/]+\/messages(\?|$)/,
+    // Below 768 px /mail is the list of mailboxes itself (push navigation's first level), drawn from
+    // the mailboxes the shell already holds: moving to it in-app fetches nothing.
+    narrow: { data: /\/api\/mailboxes(\?|$)/, session: false },
   },
   {
     name: 'Mail — open message',
@@ -397,7 +416,7 @@ for (const theme of THEMES) {
 for (const theme of THEMES) {
   test(`every data screen has a designed empty state, axe-clean — ${theme}`, async ({ page, context }) => {
     await useTheme(context, theme);
-    for (const screen of SCREENS) {
+    for (const screen of SCREENS.map((s) => atWidth(s, page))) {
       if (screen.data === undefined || screen.empty === false) continue;
       const transform = screen.empty ?? emptyArrays;
       await page.route(screen.data, (route) => fulfilEmpty(route, transform));
@@ -418,7 +437,7 @@ for (const theme of THEMES) {
 for (const theme of THEMES) {
   test(`every data screen shows a named loading state, then settles axe-clean — ${theme}`, async ({ page, context }) => {
     await useTheme(context, theme);
-    for (const screen of SCREENS) {
+    for (const screen of SCREENS.map((s) => atWidth(s, page))) {
       if (screen.data === undefined) continue;
       let release: () => void = () => undefined;
       const held = new Promise<void>((resolve) => {
@@ -450,7 +469,7 @@ for (const theme of THEMES) {
 for (const theme of THEMES) {
   test(`every data screen has a designed error state for a 500, axe-clean — ${theme}`, async ({ page, context }) => {
     await useTheme(context, theme);
-    for (const screen of SCREENS) {
+    for (const screen of SCREENS.map((s) => atWidth(s, page))) {
       if (screen.data === undefined) continue;
       await page.route(screen.data, (route) => route.fulfill({ status: 500, json: { error: 'internal_error' } }));
       await page.goto(screen.path());
@@ -504,7 +523,7 @@ for (const theme of THEMES) {
 
   test(`an expired session shows a designed signed-out state, axe-clean — ${theme}`, async ({ page, context }) => {
     await useTheme(context, theme);
-    for (const screen of SCREENS) {
+    for (const screen of SCREENS.filter((s) => fetchesOnArrival(s, page)).map((s) => atWidth(s, page))) {
       if (screen.data === undefined) continue;
       await context.addCookies(cookies);
       // Start on a screen that loads nothing, signed in, then end the session while the page is

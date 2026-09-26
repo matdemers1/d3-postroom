@@ -777,7 +777,13 @@ function MailboxIndex({ mailboxes, headingRef }: { mailboxes: Mailbox[] | null; 
         </h2>
       </div>
       {mailboxes === null ? (
-        <Skeleton variant="text" lines={5} />
+        <div role="status" aria-label="Loading mailboxes" aria-busy="true">
+          <Skeleton variant="text" lines={5} />
+        </div>
+      ) : mailboxes.length === 0 ? (
+        <EmptyState kind="empty" heading="No mailboxes yet" size="inline" headingLevel={3}>
+          Your mailboxes appear here once the server has made them.
+        </EmptyState>
       ) : (
         <nav aria-label="Mailboxes">
           <ul className="pr-mailboxes__list">
