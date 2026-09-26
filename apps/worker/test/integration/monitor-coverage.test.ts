@@ -136,6 +136,10 @@ describe.skipIf(baseUrl === undefined)('one alert, one recovery — every real m
     const monitor = createBlocklistMonitor({
       ip: '203.0.113.9',
       resolverServer: '10.0.0.1:53',
+      zoneKeys: ['spamhaus'],
+      // PST-T-7.3's real 6h cadence is covered by monitor-runner.test.ts; here every tick should
+      // re-query, same as every other monitor in this suite.
+      minIntervalMs: 0,
       lookupA: () => Promise.resolve(listed.current ? ['127.0.0.4'] : []),
     });
     if (monitor === null) throw new Error('monitor unexpectedly disabled');

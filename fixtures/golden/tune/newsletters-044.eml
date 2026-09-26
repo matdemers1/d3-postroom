@@ -1,0 +1,12 @@
+From: Kitchen Table <editor@kitchentable.example.net>
+X-SES-Outgoing: 2026.09.01-10.0.0.1
+Feedback-ID: bulk:kitchentable.example.net:ses
+To: dana@d3cloud.io
+Subject: The Sunday edition
+Date: Sun, 06 Sep 2026 14:20:25 +0000
+Message-ID: <golden-0084.20260926@kitchentable.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=kitchentable.example.net; dkim=pass header.d=kitchentable.example.net; dmarc=pass header.from=kitchentable.example.net
+
+The Sunday edition
+
+Read online: https://kitchentable.example.net/issues/4

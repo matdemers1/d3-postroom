@@ -1,0 +1,12 @@
+From: GuardPass <account@guardpass.example.org>
+To: sam@d3cloud.io
+Subject: Verify it’s really you
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.10-10.0.0.1
+Date: Wed, 09 Sep 2026 13:06:15 +0000
+Message-ID: <golden-0129.20260926@guardpass.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=guardpass.example.org; dkim=pass header.d=guardpass.example.org; dmarc=pass header.from=guardpass.example.org
+
+Verify it’s really you
+
+More detail: https://guardpass.example.org/status/1009

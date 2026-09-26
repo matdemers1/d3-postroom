@@ -1,0 +1,12 @@
+From: SecureLogin <verify@securelogin.example.com>
+To: sam@d3cloud.io
+Subject: Two-factor code: 719204
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.08-10.0.0.1
+Date: Wed, 09 Sep 2026 09:15:38 +0000
+Message-ID: <golden-0127.20260926@securelogin.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=securelogin.example.com; dkim=pass header.d=securelogin.example.com; dmarc=pass header.from=securelogin.example.com
+
+Two-factor code: 719204
+
+More detail: https://securelogin.example.com/status/1007

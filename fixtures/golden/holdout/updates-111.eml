@@ -1,0 +1,10 @@
+From: Openhome <info@email.openhome.example.com>
+To: sam@d3cloud.io
+Subject: Important changes to our privacy policy
+Date: Thu, 17 Sep 2026 07:37:48 +0000
+Message-ID: <golden-0247.20260926@email.openhome.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=email.openhome.example.com; dkim=pass header.d=email.openhome.example.com; dmarc=pass header.from=email.openhome.example.com
+
+Important changes to our privacy policy
+
+Details: https://email.openhome.example.com/m/2008

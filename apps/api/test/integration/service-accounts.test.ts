@@ -161,7 +161,7 @@ describe.skipIf(!baseUrl)('service mailboxes over submission (PST-T-1.12)', () =
 
     // Default mailboxes exist, just as they would for a person.
     const mailboxes = await db.mailbox.findMany({ where: { accountId: account.accountId }, select: { name: true } });
-    expect(mailboxes.map((m) => m.name).sort()).toEqual(['Archive', 'Drafts', 'INBOX', 'Junk', 'Rejects', 'Sent', 'Trash'].sort());
+    expect(mailboxes.map((m) => m.name).sort()).toEqual(['Archive', 'Drafts', 'INBOX', 'Junk', 'Newsletters', 'Notifications', 'Receipts', 'Rejects', 'Sent', 'Trash', 'Updates'].sort());
 
     const dbAccount = await db.account.findUniqueOrThrow({ where: { id: account.accountId } });
     expect(dbAccount.kind).toBe('service');

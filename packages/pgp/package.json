@@ -1,0 +1,25 @@
+{
+  "name": "@postroom/pgp",
+  "private": true,
+  "version": "0.0.0",
+  "description": "OpenPGP (RFC 9580/4880) and S/MIME (RFC 8551, CMS RFC 5652): formats parsed here, primitives from node:crypto",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/mime": "workspace:*"
+  },
+  "devDependencies": {}
+}

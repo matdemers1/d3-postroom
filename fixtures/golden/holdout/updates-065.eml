@@ -1,0 +1,12 @@
+From: DashRoute <shipment@dashroute.example.org>
+To: sam@d3cloud.io
+Subject: Your parcel has left our warehouse
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.12-10.0.0.1
+Date: Wed, 09 Sep 2026 17:42:22 +0000
+Message-ID: <golden-0131.20260926@dashroute.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=dashroute.example.org; dkim=pass header.d=dashroute.example.org; dmarc=pass header.from=dashroute.example.org
+
+Your parcel has left our warehouse
+
+More detail: https://dashroute.example.org/status/1011

@@ -1,0 +1,10 @@
+From: Wayfare Logistics <shipping_updates@wayfare.example.org>
+To: sam@d3cloud.io
+Subject: Your shipment is delayed
+Date: Wed, 16 Sep 2026 19:28:17 +0000
+Message-ID: <golden-0240.20260926@wayfare.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=wayfare.example.org; dkim=pass header.d=wayfare.example.org; dmarc=pass header.from=wayfare.example.org
+
+Your shipment is delayed
+
+Details: https://wayfare.example.org/m/2001

@@ -1,0 +1,12 @@
+require ["variables", "fileinto"];
+set "a" "juMBlEd lETteRS";
+set :length "b" "${a}";
+fileinto "${b}";
+set :lower "b" "${a}";
+fileinto "${b}";
+set :upperfirst "b" "${a}";
+fileinto "${b}";
+set :upperfirst :lower "b" "${a}";
+fileinto "${b}";
+set :quotewildcard "b" "Rock*";
+fileinto "${b}";

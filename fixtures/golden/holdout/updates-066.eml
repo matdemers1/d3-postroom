@@ -1,0 +1,12 @@
+From: SecureLogin <hello@securelogin.example.com>
+To: sam@d3cloud.io
+Subject: Confirm your email address to continue
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.13-10.0.0.1
+Date: Wed, 09 Sep 2026 20:01:18 +0000
+Message-ID: <golden-0132.20260926@securelogin.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=securelogin.example.com; dkim=pass header.d=securelogin.example.com; dmarc=pass header.from=securelogin.example.com
+
+Confirm your email address to continue
+
+More detail: https://securelogin.example.com/status/1012

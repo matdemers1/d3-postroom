@@ -1,0 +1,28 @@
+/* Contacts (PST-T-8.5). System tokens only (d3-check-usage). */
+
+.pr-contacts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.pr-contacts[data-split='true'] {
+  display: grid;
+  grid-template-columns: minmax(18rem, 2fr) minmax(0, 3fr);
+  align-items: start;
+}
+
+.pr-contacts__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+.pr-contacts__detail {
+  min-width: 0;
+}
+
+.pr-contacts__note {
+  white-space: pre-wrap;
+}

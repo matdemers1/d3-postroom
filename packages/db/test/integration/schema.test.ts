@@ -44,7 +44,7 @@ describe.skipIf(!baseUrl)('schema on an empty database', () => {
     await admin.end();
   });
 
-  it('seeds a domain, an admin operator and seven mailboxes, and a second run changes nothing', async () => {
+  it('seeds a domain, an admin operator and its default mailboxes, and a second run changes nothing', async () => {
     const first = await seed(db, { operatorName: 'Operator', domain: 'D3Cloud.io' });
     expect(first.changed).toBe(true);
     const second = await seed(db, { operatorName: 'Operator', domain: 'd3cloud.io' });
@@ -59,7 +59,7 @@ describe.skipIf(!baseUrl)('schema on an empty database', () => {
     expect(accounts[0]).toMatchObject({ displayName: 'Operator', isAdmin: true, passwordHash: null });
 
     const mailboxes = await db.mailbox.findMany({ where: { accountId: first.operatorId } });
-    expect(mailboxes).toHaveLength(7);
+    expect(mailboxes).toHaveLength(11); // seven special-use + four bucket folders (PST-T-5.1)
     for (const mb of mailboxes) {
       expect(mb.uidvalidity).toBeGreaterThan(0);
       expect(mb.uidnext).toBe(1);

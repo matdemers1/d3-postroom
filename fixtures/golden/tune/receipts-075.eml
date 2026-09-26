@@ -1,0 +1,12 @@
+From: Pixel & Thread <invoices@pixelthread.example.com>
+To: dana@d3cloud.io
+Subject: Billing statement available
+X-SES-Outgoing: 2026.09.09-10.0.0.1
+Feedback-ID: receipt:pixelthread.example.com:esp
+Date: Thu, 10 Sep 2026 08:04:32 +0000
+Message-ID: <golden-0141.20260926@pixelthread.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=pixelthread.example.com; dkim=pass header.d=pixelthread.example.com; dmarc=pass header.from=pixelthread.example.com
+
+Billing statement available
+
+Order total: $27.99

@@ -20,6 +20,11 @@ services:
       # the api picks the usercontent app by Host, and localhost vs 127.0.0.1 is a different origin
       # AND a different site, so the session cookie for 127.0.0.1 is never sent to it.
       USERCONTENT_ORIGIN: http://localhost:3300
+      # The api only asks whether SES is configured (admin queue Force SES, PST-T-6.6); the delivery
+      # daemon keeps its own env without these, so nothing here ever dials SES.
+      SES_SMTP_HOST: ses.invalid
+      SES_SMTP_USER: e2e
+      SES_SMTP_PASSWORD: e2e
       # e2e/tests/html-render.spec.ts's listener stands in for a sender's server on the runner; the
       # image proxy may reach a private address only with POSTROOM_E2E_SEED=1 as well.
       IMAGE_PROXY_ALLOW_PRIVATE: "1"
@@ -29,9 +34,14 @@ services:
       # POST /api/admin/dev/seed (admin-only, audited) files synthetic mail for e2e/tests/mail.spec.ts.
       # Never set anywhere else: without it the route is not mounted at all.
       POSTROOM_E2E_SEED: "1"
+      # The admin Health screen's daemon tiles (PST-T-7.6, PST-REQ-127). smtp-in/submission/imap/
+      # delivery share the wireguard sidecar's network namespace (docker-compose.yml), so their
+      # health ports are reached at that hostname; dav and worker keep their own.
+      DAEMON_HEALTH_URLS: "smtp-in=http://wireguard:9101/health,submission=http://wireguard:9102/health,imap=http://wireguard:9103/health,managesieve=http://wireguard:9107/health,delivery=http://wireguard:9104/health,dav=http://dav:9105/health,worker=http://worker:9106/health"
   smtp-in: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9101" } }
   submission: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9102" } }
   imap: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9103" } }
+  managesieve: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9107" } }
   delivery: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9104" } }
   dav: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9105" } }
   worker: { environment: { <<: *e2e-secrets, HEALTH_PORT: "9106" } }

@@ -1,0 +1,12 @@
+From: Lena Patel <lena.patel@example.com>
+To: dana@d3cloud.io
+Subject: Referred by a mutual friend
+Date: Fri, 04 Sep 2026 12:35:24 +0000
+Message-ID: <golden-0047.20260926@example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.com; dkim=pass header.d=example.com; dmarc=pass header.from=example.com
+
+Hello,
+
+Referred by a mutual friend
+
+Lena Patel

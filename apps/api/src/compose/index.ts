@@ -13,7 +13,7 @@
 // too. Saving again REPLACES the draft: a new message is filed and the old one expunged in the same
 // transaction (a message's bytes are immutable; that is how IMAP clients do it as well).
 import { randomUUID } from 'node:crypto';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import { audited, getAuditContext, recordAudit } from '@postroom/audit';
 import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
@@ -21,16 +21,35 @@ import { envInt, envString } from '@postroom/daemon';
 import { collectMessage, decodeEncodedWords, parseMailboxes, parseMessageIdList, type Mailbox } from '@postroom/mime';
 import { acceptSubmission, sendableAddresses, type AcceptOutcome, type SubmissionStorage } from '@postroom/submission';
 import { createWebmailCapsEnforcer } from '@postroom/submission/caps';
-import { ensureDkimKeys } from '@postroom/submission/dkim';
+import { ensureDkimKeys, loadSigningKeys } from '@postroom/submission/dkim';
 import { Router, type Request, type Response } from 'express';
 import type { z } from 'zod';
 import { currentSession, handle } from '../auth/middleware.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 import { DEFAULT_BLOB_ROOT } from '../mail/index.js';
+import { updateMessage } from '../mail/store.js';
+import { renderMarkdownDocument } from './markdown.js';
+import { CryptoRefusal, protectMessage } from './crypto.js';
+import { buildMdn } from './mdn.js';
 import { bracketMsgId, buildOutgoingStream, buildTextMessage, parseRecipients, type OutgoingMessage } from './message.js';
-import { DraftParams, DraftQuery, DraftRequest, SendRequest, type DraftJson, type DraftSavedJson, type SendResponseJson } from './schemas.js';
-import { DRAFT_FLAGS, fileCopy, findOwnDraft, removeMessage, SENT_FLAGS, threadSentCopy, type Denorm } from './store.js';
+import {
+  DraftParams,
+  DraftQuery,
+  DraftRequest,
+  MAX_AHEAD_MS,
+  MAX_MARKDOWN_CHARS,
+  MdnParams,
+  PendingParams,
+  PendingPatch,
+  SendRequest,
+  type DraftJson,
+  type DraftSavedJson,
+  type MdnResponseJson,
+  type PendingSendJson,
+  type SendResponseJson,
+} from './schemas.js';
+import { armReminder, cancelHeld, cancelHeldForDraft, DRAFT_FLAGS, fileCopy, findOwnDraft, pendingJson, removeMessage, SENT_FLAGS, threadSentCopy, type Denorm } from './store.js';
 
 const X_MODE = 'X-Postroom-Draft-Mode';
 const X_SOURCE = 'X-Postroom-Draft-Source';
@@ -78,6 +97,19 @@ function displayMailbox(m: Mailbox): string {
   if (m.name === '') return m.address;
   const name = /[",<>@;:()[\]\\]/.test(m.name) ? `"${m.name.replace(/(["\\])/g, '\\$1')}"` : m.name;
   return `${name} <${m.address}>`;
+}
+
+/** Whether a send is held, and until when (PST-REQ-140 undo send, PST-REQ-141 scheduled send). */
+export function holdOf(body: { undoSeconds?: number | undefined; sendAt?: string | undefined }, now: Date): { kind: 'undo' | 'scheduled'; releaseAt: Date } | null {
+  if (body.sendAt !== undefined) {
+    if (body.undoSeconds !== undefined && body.undoSeconds > 0) throw new HttpRefusal(400, 'invalid_request', 'sendAt and undoSeconds cannot be combined');
+    const at = new Date(body.sendAt);
+    if (at.getTime() <= now.getTime()) throw new HttpRefusal(400, 'send_at_past', 'sendAt must be in the future');
+    if (at.getTime() > now.getTime() + MAX_AHEAD_MS) throw new HttpRefusal(400, 'send_at_too_far', 'sendAt may be at most a year from now');
+    return { kind: 'scheduled', releaseAt: at };
+  }
+  if (body.undoSeconds !== undefined && body.undoSeconds > 0) return { kind: 'undo', releaseAt: new Date(now.getTime() + body.undoSeconds * 1000) };
+  return null;
 }
 
 export function composeRoutes(deps: ApiDeps): Router {
@@ -145,6 +177,11 @@ export function composeRoutes(deps: ApiDeps): Router {
       res.status(error.status).json({ error: error.code, message: error.message });
       return true;
     }
+    // PST-T-12.2: a send that cannot be signed/encrypted as asked is refused, never sent in the clear.
+    if (error instanceof CryptoRefusal) {
+      res.status(error.status).json({ error: error.code, message: error.message, ...(error.recipients === null ? {} : { recipients: error.recipients }) });
+      return true;
+    }
     return false;
   };
 
@@ -168,6 +205,9 @@ export function composeRoutes(deps: ApiDeps): Router {
         if (envelope.length === 0) throw new HttpRefusal(400, 'no_recipients', 'Add at least one recipient');
         if (envelope.length > maxRecipients) throw new HttpRefusal(400, 'too_many_recipients', `At most ${String(maxRecipients)} recipients per message`);
 
+        const now = rt.now();
+        const hold = holdOf(body, now);
+
         let original: Readable | null = null;
         if (body.forwardOf !== null && body.forwardOf !== undefined) {
           const source = await db.message.findFirst({ where: { id: body.forwardOf, mailbox: { accountId: me.accountId } }, select: { blobSha256: true } });
@@ -175,9 +215,20 @@ export function composeRoutes(deps: ApiDeps): Router {
           original = await store.blobs.get(source.blobSha256);
         }
 
-        const date = rt.now();
+        // A held message is dated when it goes, not when it was written.
+        const date = hold?.releaseAt ?? now;
         const domain = from.address.slice(from.address.lastIndexOf('@') + 1);
         const { inReplyTo, references } = threading(body.inReplyTo, body.references);
+        // PST-T-9.2: Markdown is rendered to sanitized HTML and sent multipart/alternative
+        // (PST-REQ-145); "Request read receipt" adds Disposition-Notification-To (PST-REQ-146).
+        // A cap ahead of rendering bounds the worst-case work regardless of how fast the renderer
+        // is: past 256 KiB the send is refused (413) rather than rendered — send it as plain text
+        // instead.
+        if (body.format === 'markdown' && body.text.length > MAX_MARKDOWN_CHARS) {
+          throw new HttpRefusal(413, 'markdown_too_large', `Markdown body exceeds ${String(MAX_MARKDOWN_CHARS)} characters; send it as plain text instead.`);
+        }
+        const html = body.format === 'markdown' ? renderMarkdownDocument(body.text) : null;
+        const extraHeaders: [string, string][] = body.requestReceipt ? [['Disposition-Notification-To', from.address]] : [];
         const message: OutgoingMessage = {
           from,
           to,
@@ -185,10 +236,12 @@ export function composeRoutes(deps: ApiDeps): Router {
           bcc,
           subject: body.subject,
           text: body.text,
+          html,
           messageId: `<${randomUUID()}@${domain}>`,
           inReplyTo,
           references,
           date,
+          extraHeaders,
         };
         const denorm: Denorm = {
           messageIdHeader: message.messageId,
@@ -198,13 +251,35 @@ export function composeRoutes(deps: ApiDeps): Router {
           sentAt: date,
           inReplyTo,
           references,
-          bodyText: body.text,
+          // An encrypted message's text is not kept in the clear beside its ciphertext (PST-T-12.2).
+          bodyText: body.crypto?.encrypt === undefined ? body.text : '',
         };
+
+        // PST-T-12.2 (PST-REQ-161): the composed message, signed and/or encrypted; null = as composed.
+        let protectedRaw: Buffer | null = null;
+        if (body.crypto !== undefined && (body.crypto.sign !== undefined || body.crypto.encrypt !== undefined)) {
+          const composed = buildOutgoingStream(message, original);
+          const chunks: Buffer[] = [];
+          for await (const c of composed) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c as Uint8Array));
+          protectedRaw = await protectMessage(db, rt.kek, Buffer.concat(chunks), { accountId: me.accountId, from: from.address, recipients: envelope, crypto: body.crypto, now: date });
+        }
+        const outgoing = (): Readable => (protectedRaw === null ? buildOutgoingStream(message, original) : Readable.from([protectedRaw]));
+
+        if (hold !== null) {
+          try {
+            await holdSend(req, res, { store, message, original, denorm, hold, envelope, forwardOf: body.forwardOf ?? null, draftId: body.draftId ?? null, remindAfterSeconds: body.remindAfterSeconds ?? null, now, outgoing: outgoing() });
+          } finally {
+            original?.destroy();
+          }
+          return;
+        }
 
         let sent: { id: string; mailboxId: string } | null = null;
         let reaped: string | null = null;
+        let reaped2: string[] = [];
+        let reminderId: string | null = null;
         const outcome = await acceptSubmission(
-          buildOutgoingStream(message, original),
+          outgoing(),
           {
             submitter: { accountId: me.accountId, addresses },
             envelopeFrom: from.address,
@@ -229,9 +304,14 @@ export function composeRoutes(deps: ApiDeps): Router {
               if (body.draftId !== null && body.draftId !== undefined) {
                 const draft = await findOwnDraft(tx, me.accountId, body.draftId);
                 if (draft !== null) {
+                  // A held send whose Drafts copy this is: sending the draft now supersedes it.
+                  reaped2 = (await cancelHeldForDraft(tx, store.blobs, me.accountId, draft.id, 'sent from the draft', date)).reaped;
                   reaped = await removeMessage(tx, store.blobs, draft);
                   draftRemoved = draft.id;
                 }
+              }
+              if (body.remindAfterSeconds !== undefined) {
+                reminderId = await armReminder(tx, { accountId: me.accountId, sentMessageId: copy.id, messageIdHeader: accepted.messageId, sentAt: date, afterSeconds: body.remindAfterSeconds });
               }
               await recordAudit(tx, {
                 actor: { kind: 'account', accountId: me.accountId },
@@ -239,7 +319,7 @@ export function composeRoutes(deps: ApiDeps): Router {
                 entityType: 'message',
                 entityId: copy.id,
                 before: draftRemoved === null ? null : { draftId: draftRemoved },
-                after: { outboundId: accepted.outboundId, messageId: accepted.messageId, sentMailboxId: copy.mailboxId, uid: copy.uid, forwardOf: body.forwardOf ?? null },
+                after: { outboundId: accepted.outboundId, messageId: accepted.messageId, sentMailboxId: copy.mailboxId, uid: copy.uid, forwardOf: body.forwardOf ?? null, reminderId },
                 context: ctx,
               });
             },
@@ -254,7 +334,7 @@ export function composeRoutes(deps: ApiDeps): Router {
           res.status(status).json({ error, message: outcome.reply.lines.join(' ') });
           return;
         }
-        await reap(store.blobs, [reaped]);
+        await reap(store.blobs, [reaped, ...reaped2]);
         const filed = sent as { id: string; mailboxId: string } | null;
         if (filed === null) throw new Error('the Sent copy was not filed');
 
@@ -275,8 +355,157 @@ export function composeRoutes(deps: ApiDeps): Router {
           // The message is queued and in Sent; the thread sweep threads what this could not.
           log('thread-failed', { messageId: filed.id, error: error instanceof Error ? error.message : String(error) });
         }
-        const json: SendResponseJson = { messageId: outcome.messageId, outboundId: outcome.outboundId, sentMessageId: filed.id, sentMailboxId: filed.mailboxId, threadId };
+        const json: SendResponseJson = { messageId: outcome.messageId, outboundId: outcome.outboundId, sentMessageId: filed.id, sentMailboxId: filed.mailboxId, threadId, reminderId };
         res.status(201).json(json);
+      } catch (error) {
+        if (!answer(res, error)) throw error;
+      }
+    }),
+  );
+
+  // --- Held sends (PST-T-9.1) ----------------------------------------------------------------------
+  //
+  // An undo-window or scheduled send is not queued: the message exactly as it will be submitted is
+  // stored as a blob the pending_send row holds a reference on, and a copy (with its Bcc) is filed in
+  // Drafts, so it is IMAP-visible and recoverable the whole time. The worker (apps/worker/src/
+  // scheduled) releases it at releaseAt through the same submission path, once; an undo before then
+  // cancels it and the draft simply stays in Drafts. Removing the draft from any client cancels it too.
+
+  const holdSend = async (
+    req: Request,
+    res: Response,
+    input: {
+      store: SubmissionStorage;
+      message: OutgoingMessage;
+      original: Readable | null;
+      denorm: Denorm;
+      hold: { kind: 'undo' | 'scheduled'; releaseAt: Date };
+      envelope: string[];
+      forwardOf: string | null;
+      draftId: string | null;
+      remindAfterSeconds: number | null;
+      now: Date;
+      /** The message exactly as it will be submitted (signed/encrypted when asked, PST-T-12.2). */
+      outgoing?: Readable;
+    },
+  ): Promise<void> => {
+    const me = currentSession(req);
+    const { store, message, denorm, hold, now } = input;
+    const domain = message.from.address.slice(message.from.address.lastIndexOf('@') + 1).toLowerCase();
+    // Refuse now what the release would refuse later: never sent unsigned (PST-REQ-038).
+    if ((await loadSigningKeys(db, store.kek, domain, now)) === null) throw new HttpRefusal(503, 'dkim_unconfigured', 'DKIM keys not configured for the sender domain');
+    const reaped: (string | null)[] = [];
+    const row = await audited(
+      db,
+      { kind: 'account', accountId: me.accountId },
+      { action: hold.kind === 'undo' ? 'compose.hold' : 'compose.schedule', entityType: 'pending_send', context: getAuditContext(req) },
+      async (tx) => {
+        const held = await store.blobs.put(input.outgoing ?? buildOutgoingStream(message, input.original), { tx });
+        const extra: [string, string][] = input.forwardOf === null ? [] : [[X_FORWARD, input.forwardOf]];
+        const draftRaw = buildTextMessage({ ...message, includeBcc: true, extraHeaders: extra });
+        const draftBlob = await store.blobs.put(draftRaw, { tx });
+        const copy = await fileCopy(tx, { accountId: me.accountId, use: 'drafts', blobSha256: draftBlob.sha256, size: draftBlob.size, flags: DRAFT_FLAGS, denorm, now, takeReference: false });
+        let replaced: string | null = null;
+        if (input.draftId !== null) {
+          const old = await findOwnDraft(tx, me.accountId, input.draftId);
+          if (old !== null) {
+            const c = await cancelHeldForDraft(tx, store.blobs, me.accountId, old.id, 'replaced by a new send', now);
+            reaped.push(...c.reaped);
+            reaped.push(await removeMessage(tx, store.blobs, old));
+            replaced = old.id;
+          }
+        }
+        const created = await tx.pendingSend.create({
+          data: {
+            accountId: me.accountId,
+            kind: hold.kind,
+            releaseAt: hold.releaseAt,
+            envelopeFrom: message.from.address,
+            recipients: input.envelope,
+            heldBlobSha256: held.sha256,
+            size: held.size,
+            draftMessageId: copy.id,
+            messageIdHeader: message.messageId,
+            subject: denorm.subject,
+            toText: denorm.to,
+            inReplyTo: message.inReplyTo,
+            references: [...message.references],
+            remindAfterSeconds: input.remindAfterSeconds,
+          },
+        });
+        return {
+          entityId: created.id,
+          before: replaced === null ? null : { draftId: replaced },
+          after: { kind: hold.kind, releaseAt: hold.releaseAt.toISOString(), draftId: copy.id, heldBlobSha256: held.sha256, recipients: input.envelope.length, messageId: message.messageId, remindAfterSeconds: input.remindAfterSeconds },
+          result: created,
+        };
+      },
+    );
+    await reap(store.blobs, reaped);
+    const json: PendingSendJson = pendingJson(row);
+    res.status(202).json(json);
+  };
+
+  const ownPending = (accountId: string, id: string) => db.pendingSend.findFirst({ where: { id, accountId } });
+
+  router.get(
+    '/pending',
+    handle(async (req, res) => {
+      const rows = await db.pendingSend.findMany({ where: { accountId: currentSession(req).accountId, state: 'held' }, orderBy: [{ releaseAt: 'asc' }, { createdAt: 'asc' }], take: 200 });
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ pending: rows.map(pendingJson) });
+    }),
+  );
+
+  router.post(
+    '/pending/:id/undo',
+    handle(async (req, res) => {
+      const params = parse(PendingParams, req.params, res);
+      if (params === null) return;
+      const store = storageFor(res);
+      if (store === null) return;
+      const me = currentSession(req);
+      let reaped: string | null = null;
+      try {
+        const row = await audited(db, { kind: 'account', accountId: me.accountId }, { action: 'compose.undo', entityType: 'pending_send', context: getAuditContext(req) }, async (tx) => {
+          const found = await tx.pendingSend.findFirst({ where: { id: params.id, accountId: me.accountId } });
+          if (found === null) throw new HttpRefusal(404, 'not_found', 'no such pending send');
+          const c = await cancelHeld(tx, store.blobs, { id: found.id, heldBlobSha256: found.heldBlobSha256, reason: found.kind === 'undo' ? 'undone' : 'cancelled', now: rt.now() });
+          if (!c.cancelled) throw new HttpRefusal(409, 'not_held', found.state === 'released' ? 'It has already been sent.' : 'It is no longer waiting to be sent.');
+          reaped = c.reaped;
+          const after = await tx.pendingSend.findUniqueOrThrow({ where: { id: found.id } });
+          return { entityId: found.id, before: { state: found.state, releaseAt: found.releaseAt.toISOString() }, after: { state: after.state, draftId: after.draftMessageId }, result: after };
+        });
+        await reap(store.blobs, [reaped]);
+        res.json(pendingJson(row));
+      } catch (error) {
+        if (!answer(res, error)) throw error;
+      }
+    }),
+  );
+
+  router.patch(
+    '/pending/:id',
+    handle(async (req, res) => {
+      const params = parse(PendingParams, req.params, res);
+      if (params === null) return;
+      const body = parse(PendingPatch, req.body, res);
+      if (body === null) return;
+      const me = currentSession(req);
+      try {
+        const now = rt.now();
+        const hold = holdOf({ sendAt: body.sendAt }, now);
+        if (hold === null) throw new HttpRefusal(400, 'invalid_request', 'sendAt is required');
+        if ((await ownPending(me.accountId, params.id)) === null) throw new HttpRefusal(404, 'not_found', 'no such pending send');
+        const row = await audited(db, { kind: 'account', accountId: me.accountId }, { action: 'compose.reschedule', entityType: 'pending_send', context: getAuditContext(req) }, async (tx) => {
+          const before = await tx.pendingSend.findFirstOrThrow({ where: { id: params.id, accountId: me.accountId } });
+          // Conditional on held, like the release: a message already sent cannot be rescheduled.
+          const n = await tx.pendingSend.updateMany({ where: { id: params.id, state: 'held' }, data: { releaseAt: hold.releaseAt, kind: 'scheduled' } });
+          if (n.count === 0) throw new HttpRefusal(409, 'not_held', 'It is no longer waiting to be sent.');
+          const after = await tx.pendingSend.findUniqueOrThrow({ where: { id: params.id } });
+          return { entityId: params.id, before: { releaseAt: before.releaseAt.toISOString(), kind: before.kind }, after: { releaseAt: after.releaseAt.toISOString(), kind: after.kind }, result: after };
+        });
+        res.json(pendingJson(row));
       } catch (error) {
         if (!answer(res, error)) throw error;
       }
@@ -321,6 +550,7 @@ export function composeRoutes(deps: ApiDeps): Router {
       };
       const raw = buildTextMessage(message);
       let reaped: string | null = null;
+      let heldReaped: string[] = [];
       const saved = await audited(
         db,
         { kind: 'account', accountId: me.accountId },
@@ -351,7 +581,11 @@ export function composeRoutes(deps: ApiDeps): Router {
             now: date,
             takeReference: false,
           });
-          if (old !== null) reaped = await removeMessage(tx, store.blobs, old);
+          if (old !== null) {
+            // Editing the Drafts copy of a held send takes it back: the old content is not sent.
+            heldReaped = (await cancelHeldForDraft(tx, store.blobs, me.accountId, old.id, 'the draft was edited', date)).reaped;
+            reaped = await removeMessage(tx, store.blobs, old);
+          }
           return {
             entityId: copy.id,
             before: old === null ? null : { id: old.id, uid: old.uid },
@@ -360,7 +594,7 @@ export function composeRoutes(deps: ApiDeps): Router {
           };
         },
       );
-      await reap(store.blobs, [reaped]);
+      await reap(store.blobs, [reaped, ...heldReaped]);
       const json: DraftSavedJson = { id: saved.id, mailboxId: saved.mailboxId, uid: saved.uid, savedAt: date.toISOString() };
       res.status(replaces === null ? 201 : 200).json(json);
     } catch (error) {
@@ -464,18 +698,22 @@ export function composeRoutes(deps: ApiDeps): Router {
       if (store === null) return;
       const me = currentSession(req);
       let reaped: string | null = null;
+      let heldReaped: string[] = [];
       try {
         await audited(db, { kind: 'account', accountId: me.accountId }, { action: 'draft.delete', entityType: 'message', context: getAuditContext(req) }, async (tx) => {
           const draft = await findOwnDraft(tx, me.accountId, params.id);
           if (draft === null) throw new HttpRefusal(404, 'not_found', 'no such draft');
+          // Discarding the Drafts copy of a held send cancels it (PST-T-9.1).
+          const held = await cancelHeldForDraft(tx, store.blobs, me.accountId, draft.id, 'the draft was discarded', rt.now());
+          heldReaped = held.reaped;
           reaped = await removeMessage(tx, store.blobs, draft);
-          return { entityId: draft.id, before: { id: draft.id, mailboxId: draft.mailboxId, uid: draft.uid }, after: null, result: null };
+          return { entityId: draft.id, before: { id: draft.id, mailboxId: draft.mailboxId, uid: draft.uid }, after: { cancelledPendingSends: held.ids }, result: null };
         });
       } catch (error) {
         if (!answer(res, error)) throw error;
         return;
       }
-      await reap(store.blobs, [reaped]);
+      await reap(store.blobs, [reaped, ...heldReaped]);
       res.status(204).end();
     }),
   );
@@ -519,4 +757,183 @@ export function composeRoutes(deps: ApiDeps): Router {
   }
 
   return router;
+}
+
+// --- Read receipts: RFC 8098 MDNs (PST-T-9.2, PST-REQ-146) ----------------------------------------
+//
+// Mounted separately, at /api/messages (disjoint path from delivery/index.ts's routes there, the
+// same pattern unsubscribe/index.ts already uses): POST /api/messages/:id/mdn sends the MDN for one
+// of the caller's own inbound messages that asked for one, through the same submission path as any
+// other outbound mail, and marks it with the IMAP keyword $MDNSent so it is offered at most once (and
+// so any RFC 3503-aware client agrees).
+
+const REPORTING_UA_DEFAULT = 'postroom; Postroom';
+
+export function mdnRoutes(deps: ApiDeps): Router {
+  const rt = runtimeFor(deps);
+  const { db } = rt;
+  const router = Router();
+  const log = (event: string, fields: Record<string, unknown> = {}): void => {
+    process.stdout.write(`${JSON.stringify({ daemon: 'api', component: 'mdn', event, ...fields })}\n`);
+  };
+  const capsOptions = {
+    db,
+    hourlyDefault: envInt(deps.env, 'SUBMISSION_CAP_HOURLY', 100),
+    dailyDefault: envInt(deps.env, 'SUBMISSION_CAP_DAILY', 500),
+    sendAlert: createAlertSender(
+      { url: envString(deps.env, 'MAIL_RELAY_URL', ''), token: envString(deps.env, 'MAIL_RELAY_TOKEN', ''), to: envString(deps.env, 'ALERT_TO', '') },
+      { log },
+    ),
+    log,
+  };
+  const webmailCaps = createWebmailCapsEnforcer(capsOptions);
+
+  router.post(
+    '/:id/mdn',
+    handle(async (req, res) => {
+      const params = parse(MdnParams, req.params, res);
+      if (params === null) return;
+      const me = currentSession(req);
+      const ctx = getAuditContext(req);
+      if (rt.kek === null) {
+        res.status(503).json({ error: 'blobstore_not_configured', message: 'POSTROOM_KEK is not set' });
+        return;
+      }
+      const root = deps.env['BLOB_ROOT']?.trim() ?? '';
+      const blobs = createBlobStore({ root: root === '' ? DEFAULT_BLOB_ROOT : root, db, kek: rt.kek });
+      const store: SubmissionStorage = { blobs, kek: rt.kek };
+
+      const found = await db.message.findFirst({
+        where: { id: params.id, mailbox: { accountId: me.accountId } },
+        select: { id: true, mailboxId: true, uid: true, flags: true, blobSha256: true, messageIdHeader: true },
+      });
+      if (found === null) {
+        notFound(res);
+        return;
+      }
+      if (found.flags.includes('$MDNSent')) {
+        res.status(409).json({ error: 'already_sent', message: 'A read receipt for this message was already sent.' });
+        return;
+      }
+      const summary = await collectMessage(await store.blobs.get(found.blobSha256));
+      const requested = summary.headers.get('Disposition-Notification-To');
+      if (requested === null || requested.trim() === '') {
+        res.status(409).json({ error: 'not_requested', message: 'This message did not ask for a read receipt.' });
+        return;
+      }
+      const to = parseMailboxes(requested)[0];
+      if (to === undefined) {
+        res.status(409).json({ error: 'not_requested', message: 'Disposition-Notification-To has no usable address.' });
+        return;
+      }
+      const addresses = await sendableAddresses(db, me.accountId);
+      const finalRecipient = addresses[0];
+      if (finalRecipient === undefined) throw new HttpRefusal(403, 'from_not_owned', 'You have no address to send from');
+      const account = await db.account.findUnique({ where: { id: me.accountId }, select: { displayName: true } });
+      const from: Mailbox = { name: account?.displayName ?? '', address: finalRecipient };
+      const originalMessageId = found.messageIdHeader === null ? `<${found.id}@local>` : bracketMsgId(found.messageIdHeader) ?? `<${found.id}@local>`;
+      const subject = decodeEncodedWords(summary.headers.get('Subject') ?? '').trim();
+      const now = rt.now();
+      const domain = finalRecipient.slice(finalRecipient.lastIndexOf('@') + 1);
+      const mdnMessageId = `<${randomUUID()}@${domain}>`;
+      const raw = buildMdn({
+        from,
+        to,
+        subject,
+        originalMessageId,
+        finalRecipient,
+        reportingUa: envString(deps.env, 'MDN_REPORTING_UA', REPORTING_UA_DEFAULT),
+        date: now,
+        messageId: mdnMessageId,
+      });
+
+      try {
+        let sentCopy: { id: string; mailboxId: string } | null = null;
+        const outcome = await acceptSubmission(
+          Readable.from([raw]),
+          {
+            submitter: { accountId: me.accountId, addresses: new Set(addresses) },
+            envelopeFrom: from.address,
+            recipients: [{ address: to.address }],
+            sessionId: ctx.requestId,
+            submittedVia: 'webmail',
+            enforceCaps: (tx, recipients, at) => webmailCaps(tx, me.accountId, recipients, at),
+            auditContext: ctx,
+            withinTransaction: async (tx, accepted) => {
+              // Exactly once under concurrency (PST-REQ-146): claim the message with a row lock
+              // held for the rest of THIS transaction, before doing any of the work below. Two
+              // concurrent POSTs for the same message both pass the unlocked pre-check above, but
+              // here the second one blocks on FOR UPDATE until the first commits (adding
+              // $MDNSent), then re-reads the now-current flags and is refused — so at most one
+              // withinTransaction ever reaches enqueueOutbound's commit, and at most one MDN is
+              // ever queued. Lock order matches every other flag change: the message's mailbox
+              // first (the row `updateMessage` locks), then the message — so a concurrent PATCH or
+              // IMAP STORE on the same message waits on the same first lock instead of deadlocking.
+              await tx.$queryRaw`SELECT 1 FROM mailbox WHERE id = ${found.mailboxId}::uuid FOR UPDATE`;
+              const claim = await tx.$queryRaw<{ flags: string[] }[]>`
+                SELECT flags FROM message WHERE id = ${found.id}::uuid FOR UPDATE`;
+              const claimed = claim[0];
+              if (claimed === undefined) throw new HttpRefusal(404, 'not_found', 'no such message');
+              if (claimed.flags.includes('$MDNSent')) {
+                throw new HttpRefusal(409, 'already_sent', 'A read receipt for this message was already sent.');
+              }
+              const copy = await fileCopy(tx, {
+                accountId: me.accountId,
+                use: 'sent',
+                blobSha256: accepted.blobSha256,
+                size: accepted.size,
+                flags: SENT_FLAGS,
+                denorm: {
+                  messageIdHeader: mdnMessageId,
+                  subject: `Read: ${subject}`,
+                  fromAddress: from.address,
+                  to: to.address,
+                  sentAt: now,
+                  inReplyTo: null,
+                  references: [],
+                  bodyText: '',
+                },
+                now,
+                takeReference: true,
+              });
+              sentCopy = copy;
+              const marked = await updateMessage(tx, { accountId: me.accountId, messageId: found.id, ifMatch: '*', add: ['$MDNSent'], remove: [], moveTo: undefined });
+              await recordAudit(tx, {
+                actor: { kind: 'account', accountId: me.accountId },
+                action: 'compose.mdn',
+                entityType: 'message',
+                entityId: found.id,
+                before: null,
+                after: { sentMessageId: copy.id, outboundId: accepted.outboundId, messageId: accepted.messageId },
+                context: ctx,
+              });
+              if (marked === null) throw new Error('message vanished while sending its MDN');
+            },
+          },
+          { db, storage: () => store, now: rt.now, log },
+        );
+        if (!outcome.ok) {
+          const { status, error } = refusalStatus(outcome);
+          res.status(status).json({ error, message: outcome.reply.lines.join(' ') });
+          return;
+        }
+        const filed = sentCopy as { id: string; mailboxId: string } | null;
+        if (filed === null) throw new Error('the MDN Sent copy was not filed');
+        const json: MdnResponseJson = { messageId: outcome.messageId, outboundId: outcome.outboundId, sentMessageId: filed.id };
+        res.status(201).json(json);
+      } catch (error) {
+        if (!answerLocal(res, error)) throw error;
+      }
+    }),
+  );
+
+  return router;
+}
+
+function answerLocal(res: Response, error: unknown): boolean {
+  if (error instanceof HttpRefusal) {
+    res.status(error.status).json({ error: error.code, message: error.message });
+    return true;
+  }
+  return false;
 }

@@ -1,0 +1,10 @@
+From: Maple Clinic <appointments@mapleclinic.example.org>
+To: sam@d3cloud.io
+Subject: Your visit is scheduled for Monday
+Date: Wed, 16 Sep 2026 23:28:20 +0000
+Message-ID: <golden-0243.20260926@mapleclinic.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=mapleclinic.example.org; dkim=pass header.d=mapleclinic.example.org; dmarc=pass header.from=mapleclinic.example.org
+
+Your visit is scheduled for Monday
+
+Details: https://mapleclinic.example.org/m/2004

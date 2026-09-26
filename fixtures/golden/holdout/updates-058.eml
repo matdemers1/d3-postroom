@@ -1,0 +1,12 @@
+From: GuardPass <hello@guardpass.example.org>
+To: sam@d3cloud.io
+Subject: Confirm your email address to continue
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.05-10.0.0.1
+Date: Wed, 09 Sep 2026 03:47:47 +0000
+Message-ID: <golden-0124.20260926@guardpass.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=guardpass.example.org; dkim=pass header.d=guardpass.example.org; dmarc=pass header.from=guardpass.example.org
+
+Confirm your email address to continue
+
+More detail: https://guardpass.example.org/status/1004

@@ -10,12 +10,12 @@ import {
   ModalClose,
   Page,
   PageHeader,
-  Skeleton,
   Stack,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, type AccountSession } from '../api';
+import { Loading, LoadFailed } from './states';
 
 const when = (iso: string): string =>
   new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -28,7 +28,7 @@ const when = (iso: string): string =>
  */
 export function Sessions() {
   const [sessions, setSessions] = useState<AccountSession[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<AccountSession | null>(null);
   const [code, setCode] = useState('');
@@ -38,9 +38,9 @@ export function Sessions() {
   const load = useCallback(async () => {
     try {
       setSessions((await api.sessions()).sessions);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -129,12 +129,10 @@ export function Sessions() {
           {notice}
         </Alert>
       )}
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load your sessions" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="your sessions" onRetry={() => void load()} />
       ) : sessions === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading your sessions" />
       ) : (
         <Table
           caption="Your live sessions"

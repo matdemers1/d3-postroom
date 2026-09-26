@@ -1,0 +1,11 @@
+From: InstantSavings Plus <deals@instantsavingsplus.example.org>
+To: sam@d3cloud.io
+Subject: Verify now to unlock savings
+Date: Mon, 14 Sep 2026 07:41:12 +0000
+Message-ID: <golden-0204.20260926@instantsavingsplus.example.org>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=instantsavingsplus.example.org; dkim=none header.d=instantsavingsplus.example.org; dmarc=none header.from=instantsavingsplus.example.org
+Precedence: junk
+
+Verify now to unlock savings
+
+Click here: https://instantsavingsplus.example.org/claim

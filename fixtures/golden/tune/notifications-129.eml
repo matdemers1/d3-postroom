@@ -1,0 +1,10 @@
+From: Uptimer <monitor@alerts.uptimer.example.com>
+To: dana@d3cloud.io
+Subject: [DOWN] api.example.com is not responding
+Date: Wed, 16 Sep 2026 03:47:10 +0000
+Message-ID: <golden-0231.20260926@alerts.uptimer.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=alerts.uptimer.example.com; dkim=pass header.d=alerts.uptimer.example.com; dmarc=pass header.from=alerts.uptimer.example.com
+
+[DOWN] api.example.com is not responding
+
+Details: https://alerts.uptimer.example.com/m/2003

@@ -1,0 +1,12 @@
+From: SwiftCourier <hello@swiftcourier.example.net>
+To: sam@d3cloud.io
+Subject: Your delivery window is 2–4pm today
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.01-10.0.0.1
+Date: Tue, 08 Sep 2026 23:01:25 +0000
+Message-ID: <golden-0120.20260926@swiftcourier.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=swiftcourier.example.net; dkim=pass header.d=swiftcourier.example.net; dmarc=pass header.from=swiftcourier.example.net
+
+Your delivery window is 2–4pm today
+
+More detail: https://swiftcourier.example.net/status/1000

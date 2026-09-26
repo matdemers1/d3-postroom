@@ -10,5 +10,6 @@ export * from './mutf7.js';
 export * from './parser.js';
 export * from './reader.js';
 export * from './response-parser.js';
+export * from './response-stream.js';
 export * from './sequence.js';
 export * from './writer.js';

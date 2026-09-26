@@ -1,0 +1,11 @@
+From: Remindly <calendar-notification@remindly.example.org>
+To: sam@d3cloud.io
+Subject: Your report is ready
+List-Unsubscribe: <https://remindly.example.org/notifications/unsubscribe>
+Date: Sat, 12 Sep 2026 08:18:09 +0000
+Message-ID: <golden-0173.20260926@remindly.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=remindly.example.org; dkim=pass header.d=remindly.example.org; dmarc=pass header.from=remindly.example.org
+
+Your report is ready
+
+Open Remindly: https://remindly.example.org/open

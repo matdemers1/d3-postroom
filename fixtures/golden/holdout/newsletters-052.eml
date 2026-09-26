@@ -1,0 +1,12 @@
+From: The Sunday Post <editor@sundaypost.example.org>
+X-SES-Outgoing: 2026.09.01-10.0.0.1
+Feedback-ID: bulk:sundaypost.example.org:ses
+To: sam@d3cloud.io
+Subject: Reading list #12
+Date: Tue, 08 Sep 2026 00:38:54 +0000
+Message-ID: <golden-0105.20260926@sundaypost.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=sundaypost.example.org; dkim=pass header.d=sundaypost.example.org; dmarc=pass header.from=sundaypost.example.org
+
+Reading list #12
+
+Read online: https://sundaypost.example.org/issues/12

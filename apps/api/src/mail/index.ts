@@ -19,6 +19,8 @@ import { sanitizeHtml } from '../usercontent/sanitize.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 import { hubFor, streamEvents } from './events.js';
+import { inspectMessage } from './inspect.js';
+import { snoozeRoutes } from './snooze.js';
 import {
   AttachmentParams,
   IdParams,
@@ -32,7 +34,7 @@ import {
   type SearchResultJson,
   type ThreadDetailJson,
 } from './schemas.js';
-import { detailJson, findOwnMessage, findOwnThread, listMailboxes, listMessages, ownMailbox, PreconditionFailed, summaryJson, updateMessage } from './store.js';
+import { detailJson, findOwnMessage, findOwnThread, listMailboxes, listMessages, mailboxSplit, messagePhish, ownMailbox, PreconditionFailed, summaryJson, trashRetentionDays, updateMessage } from './store.js';
 
 export const DEFAULT_BLOB_ROOT = '/var/lib/postroom/blobs';
 
@@ -81,6 +83,14 @@ export function mailRoutes(deps: ApiDeps): Router {
     blobs = createBlobStore({ root: root === '' ? DEFAULT_BLOB_ROOT : root, db, kek: rt.kek });
     return blobs;
   };
+  /** Same store, but null (never a 503) when it is not configured — the phish check degrades to "nothing to show" instead of failing the whole detail response. */
+  const blobStoreOrNull = (): BlobStore | null => {
+    if (blobs !== null) return blobs;
+    if (rt.kek === null) return null;
+    const root = deps.env['BLOB_ROOT']?.trim() ?? '';
+    blobs = createBlobStore({ root: root === '' ? DEFAULT_BLOB_ROOT : root, db, kek: rt.kek });
+    return blobs;
+  };
 
   const ownMessage = async (req: Request, res: Response) => {
     const params = parse(IdParams, req.params, res);
@@ -112,7 +122,22 @@ export function mailRoutes(deps: ApiDeps): Router {
         return;
       }
       res.setHeader('Cache-Control', 'no-store');
-      res.json(await listMessages(db, params.id, { cursor: query.cursor === undefined ? undefined : Number(query.cursor), limit: query.limit }));
+      res.json(await listMessages(db, params.id, { cursor: query.cursor === undefined ? undefined : Number(query.cursor), limit: query.limit, keyword: query.keyword }));
+    }),
+  );
+
+  // The Inbox's Priority / People split, for the webmail's segmented list header (PST-REQ-101).
+  router.get(
+    '/mailboxes/:id/split',
+    handle(async (req, res) => {
+      const params = parse(IdParams, req.params, res);
+      if (params === null) return;
+      if ((await ownMailbox(db, currentSession(req).accountId, params.id)) === null) {
+        notFound(res);
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await mailboxSplit(db, params.id));
     }),
   );
 
@@ -123,9 +148,10 @@ export function mailRoutes(deps: ApiDeps): Router {
     handle(async (req, res) => {
       const message = await ownMessage(req, res);
       if (message === null) return;
+      const phish = await messagePhish(db, blobStoreOrNull(), currentSession(req).accountId, message);
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('ETag', etagOf(message.modseq));
-      res.json(detailJson(message));
+      res.json(detailJson(message, phish, (await trashRetentionDays(db, [message.mailboxId])).get(message.mailboxId) ?? null));
     }),
   );
 
@@ -183,9 +209,10 @@ export function mailRoutes(deps: ApiDeps): Router {
         notFound(res);
         return;
       }
+      const phish = await messagePhish(db, blobStoreOrNull(), me.accountId, message);
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('ETag', etagOf(message.modseq));
-      res.json(detailJson(message));
+      res.json(detailJson(message, phish, (await trashRetentionDays(db, [message.mailboxId])).get(message.mailboxId) ?? null));
     }),
   );
 
@@ -237,6 +264,20 @@ export function mailRoutes(deps: ApiDeps): Router {
     }),
   );
 
+  // The Inspect drawer's evidence (PST-T-6.1, PST-REQ-114): verdicts, Received path, bucket, spam
+  // breakdown, trackers, MDN request, headers. A read — nothing stored, nothing fetched elsewhere.
+  router.get(
+    '/messages/:id/inspect',
+    handle(async (req, res) => {
+      const message = await ownMessage(req, res);
+      if (message === null) return;
+      const store = blobStore(res);
+      if (store === null) return;
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json(await inspectMessage(db, store, message, { kek: rt.kek }));
+    }),
+  );
+
   // A render ticket for the usercontent origin (PST-T-3.12): a short-lived capability URL for this
   // one message of the caller's, because that origin has no session cookie. A read — nothing stored.
   router.get(
@@ -254,13 +295,15 @@ export function mailRoutes(deps: ApiDeps): Router {
       const store = blobStore(res);
       if (store === null) return;
       const summary = await collectMessage(await store.get(message.blobSha256));
-      const remoteImages = summary.html === null ? 0 : sanitizeHtml(summary.html.text).remoteImages;
+      const stats = summary.html === null ? { remoteImages: 0, trackersBlocked: 0, linksCleaned: 0 } : sanitizeHtml(summary.html.text);
       const me = currentSession(req);
       const images = query.images === '1';
       const ticket: RenderTicketJson = {
         ...mintRenderUrl(config, { messageId: message.id, accountId: me.accountId, sessionId: me.sessionId, images }, rt.now()),
         images,
-        remoteImages,
+        remoteImages: stats.remoteImages,
+        trackersBlocked: stats.trackersBlocked,
+        linksCleaned: stats.linksCleaned,
       };
       res.setHeader('Cache-Control', 'private, no-store');
       res.json(ticket);
@@ -325,12 +368,16 @@ export function mailRoutes(deps: ApiDeps): Router {
         notFound(res);
         return;
       }
+      const days = await trashRetentionDays(
+        db,
+        found.messages.map((m) => m.mailboxId),
+      );
       const body: ThreadDetailJson = {
         id: found.thread.id,
         subject: found.thread.subject,
         messageCount: found.thread.messageCount,
         lastMessageAt: found.thread.lastMessageAt.toISOString(),
-        messages: found.messages.map(summaryJson),
+        messages: found.messages.map((m) => summaryJson(m, days.get(m.mailboxId) ?? null)),
       };
       res.setHeader('Cache-Control', 'no-store');
       res.json(body);
@@ -404,6 +451,9 @@ export function mailRoutes(deps: ApiDeps): Router {
       await streamEvents(hub, me.accountId, req, res, { stillValid });
     }),
   );
+
+  // PST-T-9.1 (PST-REQ-142): snooze and unsnooze a conversation.
+  router.use(snoozeRoutes(deps));
 
   return router;
 }

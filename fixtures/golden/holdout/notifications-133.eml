@@ -1,0 +1,10 @@
+From: Helpline Desk <support@helpline.example.com>
+To: sam@d3cloud.io
+Subject: Your request #5521 has a new comment
+Date: Fri, 18 Sep 2026 15:24:38 +0000
+Message-ID: <golden-0269.20260926@helpline.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=helpline.example.com; dkim=pass header.d=helpline.example.com; dmarc=pass header.from=helpline.example.com
+
+Your request #5521 has a new comment
+
+Details: https://helpline.example.com/m/2008

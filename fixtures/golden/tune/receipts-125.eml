@@ -1,0 +1,10 @@
+From: Sprout Grocery <care@sprout.example.org>
+To: dana@d3cloud.io
+Subject: Your order total and receipt
+Date: Tue, 15 Sep 2026 22:42:11 +0000
+Message-ID: <golden-0227.20260926@sprout.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=sprout.example.org; dkim=pass header.d=sprout.example.org; dmarc=pass header.from=sprout.example.org
+
+Your order total and receipt
+
+Details: https://sprout.example.org/m/2010

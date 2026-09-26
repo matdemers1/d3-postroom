@@ -1,0 +1,10 @@
+From: Bonus Reward Hub <deals@bonusrewardhub.example.net>
+To: sam@d3cloud.io
+Subject: You have been chosen
+Date: Mon, 14 Sep 2026 05:31:50 +0000
+Message-ID: <golden-0203.20260926@bonusrewardhub.example.net>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=bonusrewardhub.example.net; dkim=none header.d=bonusrewardhub.example.net; dmarc=none header.from=bonusrewardhub.example.net
+
+You have been chosen
+
+Click here: https://bonusrewardhub.example.net/claim

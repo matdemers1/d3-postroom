@@ -1,0 +1,17 @@
+BEGIN:VCARD
+VERSION:3.0
+FN:Sam Sample
+N:Sample;Sam;;;
+EMAIL;TYPE=INTERNET;TYPE=HOME:sam@example.net
+EMAIL;TYPE=INTERNET:sam.sample@example.com
+TEL;TYPE=CELL:+15550100200
+item1.URL:https\://sam.example.net
+item1.X-ABLabel:
+CATEGORIES:myContacts,Friends
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+N:;;;;
+EMAIL;TYPE=INTERNET:no-name@example.org
+CATEGORIES:myContacts
+END:VCARD

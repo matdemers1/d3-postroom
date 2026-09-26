@@ -1,0 +1,12 @@
+From: Fernwood Coffee <billing@fernwood.example.net>
+To: dana@d3cloud.io
+Subject: Refund processed
+X-MC-User: mandrill-1007
+Feedback-ID: receipt:fernwood.example.net:esp
+Date: Thu, 10 Sep 2026 07:20:02 +0000
+Message-ID: <golden-0140.20260926@fernwood.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=fernwood.example.net; dkim=pass header.d=fernwood.example.net; dmarc=pass header.from=fernwood.example.net
+
+Refund processed
+
+Order total: $26.99

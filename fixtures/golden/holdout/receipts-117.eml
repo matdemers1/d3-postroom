@@ -1,0 +1,10 @@
+From: Tidewater Water Co <billpay@tidewater.example.net>
+To: sam@d3cloud.io
+Subject: Thanks — we received your payment
+Date: Thu, 17 Sep 2026 14:17:04 +0000
+Message-ID: <golden-0253.20260926@tidewater.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=tidewater.example.net; dkim=pass header.d=tidewater.example.net; dmarc=pass header.from=tidewater.example.net
+
+Thanks — we received your payment
+
+Details: https://tidewater.example.net/m/2003

@@ -1,0 +1,10 @@
+From: Streamline CI <builds@streamline.example.net>
+To: sam@d3cloud.io
+Subject: Nightly build completed with warnings
+Date: Fri, 18 Sep 2026 17:53:33 +0000
+Message-ID: <golden-0270.20260926@streamline.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=streamline.example.net; dkim=pass header.d=streamline.example.net; dmarc=pass header.from=streamline.example.net
+
+Nightly build completed with warnings
+
+Details: https://streamline.example.net/m/2009

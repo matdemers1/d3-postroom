@@ -1,0 +1,10 @@
+From: Golden Ticket Offers <deals@goldenticket.example.com>
+To: dana@d3cloud.io
+Subject: Everything must go — today only
+Date: Sun, 13 Sep 2026 14:04:38 +0000
+Message-ID: <golden-0193.20260926@goldenticket.example.com>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=goldenticket.example.com; dkim=none header.d=goldenticket.example.com; dmarc=none header.from=goldenticket.example.com
+
+Everything must go — today only
+
+Click here: https://goldenticket.example.com/claim

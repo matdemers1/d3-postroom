@@ -1,0 +1,12 @@
+From: Stonecraft Studio <receipts@stonecraft.example.com>
+To: sam@d3cloud.io
+Subject: We’ve processed your refund
+X-MC-User: mandrill-1007
+Feedback-ID: receipt:stonecraft.example.com:esp
+Date: Fri, 11 Sep 2026 01:09:31 +0000
+Message-ID: <golden-0153.20260926@stonecraft.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=stonecraft.example.com; dkim=pass header.d=stonecraft.example.com; dmarc=pass header.from=stonecraft.example.com
+
+We’ve processed your refund
+
+Order total: $26.99

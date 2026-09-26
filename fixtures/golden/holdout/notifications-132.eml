@@ -1,0 +1,10 @@
+From: Eventful <invites@eventful.example.org>
+To: sam@d3cloud.io
+Subject: You’re invited: Friday demo
+Date: Fri, 18 Sep 2026 12:34:47 +0000
+Message-ID: <golden-0268.20260926@eventful.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=eventful.example.org; dkim=pass header.d=eventful.example.org; dmarc=pass header.from=eventful.example.org
+
+You’re invited: Friday demo
+
+Details: https://eventful.example.org/m/2007

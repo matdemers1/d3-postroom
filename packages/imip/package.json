@@ -1,0 +1,26 @@
+{
+  "name": "@postroom/imip",
+  "private": true,
+  "version": "0.0.0",
+  "description": "iMIP (RFC 6047) and iTIP (RFC 5546): invitations, replies and cancellations over mail",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/ical": "workspace:*",
+    "@postroom/mime": "workspace:*"
+  },
+  "devDependencies": {}
+}

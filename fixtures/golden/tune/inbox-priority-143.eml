@@ -1,0 +1,13 @@
+From: Omar Patel <orders@smallbakery.example.org>
+To: dana@d3cloud.io
+Subject: Your cake order
+Date: Sat, 19 Sep 2026 05:38:08 +0000
+Message-ID: <golden-0278.20260926@smallbakery.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=smallbakery.example.org; dkim=pass header.d=smallbakery.example.org; dmarc=pass header.from=smallbakery.example.org
+
+Hi,
+
+Your cake order
+
+Thanks,
+Omar Patel

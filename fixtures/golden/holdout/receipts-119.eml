@@ -1,0 +1,10 @@
+From: Tandem Tools <orders-us@email.tandem.example.com>
+To: sam@d3cloud.io
+Subject: Order 55190 placed
+Date: Thu, 17 Sep 2026 15:44:55 +0000
+Message-ID: <golden-0255.20260926@email.tandem.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=email.tandem.example.com; dkim=pass header.d=email.tandem.example.com; dmarc=pass header.from=email.tandem.example.com
+
+Order 55190 placed
+
+Details: https://email.tandem.example.com/m/2005

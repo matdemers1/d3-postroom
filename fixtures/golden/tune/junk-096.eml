@@ -1,0 +1,11 @@
+From: Golden Ticket Offers <deals@goldenticket.example.com>
+To: dana@d3cloud.io
+Subject: Your account needs verification
+Date: Sun, 13 Sep 2026 04:46:54 +0000
+Message-ID: <golden-0188.20260926@goldenticket.example.com>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=goldenticket.example.com; dkim=none header.d=goldenticket.example.com; dmarc=none header.from=goldenticket.example.com
+Precedence: junk
+
+Your account needs verification
+
+Click here: https://goldenticket.example.com/claim

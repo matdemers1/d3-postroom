@@ -1,0 +1,10 @@
+From: Trackly <tracking-updates@trackly.example.org>
+To: dana@d3cloud.io
+Subject: Your parcel is out for delivery
+Date: Mon, 14 Sep 2026 10:35:45 +0000
+Message-ID: <golden-0206.20260926@trackly.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=trackly.example.org; dkim=pass header.d=trackly.example.org; dmarc=pass header.from=trackly.example.org
+
+Your parcel is out for delivery
+
+Details: https://trackly.example.org/m/2001

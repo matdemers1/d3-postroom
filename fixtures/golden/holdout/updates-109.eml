@@ -1,0 +1,10 @@
+From: Ledgerly <accounts@ledgerly.example.net>
+To: sam@d3cloud.io
+Subject: Action needed: verify your identity
+Date: Thu, 17 Sep 2026 03:45:22 +0000
+Message-ID: <golden-0245.20260926@ledgerly.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=ledgerly.example.net; dkim=pass header.d=ledgerly.example.net; dmarc=pass header.from=ledgerly.example.net
+
+Action needed: verify your identity
+
+Details: https://ledgerly.example.net/m/2006

@@ -1,0 +1,10 @@
+From: Quill & Ink <shop@quillink.example.org>
+To: sam@d3cloud.io
+Subject: Refund issued for order 7731
+Date: Thu, 17 Sep 2026 22:30:36 +0000
+Message-ID: <golden-0260.20260926@quillink.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=quillink.example.org; dkim=pass header.d=quillink.example.org; dmarc=pass header.from=quillink.example.org
+
+Refund issued for order 7731
+
+Details: https://quillink.example.org/m/2010

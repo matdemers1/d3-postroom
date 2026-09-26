@@ -52,6 +52,17 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       wireguard: { condition: service_started }
+  managesieve:
+    image: ghcr.io/matdemers1/d3-postroom/server:sha-SHA
+    command: ["managesieve"]
+    env_file: [/DATA/postroom/postroom.env]
+    environment:
+      HEALTH_PORT: "9107"
+    network_mode: "service:wireguard"
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      wireguard: { condition: service_started }
   delivery:
     image: ghcr.io/matdemers1/d3-postroom/server:sha-SHA
     command: ["delivery"]
@@ -83,6 +94,10 @@ services:
       # Mail HTML renders only on this origin (PST-T-3.12): the tunnel routes usercontent.d3cloud.io
       # to this same api:3300, which answers it by Host. See docs/runbooks/usercontent.md.
       USERCONTENT_ORIGIN: https://usercontent.d3cloud.io
+      # The admin Health screen's daemon tiles (PST-T-7.6, PST-REQ-127). smtp-in/submission/imap/
+      # managesieve/delivery share the wireguard sidecar's network namespace, so their health ports are reached
+      # at that hostname; dav and worker keep their own service names.
+      DAEMON_HEALTH_URLS: "smtp-in=http://wireguard:9101/health,submission=http://wireguard:9102/health,imap=http://wireguard:9103/health,managesieve=http://wireguard:9107/health,delivery=http://wireguard:9104/health,dav=http://dav:9105/health,worker=http://worker:9106/health"
     restart: unless-stopped
     volumes: [blobs:/var/lib/postroom/blobs]
     depends_on:

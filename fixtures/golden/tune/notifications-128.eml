@@ -1,0 +1,10 @@
+From: Meetspace <calendar@meetspace.example.net>
+To: dana@d3cloud.io
+Subject: Invitation: Design sync @ Thu 10am
+Date: Wed, 16 Sep 2026 03:34:51 +0000
+Message-ID: <golden-0230.20260926@meetspace.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=meetspace.example.net; dkim=pass header.d=meetspace.example.net; dmarc=pass header.from=meetspace.example.net
+
+Invitation: Design sync @ Thu 10am
+
+Details: https://meetspace.example.net/m/2002

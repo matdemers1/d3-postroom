@@ -1,0 +1,10 @@
+From: Surveyor <team@mail.surveyor.example.net>
+To: sam@d3cloud.io
+Subject: You have 3 new responses
+Date: Fri, 18 Sep 2026 10:13:43 +0000
+Message-ID: <golden-0267.20260926@mail.surveyor.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=mail.surveyor.example.net; dkim=pass header.d=mail.surveyor.example.net; dmarc=pass header.from=mail.surveyor.example.net
+
+You have 3 new responses
+
+Details: https://mail.surveyor.example.net/m/2006

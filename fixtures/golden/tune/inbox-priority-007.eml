@@ -1,0 +1,12 @@
+From: Lena Doe <lena.doe@example.org>
+To: dana@d3cloud.io
+Subject: Let's grab coffee this week
+Date: Tue, 01 Sep 2026 23:45:25 +0000
+Message-ID: <golden-0007.20260926@example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass header.from=example.org
+
+Let's grab coffee this week
+
+Lena Doe
+
+Sent from my phone

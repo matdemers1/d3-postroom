@@ -1,0 +1,12 @@
+From: Driftwood Market <purchases@driftwood.example.net>
+To: sam@d3cloud.io
+Subject: Your statement is ready to view
+X-SES-Outgoing: 2026.09.09-10.0.0.1
+Feedback-ID: receipt:driftwood.example.net:esp
+Date: Fri, 11 Sep 2026 03:46:53 +0000
+Message-ID: <golden-0154.20260926@driftwood.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=driftwood.example.net; dkim=pass header.d=driftwood.example.net; dmarc=pass header.from=driftwood.example.net
+
+Your statement is ready to view
+
+Order total: $27.99

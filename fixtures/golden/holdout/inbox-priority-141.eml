@@ -1,0 +1,14 @@
+From: Accounts Desk <accounts@landlordco.example.org>
+To: sam@d3cloud.io
+Subject: Re: lease renewal
+Date: Sat, 19 Sep 2026 12:44:42 +0000
+Message-ID: <golden-0284.20260926@landlordco.example.org>
+In-Reply-To: <thread-284@d3cloud.io>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=landlordco.example.org; dkim=pass header.d=landlordco.example.org; dmarc=pass header.from=landlordco.example.org
+
+Hi,
+
+Re: lease renewal
+
+Thanks,
+Accounts Desk

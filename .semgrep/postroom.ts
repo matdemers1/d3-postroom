@@ -53,6 +53,10 @@ res.json({ name: req.body.name });
 res.send('<p>fixed text</p>');
 // ok: postroom.reflected-user-input
 process.stderr.write(`${JSON.stringify({ event: 'csrf-refused', origin: req.get('origin') ?? null })}\n`);
+// ok: postroom.reflected-user-input
+body.write(items.body);
+// ruleid: postroom.reflected-user-input
+response.end(request.query['q']);
 
 // ─── postroom.secret-in-log ──────────────────────────────────────────────────
 // ruleid: postroom.secret-in-log

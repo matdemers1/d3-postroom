@@ -1,0 +1,12 @@
+From: Boardline <notifications@boardline.example.com>
+To: dana@d3cloud.io
+Subject: Incident resolved: API latency
+List-Unsubscribe: <https://boardline.example.com/notifications/unsubscribe>
+X-Gitlab-Project: mention
+Date: Fri, 11 Sep 2026 20:28:42 +0000
+Message-ID: <golden-0164.20260926@boardline.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=boardline.example.com; dkim=pass header.d=boardline.example.com; dmarc=pass header.from=boardline.example.com
+
+Incident resolved: API latency
+
+Open Boardline: https://boardline.example.com/open

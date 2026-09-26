@@ -1,0 +1,13 @@
+From: Rosa Brooks <rosa.brooks@example.net>
+To: sam@d3cloud.io
+Subject: Can we push the meeting?
+Date: Thu, 03 Sep 2026 18:41:51 +0000
+Message-ID: <golden-0037.20260926@example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.net; dkim=pass header.d=example.net; dmarc=pass header.from=example.net
+
+Hi,
+
+Can we push the meeting?
+
+Best,
+Rosa Brooks

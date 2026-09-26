@@ -79,7 +79,7 @@ test('sign out, then sign in with password + TOTP and reach the admin Sessions p
   expect(cookie?.sameSite).toBe('Lax');
 
   await openNav(page);
-  await page.getByRole('link', { name: 'Sessions' }).click();
+  await page.getByRole('link', { name: 'Sessions', exact: true }).click();
   await expect(page.getByRole('heading', { name: /^Sessions/, level: 1 })).toBeVisible();
   await expect(page.getByText('This session')).toBeVisible();
 
@@ -118,7 +118,7 @@ test('revoking another session asks for a fresh TOTP (step-up)', async ({ page, 
 
   await signInWithPassword(page, operator);
   await openNav(page);
-  await page.getByRole('link', { name: 'Sessions' }).click();
+  await page.getByRole('link', { name: 'Sessions', exact: true }).click();
   await page.locator(`button[data-session-id="${otherId}"]`).click();
 
   const dialog = page.getByRole('dialog', { name: 'Confirm it is you' });
@@ -148,7 +148,7 @@ test('Sign in with D3 Auth reaches the shell (needs FAKE_ISSUER_URL)', async ({ 
   await expect(page.getByRole('heading', { name: 'Mail', level: 1 })).toBeVisible();
   // The fake issuer's user carries roles ['admin'], so the Admin section appears (PST-REQ-007).
   await openNav(page);
-  await expect(page.getByRole('link', { name: 'Sessions' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Sessions', exact: true })).toBeVisible();
   const state = (await page.request.get('/api/auth/state').then((r) => r.json())) as { method: string };
   expect(state.method).toBe('oidc');
 });

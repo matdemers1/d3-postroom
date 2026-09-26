@@ -1,0 +1,12 @@
+From: Driftwood Market <purchases@driftwood.example.net>
+To: sam@d3cloud.io
+Subject: Receipt for your recent purchase
+X-SG-EID: sg-eid-1003
+Feedback-ID: receipt:driftwood.example.net:esp
+Date: Thu, 10 Sep 2026 19:09:42 +0000
+Message-ID: <golden-0149.20260926@driftwood.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=driftwood.example.net; dkim=pass header.d=driftwood.example.net; dmarc=pass header.from=driftwood.example.net
+
+Receipt for your recent purchase
+
+Order total: $22.99

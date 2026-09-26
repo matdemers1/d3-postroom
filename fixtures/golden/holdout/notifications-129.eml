@@ -1,0 +1,10 @@
+From: Huddle Chat <no.reply@huddle.example.org>
+To: sam@d3cloud.io
+Subject: Kai sent you a message
+Date: Fri, 18 Sep 2026 07:40:16 +0000
+Message-ID: <golden-0265.20260926@huddle.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=huddle.example.org; dkim=pass header.d=huddle.example.org; dmarc=pass header.from=huddle.example.org
+
+Kai sent you a message
+
+Details: https://huddle.example.org/m/2004

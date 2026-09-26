@@ -1,0 +1,11 @@
+From: Lucky Winner Club <deals@luckywinner.example.org>
+To: sam@d3cloud.io
+Subject: Exclusive deal just for you
+Date: Sun, 13 Sep 2026 18:13:36 +0000
+Message-ID: <golden-0196.20260926@luckywinner.example.org>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=luckywinner.example.org; dkim=none header.d=luckywinner.example.org; dmarc=none header.from=luckywinner.example.org
+Precedence: junk
+
+Exclusive deal just for you
+
+Click here: https://luckywinner.example.org/claim

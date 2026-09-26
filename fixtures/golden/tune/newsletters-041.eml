@@ -1,0 +1,14 @@
+From: Weekly Signal <newsletter@weeklysignal.example.com>
+List-Id: Weekly Signal <bulk.weeklysignal.example.com>
+List-Unsubscribe: <https://weeklysignal.example.com/unsubscribe>, <mailto:unsubscribe@weeklysignal.example.com>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Precedence: bulk
+To: dana@d3cloud.io
+Subject: This week: five things worth your time
+Date: Sun, 06 Sep 2026 10:12:21 +0000
+Message-ID: <golden-0081.20260926@weeklysignal.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=weeklysignal.example.com; dkim=pass header.d=weeklysignal.example.com; dmarc=pass header.from=weeklysignal.example.com
+
+This week: five things worth your time
+
+Read online: https://weeklysignal.example.com/issues/1

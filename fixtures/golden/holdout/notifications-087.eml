@@ -1,0 +1,11 @@
+From: Deskbell <notifications@deskbell.example.com>
+To: sam@d3cloud.io
+Subject: You have 2 unread mentions
+List-Unsubscribe: <https://deskbell.example.com/notifications/unsubscribe>
+Date: Sat, 12 Sep 2026 18:26:07 +0000
+Message-ID: <golden-0179.20260926@deskbell.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=deskbell.example.com; dkim=pass header.d=deskbell.example.com; dmarc=pass header.from=deskbell.example.com
+
+You have 2 unread mentions
+
+Open Deskbell: https://deskbell.example.com/open

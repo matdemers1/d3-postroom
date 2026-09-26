@@ -275,36 +275,53 @@ export interface FakeDns {
   mx?: Record<string, { preference: number; exchange: string }[] | 'nxdomain' | 'servfail'>;
   a?: Record<string, string[]>;
   aaaa?: Record<string, string[]>;
+  /** Name → TXT strings (one record each). Absent = NOERROR, no records. */
+  txt?: Record<string, string[] | 'servfail'>;
+  /** Name (e.g. `_25._tcp.mx.example`) → TLSA records. Absent = NOERROR, no records. */
+  tlsa?: Record<string, { usage: number; selector: number; matchingType: number; data: Uint8Array }[] | 'servfail'>;
+  /** Names whose answers carry the AD bit, as our validating resolver would set it. Default: none. */
+  secure?: string[];
 }
 
 export interface FakeResolver extends Resolver {
-  queries: { type: 'MX' | 'A' | 'AAAA'; name: string }[];
+  queries: { type: 'MX' | 'A' | 'AAAA' | 'TXT' | 'TLSA'; name: string }[];
 }
 
 export function fakeResolver(dns: FakeDns): FakeResolver {
   const queries: FakeResolver['queries'] = [];
-  const ok = (answers: DnsAnswer[]): ResolverResult => ({ rcode: RCode.NOERROR, ad: false, answers, authority: [] });
+  const secure = new Set((dns.secure ?? []).map((n) => n.toLowerCase()));
+  const ok = (name: string, answers: DnsAnswer[]): ResolverResult => ({ rcode: RCode.NOERROR, ad: secure.has(name.toLowerCase()), answers, authority: [] });
   const unsupported = (): Promise<ResolverResult> => Promise.reject(new Error('fakeResolver: not scripted'));
   return {
     queries,
     query: unsupported,
-    txt: unsupported,
-    tlsa: unsupported,
     ptr: unsupported,
+    txt: (name) => {
+      queries.push({ type: 'TXT', name });
+      const entry = dns.txt?.[name];
+      if (entry === 'servfail') return Promise.reject(new DnsServfailError(name, RRType.TXT));
+      return Promise.resolve(ok(name, (entry ?? []).map((text) => ({ name, ttl: 300, type: RRType.TXT, class: 1, kind: 'TXT' as const, strings: [text], text }))));
+    },
+    tlsa: (name) => {
+      queries.push({ type: 'TLSA', name });
+      const entry = dns.tlsa?.[name];
+      if (entry === 'servfail') return Promise.reject(new DnsServfailError(name, RRType.TLSA));
+      return Promise.resolve(ok(name, (entry ?? []).map((r) => ({ name, ttl: 300, type: RRType.TLSA, class: 1, kind: 'TLSA' as const, usage: r.usage, selector: r.selector, matchingType: r.matchingType, certData: r.data }))));
+    },
     mx: (name) => {
       queries.push({ type: 'MX', name });
       const entry = dns.mx?.[name];
       if (entry === 'servfail') return Promise.reject(new DnsServfailError(name, RRType.MX));
       if (entry === 'nxdomain') return Promise.resolve({ rcode: RCode.NXDOMAIN, ad: false, answers: [], authority: [] });
-      return Promise.resolve(ok((entry ?? []).map((r) => ({ name, ttl: 300, type: RRType.MX, class: 1, kind: 'MX' as const, preference: r.preference, exchange: r.exchange }))));
+      return Promise.resolve(ok(name, (entry ?? []).map((r) => ({ name, ttl: 300, type: RRType.MX, class: 1, kind: 'MX' as const, preference: r.preference, exchange: r.exchange }))));
     },
     a: (name) => {
       queries.push({ type: 'A', name });
-      return Promise.resolve(ok((dns.a?.[name] ?? []).map((address) => ({ name, ttl: 300, type: RRType.A, class: 1, kind: 'A' as const, address }))));
+      return Promise.resolve(ok(name, (dns.a?.[name] ?? []).map((address) => ({ name, ttl: 300, type: RRType.A, class: 1, kind: 'A' as const, address }))));
     },
     aaaa: (name) => {
       queries.push({ type: 'AAAA', name });
-      return Promise.resolve(ok((dns.aaaa?.[name] ?? []).map((address) => ({ name, ttl: 300, type: RRType.AAAA, class: 1, kind: 'AAAA' as const, address }))));
+      return Promise.resolve(ok(name, (dns.aaaa?.[name] ?? []).map((address) => ({ name, ttl: 300, type: RRType.AAAA, class: 1, kind: 'AAAA' as const, address }))));
     },
   };
 }

@@ -160,6 +160,7 @@ const detail = (extra: Partial<MessageDetail> = {}): MessageDetail => ({
   inReplyTo: null,
   references: ['<root@example.org>'],
   verdict: null,
+  phish: null,
   ...extra,
 });
 const body = (headers: Record<string, string>, text = 'Line one\nLine two'): MessageBody => ({

@@ -1,0 +1,10 @@
+From: Transit Card <service@transitcard.example.org>
+To: sam@d3cloud.io
+Subject: Your card will expire soon
+Date: Thu, 17 Sep 2026 05:26:25 +0000
+Message-ID: <golden-0246.20260926@transitcard.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=transitcard.example.org; dkim=pass header.d=transitcard.example.org; dmarc=pass header.from=transitcard.example.org
+
+Your card will expire soon
+
+Details: https://transitcard.example.org/m/2007

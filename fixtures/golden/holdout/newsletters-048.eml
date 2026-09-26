@@ -1,0 +1,12 @@
+From: Field Notes <newsletter@fieldnotes.example.com>
+X-SES-Outgoing: 2026.09.01-10.0.0.1
+Feedback-ID: bulk:fieldnotes.example.com:ses
+To: sam@d3cloud.io
+Subject: What caught our eye
+Date: Mon, 07 Sep 2026 17:24:11 +0000
+Message-ID: <golden-0101.20260926@fieldnotes.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=fieldnotes.example.com; dkim=pass header.d=fieldnotes.example.com; dmarc=pass header.from=fieldnotes.example.com
+
+What caught our eye
+
+Read online: https://fieldnotes.example.com/issues/8

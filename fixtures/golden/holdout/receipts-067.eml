@@ -1,0 +1,12 @@
+From: Cedar & Vine <orders@cedarvine.example.net>
+To: sam@d3cloud.io
+Subject: Payment successful
+X-SG-EID: sg-eid-1000
+Feedback-ID: receipt:cedarvine.example.net:esp
+Date: Thu, 10 Sep 2026 16:14:11 +0000
+Message-ID: <golden-0146.20260926@cedarvine.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=cedarvine.example.net; dkim=pass header.d=cedarvine.example.net; dmarc=pass header.from=cedarvine.example.net
+
+Payment successful
+
+Order total: $19.99

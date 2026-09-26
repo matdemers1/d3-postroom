@@ -4,6 +4,7 @@ import { createResolver } from '@postroom/dns';
 import { createDirectTransport, DEFAULT_HELO_NAME } from '../client/transport.js';
 import type { Log } from '../client/session.js';
 import type { AttemptOutcome } from '../state.js';
+import { createSettingPolicyStore, type SettingDelegate } from '../policy/mta-sts.js';
 import { sesTransportFromEnv } from './ses.js';
 import type { DeliveryRequest, DeliveryResult, Transport } from './types.js';
 
@@ -32,7 +33,12 @@ export function notBuiltTransport(name = 'direct'): Transport {
  *   DELIVERY_IPV6=1         also look up and dial AAAA (off until IPv6 reverse DNS exists, PST-REQ-036).
  *   DELIVERY_LOCAL_ADDRESS  bind the source address (normally unset: the WireGuard netns routes tcp/25).
  */
-export function transportFromEnv(env: NodeJS.ProcessEnv = process.env, log?: Log): Transport {
+/**
+ * `setting` persists MTA-STS policies in the `setting` table (RFC 8461 §5: a policy outlives a
+ * restart until its max_age, so an attacker who strips the TXT record after one cannot downgrade);
+ * without it, policies live in memory only (tests).
+ */
+export function transportFromEnv(env: NodeJS.ProcessEnv = process.env, log?: Log, setting?: SettingDelegate): Transport {
   const localAddress = env['DELIVERY_LOCAL_ADDRESS'];
   return createDirectTransport({
     resolver: createResolver({ server: env['DNS_RESOLVER'] ?? '127.0.0.1:53' }),
@@ -40,6 +46,7 @@ export function transportFromEnv(env: NodeJS.ProcessEnv = process.env, log?: Log
     ipv4Only: env['DELIVERY_IPV6'] !== '1',
     ...(localAddress === undefined || localAddress === '' ? {} : { localAddress }),
     ...(log === undefined ? {} : { log }),
+    ...(setting === undefined ? {} : { mtaSts: { cache: createSettingPolicyStore(setting) } }),
   });
 }
 
@@ -48,7 +55,7 @@ export function transportFromEnv(env: NodeJS.ProcessEnv = process.env, log?: Log
  * when SES credentials are configured (PST-T-1.11). The ses transport claims DELIVERY_SES_DOMAINS,
  * so the worker routes those recipients to it at each attempt; see transports/ses.ts.
  */
-export function transportsFromEnv(env: NodeJS.ProcessEnv = process.env, log?: Log): Record<string, Transport> {
+export function transportsFromEnv(env: NodeJS.ProcessEnv = process.env, log?: Log, setting?: SettingDelegate): Record<string, Transport> {
   const ses = sesTransportFromEnv(env, log);
-  return { direct: transportFromEnv(env, log), ...(ses === undefined ? {} : { ses }) };
+  return { direct: transportFromEnv(env, log, setting), ...(ses === undefined ? {} : { ses }) };
 }

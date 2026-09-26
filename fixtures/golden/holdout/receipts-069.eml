@@ -1,0 +1,12 @@
+From: Stonecraft Studio <receipts@stonecraft.example.com>
+To: sam@d3cloud.io
+Subject: Your order is confirmed
+X-SES-Outgoing: 2026.09.03-10.0.0.1
+Feedback-ID: receipt:stonecraft.example.com:esp
+Date: Thu, 10 Sep 2026 17:44:14 +0000
+Message-ID: <golden-0148.20260926@stonecraft.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=stonecraft.example.com; dkim=pass header.d=stonecraft.example.com; dmarc=pass header.from=stonecraft.example.com
+
+Your order is confirmed
+
+Order total: $21.99

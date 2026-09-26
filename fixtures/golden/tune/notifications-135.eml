@@ -1,0 +1,10 @@
+From: Wikihive <hello@wikihive.example.com>
+To: dana@d3cloud.io
+Subject: Mia mentioned you on a page
+Date: Wed, 16 Sep 2026 13:12:34 +0000
+Message-ID: <golden-0237.20260926@wikihive.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=wikihive.example.com; dkim=pass header.d=wikihive.example.com; dmarc=pass header.from=wikihive.example.com
+
+Mia mentioned you on a page
+
+Details: https://wikihive.example.com/m/2009

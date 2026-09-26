@@ -1,0 +1,10 @@
+From: FastCash Offers <deals@fastcashoffers.example.com>
+To: sam@d3cloud.io
+Subject: This offer expires tonight
+Date: Sun, 13 Sep 2026 20:17:43 +0000
+Message-ID: <golden-0197.20260926@fastcashoffers.example.com>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=fastcashoffers.example.com; dkim=none header.d=fastcashoffers.example.com; dmarc=none header.from=fastcashoffers.example.com
+
+This offer expires tonight
+
+Click here: https://fastcashoffers.example.com/claim

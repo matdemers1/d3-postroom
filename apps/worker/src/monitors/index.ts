@@ -64,6 +64,12 @@ export function buildMonitors(opts: BuildMonitorsOptions): WorkerMonitors {
       ip: envString(env, 'EDGE_PUBLIC_IP', ''),
       resolverServer: envString(env, 'DNS_RESOLVER', '127.0.0.1:53'),
       dqsKey: dqsKey === '' ? undefined : dqsKey,
+      minIntervalMs: envInt(env, 'BLOCKLIST_INTERVAL_MS', 6 * 3_600_000),
+      zoneTimeoutMs: envInt(env, 'BLOCKLIST_ZONE_TIMEOUT_MS', 5_000),
+      zoneKeys: (() => {
+        const raw = envString(env, 'BLOCKLIST_ZONES', '');
+        return raw === '' ? undefined : splitList(raw);
+      })(),
     }),
     createBackupMonitor({
       db: opts.db,

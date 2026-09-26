@@ -1,6 +1,16 @@
-// One message: its headers, its text body, its attachments, and what you can do with it. The main
-// view stays calm — who, when, what it says — and the evidence (authentication, routing, raw
+// One message, or the whole thread it belongs to (PST-T-3.15, PST-REQ-079): its headers, its text
+// body, its attachments, its delivery timeline when it went out, and what you can do with it. The
+// main view stays calm — who, when, what it says — and the evidence (authentication, routing, raw
 // headers) waits for the Inspect drawer (PST-P-6).
+//
+// A message with replies shows the whole conversation (GET /api/threads/:id): older messages
+// collapsed to a sender/date row, the newest expanded, and whichever message was opened expanded
+// too. It follows the server live over SSE (PST-REQ-083) — a reply filed anywhere joins the open
+// thread without a reload. Pure ordering/collapse logic lives in ./thread.ts, unit tested there.
+//
+// A sent message's per-recipient delivery state and attempt log (PST-T-6.4, PST-REQ-119) sits below
+// its body: a state badge, a deferral's reason and next retry, and every attempt's transport, MX and
+// remote response. Pure formatting lives in ./delivery.ts, unit tested there.
 //
 // HTML is never put into this document (PST-REQ-159/175). It is sanitised on the server and shown
 // from the separate usercontent origin in a sandboxed frame (PST-T-3.12, PST-REQ-081): no
@@ -14,16 +24,41 @@
 //
 // When the server has no usercontent origin configured (503), the text/plain part is shown instead
 // and an HTML-only message says so.
-import { forwardRef, useEffect, useState, type ReactNode } from 'react';
-import { Alert, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, Skeleton, Stack } from '@d3cloud/ui';
-import { api, ApiError, attachmentUrl, type MessageBody, type MessageDetail, type RenderTicket } from '../api';
-import { byteSize, fullDate, header } from './format';
-import { PaperclipIcon, StarIcon } from './icons';
+import { forwardRef, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
+import { Alert, Badge, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, IconButton, Skeleton, Stack } from '@d3cloud/ui';
+import { attemptRemoteText, attemptSummary, deferralReason, deliveryPhase, dsnFiledAt, isPending, NO_DELIVERY_RECORD_TEXT, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
+import { InspectDrawer } from './InspectDrawer';
+import { InviteSection } from '../invites/InviteSection';
+import { ReceiptPrompt } from './ReceiptPrompt';
+import { wantsReceipt } from './receipt';
+import { useMail } from './MailContext';
+import { collapsedSummary, isConversation, mightJoinThread, threadRows, toggleRow } from './thread';
+import { trackersBlockedNote } from './trackers';
+import {
+  api,
+  ApiError,
+  attachmentUrl,
+  contactPath,
+  contactsApi,
+  type DeliveryDetail,
+  type DeliveryRecipient,
+  type MessageBody,
+  type MessageDetail,
+  type MessageSummary,
+  type Phish,
+  type RenderTicket,
+} from '../api';
+import { byteSize, displayName, fullDate, header } from './format';
+import { ChevronIcon, DangerIcon, InfoIcon, PaperclipIcon, StarIcon, WarningIcon } from './icons';
 import { isStarred } from './list';
+import { PHISH_TONE_OF, phishVerdict, phishWarningTitle, sortPhishWarnings } from './phish';
+import { snippetOf } from './thread';
+import { SessionEnded } from '../screens/states';
 
 export interface OpenMessage {
   id: string;
-  status: 'loading' | 'ready' | 'missing' | 'error';
+  status: 'loading' | 'ready' | 'missing' | 'error' | 'signed-out';
   detail: MessageDetail | null;
   body: MessageBody | null;
   bodyStatus: 'loading' | 'ready' | 'error';
@@ -36,11 +71,15 @@ export interface ReadingPaneProps {
   canTrash: boolean;
   onAction: (action: 'reply' | 'replyAll' | 'forward' | 'archive' | 'delete' | 'markUnread' | 'star') => void;
   onRetry: () => void;
+  /** Snooze/Unsnooze, placed inside the action toolbar beside Archive and Delete (PST-T-11.4). */
+  snooze?: ReactNode;
+  /** Moves a message a phishing warning is about to Junk; absent when there is no Junk mailbox. */
+  onMoveToJunk?: ((message: MessageDetail) => void) | undefined;
   children?: ReactNode;
 }
 
 export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(function ReadingPane(
-  { open, back, canArchive, canTrash, onAction, onRetry, children },
+  { open, back, canArchive, canTrash, onAction, onRetry, snooze, onMoveToJunk, children },
   headingRef,
 ) {
   if (open === null) {
@@ -74,6 +113,14 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
       </section>
     );
   }
+  if (open.status === 'signed-out') {
+    return (
+      <section className="pr-reader" aria-label="Reading pane">
+        {back}
+        <SessionEnded size="inline" />
+      </section>
+    );
+  }
   if (open.status === 'error' || open.detail === null) {
     return (
       <section className="pr-reader" aria-label="Reading pane">
@@ -85,13 +132,9 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
     );
   }
 
-  const { detail, body } = open;
+  const { detail, body, bodyStatus } = open;
   const subject = detail.subject === null || detail.subject === '' ? '(no subject)' : detail.subject;
-  const from = header(body, 'From') ?? detail.from ?? '';
-  const to = header(body, 'To');
-  const cc = header(body, 'Cc');
   const starred = isStarred(detail);
-  const attachments = body?.attachments.filter((a) => a.disposition === 'attachment' || a.filename !== null) ?? [];
 
   return (
     <article className="pr-reader" aria-labelledby="pr-reader-subject" data-message-id={detail.id}>
@@ -100,51 +143,514 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
         <h2 id="pr-reader-subject" className="pr-reader__subject" tabIndex={-1} ref={headingRef}>
           {subject}
         </h2>
-        <div role="group" aria-label="Message actions">
-          <Cluster gap="8">
+        {/* PST-T-11.4: one toolbar in three groups — triage (Archive, Delete, Snooze) first, then the
+            replies, then the rest — with Snooze inside it rather than on a line of its own, and Star as
+            an icon so the row fits beside the list at 1280px. */}
+        <div role="group" aria-label="Message actions" className="pr-reader__actions">
+          <Cluster gap="4">
+            <Button size="sm" variant="ghost" disabled={!canArchive} onClick={() => { onAction('archive'); }}>Archive</Button>
+            <Button size="sm" variant="ghost" disabled={!canTrash} onClick={() => { onAction('delete'); }}>Delete</Button>
+            {snooze}
+          </Cluster>
+          <Cluster gap="4">
             <Button size="sm" variant="secondary" onClick={() => { onAction('reply'); }}>Reply</Button>
             <Button size="sm" variant="ghost" onClick={() => { onAction('replyAll'); }}>Reply all</Button>
             <Button size="sm" variant="ghost" onClick={() => { onAction('forward'); }}>Forward</Button>
-            <Button size="sm" variant="ghost" disabled={!canArchive} onClick={() => { onAction('archive'); }}>Archive</Button>
-            <Button size="sm" variant="ghost" disabled={!canTrash} onClick={() => { onAction('delete'); }}>Delete</Button>
+          </Cluster>
+          <Cluster gap="4">
             <Button size="sm" variant="ghost" onClick={() => { onAction('markUnread'); }}>Mark unread</Button>
-            <Button size="sm" variant="ghost" pressed={starred} icon={<StarIcon filled={starred} />} onClick={() => { onAction('star'); }}>
-              Star
-            </Button>
+            <IconButton size="sm" variant="ghost" label={starred ? 'Unstar' : 'Star'} pressed={starred} icon={<StarIcon filled={starred} />} onClick={() => { onAction('star'); }} />
+            <InspectDrawer messageId={detail.id} />
           </Cluster>
         </div>
-        <DescriptionList className="pr-reader__meta">
-          <DescriptionItem term="From">{from === '' ? '(unknown sender)' : from}</DescriptionItem>
-          {to !== null ? <DescriptionItem term="To">{to}</DescriptionItem> : null}
-          {cc !== null ? <DescriptionItem term="Cc">{cc}</DescriptionItem> : null}
-          <DescriptionItem term="Date" numeric>
-            <time dateTime={detail.date}>{fullDate(detail.date)}</time>
-          </DescriptionItem>
-        </DescriptionList>
         {children}
-        <MessageText body={body} status={open.bodyStatus} onRetry={onRetry} />
-        {attachments.length > 0 ? (
-          <section aria-label="Attachments" className="pr-reader__attachments">
-            <h3 className="pr-reader__h3">
-              {attachments.length === 1 ? '1 attachment' : `${String(attachments.length)} attachments`}
-            </h3>
-            <ul className="pr-attachments">
-              {attachments.map((a) => (
-                <li key={a.partId}>
-                  <a className="pr-attachment" href={attachmentUrl(detail.id, a.partId)} download={a.filename ?? `part-${a.partId}`}>
-                    <PaperclipIcon />
-                    <span className="pr-attachment__name">{a.filename ?? `Part ${a.partId}`}</span>
-                    <span className="pr-attachment__size">{byteSize(a.size)}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        <ThreadConversation
+          detail={detail}
+          body={body}
+          bodyStatus={bodyStatus}
+          onRetry={onRetry}
+          onMoveToJunk={onMoveToJunk}
+          fallback={<MessageContent detail={detail} body={body} bodyStatus={bodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} />}
+        />
       </Stack>
     </article>
   );
 });
+
+// --- The thread (PST-T-3.15, PST-REQ-079) ------------------------------------------------------
+
+interface ExtraMessage {
+  status: 'loading' | 'ready' | 'error';
+  detail: MessageDetail | null;
+  body: MessageBody | null;
+  bodyStatus: 'loading' | 'ready' | 'error';
+}
+
+const LOADING_EXTRA: ExtraMessage = { status: 'loading', detail: null, body: null, bodyStatus: 'loading' };
+
+/**
+ * Renders `fallback` (the ordinary single-message view) unless the open message's thread has more
+ * than one message, in which case it renders the conversation instead: older messages collapsed,
+ * the newest expanded, the message that was opened expanded too — kept live over SSE. All of this
+ * component's hooks run unconditionally so the branch can be decided at the very end.
+ */
+function ThreadConversation({
+  detail,
+  body,
+  bodyStatus,
+  onRetry,
+  onMoveToJunk,
+  fallback,
+}: {
+  detail: MessageDetail;
+  body: MessageBody | null;
+  bodyStatus: OpenMessage['bodyStatus'];
+  onRetry: () => void;
+  onMoveToJunk?: ((message: MessageDetail) => void) | undefined;
+  fallback: ReactNode;
+}): ReactNode {
+  const { subscribe } = useMail();
+  // `detail.threadId` is whatever MailView last fetched, which can be stale: a message's very first
+  // reply backfills ITS threadId server-side (packages/threading's orphan step) at the moment the
+  // reply is sent, but nothing forces MailView to refetch the still-open original afterwards. This
+  // component's own mount is the moment to ask again, so a remount (Composer closing back to it,
+  // exactly when a reply was just sent) always gets the current answer rather than the stale null.
+  const [threadId, setThreadId] = useState<string | null>(detail.threadId);
+  const [thread, setThread] = useState<MessageSummary[] | null>(null);
+  const [toggled, setToggled] = useState<ReadonlySet<string>>(new Set());
+  const [extra, setExtra] = useState<ReadonlyMap<string, ExtraMessage>>(new Map());
+  // PST-T-11.4: a collapsed row's sender name and first line, from its body (fetched once per row).
+  const [previews, setPreviews] = useState<ReadonlyMap<string, MessageBody | null>>(new Map());
+
+  const loadThread = useCallback((id: string | null) => {
+    if (id === null) return;
+    api.thread(id).then(
+      (t) => { setThread(t.messages); },
+      () => undefined,
+    );
+  }, []);
+
+  // A different open message starts fresh, and re-asks the server for its current threadId.
+  useEffect(() => {
+    let cancelled = false;
+    setThread(null);
+    setToggled(new Set());
+    setExtra(new Map());
+    setPreviews(new Map());
+    setThreadId(detail.threadId);
+    if (detail.threadId !== null) loadThread(detail.threadId);
+    api.message(detail.id).then(
+      (d) => {
+        if (cancelled) return;
+        setThreadId(d.threadId);
+        if (d.threadId !== null && d.threadId !== detail.threadId) loadThread(d.threadId);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [detail.id, detail.threadId, loadThread]);
+
+  // Live: any newly filed message could be a reply that just joined this thread.
+  useEffect(() => {
+    if (!mightJoinThread(threadId)) return;
+    return subscribe((event) => {
+      if (event.type === 'message.new' || event.type === 'reconnected') loadThread(threadId);
+    });
+  }, [threadId, subscribe, loadThread]);
+
+  const rows = thread === null ? [] : threadRows(thread, detail.id, toggled);
+  const expandedIds = rows.filter((r) => r.expanded).map((r) => r.message.id);
+  const expandedKey = expandedIds.join(',');
+
+  // Fetch full detail/body for any expanded row other than the one already loaded by the caller.
+  useEffect(() => {
+    const need = expandedIds.filter((id) => id !== detail.id);
+    if (need.length === 0) return;
+    setExtra((prev) => {
+      const missing = need.filter((id) => !prev.has(id));
+      if (missing.length === 0) return prev;
+      const next = new Map(prev);
+      for (const id of missing) next.set(id, LOADING_EXTRA);
+      return next;
+    });
+    let cancelled = false;
+    const patch = (id: string, patch_: Partial<ExtraMessage>) => {
+      if (cancelled) return;
+      setExtra((prev) => {
+        const next = new Map(prev);
+        next.set(id, { ...(prev.get(id) ?? LOADING_EXTRA), ...patch_ });
+        return next;
+      });
+    };
+    for (const id of need) {
+      api.message(id).then(
+        (d) => { patch(id, { status: 'ready', detail: d }); },
+        () => { patch(id, { status: 'error' }); },
+      );
+      api.messageBody(id).then(
+        (b) => { patch(id, { body: b, bodyStatus: 'ready' }); },
+        () => { patch(id, { bodyStatus: 'error' }); },
+      );
+    }
+    return () => {
+      cancelled = true;
+    };
+    // expandedKey (a joined string) is the real dependency; expandedIds is derived from thread/toggled
+    // state each render and would make this effect fire on every render if listed directly.
+  }, [expandedKey, detail.id]);
+
+  // Bodies for the collapsed rows' previews: a thread is a handful of messages, and each body is
+  // asked for once. A row that is expanded later reuses its own fetch (extra) instead.
+  const collapsedKey = rows.filter((r) => !r.expanded).map((r) => r.message.id).join(',');
+  useEffect(() => {
+    const ids = collapsedKey === '' ? [] : collapsedKey.split(',');
+    let cancelled = false;
+    for (const id of ids) {
+      if (previews.has(id)) continue;
+      setPreviews((prev) => (prev.has(id) ? prev : new Map(prev).set(id, null)));
+      api.messageBody(id).then(
+        (b) => {
+          if (!cancelled) setPreviews((prev) => new Map(prev).set(id, b));
+        },
+        () => undefined,
+      );
+    }
+    return () => {
+      cancelled = true;
+    };
+    // collapsedKey (a joined string) is the real dependency, as with expandedKey above.
+  }, [collapsedKey]);
+
+  if (thread === null || !isConversation(thread)) return fallback;
+
+  const threadSubject = thread[thread.length - 1]?.subject ?? null;
+
+  return (
+    <Stack as="ol" gap="12" aria-label="Conversation" className="pr-thread">
+      {rows.map(({ message, expanded }) => {
+        const isOpen = message.id === detail.id;
+        const rowDetail = isOpen ? detail : (extra.get(message.id)?.detail ?? null);
+        const rowBody = isOpen ? body : (extra.get(message.id)?.body ?? null);
+        const rowBodyStatus = isOpen ? bodyStatus : (extra.get(message.id)?.bodyStatus ?? 'loading');
+        return (
+          <li key={message.id} className="pr-thread__item" data-message-id={message.id} data-expanded={expanded}>
+            {expanded ? (
+              rowDetail === null ? (
+                <Skeleton variant="text" lines={3} />
+              ) : (
+                <MessageContent detail={rowDetail} body={rowBody} bodyStatus={rowBodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} />
+              )
+            ) : (
+              <button
+                type="button"
+                className="pr-thread__collapsed"
+                aria-expanded={false}
+                onClick={() => { setToggled((t) => toggleRow(t, message.id)); }}
+              >
+                <CollapsedRow message={message} threadSubject={threadSubject} preview={previews.get(message.id) ?? null} />
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </Stack>
+  );
+}
+
+/** A collapsed thread row: chevron, sender name, date, and the first line of what they wrote. */
+function CollapsedRow({ message, threadSubject, preview }: { message: MessageSummary; threadSubject: string | null; preview: MessageBody | null }) {
+  const from = header(preview, 'From');
+  const name = from === null ? collapsedSummary(message, threadSubject) : collapsedSummary({ from: displayName(from), subject: message.subject }, threadSubject);
+  const snippet = snippetOf(preview?.text);
+  return (
+    <>
+      <span className="pr-thread__chevron" aria-hidden="true">
+        <ChevronIcon />
+      </span>
+      <span className="pr-thread__collapsed-main">
+        <span className="pr-thread__collapsed-summary">{name}</span>
+        {snippet === null ? null : <span className="pr-thread__snippet">{snippet}</span>}
+      </span>
+      <span className="pr-reader__note">{fullDate(message.date)}</span>
+    </>
+  );
+}
+
+// --- One message's content: meta, phishing banner, body, attachments, delivery -----------------
+
+function MessageMeta({ detail, body }: { detail: MessageDetail; body: MessageBody | null }) {
+  const from = header(body, 'From') ?? detail.from ?? '';
+  const to = header(body, 'To');
+  const cc = header(body, 'Cc');
+  // PST-REQ-137: a sender who is in the address book links to their card.
+  const [contact, setContact] = useState<{ addressBookId: string; name: string; displayName: string } | null>(null);
+  useEffect(() => {
+    setContact(null);
+    const address = detail.from;
+    if (address === null || address === '') return undefined;
+    let live = true;
+    contactsApi
+      .lookup(address)
+      .then((r) => {
+        if (live) setContact(r.contact);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [detail.from]);
+  return (
+    <DescriptionList className="pr-reader__meta">
+      <DescriptionItem term="From">
+        {from === '' ? '(unknown sender)' : from}
+        {contact === null ? null : (
+          <>
+            {' · '}
+            <RouterLink to={contactPath(contact.addressBookId, contact.name)}>In contacts as {contact.displayName}</RouterLink>
+          </>
+        )}
+      </DescriptionItem>
+      {to !== null ? <DescriptionItem term="To">{to}</DescriptionItem> : null}
+      {cc !== null ? <DescriptionItem term="Cc">{cc}</DescriptionItem> : null}
+      <DescriptionItem term="Date" numeric>
+        <time dateTime={detail.date}>{fullDate(detail.date)}</time>
+      </DescriptionItem>
+    </DescriptionList>
+  );
+}
+
+function Attachments({ messageId, body }: { messageId: string; body: MessageBody | null }) {
+  const attachments = body?.attachments.filter((a) => a.disposition === 'attachment' || a.filename !== null) ?? [];
+  if (attachments.length === 0) return null;
+  return (
+    <section aria-label="Attachments" className="pr-reader__attachments">
+      <h3 className="pr-reader__h3">{attachments.length === 1 ? '1 attachment' : `${String(attachments.length)} attachments`}</h3>
+      <ul className="pr-attachments">
+        {attachments.map((a) => (
+          <li key={a.partId}>
+            <a className="pr-attachment" href={attachmentUrl(messageId, a.partId)} download={a.filename ?? `part-${a.partId}`}>
+              <PaperclipIcon />
+              <span className="pr-attachment__name">{a.filename ?? `Part ${a.partId}`}</span>
+              <span className="pr-attachment__size">{byteSize(a.size)}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function MessageContent({
+  detail,
+  body,
+  bodyStatus,
+  onRetry,
+  onMoveToJunk,
+}: {
+  detail: MessageDetail;
+  body: MessageBody | null;
+  bodyStatus: OpenMessage['bodyStatus'];
+  onRetry: () => void;
+  onMoveToJunk?: ((message: MessageDetail) => void) | undefined;
+}) {
+  const { mailboxes } = useMail();
+  const use = mailboxes?.find((m) => m.id === detail.mailboxId)?.specialUse;
+  const ownMailbox = use === 'sent' || use === 'drafts';
+  return (
+    <Stack gap="16">
+      <MessageMeta detail={detail} body={body} />
+      <PhishBanner phish={detail.phish} inJunk={use === 'junk'} onMoveToJunk={onMoveToJunk === undefined ? undefined : () => { onMoveToJunk(detail); }} />
+      {wantsReceipt(detail, body, ownMailbox) ? <ReceiptPrompt key={detail.id} messageId={detail.id} /> : null}
+      <InviteSection messageId={detail.id} />
+      <MessageText body={body} status={bodyStatus} onRetry={onRetry} />
+      <Attachments messageId={detail.id} body={body} />
+      <DeliverySection messageId={detail.id} mailboxId={detail.mailboxId} />
+    </Stack>
+  );
+}
+
+// --- Delivery timeline (PST-T-6.4, PST-T-6.7, PST-REQ-119) --------------------------------------
+
+interface DeliverySectionState {
+  status: 'loading' | 'ready' | 'no-record' | 'error';
+  data: DeliveryDetail | null;
+}
+
+const LOADING_DELIVERY: DeliverySectionState = { status: 'loading', data: null };
+
+/** A sent message's per-recipient state and attempt log, found with one indexed server-side lookup
+ *  (GET /api/messages/:id/outbound, PST-T-6.7) instead of scanning the account's recent sends. When
+ *  the lookup finds no linked OutboundMessage row — never sent through Postroom at all, or a Sent
+ *  copy another client APPENDed directly — an explicit note is shown rather than nothing, since that
+ *  silence used to look identical to "still loading". */
+function DeliverySection({ messageId, mailboxId }: { messageId: string; mailboxId: string }) {
+  const { subscribe, mailboxes } = useMail();
+  // Received mail has no delivery of ours to show; only a copy in Sent says so out loud.
+  const inSent = mailboxes?.find((m) => m.id === mailboxId)?.specialUse === 'sent';
+  const [state, setState] = useState<DeliverySectionState>(LOADING_DELIVERY);
+
+  const load = useCallback(() => {
+    api.messageOutbound(messageId).then(
+      ({ outboundId }) => {
+        if (outboundId === null || deliveryPhase(outboundId) === 'no-record') {
+          setState({ status: 'no-record', data: null });
+          return;
+        }
+        api.messageDelivery(outboundId).then(
+          (data) => { setState({ status: 'ready', data }); },
+          (error: unknown) => {
+            setState({ status: error instanceof ApiError && error.status === 404 ? 'no-record' : 'error', data: null });
+          },
+        );
+      },
+      () => { setState({ status: 'error', data: null }); },
+    );
+  }, [messageId]);
+
+  useEffect(() => {
+    setState(LOADING_DELIVERY);
+    load();
+  }, [load]);
+
+  const pending = state.data?.recipients.some((r) => isPending(r.state)) ?? false;
+
+  // While anything can still change on its own: every 30 s, and sooner on any mail event.
+  useEffect(() => {
+    if (!pending) return undefined;
+    const timer = setInterval(load, 30_000);
+    return () => { clearInterval(timer); };
+  }, [pending, load]);
+
+  useEffect(() => {
+    if (!pending) return undefined;
+    return subscribe(() => { load(); });
+  }, [pending, subscribe, load]);
+
+  if (state.status === 'loading') return null;
+  if (state.status === 'error') {
+    return (
+      <Alert tone="warning" title="The delivery timeline could not be loaded" actions={<Button size="sm" onClick={load}>Try again</Button>}>
+        Postroom did not answer. Check your connection.
+      </Alert>
+    );
+  }
+  if (state.status === 'no-record' || state.data === null) {
+    if (!inSent) return null;
+    return (
+      <section aria-label="Delivery" className="pr-delivery" data-testid="delivery">
+        <h3 className="pr-reader__h3">Delivery</h3>
+        <p className="pr-delivery__attempts" data-testid="delivery-no-record">
+          {NO_DELIVERY_RECORD_TEXT}
+        </p>
+      </section>
+    );
+  }
+  return (
+    <section aria-label="Delivery" className="pr-delivery" data-testid="delivery">
+      <h3 className="pr-reader__h3">Delivery</h3>
+      <ul className="pr-delivery__list">
+        {state.data.recipients.map((r) => (
+          <DeliveryRecipientRow key={r.id} recipient={r} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function DeliveryRecipientRow({ recipient: r }: { recipient: DeliveryRecipient }) {
+  const reason = deferralReason(r);
+  const dsnAt = dsnFiledAt(r);
+  return (
+    <li className="pr-delivery__recipient" data-testid="delivery-recipient" data-state={r.state}>
+      <div className="pr-delivery__head">
+        <Badge tone={STATE_TONE[r.state]} data-testid="delivery-state">
+          {STATE_LABEL[r.state]}
+        </Badge>
+        <span className="pr-delivery__address">{r.address}</span>
+      </div>
+      {reason !== null ? (
+        <p className="pr-reader__note" data-testid="deferral-reason">
+          {reason}
+        </p>
+      ) : null}
+      {r.state === 'deferred' ? (
+        <p className="pr-reader__note" data-testid="next-retry">
+          Next retry at {fullDate(r.nextAttemptAt)} ({relativeMinutes(r.nextAttemptAt)}).
+        </p>
+      ) : null}
+      {r.state === 'bounced' && dsnAt !== null ? (
+        <p className="pr-reader__note" data-testid="dsn-note">
+          A delivery failure notice was filed to your Inbox at {fullDate(dsnAt)}.
+        </p>
+      ) : null}
+      {r.attemptsLog.length > 0 ? (
+        <ol className="pr-delivery__attempts" aria-label={`Attempts for ${r.address}`}>
+          {r.attemptsLog.map((a) => {
+            const remote = attemptRemoteText(a);
+            return (
+              <li key={a.startedAt}>
+                <span>
+                  {fullDate(a.startedAt)} · {attemptSummary(a)}
+                </span>
+                {remote !== null ? <span className="pr-reader__note"> — {remote}</span> : null}
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
+    </li>
+  );
+}
+
+// --- Phishing/lookalike warnings (PST-T-6.5, PST-REQ-120) ---------------------------------------
+//
+// One warning per detection, worst first, each with its full reason (never just the kind label —
+// the label is a heading, the reason is the sentence that says why). A `high`-severity warning is
+// what actually happened to *this* message just now, so it interrupts like any other dynamic error
+// (role="alert"); `medium`/`low` sit quietly in the same named region, discoverable by landmark
+// navigation without a screen reader announcing over whatever the reader was doing. Sorting and
+// labelling live in ./phish.ts, unit tested there.
+
+const TONE_ICON = { danger: <DangerIcon />, warning: <WarningIcon />, info: <InfoIcon /> } as const;
+
+function PhishBanner({ phish, inJunk, onMoveToJunk }: { phish: Phish | null; inJunk: boolean; onMoveToJunk: (() => void) | undefined }) {
+  if (phish === null || phish.warnings.length === 0) return null;
+  const sorted = sortPhishWarnings(phish.warnings);
+  // PST-T-11.4: a one-line verdict and the one action that answers it, above the evidence; each
+  // warning keeps its own alert, now with a tone icon (severity never rests on colour alone) and a
+  // title that names the check that failed.
+  const verdict = phishVerdict(sorted);
+  return (
+    <section aria-label="Phishing and authentication warnings" className="pr-reader__phish" data-testid="phish-warnings">
+      <Stack gap="8">
+        <div className="pr-phish__verdict">
+          <p className="pr-phish__verdict-text">{verdict}</p>
+          {onMoveToJunk !== undefined && !inJunk ? (
+            <Button size="sm" variant="secondary" onClick={onMoveToJunk}>
+              Move to Junk
+            </Button>
+          ) : null}
+        </div>
+        {sorted.map((w, index) => (
+          <Alert
+            key={`${w.kind}-${String(index)}`}
+            tone={PHISH_TONE_OF[w.severity]}
+            icon={TONE_ICON[PHISH_TONE_OF[w.severity]]}
+            title={phishWarningTitle(w.kind, w.reason)}
+            dynamic={w.severity === 'high'}
+            data-testid="phish-warning"
+            data-phish-kind={w.kind}
+            data-phish-severity={w.severity}
+          >
+            {w.reason}
+          </Alert>
+        ))}
+      </Stack>
+    </section>
+  );
+}
 
 /** The frame's sandbox: popups only, so a link (target=_blank, noopener) opens in a normal tab. No scripts, no same-origin. */
 export const MAIL_FRAME_SANDBOX = 'allow-popups allow-popups-to-escape-sandbox';
@@ -191,9 +697,15 @@ function HtmlFrame({ messageId, fallback, note: lead }: { messageId: string; fal
     );
   }
   const note = blockedImagesNote(state.ticket);
+  const trackers = trackersBlockedNote(state.ticket);
   return (
     <Stack gap="8">
       {lead}
+      {trackers !== null ? (
+        <Alert tone="info" title="Tracking removed" data-testid="trackers-blocked">
+          {trackers}. Postroom stripped these before showing the message, so the sender cannot see that you opened it.
+        </Alert>
+      ) : null}
       {note !== null ? (
         <Alert
           tone="info"

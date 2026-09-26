@@ -1,0 +1,12 @@
+From: The Long Read <digest@thelongread.example.org>
+X-SES-Outgoing: 2026.09.01-10.0.0.1
+Feedback-ID: bulk:thelongread.example.org:ses
+To: dana@d3cloud.io
+Subject: Issue #12
+Date: Mon, 07 Sep 2026 06:10:44 +0000
+Message-ID: <golden-0092.20260926@thelongread.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=thelongread.example.org; dkim=pass header.d=thelongread.example.org; dmarc=pass header.from=thelongread.example.org
+
+Issue #12
+
+Read online: https://thelongread.example.org/issues/12

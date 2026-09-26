@@ -172,3 +172,27 @@ describe('outlook/apple autodiscover', () => {
     expect(csp).toContain("default-src 'self'");
   });
 });
+
+describe('DAV well-known redirects (RFC 6764 §5, PST-T-8.3)', () => {
+  it('sends /.well-known/caldav and carddav on to the DAV host, for any method', async () => {
+    const app = makeApp();
+    for (const svc of ['caldav', 'carddav']) {
+      const get = await request(app).get(`/.well-known/${svc}`);
+      expect(get.status).toBe(301);
+      expect(get.headers['location']).toBe('https://dav.d3cloud.io/dav/');
+      const other = await request(app).put(`/.well-known/${svc}`);
+      expect(other.status).toBe(301);
+    }
+  });
+
+  it('follows DAV_HOSTNAME', async () => {
+    const app = createApp({ db: fakeDb(['d3cloud.io']), env: { DAV_HOSTNAME: 'cal.example.test' }, config });
+    const res = await request(app).get('/.well-known/caldav');
+    expect(res.headers['location']).toBe('https://cal.example.test/dav/');
+  });
+
+  it('leaves other well-known paths alone', async () => {
+    const res = await request(makeApp()).get('/.well-known/caldav/extra');
+    expect(res.status).not.toBe(301);
+  });
+});

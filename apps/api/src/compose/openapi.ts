@@ -2,6 +2,7 @@
 // the routes validate with (schemas.ts). Spread into ROUTES/COMPONENTS by src/openapi/document.ts.
 import type { z } from 'zod';
 import type { ResponseSpec, RouteSpec } from '../openapi/document.js';
+import { SNOOZE_COMPONENTS, SNOOZE_ROUTES } from '../mail/snooze.js';
 import * as C from './schemas.js';
 
 export const COMPOSE_COMPONENTS: Record<string, z.ZodType> = {
@@ -9,6 +10,12 @@ export const COMPOSE_COMPONENTS: Record<string, z.ZodType> = {
   Draft: C.Draft,
   DraftList: C.DraftList,
   DraftSaved: C.DraftSaved,
+  // PST-T-9.1: held sends, and (from mail/snooze.ts) snoozed conversations.
+  PendingSend: C.PendingSend,
+  PendingSendList: C.PendingSendList,
+  // PST-T-9.2: RFC 8098 read receipts.
+  MdnResponse: C.MdnResponse,
+  ...SNOOZE_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -28,14 +35,59 @@ export const COMPOSE_ROUTES: RouteSpec[] = [
     headers: CSRF,
     responses: {
       '201': { description: 'Queued and filed in Sent.', schema: 'SendResponse' },
+      '202': { description: 'Held (undoSeconds > 0 or sendAt): a copy is in Drafts and the worker queues it at releaseAt, unless it is undone first.', schema: 'PendingSend' },
       ...COMMON,
+      '400': err('Invalid request, including crypto_mixed (sign and encrypt must use the same scheme).'),
       '403': err('Missing CSRF header, or From is not one of the caller’s addresses.'),
       '404': err('forwardOf is not a message of the caller.'),
-      '413': err('The header block is too large.'),
+      '409': err('Sign/encrypt could not be done (PST-T-12.2): recipient_keys_missing (the `recipients` without a key; nothing is sent in plaintext), signing_key_missing, own_key_missing, or recipient_key_unusable.'),
+      '413': err('The header block is too large, or the Markdown body is over 256 KiB.'),
       '429': err('The recipient cap is reached.'),
       '503': err('No DKIM keys for the sender domain (never sent unsigned), or POSTROOM_KEK is not set.'),
     },
   },
+  {
+    method: 'get',
+    path: '/api/compose/pending',
+    operationId: 'listPendingSends',
+    tag: 'Compose',
+    summary: 'The caller’s held sends (undo window and scheduled), soonest first.',
+    responses: { '200': { description: 'Held sends.', schema: 'PendingSendList' }, '401': COMMON['401'] },
+  },
+  {
+    method: 'post',
+    path: '/api/compose/pending/{id}/undo',
+    operationId: 'undoPendingSend',
+    tag: 'Compose',
+    summary: 'Undo send / cancel a scheduled send: it is never queued, and stays in Drafts.',
+    params: C.PendingParams,
+    headers: CSRF,
+    responses: {
+      '200': { description: 'Cancelled; draftId is the copy in Drafts.', schema: 'PendingSend' },
+      ...COMMON,
+      '404': err('Not a held send of the caller.'),
+      '409': err('It has already been sent (or cancelled).'),
+    },
+  },
+  {
+    method: 'patch',
+    path: '/api/compose/pending/{id}',
+    operationId: 'reschedulePendingSend',
+    tag: 'Compose',
+    summary: 'Move a held send to another time.',
+    params: C.PendingParams,
+    body: C.PendingPatch,
+    headers: CSRF,
+    responses: {
+      '200': { description: 'Rescheduled.', schema: 'PendingSend' },
+      '400': COMMON['400'],
+      '401': COMMON['401'],
+      '403': COMMON['403'],
+      '404': err('Not a held send of the caller.'),
+      '409': err('It has already been sent (or cancelled).'),
+    },
+  },
+  ...SNOOZE_ROUTES,
   {
     method: 'get',
     path: '/api/compose/drafts',
@@ -85,5 +137,23 @@ export const COMPOSE_ROUTES: RouteSpec[] = [
     params: C.DraftParams,
     headers: CSRF,
     responses: { '204': { description: 'Removed.' }, ...COMMON, '404': err('Not a draft of the caller.') },
+  },
+  {
+    method: 'post',
+    path: '/api/messages/{id}/mdn',
+    operationId: 'sendMdn',
+    tag: 'Compose',
+    summary: 'Send an RFC 8098 read receipt (MDN) for one of the caller’s inbound messages (PST-REQ-146).',
+    description: 'Only once per message: marks the message $MDNSent. Audited. Needs x-postroom-csrf: 1.',
+    params: C.MdnParams,
+    headers: CSRF,
+    responses: {
+      '201': { description: 'The MDN was sent and filed in Sent.', schema: 'MdnResponse' },
+      '401': COMMON['401'],
+      '403': COMMON['403'],
+      '404': err('Not a message of the caller.'),
+      '409': err('It already asked and got one, or it never asked for one.'),
+      '503': COMMON['503'],
+    },
   },
 ];

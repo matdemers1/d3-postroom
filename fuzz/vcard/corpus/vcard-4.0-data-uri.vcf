@@ -1,0 +1,12 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:urn:uuid:00000000-0000-4000-8000-000000000042
+FN:Casey Placeholder
+N:Placeholder;Casey;;;
+EMAIL;TYPE=home;PREF=2:casey@example.org
+EMAIL;TYPE=work;PREF=1:casey@work.example
+EMAIL;VALUE=uri:mailto:casey.alt@example.net
+TEL;VALUE=uri;TYPE=cell:tel:+1-555-010-0400
+PHOTO:data:image/png;base64,iVBORw0KGgoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+NOTE;LANGUAGE=en:Emoji-safe folding: 🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉 and ü, é, ñ.
+END:VCARD

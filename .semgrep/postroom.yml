@@ -96,6 +96,15 @@ rules:
       # A structured log line is not a response body.
       - pattern-not: process.stdout.write(...)
       - pattern-not: process.stderr.write(...)
+      # Reflection needs an HTTP request and response. Every handler here (Express and node:http)
+      # names them req/request and res/response, so the rule stays on those: a worker writing a
+      # fetched IMAP item's `body` into a spool sink (`sink.write(items.body)`) is not a response.
+      - metavariable-regex:
+          metavariable: $REQ
+          regex: ^(req|request)$
+      - metavariable-regex:
+          metavariable: $RES
+          regex: ^(res|response)$
 
   - id: postroom.secret-in-log
     languages: [typescript, javascript]

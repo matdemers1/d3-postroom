@@ -7,9 +7,12 @@
 //                `ipv4Only` is on (DELIVERY_IPV6=1 turns it off).
 //   PST-REQ-019  egress through the WireGuard sidecar is the network namespace's job; the socket's
 //                local address is recorded as `localIp` so an attempt shows which path it took.
+//   PST-REQ-126  DANE and MTA-STS (src/policy): a domain that demands verified TLS gets it or a
+//                temporary failure, never plaintext; the decision is recorded in tlsPeer.
 import { isIP, isIPv4 } from 'node:net';
 import type tls from 'node:tls';
 import { DnsServfailError, resolveMxTargets, type Resolver } from '@postroom/dns';
+import { createTlsPlanner, describePolicy, type DomainTlsPlan, type HostDecision, type MtaStsOptions, type TlsPolicyKind } from '../policy/index.js';
 import type { AttemptOutcome } from '../state.js';
 import type { AttemptDetails, DeliveryRequest, DeliveryResult, Transport } from '../transports/types.js';
 import { abortReason, connectTcp, errorText, SmtpClientError, SmtpConnection, type Connector } from './connection.js';
@@ -39,6 +42,14 @@ export interface DirectTransportOptions {
   connect?: Connector;
   name?: string;
   log?: Log;
+  /**
+   * MTA-STS (RFC 8461). On by default with an in-memory policy cache and the system trust roots;
+   * `false` turns it off. `cache` persists policies (createSettingPolicyStore), `ca` replaces the
+   * trust roots for the policy fetch (tests), `port` the HTTPS port (tests).
+   */
+  mtaSts?: false | Omit<MtaStsOptions, 'resolver'>;
+  /** DANE (RFC 7672). Default true: acts only on TLSA records our validating resolver vouched for. */
+  dane?: boolean;
 }
 
 export const DEFAULT_HELO_NAME = 'mx.d3cloud.io';
@@ -77,6 +88,12 @@ export function createDirectTransport(options: DirectTransportOptions): Transpor
     tlsOptions: options.tlsOptions ?? {},
     log,
   };
+  const planner = createTlsPlanner({
+    resolver: options.resolver,
+    ipv4Only,
+    ...(options.mtaSts === undefined ? {} : { mtaSts: options.mtaSts }),
+    ...(options.dane === undefined ? {} : { dane: options.dane }),
+  });
 
   const deliver = async (request: DeliveryRequest): Promise<DeliveryResult> => {
     const { signal } = request;
@@ -109,15 +126,43 @@ export function createDirectTransport(options: DirectTransportOptions): Transpor
       return { details, results: everyone(request, { kind: 'error', error: `resolving MX for ${request.domain}: ${resolution.reason}` }) };
     }
 
+    let tlsPlan: DomainTlsPlan;
+    try {
+      tlsPlan = await raceAbort(planner.plan(request.domain, resolution.dnssec), signal);
+    } catch (error) {
+      return { details, results: everyone(request, { kind: 'error', error: `TLS policy for ${request.domain}: ${errorText(error)}` }) };
+    }
+    if (tlsPlan.mtaSts.kind === 'policy') {
+      log('mta-sts-policy', { domain: request.domain, id: tlsPlan.mtaSts.id, mode: tlsPlan.mtaSts.policy.mode, source: tlsPlan.mtaSts.source });
+    }
+
     const candidates: Target[] = [];
+    const skipped: string[] = [];
+    let skippedPolicy: TlsPolicyKind = 'mta-sts-enforce';
     for (const target of resolution.targets) {
-      for (const ip of target.addresses) {
-        // Belt and braces for PST-REQ-036: the resolver was told ipv4Only, and nothing else is dialled either.
-        if (ipv4Only ? !isIPv4(ip) : isIP(ip) === 0) continue;
-        candidates.push({ host: target.host, ip });
+      // Belt and braces for PST-REQ-036: the resolver was told ipv4Only, and nothing else is dialled either.
+      const addresses = target.addresses.filter((ip) => (ipv4Only ? isIPv4(ip) : isIP(ip) !== 0));
+      if (addresses.length === 0) continue;
+      let decision: HostDecision;
+      try {
+        decision = await raceAbort(tlsPlan.decide(target.host), signal);
+      } catch (error) {
+        return { details, results: everyone(request, { kind: 'error', error: `TLS policy for ${target.host}: ${errorText(error)}` }) };
       }
+      if (!decision.use) {
+        // An MX outside an enforced MTA-STS policy, or one whose TLSA lookup failed: never dialled.
+        skipped.push(decision.reason);
+        skippedPolicy = decision.policyKind;
+        log('mx-skipped-by-tls-policy', { domain: request.domain, mxHost: target.host, policy: decision.policyKind, reason: decision.reason });
+        continue;
+      }
+      for (const ip of addresses) candidates.push({ host: target.host, ip, policy: decision.policy });
     }
     if (candidates.length === 0) {
+      if (skipped.length > 0) {
+        details = { tlsPeer: describePolicy(skippedPolicy, false, skipped.join(' | ')) };
+        return { details, results: everyone(request, { kind: 'temporary', enhanced: '4.7.5', text: `no usable MX for ${request.domain} under its TLS policy: ${skipped.join(' | ')}` }) };
+      }
       return { details, results: everyone(request, { kind: 'error', error: `no ${ipv4Only ? 'IPv4 ' : ''}address for any MX of ${request.domain}` }) };
     }
 
@@ -128,6 +173,10 @@ export function createDirectTransport(options: DirectTransportOptions): Transpor
         break;
       }
       details = { mxHost: target.host, mxIp: target.ip };
+      if (target.policy !== undefined && target.policy.kind !== 'opportunistic') {
+        // Recorded up front so a connect failure still shows which policy the attempt ran under.
+        details.tlsPeer = describePolicy(target.policy.kind, false, 'no TLS session established');
+      }
       let conn: SmtpConnection;
       try {
         const socket = await connect({ host: target.ip, port, ...(options.localAddress === undefined ? {} : { localAddress: options.localAddress }), timeoutMs: connectTimeoutMs, signal });

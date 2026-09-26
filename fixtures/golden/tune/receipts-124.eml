@@ -1,0 +1,10 @@
+From: Vectorly <billing+us@vectorly.example.com>
+To: dana@d3cloud.io
+Subject: Payment received for your Pro plan
+Date: Tue, 15 Sep 2026 21:49:12 +0000
+Message-ID: <golden-0226.20260926@vectorly.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=vectorly.example.com; dkim=pass header.d=vectorly.example.com; dmarc=pass header.from=vectorly.example.com
+
+Payment received for your Pro plan
+
+Details: https://vectorly.example.com/m/2009

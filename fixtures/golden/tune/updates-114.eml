@@ -1,0 +1,10 @@
+From: Parcel Point <no_reply2@parcelpoint.example.net>
+To: dana@d3cloud.io
+Subject: Your package was delivered
+Date: Tue, 15 Sep 2026 04:51:47 +0000
+Message-ID: <golden-0216.20260926@parcelpoint.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=parcelpoint.example.net; dkim=pass header.d=parcelpoint.example.net; dmarc=pass header.from=parcelpoint.example.net
+
+Your package was delivered
+
+Details: https://parcelpoint.example.net/m/2011

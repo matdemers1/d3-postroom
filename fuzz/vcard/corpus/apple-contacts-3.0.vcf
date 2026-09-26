@@ -1,0 +1,33 @@
+BEGIN:VCARD
+VERSION:3.0
+PRODID:-//Apple Inc.//macOS 15.0//EN
+N:Example;Alex;Jordan;;
+FN:Alex Jordan Example
+ORG:Example Widgets Ltd.;Research
+TITLE:Principal Tinkerer
+item1.EMAIL;type=INTERNET;type=pref:alex@example.org
+item1.X-ABLabel:_$!<Other>!$_
+EMAIL;type=INTERNET;type=HOME:ALEX@EXAMPLE.ORG
+EMAIL;type=INTERNET;type=WORK:alex.example@work.example.com
+item2.EMAIL;type=INTERNET:tinker@example.net
+item2.X-ABLabel:Hobbies
+TEL;type=CELL;type=VOICE;type=pref:+1 (555) 010-0100
+TEL;type=HOME;type=VOICE:+1 (555) 010-0101
+item3.ADR;type=HOME;type=pref:;;1 Example Street\nApt 2;Springfield;XX;00000;Exampleland
+item3.X-ABADR:us
+NOTE:Met at the maker fair.\nLikes: soldering\, gears\; and tea.
+BDAY;value=date:1990-01-01
+PHOTO;ENCODING=b;TYPE=JPEG:/9j/4AAQSkZJRgAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcY
+ GRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4//9k=
+X-SOCIALPROFILE;type=example:https://social.example.com/@alex
+UID:4F7C2F0E-0000-4000-8000-00000000A1EX
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+PRODID:-//Apple Inc.//macOS 15.0//EN
+N:;;;;
+FN:
+ORG:Example Plumbing Co.;
+EMAIL;type=INTERNET;type=WORK;type=pref:office@plumbing.example
+X-ABShowAs:COMPANY
+END:VCARD

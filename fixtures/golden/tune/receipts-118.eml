@@ -1,0 +1,10 @@
+From: TaskHive <billing@taskhive.example.com>
+To: dana@d3cloud.io
+Subject: Invoice INV-2291 for September
+Date: Tue, 15 Sep 2026 11:48:13 +0000
+Message-ID: <golden-0220.20260926@taskhive.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=taskhive.example.com; dkim=pass header.d=taskhive.example.com; dmarc=pass header.from=taskhive.example.com
+
+Invoice INV-2291 for September
+
+Details: https://taskhive.example.com/m/2003

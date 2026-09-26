@@ -179,6 +179,16 @@ export function autoconfigRoutes(deps: ApiDeps): Router {
     res.send(thunderbirdConfigXml(domain, imapHost, submissionHost, deps.config.webOrigin));
   });
 
+  // RFC 6764 §5 (PST-T-8.3): a calendar or contacts client pointed at the webmail host is sent on to
+  // the DAV host's context path. The DAV daemon answers the same paths on its own host.
+  const davContext = `https://${deps.env['DAV_HOSTNAME'] ?? 'dav.d3cloud.io'}/dav/`;
+  for (const svc of ['caldav', 'carddav']) {
+    router.all(`/.well-known/${svc}`, (_req: Request, res: Response) => {
+      res.set('Cache-Control', 'public, max-age=86400');
+      res.redirect(301, davContext);
+    });
+  }
+
   router.get('/.well-known/autoconfig/mail/config-v1.1.xml', serveThunderbirdConfig);
   router.get('/mail/config-v1.1.xml', serveThunderbirdConfig);
 

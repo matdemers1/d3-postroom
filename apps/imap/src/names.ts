@@ -30,6 +30,7 @@ export function invalidNameReason(name: string): string | null {
   if (name.endsWith(DELIMITER)) return 'Mailbox name may not end with the hierarchy delimiter';
   if (name.includes(`${DELIMITER}${DELIMITER}`)) return 'Mailbox name has an empty level';
   if (/[*%]/.test(name)) return 'Mailbox name may not contain * or %';
+  if (name.split(DELIMITER).some((level) => level === '.' || level === '..')) return 'Mailbox name may not have a level named . or ..';
   // eslint-disable-next-line no-control-regex -- the point is to refuse control characters
   if (/[\u0000-\u001f\u007f]/.test(name)) return 'Mailbox name may not contain control characters';
   return null;

@@ -1,0 +1,10 @@
+From: Snapdeploy <deploys@snapdeploy.example.org>
+To: dana@d3cloud.io
+Subject: Deployment to production succeeded
+Date: Wed, 16 Sep 2026 14:58:59 +0000
+Message-ID: <golden-0238.20260926@snapdeploy.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=snapdeploy.example.org; dkim=pass header.d=snapdeploy.example.org; dmarc=pass header.from=snapdeploy.example.org
+
+Deployment to production succeeded
+
+Details: https://snapdeploy.example.org/m/2010

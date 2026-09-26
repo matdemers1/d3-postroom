@@ -9,6 +9,12 @@
 // PST-REQ-050  everything streams: a 100 MB message is never held in memory.
 // PST-ADR-009  deletion is crypto-shred: the row holding the wrapped DEK is deleted first, then
 //              the file is unlinked. A file whose row is gone is unreadable ciphertext.
+// PST-REQ-130  release() is the ONE path that drops a reference, and so the one place a blob is
+//              shredded: the release that takes the refcount to 0 deletes the row (the wrapped DEK)
+//              in the same transaction as whatever removed the last Message or spool reference —
+//              IMAP EXPUNGE and mailbox DELETE (apps/imap), a failed APPEND, and the worker's
+//              retention sweep (apps/worker/src/retention). The file goes after the commit (reap());
+//              a crash in between leaves an orphan with no DEK, which gc() removes.
 //
 // AAD choice. The name (plaintext SHA-256) is only known once the whole message has streamed
 // through, but the encryptor needs its AAD up front. So the ciphertext stream is sealed with the

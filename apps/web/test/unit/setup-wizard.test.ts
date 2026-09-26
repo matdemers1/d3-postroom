@@ -48,6 +48,8 @@ describe('delivery timeline', () => {
         id: 'r',
         address: 'someone@example.net',
         state: 'delivered',
+        lastEnhanced: null,
+        dsn: { delaySentAt: null, failureSentAt: null },
         attempts: 2,
         nextAttemptAt: '2026-09-26T10:01:00.000Z',
         lastCode: 250,

@@ -1,0 +1,55 @@
+BEGIN:VCALENDAR
+PRODID:-//RFC 5545//Sections 3.6.2-3.6.6 examples//EN
+VERSION:2.0
+BEGIN:VTODO
+UID:20070313T123432Z-456553@example.com
+DTSTAMP:20070313T123432Z
+DUE;VALUE=DATE:20070501
+SUMMARY:Submit Quebec Income Tax Return for 2006
+CLASS:CONFIDENTIAL
+CATEGORIES:FAMILY,FINANCE
+STATUS:NEEDS-ACTION
+END:VTODO
+BEGIN:VTODO
+UID:20070514T103211Z-123404@example.com
+DTSTAMP:20070514T103211Z
+DTSTART:20070514T110000Z
+DUE:20070709T130000Z
+COMPLETED:20070707T100000Z
+SUMMARY:Submit Revised Internet-Draft
+PRIORITY:1
+STATUS:NEEDS-ACTION
+BEGIN:VALARM
+ACTION:AUDIO
+TRIGGER;VALUE=DATE-TIME:19970317T133000Z
+REPEAT:4
+DURATION:PT15M
+ATTACH;FMTTYPE=audio/basic:ftp://example.com/pub/sounds/bell-01.aud
+END:VALARM
+END:VTODO
+BEGIN:VJOURNAL
+UID:19970901T130000Z-123405@example.com
+DTSTAMP:19970901T130000Z
+DTSTART;VALUE=DATE:19970317
+SUMMARY:Staff meeting minutes
+DESCRIPTION:1. Staff meeting: Participants include Joe\,
+  Lisa\, and Bob. Aurora project plans were reviewed.
+  There is currently no budget reserves for this project.
+  Lisa will escalate to management. Next meeting on Tuesday.\n
+ 2. Telephone Conference: ABC Corp. sales representative
+  called to discuss new printer. Promised to get us a demo by
+  Friday.\n3. Henry Miller (Handsoff Insurance): Car was
+  totaled by tree. Is looking into a loaner car. 555-2323
+  (tel).
+END:VJOURNAL
+BEGIN:VFREEBUSY
+UID:19970901T082949Z-FA43EF@example.com
+ORGANIZER:mailto:jane_doe@example.com
+ATTENDEE:mailto:john_public@example.com
+DTSTART:19971015T050000Z
+DTEND:19971016T050000Z
+DTSTAMP:19970901T083000Z
+FREEBUSY:19971015T050000Z/PT8H30M,
+ 19971015T160000Z/PT5H30M,19971015T223000Z/PT6H30M
+END:VFREEBUSY
+END:VCALENDAR

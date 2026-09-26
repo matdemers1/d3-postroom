@@ -1,0 +1,14 @@
+From: Field Notes <newsletter@fieldnotes.example.com>
+List-Id: Field Notes <bulk.fieldnotes.example.com>
+List-Unsubscribe: <https://fieldnotes.example.com/unsubscribe>, <mailto:unsubscribe@fieldnotes.example.com>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Precedence: bulk
+To: sam@d3cloud.io
+Subject: A dispatch from the team
+Date: Tue, 08 Sep 2026 01:49:10 +0000
+Message-ID: <golden-0106.20260926@fieldnotes.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=fieldnotes.example.com; dkim=pass header.d=fieldnotes.example.com; dmarc=pass header.from=fieldnotes.example.com
+
+A dispatch from the team
+
+Read online: https://fieldnotes.example.com/issues/13

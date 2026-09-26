@@ -1,0 +1,12 @@
+From: Millpond Supply <billing@millpond.example.org>
+To: sam@d3cloud.io
+Subject: You paid $1001.00 to Millpond Supply
+X-MC-User: mandrill-1001
+Feedback-ID: receipt:millpond.example.org:esp
+Date: Thu, 10 Sep 2026 16:49:02 +0000
+Message-ID: <golden-0147.20260926@millpond.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=millpond.example.org; dkim=pass header.d=millpond.example.org; dmarc=pass header.from=millpond.example.org
+
+You paid $1001.00 to Millpond Supply
+
+Order total: $20.99

@@ -1,0 +1,10 @@
+From: CloudDrive <account@mail.clouddrive.example.com>
+To: dana@d3cloud.io
+Subject: Your storage is almost full
+Date: Mon, 14 Sep 2026 14:22:03 +0000
+Message-ID: <golden-0208.20260926@mail.clouddrive.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=mail.clouddrive.example.com; dkim=pass header.d=mail.clouddrive.example.com; dmarc=pass header.from=mail.clouddrive.example.com
+
+Your storage is almost full
+
+Details: https://mail.clouddrive.example.com/m/2003

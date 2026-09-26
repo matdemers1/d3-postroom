@@ -1,0 +1,13 @@
+From: Marco Rossi | Billing <marco@ledgerfirm.example.org>
+To: dana@d3cloud.io
+Subject: Invoice question for you
+Date: Fri, 18 Sep 2026 21:10:48 +0000
+Message-ID: <golden-0273.20260926@ledgerfirm.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=ledgerfirm.example.org; dkim=pass header.d=ledgerfirm.example.org; dmarc=pass header.from=ledgerfirm.example.org
+
+Hi,
+
+Invoice question for you
+
+Thanks,
+Marco Rossi | Billing

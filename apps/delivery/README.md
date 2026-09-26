@@ -33,6 +33,31 @@ certificate against the SES host name, and only then authenticates (AUTH PLAIN, 
 refused credential defers mail, it never bounces it. The stored, already DKIM-signed blob is
 streamed unchanged, so the signature survives. Operating it: `docs/runbooks/ses.md`.
 
+## Outbound TLS policy: DANE and MTA-STS
+
+PST-REQ-126, PST-T-7.5, `src/policy/`. Before dialling, the direct transport decides per MX host
+what TLS the session must have:
+
+| Policy | When | Rule |
+|---|---|---|
+| `dane` | MX RRset, the host's A/AAAA **and** `_25._tcp.<mx>` TLSA all carry AD from our resolver, and at least one record is DANE-TA(2)/DANE-EE(3) | STARTTLS required; the presented chain must match a record (RFC 7672). Takes precedence over MTA-STS |
+| `mta-sts-enforce` | `_mta-sts.<domain>` TXT + policy at `https://mta-sts.<domain>/.well-known/mta-sts.txt` in `enforce` | only MX hosts matching the policy are dialled; STARTTLS required; WebPKI certificate valid for the MX name |
+| `mta-sts-testing` | policy in `testing` | opportunistic, but what enforce would have said is recorded |
+| `opportunistic` | everything else | STARTTLS when offered, any certificate (RFC 3207), as before |
+
+A mandatory policy that is not met (no STARTTLS, a bad certificate, a TLSA mismatch, an MX outside
+the policy, a failed TLSA lookup) is a **temporary** failure (`4.7.5`) with the reason in the
+attempt's text: mail waits and retries, it is never sent in plaintext. The decision is recorded on
+every `DeliveryAttempt` in `tls_peer` as `tls-policy=<policy>; policy-verified=yes|no;
+policy-reason=<why>` followed by the certificate summary. A plaintext opportunistic delivery leaves
+the TLS columns empty, as before.
+
+Policies are cached per domain for `max_age` and refetched when the TXT id changes; the default
+cache is in memory (`createSettingPolicyStore` persists to the `setting` table when given a Prisma
+delegate). The policy fetch resolves `mta-sts.<domain>` through our resolver, verifies the
+certificate against the system roots, follows no redirects, requires `text/plain`, and caps size
+(64 KiB) and time (10 s). Operating it: `docs/runbooks/outbound-tls.md`.
+
 ## Tests
 
 ```bash

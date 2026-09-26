@@ -97,6 +97,13 @@ enum AppPasswordScope {
   @@map("app_password_scope")
 }
 
+enum DavCollectionKind {
+  calendar
+  addressbook
+
+  @@map("dav_collection_kind")
+}
+
 enum ActorKind {
   account
   system
@@ -130,12 +137,94 @@ model Account {
   identityLinks    IdentityLink[]
   addresses        Address[]
   addressTargets   AddressTarget[]
+  correspondents   Correspondent[]
   mailboxes        Mailbox[]
   appPasswords     AppPassword[]
   sessions         Session[]
   auditEvents      AuditEvent[]
 
+  // PST-T-5.3: per-account naive Bayes.
+  bayesTrainingEvents  BayesTrainingEvent[]
+  bayesTrainedMessages BayesTrainedMessage[]
+  bayesTokens          BayesToken[]
+  bayesBucketTotals    BayesBucketTotal[]
+
+  // PST-T-7.7: per-mailbox retention.
+  retentionPolicies RetentionPolicy[]
+  // PST-T-5.4: sender pins and the new-sender screen (Allow/Block).
+  senderPins        SenderPin[]
+
+  // PST-T-8.2: CalDAV calendars and CardDAV address books.
+  davCollections DavCollection[]
+
+  // PST-T-9.5: Sieve scripts (ManageSieve + the webmail rules builder) and vacation replies sent.
+  sieveScripts         SieveScript[]
+  sieveVacationReplies SieveVacationReply[]
+
+  // PST-T-9.1: undo send / scheduled send, snoozed threads, remind-if-no-reply.
+  pendingSends   PendingSend[]
+  snoozedThreads SnoozedThread[]
+  replyReminders ReplyReminder[]
+
+  // PST-T-9.2: saved composer templates. PST-T-12.1/12.2: PGP and S/MIME keys.
+  templates  ComposeTemplate[]
+  cryptoKeys CryptoKey[]
+
   @@map("account")
+}
+
+/// A sender pin (PST-REQ-105) and/or a new-sender screen decision (PST-REQ-106), per account and
+/// normalized sender address. `bucket` is set when the user pinned this sender to a bucket — it
+/// overrides the classifier entirely (@postroom/classifier's bucketFor consults it before rules and
+/// Bayes). `screen` is set from the new-sender badge's Allow/Block: `block` routes this sender's
+/// future mail to Junk (via the account's blocked-pins signal, same as a bucket pin of `junk`, but
+/// unauthenticated mail is not exempt — junking a spoofer is harmless); `allow` treats the sender as
+/// a known contact, so a directly-addressed message from them can reach Priority. Either or both may
+/// be set on the same row; at least one is expected to be non-null in practice.
+model SenderPin {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId         String    @map("account_id") @db.Uuid
+  /// Lowercased, +tag-stripped (@postroom/classifier's normalizeAddress).
+  address           String
+  /// priority | people | newsletters | updates | receipts | notifications | junk
+  bucket            String?
+  /// allow | block
+  screen            String?
+  /// One-click unsubscribe (RFC 8058), PST-T-5.6, PST-REQ-110: when this sender was last asked to
+  /// stop, and how it went. Null means never attempted.
+  unsubscribedAt    DateTime? @map("unsubscribed_at") @db.Timestamptz(6)
+  /// 'one-click' — mailto: links are shown but never auto-sent.
+  unsubscribeMethod String?   @map("unsubscribe_method")
+  /// sent | failed
+  unsubscribeResult String?   @map("unsubscribe_result")
+  /// Why it failed, or the upstream status on success — short, for the sender profile.
+  unsubscribeDetail String?   @map("unsubscribe_detail")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, address])
+  @@index([accountId])
+  @@map("sender_pin")
+}
+
+/// One address this account has written to (PST-T-5.8, PST-REQ-102): the reply graph, indexed for a
+/// single lookup at classify time instead of a substring scan over Sent. Maintained on send (the
+/// submission accept transaction upserts count+1/lastWrittenAt) and backfilled from
+/// OutboundRecipient/OutboundMessage.
+model Correspondent {
+  accountId      String   @map("account_id") @db.Uuid
+  /// Lowercased, +tag-stripped (@postroom/classifier's normalizeAddress).
+  address        String
+  firstWrittenAt DateTime @map("first_written_at") @db.Timestamptz(6)
+  lastWrittenAt  DateTime @map("last_written_at") @db.Timestamptz(6)
+  count          Int      @default(0)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, address])
+  @@map("correspondent")
 }
 
 /// An external identity (D3 Auth OIDC) linked by (issuer, subject). Email is informational only.
@@ -280,12 +369,32 @@ model Mailbox {
   createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  account  Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  messages Message[]
-  expunged ExpungedMessage[]
+  account         Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  messages        Message[]
+  expunged        ExpungedMessage[]
+  retentionPolicy RetentionPolicy?
 
   @@unique([accountId, name])
   @@map("mailbox")
+}
+
+/// How long a mailbox keeps a message (PST-T-7.7, PST-REQ-129). A row overrides the built-in default
+/// for the mailbox's special use (Junk 30 d, Trash 30 d, Rejects 14 d; every other mailbox: forever).
+/// `days` null keeps messages forever (turns a default off). Expiry never deletes outside Trash and
+/// Rejects: any other mailbox's expired messages MOVE to Trash, where the clock starts again.
+model RetentionPolicy {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  mailboxId String   @unique @map("mailbox_id") @db.Uuid
+  days      Int?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  mailbox Mailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("retention_policy")
 }
 
 /// One message in one mailbox. The raw RFC 5322 bytes live in the blob, never here.
@@ -312,6 +421,9 @@ model Message {
   inReplyTo        String?   @map("in_reply_to")
   references       String[]  @default([])
   threadId         String?   @map("thread_id") @db.Uuid
+  /// When the message entered a Trash mailbox — the visible clock of PST-REQ-129. Stamped by a
+  /// trigger on every insert into / move into Trash (any surface), cleared on a move out.
+  trashedAt        DateTime? @map("trashed_at") @db.Timestamptz(6)
 
   mailbox Mailbox         @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
   blob    Blob            @relation(fields: [blobSha256], references: [sha256], onDelete: Restrict)
@@ -320,12 +432,19 @@ model Message {
   search  MessageSearch?
   verdict MessageVerdict?
 
+  // PST-T-7.1: DMARC aggregate / TLS-RPT reports read out of this message.
+  reportIngest  ReportIngest?
+  dmarcReports  DmarcReport[]
+  tlsRptReports TlsRptReport[]
+
   @@unique([mailboxId, inboundMessageId])
   @@unique([mailboxId, uid])
   @@index([threadId])
   @@index([messageIdHeader])
   @@index([mailboxId, modseq])
   @@index([blobSha256])
+  @@index([mailboxId, receivedAt])
+  @@index([mailboxId, trashedAt])
   @@map("message")
 }
 
@@ -388,14 +507,33 @@ model DkimKey {
   /// PKCS#8 DER sealed with the KEK, aad = "dkim:<domain>:<selector>".
   sealedPrivate Bytes         @map("sealed_private")
   kekId         String        @map("kek_id")
+  /// When the key started signing. For a `pending` key: its creation time, overwritten at the switch.
   activeFrom    DateTime      @default(now()) @map("active_from") @db.Timestamptz(6)
   retiredAt     DateTime?     @map("retired_at") @db.Timestamptz(6)
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Rotation (PST-T-7.4, PST-REQ-125): only `active` signs, one per (domain, algorithm).
+  state         DkimKeyState  @default(active)
+  /// When our resolver first saw this key's TXT with the matching p= (the switch happened then).
+  dnsVerifiedAt DateTime?     @map("dns_verified_at") @db.Timestamptz(6)
+  /// A `retiring` key becomes `retired` no earlier than this (switch + 7 days).
+  retireAfter   DateTime?     @map("retire_after") @db.Timestamptz(6)
 
   domain Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
   @@unique([domainId, selector])
+  @@index([domainId, algorithm, state])
   @@map("dkim_key")
+}
+
+/// A DKIM key's place in rotation: pending (created, TXT not yet seen in DNS) → active (signing) →
+/// retiring (superseded, still published for 7 days) → retired (the TXT may be removed).
+enum DkimKeyState {
+  pending
+  active
+  retiring
+  retired
+
+  @@map("dkim_key_state")
 }
 
 /// The Postgres job queue every stage runs on (PST-T-1.5, PST-T-2.7): claimed with
@@ -443,6 +581,9 @@ model OutboundMessage {
   recipients  OutboundRecipient[]
 
   @@index([accountId, createdAt])
+  /// PST-T-6.7 (PST-REQ-119): the mailbox message → outbound lookup joins on this pair — a Sent
+  /// copy's Message-ID header against this account's outbound rows, newest first.
+  @@index([accountId, messageId])
   @@map("outbound_message")
 }
 
@@ -543,6 +684,9 @@ model InboundMessage {
   smtpReply         String?      @map("smtp_reply")
   lastError         String?      @map("last_error")
   filedAt           DateTime?    @map("filed_at") @db.Timestamptz(6)
+  /// When this spool row's blob reference was released (PST-T-7.7): after every Message copy of the
+  /// blob is gone, so the last reference can go and the blob be crypto-shredded (PST-REQ-130).
+  blobReleasedAt    DateTime?    @map("blob_released_at") @db.Timestamptz(6)
 
   session  InboundSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   messages Message[]
@@ -559,6 +703,8 @@ model MessageVerdict {
   attachments Json     @default("[]")
   bucket      String?
   reasons     String[] @default([])
+  /// The scores behind the bucket decision (rule signals, Bayes probabilities), PST-REQ-103.
+  scores      Json     @default("{}")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
@@ -637,4 +783,512 @@ model ExpungedMessage {
   @@id([mailboxId, uid])
   @@index([mailboxId, modseq])
   @@map("expunged_message")
+}
+
+// ─── PST-P-5: per-account naive Bayes (PST-T-5.3) ─────────────────────────────────────────────────
+
+/// A user moved a message between two sorting buckets, from any client (PST-REQ-104): written in the
+/// same transaction as the move by the IMAP server (MOVE, UID MOVE, COPY then EXPUNGE) and the
+/// webmail API; the worker's training consumer applies it to the counts, in id order, and stamps
+/// processedAt in the same transaction. The row is the record of the training (moves are not audited
+/// one by one — see apps/imap/src/store.ts).
+model BayesTrainingEvent {
+  /// Ordering: a later move of the same message always has a larger id (it waits on the mailbox lock).
+  id          BigInt    @id @default(autoincrement())
+  accountId   String    @map("account_id") @db.Uuid
+  /// The message after the move. No foreign key: it may be moved again or expunged before the
+  /// consumer runs, and the event must outlive it.
+  messageId   String    @map("message_id") @db.Uuid
+  /// The trained document's identity: the same bytes are the same document wherever they are filed.
+  blobSha256  String    @map("blob_sha256")
+  fromBucket  String    @map("from_bucket")
+  toBucket    String    @map("to_bucket")
+  /// imap-move | imap-copy-expunge | web
+  via         String
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+  /// trained | retrained | unchanged | skipped: <why>
+  outcome     String?
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([processedAt, id])
+  @@index([accountId])
+  @@map("bayes_training_event")
+}
+
+/// Which bucket a document is trained into, and exactly the tokens that training added — so a move
+/// back subtracts precisely what was added, and a replayed event changes nothing.
+model BayesTrainedMessage {
+  accountId  String   @map("account_id") @db.Uuid
+  blobSha256 String   @map("blob_sha256")
+  bucket     String
+  tokens     String[]
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, blobSha256])
+  @@map("bayes_trained_message")
+}
+
+/// How often a token was trained into a bucket, per account. Rows at zero are deleted.
+model BayesToken {
+  accountId String @map("account_id") @db.Uuid
+  bucket    String
+  token     String
+  count     Int
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, bucket, token])
+  @@index([accountId, token])
+  @@map("bayes_token")
+}
+
+/// Documents and tokens trained into a bucket, per account.
+model BayesBucketTotal {
+  accountId String @map("account_id") @db.Uuid
+  bucket    String
+  docs      Int    @default(0)
+  tokens    Int    @default(0)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, bucket])
+  @@map("bayes_bucket_total")
+}
+
+// ─── CalDAV / CardDAV (PST-T-8.2, PST-REQ-132, PST-REQ-133) ─────────────────
+
+/// A calendar (RFC 4791) or an address book (RFC 6352) of one account. Every person account gets a
+/// "Calendar" and a "Contacts" collection when it is created (a trigger on account, which also
+/// covers accounts created before this table existed via the migration's backfill).
+model DavCollection {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String            @map("account_id") @db.Uuid
+  kind        DavCollectionKind
+  /// The collection's URL segment under the account's home set (decoded; `calendar`, a client UUID).
+  slug        String
+  displayName String            @map("display_name")
+  description String?
+  /// Apple's calendar-color, e.g. `#FF2968FF`.
+  color       String?
+  /// Apple's calendar-order.
+  sortOrder   Int?              @map("sort_order")
+  /// Supported calendar components (VEVENT, VTODO, VJOURNAL); empty for an address book.
+  components  String[]          @default([])
+  /// Properties a client set that the server does not interpret (calendar-timezone, …), as
+  /// `{ "{ns}name": <element tree> }`. Size-capped by the daemon.
+  deadProps   Json              @default("{}") @map("dead_props")
+  /// The last change sequence number: the sync token (RFC 6578) and the getctag. Only grows.
+  syncSeq     BigInt            @default(0) @map("sync_seq")
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account   Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  resources DavResource[]
+  changes   DavChange[]
+
+  @@unique([accountId, kind, slug])
+  @@index([accountId])
+  @@map("dav_collection")
+}
+
+/// One calendar object resource (an .ics) or address object resource (a .vcf). The bytes the client
+/// PUT are stored verbatim but encrypted: `data` is AES-256-GCM under a per-resource DEK, and the DEK
+/// is wrapped by the KEK (PST-ADR-009). Deleting the row crypto-shreds it. The AAD of both is
+/// `dav-resource:<id>`, so a ciphertext cannot be moved to another row.
+model DavResource {
+  id            String   @id @db.Uuid
+  collectionId  String   @map("collection_id") @db.Uuid
+  /// The resource's URL segment within the collection (decoded).
+  name          String
+  /// The iCalendar/vCard UID: unique per collection (CALDAV:no-uid-conflict, CARDDAV:no-uid-conflict).
+  uid           String
+  /// VEVENT, VTODO or VJOURNAL for a calendar object; null for a vCard.
+  componentType String?  @map("component_type")
+  /// Strong entity tag (quoted on the wire). A fresh random value on every write.
+  etag          String
+  /// Plaintext size in bytes.
+  size          Int
+  wrappedDek    Bytes    @map("wrapped_dek")
+  kekId         String   @map("kek_id")
+  data          Bytes
+  /// The collection's syncSeq at this resource's last write.
+  modSeq        BigInt   @map("mod_seq")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  collection DavCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, name])
+  @@unique([collectionId, uid])
+  @@map("dav_resource")
+}
+
+/// The sync-collection change log (RFC 6578): one row per member change, tombstones included, so an
+/// incremental sync from any earlier token names every added, modified and removed href.
+model DavChange {
+  collectionId String   @map("collection_id") @db.Uuid
+  seq          BigInt
+  name         String
+  deleted      Boolean
+  at           DateTime @default(now()) @db.Timestamptz(6)
+
+  collection DavCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, seq])
+  @@index([collectionId, name])
+  @@map("dav_change")
+}
+
+// ─── Sieve (PST-T-9.5, PST-REQ-148, PST-REQ-149, PST-REQ-150) ───────────────────────────────────
+
+/// One Sieve script of one account, as ManageSieve (RFC 5804) and the webmail rules builder store it.
+/// At most one script per account is active: a partial unique index on (account_id) WHERE active
+/// (in the migration's SQL, because Prisma cannot express it). The worker's sieve stage runs the
+/// active script. The content is kept exactly as uploaded; it always compiled when it was stored.
+model SieveScript {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  /// RFC 5804 script name: 1-128 characters, no control characters.
+  name      String
+  content   String
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, name])
+  @@map("sieve_script")
+}
+
+/// A vacation auto-reply that was sent (RFC 5230 §4.2): the once-per-sender-per-:days memory. One
+/// per (account, inbound message) at most, so a replayed sieve stage never sends a second reply.
+model SieveVacationReply {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId         String   @map("account_id") @db.Uuid
+  /// The envelope sender the reply went to, lowercased.
+  sender            String
+  /// The vacation :handle (or the interpreter's hash of reason/subject/from/mime).
+  handle            String
+  /// The inbound spool row that triggered the reply.
+  inboundMessageId  String?  @map("inbound_message_id") @db.Uuid
+  /// The queued reply.
+  outboundMessageId String?  @map("outbound_message_id") @db.Uuid
+  sentAt            DateTime @default(now()) @map("sent_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, inboundMessageId])
+  @@index([accountId, sender, handle, sentAt])
+  @@map("sieve_vacation_reply")
+}
+
+// ─── Deliverability reports (PST-T-7.1, PST-REQ-122) ─────────────────────────────────────────────
+
+/// One message in a report mailbox (REPORTS_MAILBOX / TLSRPT_MAILBOX) the worker has looked at, and
+/// what it found: `ingested`, `duplicate` (a re-delivered report), `no-report`, or `error`. The
+/// sweep picks up only messages with no row here, so a message is read once, however often it runs.
+model ReportIngest {
+  messageId   String   @id @map("message_id") @db.Uuid
+  outcome     String
+  /// Per attachment: kind, org, report id, and the ReportError code/message on failure.
+  detail      Json
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(6)
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("report_ingest")
+}
+
+/// A DMARC aggregate report (RFC 7489 Appendix C). Unique per (reporting org, report id): a
+/// re-delivered report is recognized and never stored twice.
+model DmarcReport {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgName         String   @map("org_name")
+  reportId        String   @map("report_id")
+  email           String?
+  /// policy_published/domain.
+  domain          String
+  rangeBegin      DateTime @map("range_begin") @db.Timestamptz(6)
+  rangeEnd        DateTime @map("range_end") @db.Timestamptz(6)
+  /// policy_published as reported: { domain, adkim, aspf, p, sp, pct, fo }.
+  policyPublished Json     @map("policy_published")
+  /// The message it arrived in; null once that message is gone.
+  messageId       String?  @map("message_id") @db.Uuid
+  receivedAt      DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  /// ours | foreign (PST-T-7.9, PST-REQ-122): whether policy_published/domain is one of our Domain
+  /// rows. A foreign report is stored (so it is visible and auditable) but excluded from every
+  /// Deliverability aggregate. Existing rows default to "ours".
+  status          String   @default("ours")
+  /// Why a foreign report was classified foreign. Null for "ours".
+  reason          String?
+
+  message Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  records DmarcRecord[]
+
+  @@unique([orgName, reportId])
+  @@index([rangeBegin])
+  @@index([status])
+  @@map("dmarc_report")
+}
+
+/// One row of an aggregate report: `count` messages from `sourceIp` with the same results.
+model DmarcRecord {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId     String  @map("report_id") @db.Uuid
+  sourceIp     String  @map("source_ip")
+  count        Int
+  /// none | quarantine | reject
+  disposition  String
+  /// policy_evaluated: the aligned DKIM / SPF result, pass | fail, or null when not reported.
+  dkim         String?
+  spf          String?
+  headerFrom   String  @map("header_from")
+  envelopeFrom String? @map("envelope_from")
+  /// { dkim: [...], spf: [...], reasons: [...] } as reported.
+  authResults  Json    @map("auth_results")
+
+  report DmarcReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([sourceIp])
+  @@map("dmarc_record")
+}
+
+/// An SMTP TLS report (RFC 8460). Unique per (organization, report id).
+model TlsRptReport {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgName     String   @map("org_name")
+  reportId    String   @map("report_id")
+  contactInfo String?  @map("contact_info")
+  rangeBegin  DateTime @map("range_begin") @db.Timestamptz(6)
+  rangeEnd    DateTime @map("range_end") @db.Timestamptz(6)
+  messageId   String?  @map("message_id") @db.Uuid
+  receivedAt  DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  /// ours | foreign (PST-T-7.9, PST-REQ-122): whether any policies[].policy-domain is one of our
+  /// Domain rows. Foreign when none of them are. Existing rows default to "ours".
+  status      String   @default("ours")
+  /// Why a foreign report was classified foreign. Null for "ours".
+  reason      String?
+
+  message  Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  policies TlsRptPolicy[]
+
+  @@unique([orgName, reportId])
+  @@index([rangeBegin])
+  @@index([status])
+  @@map("tlsrpt_report")
+}
+
+model TlsRptPolicy {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId     String   @map("report_id") @db.Uuid
+  /// sts | tlsa | no-policy-found
+  policyType   String   @map("policy_type")
+  policyDomain String   @map("policy_domain")
+  policyString String[] @default([]) @map("policy_string")
+  mxHost       String[] @default([]) @map("mx_host")
+  successCount Int      @map("success_count")
+  failureCount Int      @map("failure_count")
+
+  report   TlsRptReport    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  failures TlsRptFailure[]
+
+  @@index([reportId])
+  @@map("tlsrpt_policy")
+}
+
+model TlsRptFailure {
+  id                  String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyId            String  @map("policy_id") @db.Uuid
+  resultType          String  @map("result_type")
+  sendingMtaIp        String? @map("sending_mta_ip")
+  receivingMxHostname String? @map("receiving_mx_hostname")
+  receivingIp         String? @map("receiving_ip")
+  failedSessionCount  Int     @map("failed_session_count")
+  additionalInfo      String? @map("additional_info")
+  failureReasonCode   String? @map("failure_reason_code")
+
+  policy TlsRptPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId])
+  @@map("tlsrpt_failure")
+}
+
+// ─── PST-T-9.1: undo send, scheduled send, snooze, remind-if-no-reply ─────
+
+enum PendingSendState {
+  held
+  released
+  cancelled
+  failed
+
+  @@map("pending_send_state")
+}
+
+/// A composed message held back from the outbound queue until `releaseAt` (PST-REQ-140 undo send,
+/// PST-REQ-141 scheduled send). The worker releases it through the submission path exactly once:
+/// the held → released transition commits in the same transaction as the outbound queue rows. A
+/// copy stays in Drafts (`draftMessageId`) the whole time, so it is IMAP-visible and recoverable.
+model PendingSend {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId          String           @map("account_id") @db.Uuid
+  /// 'undo' (held for the undo window) or 'scheduled' (a chosen send time).
+  kind               String
+  state              PendingSendState @default(held)
+  releaseAt          DateTime         @map("release_at") @db.Timestamptz(6)
+  envelopeFrom       String           @map("envelope_from")
+  recipients         String[]
+  /// The message exactly as it will be submitted (no Bcc, no draft headers). This row holds one
+  /// reference on the blob until it is released or cancelled.
+  heldBlobSha256     String           @map("held_blob_sha256")
+  size               Int
+  /// The copy in Drafts (\Draft \Seen). Removing it from any client cancels the send.
+  draftMessageId     String?          @map("draft_message_id") @db.Uuid
+  messageIdHeader    String           @map("message_id_header")
+  subject            String           @default("")
+  toText             String           @default("") @map("to_text")
+  inReplyTo          String?          @map("in_reply_to")
+  references         String[]         @default([])
+  /// Remind-if-no-reply interval to arm once the message is actually sent (PST-REQ-143).
+  remindAfterSeconds Int?             @map("remind_after_seconds")
+  outboundId         String?          @map("outbound_id") @db.Uuid
+  sentMessageId      String?          @map("sent_message_id") @db.Uuid
+  /// Why it was cancelled or failed, in words (a refusal from the submission path, a removed draft).
+  reason             String?
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt         DateTime?        @map("finished_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([state, releaseAt])
+  @@index([accountId, state])
+  @@map("pending_send")
+}
+
+/// A thread snoozed out of INBOX until `until` (PST-REQ-142). The moved messages keep their row ids
+/// (re-homed like the retention sweep's move), so `messageIds` finds them again in Snoozed.
+model SnoozedThread {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId  String    @map("account_id") @db.Uuid
+  threadId   String    @map("thread_id") @db.Uuid
+  until      DateTime  @db.Timestamptz(6)
+  messageIds String[]  @map("message_ids") @db.Uuid
+  /// 'snoozed', then 'returned' (by the worker at `until`) or 'unsnoozed' (by hand).
+  state      String    @default("snoozed")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  returnedAt DateTime? @map("returned_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([state, until])
+  @@index([accountId, threadId])
+  @@map("snoozed_thread")
+}
+
+/// Remind-if-no-reply on a sent message (PST-REQ-143): at `dueAt`, if nobody else wrote in the
+/// thread after `sentAt`, the Sent message is resurfaced in INBOX as a local copy (same blob, one
+/// more reference, unread, \Flagged $Remind) — never a second delivery.
+model ReplyReminder {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId           String    @map("account_id") @db.Uuid
+  sentMessageId       String    @map("sent_message_id") @db.Uuid
+  messageIdHeader     String    @map("message_id_header")
+  sentAt              DateTime  @map("sent_at") @db.Timestamptz(6)
+  dueAt               DateTime  @map("due_at") @db.Timestamptz(6)
+  /// 'pending', then 'resurfaced', 'replied' or 'cancelled'.
+  state               String    @default("pending")
+  resurfacedMessageId String?   @map("resurfaced_message_id") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  checkedAt           DateTime? @map("checked_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([state, dueAt])
+  @@index([accountId, sentMessageId])
+  @@map("reply_reminder")
+}
+
+// ─── Transcripts, templates, keys (wave 8 pre-flight) ────────────────────
+
+/// One SMTP session's transcript, compressed and kept forever (PST-T-6.3, PST-REQ-118). Credentials
+/// are redacted before the bytes are written (PST-REQ-117). `sessionId` is the daemon's own session
+/// id — an InboundSession id for smtp-in, a random id for submission.
+model SmtpTranscript {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// smtp-in | submission
+  daemon          String
+  sessionId       String    @map("session_id")
+  clientIp        String    @map("client_ip")
+  startedAt       DateTime  @map("started_at") @db.Timestamptz(6)
+  endedAt         DateTime? @map("ended_at") @db.Timestamptz(6)
+  lineCount       Int       @default(0) @map("line_count")
+  /// Uncompressed size after redaction.
+  rawBytes        Int       @default(0) @map("raw_bytes")
+  /// What is on disk: the compressed size, summed on Health.
+  compressedBytes Int       @default(0) @map("compressed_bytes")
+  /// gzip | br
+  compression     String
+  body            Bytes
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([daemon, sessionId])
+  @@index([startedAt])
+  @@index([clientIp, startedAt])
+  @@map("smtp_transcript")
+}
+
+/// A saved composer template with {{variables}} (PST-T-9.2, PST-REQ-144).
+model ComposeTemplate {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  /// What `;` matches on, unique per account.
+  shortcut  String
+  name      String
+  subject   String?
+  /// Markdown.
+  body      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, shortcut])
+  @@map("compose_template")
+}
+
+/// A PGP or S/MIME key (PST-T-12.1/12.2, PST-REQ-160/161). Own keys carry the private half sealed
+/// under the KEK (the same envelope as blobs); contacts' public keys have no private half.
+model CryptoKey {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId     String    @map("account_id") @db.Uuid
+  /// pgp | smime
+  kind          String
+  /// own | contact
+  owner         String
+  /// Lowercased address the key speaks for (a UID's email or the certificate's rfc822Name).
+  address       String
+  /// PGP v4/v6 fingerprint hex, or the certificate's SHA-256 hex.
+  fingerprint   String
+  algorithm     String
+  /// Armored public key, or the certificate in PEM.
+  publicKey     String    @map("public_key")
+  /// The private key, sealed: DEK-wrapped under the KEK. Null for contact keys.
+  sealedPrivate Bytes?    @map("sealed_private")
+  wrappedDek    Bytes?    @map("wrapped_dek")
+  kekId         String?   @map("kek_id")
+  nonce         Bytes?
+  expiresAt     DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, kind, fingerprint])
+  @@index([accountId, address])
+  @@map("crypto_key")
 }

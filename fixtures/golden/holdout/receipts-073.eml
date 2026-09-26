@@ -1,0 +1,12 @@
+From: Millpond Supply <billing@millpond.example.org>
+To: sam@d3cloud.io
+Subject: Subscription renewal confirmation
+X-SG-EID: sg-eid-1006
+Feedback-ID: receipt:millpond.example.org:esp
+Date: Thu, 10 Sep 2026 22:18:54 +0000
+Message-ID: <golden-0152.20260926@millpond.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=millpond.example.org; dkim=pass header.d=millpond.example.org; dmarc=pass header.from=millpond.example.org
+
+Subscription renewal confirmation
+
+Order total: $25.99

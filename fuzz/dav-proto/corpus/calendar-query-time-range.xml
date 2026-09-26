@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:prop><D:getetag/><C:calendar-data/></D:prop>
+  <C:filter>
+    <C:comp-filter name="VCALENDAR">
+      <C:comp-filter name="VEVENT">
+        <C:time-range start="20260301T000000Z" end="20260401T000000Z"/>
+        <C:prop-filter name="SUMMARY"><C:text-match collation="i;ascii-casemap" negate-condition="no">Standup</C:text-match></C:prop-filter>
+        <C:prop-filter name="ATTENDEE"><C:param-filter name="PARTSTAT"><C:text-match>NEEDS-ACTION</C:text-match></C:param-filter></C:prop-filter>
+      </C:comp-filter>
+      <C:comp-filter name="VTODO"><C:is-not-defined/></C:comp-filter>
+    </C:comp-filter>
+  </C:filter>
+</C:calendar-query>

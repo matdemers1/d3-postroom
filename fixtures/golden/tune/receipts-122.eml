@@ -1,0 +1,10 @@
+From: Parkside Garage <invoices@parkside.example.org>
+To: dana@d3cloud.io
+Subject: Parking receipt for Sep 12
+Date: Tue, 15 Sep 2026 19:41:20 +0000
+Message-ID: <golden-0224.20260926@parkside.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=parkside.example.org; dkim=pass header.d=parkside.example.org; dmarc=pass header.from=parkside.example.org
+
+Parking receipt for Sep 12
+
+Details: https://parkside.example.org/m/2007

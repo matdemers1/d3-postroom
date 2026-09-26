@@ -42,6 +42,10 @@ export const AttachmentParams = z.object({ id: Uuid, partId: z.string().regex(/^
 export const MessageListQuery = z.object({
   cursor: z.string().regex(/^\d{1,10}$/).optional().describe('The nextCursor of the previous page.'),
   limit: z.coerce.number().int().min(1).max(200).default(50),
+  keyword: z
+    .enum(['$Priority', '$People'])
+    .optional()
+    .describe("Only messages carrying this sorting keyword: the Inbox's Priority / People split (PST-REQ-101)."),
 });
 
 export const MessagePatch = z
@@ -97,11 +101,28 @@ export const MessageSummary = z.object({
   size: z.number().int(),
   flags: z.array(z.string()),
   bucket: z.string().nullable(),
+  /** PST-REQ-129's visible clock: when the message entered Trash; null outside Trash. */
+  trashedAt: Iso.nullable().describe('When the message entered Trash (the retention clock); null outside Trash.'),
+  expiresAt: Iso.nullable().describe('When the retention sweep expunges it from Trash; null outside Trash or when Trash keeps mail forever.'),
+  /** A first-time human sender's message (PST-T-5.4, PST-REQ-106): the new-sender badge, Allow/Block. */
+  newSender: z.boolean(),
 });
 export const MessageList = z.object({
   messages: z.array(MessageSummary),
   nextCursor: z.string().nullable(),
 });
+
+const SplitCount = z.object({ total: z.number().int(), unseen: z.number().int() });
+
+/** The Inbox's Priority / People split (PST-REQ-101): how many of each, and how many unread. */
+export const MailboxSplit = z.object({ priority: SplitCount, people: SplitCount });
+
+export const PhishWarning = z.object({
+  kind: z.enum(['display-name-spoofing', 'lookalike-domain', 'punycode-domain', 'first-time-brand-sender', 'auth-failure', 'link-mismatch']),
+  severity: z.enum(['low', 'medium', 'high']),
+  reason: z.string(),
+});
+export const Phish = z.object({ warnings: z.array(PhishWarning) });
 
 export const MessageDetail = MessageSummary.extend({
   messageIdHeader: z.string().nullable(),
@@ -114,6 +135,9 @@ export const MessageDetail = MessageSummary.extend({
       auth: z.unknown(),
     })
     .nullable(),
+  /** Phishing/lookalike warnings (PST-REQ-120), each with a stated reason. Null when there is
+   * nothing to check yet (no stored auth verdict, e.g. this account's own Sent copy). */
+  phish: Phish.nullable(),
 });
 
 export const Attachment = z.object({
@@ -143,6 +167,8 @@ export const RenderTicket = z.object({
   expiresAt: Iso,
   images: z.boolean().describe('Whether remote images load (through the proxy) in this render.'),
   remoteImages: z.number().int().describe('Remote images in the message. Above 0 with images false means some are blocked.'),
+  trackersBlocked: z.number().int().describe('Known tracking pixels dropped entirely from this message, never loaded even with images on (PST-REQ-116).'),
+  linksCleaned: z.number().int().describe('Links with a tracking parameter stripped or a known redirect wrapper unwrapped (PST-REQ-116).'),
 });
 
 export const SearchResult = z.object({
@@ -189,6 +215,7 @@ export const MessageNewEvent = z.object({
 
 export type MailboxJson = z.infer<typeof Mailbox>;
 export type MessageSummaryJson = z.infer<typeof MessageSummary>;
+export type PhishJson = z.infer<typeof Phish>;
 export type MessageDetailJson = z.infer<typeof MessageDetail>;
 export type MessageBodyJson = z.infer<typeof MessageBody>;
 export type RenderTicketJson = z.infer<typeof RenderTicket>;

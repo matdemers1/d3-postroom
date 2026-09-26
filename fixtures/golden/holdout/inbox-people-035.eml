@@ -1,0 +1,12 @@
+From: Nadia Okafor <nadia.okafor@corp.example.org>
+To: sam@d3cloud.io
+Subject: Urgent: A quick intro before the call
+Date: Sun, 06 Sep 2026 00:59:59 +0000
+Message-ID: <golden-0075.20260926@corp.example.org>
+Authentication-Results: mx.d3cloud.io; spf=fail smtp.mailfrom=corp.example.org; dkim=fail header.d=corp.example.org; dmarc=fail header.from=corp.example.org
+
+Hello,
+
+A quick intro before the call
+
+Nadia Okafor

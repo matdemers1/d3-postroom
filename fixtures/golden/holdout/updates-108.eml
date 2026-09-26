@@ -1,0 +1,10 @@
+From: Quickship <delivery-status@quickship.example.com>
+To: sam@d3cloud.io
+Subject: Arriving today by 8pm
+Date: Thu, 17 Sep 2026 01:43:25 +0000
+Message-ID: <golden-0244.20260926@quickship.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=quickship.example.com; dkim=pass header.d=quickship.example.com; dmarc=pass header.from=quickship.example.com
+
+Arriving today by 8pm
+
+Details: https://quickship.example.com/m/2005

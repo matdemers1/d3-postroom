@@ -1,0 +1,17 @@
+/* PST-T-11.4: a plain <a> or RouterLink the app renders without a class (a contact's name, "In
+ * contacts as …", a sender link) took the browser default link blue and visited purple, which
+ * belong to neither theme. @d3cloud/ui's Link carries its own class, so only unclassed anchors are
+ * matched, at zero specificity: any component style still wins. */
+:where(a:not([class])) {
+  color: var(--color-accent);
+  text-decoration-line: underline;
+  text-underline-offset: 0.15em;
+}
+
+:where(a:not([class]):visited) {
+  color: var(--color-accent);
+}
+
+:where(a:not([class]):hover) {
+  color: var(--color-accent-hover);
+}

@@ -1,0 +1,12 @@
+From: Boardline <notifications@boardline.example.com>
+To: dana@d3cloud.io
+Subject: You have a new mention
+List-Unsubscribe: <https://boardline.example.com/notifications/unsubscribe>
+X-GitHub-Reason: mention
+Date: Fri, 11 Sep 2026 11:25:02 +0000
+Message-ID: <golden-0159.20260926@boardline.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=boardline.example.com; dkim=pass header.d=boardline.example.com; dmarc=pass header.from=boardline.example.com
+
+You have a new mention
+
+Open Boardline: https://boardline.example.com/open

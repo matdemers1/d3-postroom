@@ -1,0 +1,10 @@
+From: Summit Credit Union <security-notice@summitcu.example.net>
+To: sam@d3cloud.io
+Subject: Unusual sign-in attempt blocked
+Date: Wed, 16 Sep 2026 16:52:56 +0000
+Message-ID: <golden-0239.20260926@summitcu.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=summitcu.example.net; dkim=pass header.d=summitcu.example.net; dmarc=pass header.from=summitcu.example.net
+
+Unusual sign-in attempt blocked
+
+Details: https://summitcu.example.net/m/2000

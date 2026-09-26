@@ -2,7 +2,7 @@
 // send reads. The browser behaviour is e2e/tests/compose.spec.ts.
 import { describe, expect, it } from 'vitest';
 import { ApiError, type SavedDraft } from '../../src/api';
-import { fieldsOf, hasRecipients, initialState, resumableDraft, sendErrorText, stateFromSaved, type ComposeDraft } from '../../src/mail/compose';
+import { fieldsOf, hasRecipients, initialState, isSendChord, resumableDraft, sendErrorText, stateFromSaved, type ComposeDraft } from '../../src/mail/compose';
 
 const SRC = '33333333-3333-4333-8333-333333333333';
 
@@ -68,6 +68,9 @@ describe('drafts', () => {
       inReplyTo: '<plans@example.org>',
       references: ['<plans@example.org>'],
       forwardOf: null,
+      // PST-T-9.2: a saved draft has no Markdown/receipt state of its own; it always resumes plain.
+      format: 'plain',
+      requestReceipt: false,
     });
   });
 
@@ -85,5 +88,33 @@ describe('a refused send, in words', () => {
     expect(sendErrorText(new ApiError(429, 'recipient_cap', {}))).toMatch(/sending limit/);
     expect(sendErrorText(new ApiError(400, 'invalid_recipient', { error: 'invalid_recipient', message: 'to: "x" is not an address' }))).toBe('to: "x" is not an address');
     expect(sendErrorText(new TypeError('fetch failed'))).toMatch(/nothing was sent/);
+  });
+});
+
+describe('isSendChord (PST-T-11.4)', () => {
+  const key = (over: Partial<{ key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; composing: boolean }>) => ({
+    key: over.key ?? 'Enter',
+    metaKey: over.metaKey ?? false,
+    ctrlKey: over.ctrlKey ?? false,
+    altKey: over.altKey ?? false,
+    shiftKey: over.shiftKey ?? false,
+    nativeEvent: { isComposing: over.composing ?? false },
+  });
+
+  it('is ⌘↵ or Ctrl+Enter', () => {
+    expect(isSendChord(key({ metaKey: true }))).toBe(true);
+    expect(isSendChord(key({ ctrlKey: true }))).toBe(true);
+  });
+
+  it('is not a plain Enter (a new line in the body), nor with Shift, Alt or both modifiers', () => {
+    expect(isSendChord(key({}))).toBe(false);
+    expect(isSendChord(key({ metaKey: true, shiftKey: true }))).toBe(false);
+    expect(isSendChord(key({ ctrlKey: true, altKey: true }))).toBe(false);
+    expect(isSendChord(key({ metaKey: true, ctrlKey: true }))).toBe(false);
+    expect(isSendChord(key({ key: 'a', metaKey: true }))).toBe(false);
+  });
+
+  it('never fires while an input method is composing', () => {
+    expect(isSendChord(key({ metaKey: true, composing: true }))).toBe(false);
   });
 });

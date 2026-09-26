@@ -1,0 +1,12 @@
+From: Basalt & Co <invoices@basaltco.example.org>
+To: sam@d3cloud.io
+Subject: Order confirmation #1009
+X-SG-EID: sg-eid-1009
+Feedback-ID: receipt:basaltco.example.org:esp
+Date: Fri, 11 Sep 2026 05:31:22 +0000
+Message-ID: <golden-0155.20260926@basaltco.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=basaltco.example.org; dkim=pass header.d=basaltco.example.org; dmarc=pass header.from=basaltco.example.org
+
+Order confirmation #1009
+
+Order total: $28.99

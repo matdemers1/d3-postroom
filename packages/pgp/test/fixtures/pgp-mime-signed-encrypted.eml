@@ -1,0 +1,43 @@
+From: Bob Test <bob@example.test>
+To: Alice Test <alice@example.test>
+Subject: Signed and encrypted
+Date: Sat, 26 Sep 2026 12:00:00 +0000
+Message-ID: <1969030255@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; boundary="enc-b"
+
+This is an OpenPGP/MIME encrypted message (RFC 4880 and 3156)
+--enc-b
+Content-Type: application/pgp-encrypted
+Content-Description: PGP/MIME version identification
+
+Version: 1
+
+--enc-b
+Content-Type: application/octet-stream; name="encrypted.asc"
+Content-Description: OpenPGP encrypted message
+Content-Disposition: inline; filename="encrypted.asc"
+
+-----BEGIN PGP MESSAGE-----
+
+hF4DOZoYFaNPo1USAQdABlCplC/IdQAXb3cIr9PyAT8l4SQO8b/dHKBy2gBwNQcw
+dgI4lqpNbgiGdCXLU1kELnm/lJaboWB95n9GARp+aMhYyzxtKsH0e4wzl2J0LSbf
+0ukBwKUXn9aRiGU1MgMUyDT6h8B0vMmvqGxxZ1NYdnxUMowfecU8E0RVJ2tRyIcA
+h8x83yOayDN9DCsjNE6wR53wqFs/w08YTNULhtv78ckF/iy2VvTupE7Dt2DOt8ls
+7Hj5SVRDF/zsgCax7WrpFNpv0MrW+Ioi6pL3vtHiHQ4ocZ1P63NeOOQ9XZkNbmJV
+Ehfq19wU4j2X/YGXG6rd/P0JCoNyfbotG7pxsKd2bJoEgh2li8FronYz6CjnJTaN
+6WgBvNVvmPM/5DeH0nneXjskbK2XHtI5Qo0RP8lSFnyzt4s8E4SqK89SwwAUuq/8
+FL7pREwySmknFSOc9gLALoa6WK/YLqYDmyoOfZmBWERYZ8SqloKoi5AMYQVA+YUD
+A3Vj/LPX6GeLPya0+LN+0TAqQCLYCGt1lk2X1pxRB9EBMbKwdXKvfyIPPCAaoEau
+V/yYFOKVUip5eiflO68R0iHw92kfWE+eAN+STnUVc4Q1kls/uTOnTw20TaETzhKm
+TYSczSYjSvPO478GZ5j0UfOaxtjrcyqDZQD5TA2xrAZzprDWByp/8eiLM3Sr+jG9
+v1mXm04oUFIufrhRKJcSALBrkVCAL3NnuU4C3n7g9DVaAeOa6BPQpkyrNdVn4V8H
+wqI9pcN4hbZWhBWreIUsPqR/EdVFq539ToY0o3IuEXOfHqIAj/9J1xcBsJtu2+FH
+OvvTV8O0FsAiHVLdjP6u1xSAPphfPRMCRDUYu4eeN86cNBbYmVE61faSi/Fepy/v
+hGAbeEtq01o0CFyIJYqblDmTLAYxCfM/4eZ3ji+EmTIN87479BpUKeDduAJCI087
+wUfJ9Kwnk17ePVE/trLNIYNX9blA9YQvVp0FzoMVb5xgcVF4udUcpldAh8UMSohe
+YPOIkQY=
+=kmJr
+-----END PGP MESSAGE-----
+
+--enc-b--

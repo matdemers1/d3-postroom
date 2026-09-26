@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<B:mkcalendar xmlns:A="DAV:" xmlns:B="urn:ietf:params:xml:ns:caldav" xmlns:D="http://apple.com/ns/ical/">
+  <A:set>
+    <A:prop>
+      <A:displayname>Work &amp; Life</A:displayname>
+      <D:calendar-color symbolic-color="custom">#FF2968FF</D:calendar-color>
+      <D:calendar-order>3</D:calendar-order>
+      <B:calendar-timezone><![CDATA[BEGIN:VCALENDAR
+BEGIN:VTIMEZONE
+TZID:America/New_York
+END:VTIMEZONE
+END:VCALENDAR
+]]></B:calendar-timezone>
+      <B:supported-calendar-component-set><B:comp name="VEVENT"/></B:supported-calendar-component-set>
+    </A:prop>
+  </A:set>
+</B:mkcalendar>

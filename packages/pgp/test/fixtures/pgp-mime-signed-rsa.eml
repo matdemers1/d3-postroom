@@ -1,0 +1,40 @@
+From: Bob Test <bob@example.test>
+To: Me <me@d3cloud.io>
+Subject: Signed with RSA
+Date: Sat, 26 Sep 2026 12:00:00 +0000
+Message-ID: <1254310670@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/signed; micalg=pgp-sha512; protocol="application/pgp-signature"; boundary="sig-b"
+
+This is an OpenPGP/MIME signed message (RFC 4880 and 3156)
+--sig-b
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+Hi Alice,
+
+This one is signed with RSA-3072.
+
+Bob
+
+--sig-b
+Content-Type: application/pgp-signature; name="signature.asc"
+Content-Description: OpenPGP digital signature
+Content-Disposition: attachment; filename="signature.asc"
+
+-----BEGIN PGP SIGNATURE-----
+
+iQHPBAABCgA5FiEEBKsJP6c41YHvE/Srxfkm8n7Y654FAmq30NQbFIAAAAAABAAO
+bWFudTIsMi41KzEuMTIsMCwzAAoJEMX5JvJ+2OueiboL/2bHTpsj0rpb3yrCjCqd
+dSxige9B3smqVuR8C/3Cf8a/a7fILgJ41QyNVss9SGBUWdSieM1k8xK9VH0r/ny8
+SjdLiLOEn/zDs0E/ygZ7Gro5BkQA4wR9oqCLZ9CFvok8iqaBkz/rJ49IrKGfLlqX
+t48M99hS0GUc8ucqV58gR3qWQj6VYbzJnR7u+xGUP6dY1LKdkdNxE6DPMXxXmp+b
+MQ7eg14bacfYVsF6TrMRlg2l3Zhcm7smWZWAb8M5h7k7disM2H4/H7DvZs35PHPt
+Gf8191QeSx4sJYVTsVUwRqZH5WmYZFscKLt19X7Gw3AKUkNUXRoh4ZQoF6+ytwAe
+AQ+/sCIm6Y9gmjbAP3rPd+RSz0CWjHv4LwF+68tH68c17PuR53oBdlybQy/RZQoE
+OW5xT+/iTGoj9N2Py5WUFSUkPHQaITBiuht0o9utbCXeDTLr6jq8jUl8g2tr7d+2
+LMRM2Nh1HJoQoAcuwZF0uQ4DQ2uA3iKUJKtkNNfX9RcIRg==
+=5IGD
+-----END PGP SIGNATURE-----
+
+--sig-b--

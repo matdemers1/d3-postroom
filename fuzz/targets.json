@@ -67,23 +67,57 @@
     },
     {
       "name": "ical",
-      "status": "pending: packages/ical not built",
-      "package": "packages/ical"
+      "status": "active",
+      "package": "packages/ical",
+      "target": "fuzz/ical/target.mjs",
+      "corpus": "fuzz/ical/corpus",
+      "fixtures": "fuzz/ical/fixtures",
+      "note": "iCalendar parse + serializer round-trip, and recurrence expansion into a range (sorted, unique, in range, capped)"
     },
     {
       "name": "vcard",
-      "status": "pending: packages/vcard not built",
-      "package": "packages/vcard"
+      "status": "active",
+      "package": "packages/vcard",
+      "target": "fuzz/vcard/target.mjs",
+      "corpus": "fuzz/vcard/corpus",
+      "fixtures": "fuzz/vcard/fixtures",
+      "note": "vCard 4.0/3.0/2.1 parse + serializer round-trip, and the contact helpers (displayName, emailsOf, photoOf, …)"
     },
     {
       "name": "sieve",
-      "status": "pending: packages/sieve not built",
-      "package": "packages/sieve"
+      "status": "active",
+      "package": "packages/sieve",
+      "target": "fuzz/sieve/target.mjs",
+      "corpus": "fuzz/sieve/corpus",
+      "fixtures": "fuzz/sieve/fixtures",
+      "note": "Sieve lexer/parser/printer round trip, validator and interpreter (RFC 5228 + extensions)"
+    },
+    {
+      "name": "dav-proto",
+      "status": "active",
+      "package": "packages/dav-proto",
+      "target": "fuzz/dav-proto/target.mjs",
+      "corpus": "fuzz/dav-proto/corpus",
+      "fixtures": "fuzz/dav-proto/fixtures",
+      "note": "Strict XML parser (DTDs refused: no XXE, no entity expansion) + serializer round-trip, and the PROPFIND/PROPPATCH/MKCALENDAR/REPORT body parsers, path, Depth and entity-tag helpers"
     },
     {
       "name": "dmarc-report",
-      "status": "pending: packages/reports not built",
-      "package": "packages/reports"
+      "status": "active",
+      "package": "packages/reports",
+      "target": "fuzz/dmarc-report/target.mjs",
+      "corpus": "fuzz/dmarc-report/corpus",
+      "fixtures": "fuzz/dmarc-report/fixtures",
+      "note": "DMARC aggregate (RFC 7489 App. C) and TLS-RPT (RFC 8460) parsers with serializer round-trip, the strict XXE-proof XML reader, and bounded gzip/zip unwrapping"
+    },
+    {
+      "name": "pgp",
+      "status": "active",
+      "package": "packages/pgp",
+      "target": "fuzz/pgp/target.mjs",
+      "corpus": "fuzz/pgp/corpus",
+      "fixtures": "fuzz/pgp/fixtures",
+      "note": "OpenPGP packet framing, keys, v4 signatures, PKESK/SEIPD decrypt path, ASCII armor and cleartext framework; the DER/BER reader and CMS SignedData/EnvelopedData/certificate readers (PST-T-12.1)"
     }
   ]
 }

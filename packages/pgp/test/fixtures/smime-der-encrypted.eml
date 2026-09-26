@@ -1,0 +1,21 @@
+To: Carol Test <carol@example.test>
+From: Dave <dave@example.test>
+Subject: S/MIME encrypted, der
+MIME-Version: 1.0
+Content-Disposition: attachment; filename="smime.p7m"
+Content-Type: application/pkcs7-mime; smime-type=enveloped-data; name="smime.p7m"
+Content-Transfer-Encoding: base64
+
+MIICOQYJKoZIhvcNAQcDoIICKjCCAiYCAQAxggGAMIIBfAIBADBkMEwxFjAUBgNV
+BAoMDVBvc3Ryb29tIFRlc3QxMjAwBgNVBAMMKVBvc3Ryb29tIFRlc3QgSW50ZXJt
+ZWRpYXRlIENBIChURVNUIE9OTFkpAhQXZziDSGtBaPci62PhkzalV3Vo0DANBgkq
+hkiG9w0BAQEFAASCAQBA+hZCaBjewCWWC+FFYqbiQ4s1kpVEECXnXc5Co6pIUK4V
+iFtNklUr/4+B8f/lgmHF+HMPQOhezSxnOYMKLt2P6G5IX6UHJ3U5Zy92P0l8JpGA
+pul4fx6BWWOBaxfckIw+DTPpKDc099SrZExtwM7lOORkRzGBtOS22Av6+SGfHSlm
+RUh3ESVaNhYptJh+xVW/hi1oQ3+N7y5Ce67fTdznGrm4MpQrPj003q9uzWZbVdXa
+J2I/mEb5kucuzouSDJft6tmCzPcYSW8EW0xJopsVtRkMCM94AsodgbHe+KTVwbwN
+G4YGEzT/+aZseXSFt0NKsvLfPbzDHhhMlSVqatqqMIGcBgkqhkiG9w0BBwEwHQYJ
+YIZIAWUDBAEqBBByha/DrWHM0qYA2hzP5y7zgHBelOwoug8telj0W9Mbp9+xPUxh
+XwODiysxLQxBaTdzOW7LcLCvJJLfdzunSvMUrhAbQ4bQq9ESGN3yIdb2Y03uqaYt
+ML7QZEqI0KiqUnhfb5SxeWSP4squNjA3bLlZ3g3Q4MrW1TirGiKLBbxwRF4n
+

@@ -6,24 +6,30 @@
 // refetches rather than guessing.
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type SyntheticEvent } from 'react';
 import { Link as RouterLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Alert, Button, EmptyState, Input, Link, Skeleton, Stack } from '@d3cloud/ui';
-import { api, ApiError, type Mailbox, type MessageDetail, type MessageSummary } from '../api';
+import { Alert, Button, EmptyState, Input, Link, SegmentedControl, Skeleton, Stack } from '@d3cloud/ui';
+import { api, ApiError, type Mailbox, type MailboxSplit, type MessageDetail, type MessageSummary } from '../api';
+import { CommandPalette } from './CommandPalette';
 import { Composer } from './Composer';
 import { draftFor } from './compose';
+import { Feed } from './Feed';
 import { findSpecial, mailboxLabel } from './format';
-import { ComposeIcon, mailboxIcon } from './icons';
+import { ComposeIcon, mailboxIcon, SearchIcon } from './icons';
 import { describeTarget, resolveKey, type MailAction } from './keys';
 import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEEN } from './list';
 import { useMail } from './MailContext';
 import { MessageList, type MessageListHandle } from './MessageList';
 import { ReadingPane, type OpenMessage } from './ReadingPane';
+import { ScheduledSends, SnoozeControl, UndoSendToast } from './Scheduled';
 import { mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
+import { emptyMailboxCopy, inSegment, isInboxSegment, segmentItems, segmentKeyword, type InboxSegment } from './split';
 import { SPLIT_QUERY, useMediaQuery } from './useMedia';
+import { SessionEnded } from '../screens/states';
 
 const PAGE = 50;
 
-type Notice = { tone: 'info' | 'danger'; text: string; key: number };
+/** `undo`, once the server has answered a move, puts the message back where it was (PST-T-11.4). */
+type Notice = { tone: 'info' | 'danger'; text: string; key: number; undo?: () => void };
 
 function summaryOf(m: MessageDetail | MessageSummary): MessageSummary {
   return {
@@ -59,15 +65,22 @@ function MailPanes({ route }: { route: MailRoute }) {
   const mailbox: Mailbox | null = mailboxes?.find((m) => m.id === mailboxId) ?? null;
   const archive = mailboxes === null ? undefined : findSpecial(mailboxes, 'archive');
   const trash = mailboxes === null ? undefined : findSpecial(mailboxes, 'trash');
+  const junk = mailboxes === null ? undefined : findSpecial(mailboxes, 'junk');
 
   const [searchQuery, setSearchQuery] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [searchUnavailable, setSearchUnavailable] = useState(false);
+  const [listSignedOut, setListSignedOut] = useState(false);
   const [list, dispatch] = useReducer(listReducer, initialList);
   const [open, setOpen] = useState<OpenMessage | null>(null);
   const [openReload, setOpenReload] = useState(0);
   const [overlay, setOverlay] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  // PST-T-11.4: the Inbox's Priority / People split. Held here, not in the URL, so opening a message
+  // (a new URL under the same layout route) keeps the segment; Everything is the default.
+  const [segment, setSegment] = useState<InboxSegment>('all');
+  const [inboxSplit, setInboxSplit] = useState<MailboxSplit | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<MessageListHandle>(null);
@@ -84,16 +97,21 @@ function MailPanes({ route }: { route: MailRoute }) {
    *  (a row removed optimistically is no longer in the list to read it from). */
   const modseqs = useRef(new Map<string, string>());
 
+  const isInbox = mailbox !== null && inbox !== undefined && mailbox.id === inbox.id && searchQuery === null;
+  const activeSegment: InboxSegment = isInbox ? segment : 'all';
+  const keyword = segmentKeyword(activeSegment);
+
   // Latest state for handlers that outlive a render (keys, SSE, queued writes).
-  const latest = useRef({ list, open, route, mailboxId, searchQuery });
-  latest.current = { list, open, route, mailboxId, searchQuery };
+  const latest = useRef({ list, open, route, mailboxId, searchQuery, activeSegment });
+  latest.current = { list, open, route, mailboxId, searchQuery, activeSegment };
 
   const listKey = searchQuery !== null ? `search:${searchQuery}` : mailboxId;
   const listPath = mailPath(route.mailboxId);
 
-  const say = useCallback((tone: Notice['tone'], text: string) => {
+  const say = useCallback((tone: Notice['tone'], text: string): number => {
     noticeKey.current += 1;
     setNotice({ tone, text, key: noticeKey.current });
+    return noticeKey.current;
   }, []);
 
   // --- Fill the viewport below whatever sits above us (the shell's top bar below lg) ---------------
@@ -115,10 +133,28 @@ function MailPanes({ route }: { route: MailRoute }) {
     (cursor: string | null, limit: number) => {
       if (searchQuery !== null) return api.search(searchQuery, { cursor });
       if (mailboxId === null) return Promise.resolve({ messages: [], nextCursor: null });
-      return api.messages(mailboxId, { cursor, limit });
+      return api.messages(mailboxId, { cursor, limit, keyword });
     },
-    [searchQuery, mailboxId],
+    [searchQuery, mailboxId, keyword],
   );
+
+  // The split's counts, whenever the Inbox's own counters move (a new message, a read, a move).
+  const inboxId = inbox?.id ?? null;
+  const inboxModseq = inbox?.highestModseq ?? null;
+  const inboxUnseen = inbox?.unseen ?? 0;
+  useEffect(() => {
+    if (inboxId === null) return;
+    let cancelled = false;
+    api.mailboxSplit(inboxId).then(
+      (s) => {
+        if (!cancelled) setInboxSplit(s);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [inboxId, inboxModseq, inboxUnseen]);
 
   useEffect(() => {
     dispatch({ type: 'reset', mailboxId: listKey });
@@ -132,6 +168,7 @@ function MailPanes({ route }: { route: MailRoute }) {
       .catch((error: unknown) => {
         if (cancelled) return;
         if (error instanceof ApiError && error.status === 501) setSearchUnavailable(true);
+        setListSignedOut(error instanceof ApiError && error.status === 401);
         dispatch({ type: 'failed', mailboxId: listKey });
       });
     return () => {
@@ -193,6 +230,8 @@ function MailPanes({ route }: { route: MailRoute }) {
         api
           .message(event.data.messageId)
           .then((detail) => {
+            // A Priority or People list only takes a new arrival that carries its keyword.
+            if (!inSegment(detail.flags, latest.current.activeSegment)) return;
             dispatch({ type: 'upsert', message: summaryOf(detail) });
           })
           .catch(() => undefined);
@@ -223,8 +262,8 @@ function MailPanes({ route }: { route: MailRoute }) {
         if (!cancelled) setOpen((o) => (o === null || o.id !== messageId ? o : { ...o, status: 'ready', detail }));
       })
       .catch((error: unknown) => {
-        const missing = error instanceof ApiError && error.status === 404;
-        if (!cancelled) setOpen((o) => (o === null || o.id !== messageId ? o : { ...o, status: missing ? 'missing' : 'error' }));
+        const status = error instanceof ApiError && error.status === 404 ? 'missing' : error instanceof ApiError && error.status === 401 ? 'signed-out' : 'error';
+        if (!cancelled) setOpen((o) => (o === null || o.id !== messageId ? o : { ...o, status }));
       });
     api
       .messageBody(messageId)
@@ -292,18 +331,36 @@ function MailPanes({ route }: { route: MailRoute }) {
       dispatch({ type: 'remove', id: m.id });
       const { route: r } = latest.current;
       if (r.messageId === m.id) void navigate(mailPath(r.mailboxId), { replace: false });
-      say('info', `Moved to ${mailboxLabel(to)}.`);
+      const noticeId = say('info', `Moved to ${mailboxLabel(to)}.`);
+      const from = mailboxes?.find((x) => x.id === m.mailboxId) ?? null;
       enqueue(async () => {
         const known = modseqs.current.get(m.id);
         const current = findLatest(m.id) ?? (known === undefined || BigInt(known) <= BigInt(m.modseq) ? m : { ...m, modseq: known });
         try {
-          await api.patchMessage(m.id, current.modseq, { mailboxId: to.id });
+          const moved = await api.patchMessage(m.id, current.modseq, { mailboxId: to.id });
+          if (from === null) return;
+          // PST-T-11.4: the move can be taken back. The server gave the moved copy a new id, so the
+          // undo moves THAT copy home — and only while this notice is still the one on screen.
+          const undo = () => {
+            setNotice(null);
+            enqueue(async () => {
+              try {
+                await api.patchMessage(moved.id, moved.modseq, { mailboxId: from.id });
+                say('info', `Moved back to ${mailboxLabel(from)}.`);
+                reloadList();
+                void refreshMailboxes();
+              } catch (error) {
+                recover(error);
+              }
+            });
+          };
+          setNotice((n) => (n !== null && n.key === noticeId ? { ...n, undo } : n));
         } catch (error) {
           recover(error);
         }
       });
     },
-    [enqueue, navigate, recover, say],
+    [enqueue, navigate, recover, say, mailboxes, reloadList, refreshMailboxes],
   );
 
   // Opening a message marks it read, once.
@@ -416,6 +473,9 @@ function MailPanes({ route }: { route: MailRoute }) {
       case 'help':
         setOverlay((v) => !v);
         return;
+      case 'commandPalette':
+        setPaletteOpen((v) => !v);
+        return;
     }
   };
 
@@ -423,6 +483,8 @@ function MailPanes({ route }: { route: MailRoute }) {
   performRef.current = perform;
   const overlayRef = useRef(overlay);
   overlayRef.current = overlay;
+  const paletteOpenRef = useRef(paletteOpen);
+  paletteOpenRef.current = paletteOpen;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -432,9 +494,10 @@ function MailPanes({ route }: { route: MailRoute }) {
       const { action, pending } = resolveKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, ...describeTarget(e.target) }, pendingKey.current);
       pendingKey.current = pending;
       if (action === null) return;
-      // Behind a dialog (the overlay, the navigation drawer, a menu) only ? does anything.
-      if ((inDialog !== null || overlayRef.current) && action !== 'help') return;
-      if (inDialog !== null && !overlayRef.current) return;
+      // Behind a dialog (the overlay, the navigation drawer, a menu) only ? and the ⌘K chord do
+      // anything — the chord still toggles the palette shut when it is what is open.
+      if ((inDialog !== null || overlayRef.current) && action !== 'help' && action !== 'commandPalette') return;
+      if (inDialog !== null && !overlayRef.current && !paletteOpenRef.current) return;
       e.preventDefault();
       performRef.current(action);
     };
@@ -514,11 +577,15 @@ function MailPanes({ route }: { route: MailRoute }) {
           </Button>
         </div>
         <form role="search" className="pr-search" onSubmit={submitSearch}>
+          {/* PST-T-11.4: a glyph and the / key say what this field is; the accessible name stays
+              "Search mail" (a placeholder is never a label in @d3cloud/ui). */}
           <Input
             ref={searchInput}
             type="search"
             size="sm"
             aria-label="Search mail"
+            leading={<SearchIcon />}
+            trailing={split ? <kbd className="pr-search__key">/</kbd> : undefined}
             value={searchText}
             onChange={(e) => {
               setSearchText(e.target.value);
@@ -536,9 +603,31 @@ function MailPanes({ route }: { route: MailRoute }) {
             </Button>
           ) : null}
         </form>
-        <div className="pr-notice" role="status" aria-live="polite">
-          {notice?.tone === 'info' ? <span key={notice.key}>{notice.text}</span> : null}
+        {isInbox ? (
+          <SegmentedControl
+            aria-label="Show in Inbox"
+            size="sm"
+            className="pr-split"
+            value={segment}
+            onValueChange={(v) => {
+              if (isInboxSegment(v)) setSegment(v);
+            }}
+            items={segmentItems(inboxSplit, inboxUnseen)}
+          />
+        ) : null}
+        <div className="pr-notice__row">
+          <div className="pr-notice" role="status" aria-live="polite">
+            {notice?.tone === 'info' ? <span key={notice.key}>{notice.text}</span> : null}
+          </div>
+          {notice?.tone === 'info' && notice.undo !== undefined ? (
+            <Button size="sm" variant="ghost" onClick={notice.undo}>
+              Undo
+            </Button>
+          ) : null}
         </div>
+        {/* PST-T-9.1: the undo-send toast, and scheduled sends above Drafts. */}
+        {split || view === 'list' ? <UndoSendToast /> : null}
+        {mailbox?.specialUse === 'drafts' && searchQuery === null ? <ScheduledSends drafts={mailbox} /> : null}
         {notice?.tone === 'danger' ? (
           <Alert key={notice.key} tone="danger" dynamic flush actions={<Button size="sm" variant="ghost" onClick={() => { setNotice(null); }}>Dismiss</Button>}>
             {notice.text}
@@ -549,9 +638,11 @@ function MailPanes({ route }: { route: MailRoute }) {
         list={list}
         listRef={listRef}
         label={listLabel}
+        empty={emptyMailboxCopy(mailbox, activeSegment)}
         openId={route.messageId}
         searching={searchQuery !== null}
         searchUnavailable={searchUnavailable}
+        signedOut={listSignedOut}
         onRetry={reloadList}
         onOpen={(m, index) => {
           dispatch({ type: 'cursor', index });
@@ -601,11 +692,59 @@ function MailPanes({ route }: { route: MailRoute }) {
         onAction={(a) => {
           perform(a);
         }}
-      />
+        onMoveToJunk={
+          junk === undefined
+            ? undefined
+            : (d) => {
+                move(summaryOf(d), junk);
+              }
+        }
+        snooze={
+          /* PST-T-9.1 (PST-REQ-142): snooze the open conversation, or bring it back — inside the
+             toolbar since PST-T-11.4. */
+          <SnoozeControl
+            threadId={open?.detail?.threadId ?? null}
+            inInbox={open?.detail?.mailboxId !== undefined && open.detail.mailboxId === inbox?.id}
+            snoozed={open?.detail?.mailboxId !== undefined && mailboxes?.find((m) => m.id === open.detail?.mailboxId)?.name === 'Snoozed'}
+            onDone={(text) => {
+              say('info', text);
+              void navigate(mailPath(route.mailboxId));
+            }}
+          />
+        }
+      >
+        {!split && view !== 'list' ? <UndoSendToast /> : null}
+      </ReadingPane>
     );
 
+  // PST-T-5.6, PST-REQ-109: the Newsletters folder opens as a continuous-scroll feed of full bodies
+  // instead of the usual list + reader — there is no "one message open" here, so route.messageId
+  // and the reader pane are moot for it.
+  const isNewslettersFeed = mailbox !== null && mailbox.name === 'Newsletters' && route.compose === null && searchQuery === null;
+  const feedPane = mailbox === null ? null : (
+    <section className="pr-mail__feed" aria-labelledby="pr-list-title">
+      {/* Up one level is the mailboxes, not this same feed (PST-T-11.4). */}
+      {!split ? (
+        <div className="pr-back">
+          <Link asChild variant="standalone">
+            <RouterLink to="/mail">
+              <span aria-hidden="true">‹ </span>
+              Mailboxes
+            </RouterLink>
+          </Link>
+        </div>
+      ) : null}
+      <h2 id="pr-list-title" className="pr-listhead__title" tabIndex={-1} ref={viewHeading}>
+        {title}
+      </h2>
+      <Feed mailbox={mailbox} />
+    </section>
+  );
+
   let content;
-  if (split) {
+  if (isNewslettersFeed) {
+    content = feedPane;
+  } else if (split) {
     content = (
       <>
         {listPane}
@@ -625,6 +764,28 @@ function MailPanes({ route }: { route: MailRoute }) {
       <h1 className="pr-vh">Mail</h1>
       {content}
       <ShortcutsOverlay open={overlay} onOpenChange={setOverlay} />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        mailboxes={mailboxes}
+        target={target()}
+        onAction={perform}
+        onMove={move}
+        onNavigate={(path) => {
+          void navigate(path);
+        }}
+        onSnooze={(m, until) => {
+          if (m.threadId === null) return;
+          api
+            .snoozeThread(m.threadId, until.toISOString())
+            .then(() => {
+              say('info', 'Snoozed. It comes back when the time comes.');
+              reloadList();
+              void refreshMailboxes();
+            })
+            .catch(recover);
+        }}
+      />
     </div>
   );
 }
@@ -633,9 +794,11 @@ function ListBody({
   list,
   listRef,
   label,
+  empty,
   openId,
   searching,
   searchUnavailable,
+  signedOut,
   onRetry,
   onOpen,
   onNearEnd,
@@ -643,9 +806,11 @@ function ListBody({
   list: ReturnType<typeof listReducer>;
   listRef: React.Ref<MessageListHandle>;
   label: string;
+  empty: { heading: string; body: string };
   openId: string | null;
   searching: boolean;
   searchUnavailable: boolean;
+  signedOut: boolean;
   onRetry: () => void;
   onOpen: (m: MessageSummary, index: number) => void;
   onNearEnd: () => void;
@@ -662,6 +827,13 @@ function ListBody({
     );
   }
   if (list.status === 'error') {
+    if (signedOut) {
+      return (
+        <div className="pr-list pr-list--state">
+          <SessionEnded headingLevel={3} size="inline" />
+        </div>
+      );
+    }
     if (searching && searchUnavailable) {
       return (
         <div className="pr-list pr-list--state">
@@ -682,8 +854,8 @@ function ListBody({
   if (list.messages.length === 0) {
     return (
       <div className="pr-list pr-list--state">
-        <EmptyState kind={searching ? 'no-results' : 'empty'} heading={searching ? 'Nothing matched that search' : 'No messages here'} size="inline" headingLevel={3}>
-          {searching ? 'Try fewer or different words.' : 'New mail appears here as it arrives.'}
+        <EmptyState kind={searching ? 'no-results' : 'empty'} heading={searching ? 'Nothing matched that search' : empty.heading} size="inline" headingLevel={3}>
+          {searching ? 'Try fewer or different words.' : empty.body}
         </EmptyState>
       </div>
     );
@@ -701,7 +873,13 @@ function MailboxIndex({ mailboxes, headingRef }: { mailboxes: Mailbox[] | null; 
         </h2>
       </div>
       {mailboxes === null ? (
-        <Skeleton variant="text" lines={5} />
+        <div role="status" aria-label="Loading mailboxes" aria-busy="true">
+          <Skeleton variant="text" lines={5} />
+        </div>
+      ) : mailboxes.length === 0 ? (
+        <EmptyState kind="empty" heading="No mailboxes yet" size="inline" headingLevel={3}>
+          Your mailboxes appear here once the server has made them.
+        </EmptyState>
       ) : (
         <nav aria-label="Mailboxes">
           <ul className="pr-mailboxes__list">

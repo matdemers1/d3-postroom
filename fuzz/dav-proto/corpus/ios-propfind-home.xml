@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<A:propfind xmlns:A="DAV:" xmlns:B="urn:ietf:params:xml:ns:caldav" xmlns:C="http://calendarserver.org/ns/" xmlns:D="http://apple.com/ns/ical/" xmlns:E="http://me.com/_namespace/">
+  <A:prop>
+    <A:add-member/>
+    <C:allowed-sharing-modes/>
+    <D:autoprovisioned/>
+    <E:bulk-requests/>
+    <D:calendar-color/>
+    <B:calendar-description/>
+    <B:calendar-free-busy-set/>
+    <D:calendar-order/>
+    <B:calendar-timezone/>
+    <A:current-user-privilege-set/>
+    <B:default-alarm-vevent-date/>
+    <B:default-alarm-vevent-datetime/>
+    <A:displayname/>
+    <C:getctag/>
+    <A:owner/>
+    <A:resourcetype/>
+    <B:schedule-calendar-transp/>
+    <B:supported-calendar-component-set/>
+    <A:supported-report-set/>
+    <A:sync-token/>
+  </A:prop>
+</A:propfind>

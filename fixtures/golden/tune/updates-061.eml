@@ -1,0 +1,12 @@
+From: AccountGuard <security@accountguard.example.org>
+To: dana@d3cloud.io
+Subject: We noticed a new device sign-in
+Auto-Submitted: auto-generated
+X-SES-Outgoing: 2026.09.08-10.0.0.1
+Date: Tue, 08 Sep 2026 13:04:43 +0000
+Message-ID: <golden-0114.20260926@accountguard.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=accountguard.example.org; dkim=pass header.d=accountguard.example.org; dmarc=pass header.from=accountguard.example.org
+
+We noticed a new device sign-in
+
+More detail: https://accountguard.example.org/status/1007

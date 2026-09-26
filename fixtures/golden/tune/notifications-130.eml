@@ -1,0 +1,10 @@
+From: Chirp <messages@chirp.example.org>
+To: dana@d3cloud.io
+Subject: You have a new direct message
+Date: Wed, 16 Sep 2026 05:14:22 +0000
+Message-ID: <golden-0232.20260926@chirp.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=chirp.example.org; dkim=pass header.d=chirp.example.org; dmarc=pass header.from=chirp.example.org
+
+You have a new direct message
+
+Details: https://chirp.example.org/m/2004

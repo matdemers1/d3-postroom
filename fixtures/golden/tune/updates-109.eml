@@ -1,0 +1,10 @@
+From: Keystone ID <verify2@keystoneid.example.com>
+To: dana@d3cloud.io
+Subject: Confirm this sign-in code
+Date: Mon, 14 Sep 2026 22:12:28 +0000
+Message-ID: <golden-0211.20260926@keystoneid.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=keystoneid.example.com; dkim=pass header.d=keystoneid.example.com; dmarc=pass header.from=keystoneid.example.com
+
+Confirm this sign-in code
+
+Details: https://keystoneid.example.com/m/2006

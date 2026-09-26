@@ -1,0 +1,10 @@
+From: Pollster <mentions@pollster.example.org>
+To: sam@d3cloud.io
+Subject: Someone mentioned you in a comment
+Date: Fri, 18 Sep 2026 19:15:01 +0000
+Message-ID: <golden-0271.20260926@pollster.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=pollster.example.org; dkim=pass header.d=pollster.example.org; dmarc=pass header.from=pollster.example.org
+
+Someone mentioned you in a comment
+
+Details: https://pollster.example.org/m/2010

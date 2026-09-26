@@ -1,0 +1,12 @@
+From: Harborlight Goods <payments@harborlight.example.org>
+To: dana@d3cloud.io
+Subject: Purchase confirmation
+X-SG-EID: sg-eid-1009
+Feedback-ID: receipt:harborlight.example.org:esp
+Date: Thu, 10 Sep 2026 10:00:59 +0000
+Message-ID: <golden-0142.20260926@harborlight.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=harborlight.example.org; dkim=pass header.d=harborlight.example.org; dmarc=pass header.from=harborlight.example.org
+
+Purchase confirmation
+
+Order total: $28.99

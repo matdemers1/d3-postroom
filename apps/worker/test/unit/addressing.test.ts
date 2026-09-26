@@ -1,7 +1,11 @@
 // PST-T-2.11 in isolation: alias fan-out, per-account dedupe, plus-address tags and masked-alias
 // site tags become IMAP keywords, and the keyword is always a valid atom.
+//
+// PST-T-5.7: a plus tag equal to a bucket name overrides the classifier's decision for that
+// account's copy (PST-REQ-111).
 import { describe, expect, it } from 'vitest';
-import { keywordSuffix, parseRecipients, planCopies, siteKeyword, tagKeyword } from '../../src/stages/file.js';
+import { applyTagRouting, keywordSuffix, parseRecipients, planCopies, siteKeyword, tagKeyword } from '../../src/stages/file.js';
+import type { AccountDecision } from '../../src/stages/types.js';
 
 const A = '00000000-0000-4000-8000-00000000000a';
 const B = '00000000-0000-4000-8000-00000000000b';
@@ -41,6 +45,35 @@ describe('keywords', () => {
     expect(tagKeyword('GitHub')).toBe('$Postroom.tag.github');
     expect(siteKeyword('a b')).toBe('$Postroom.site.a_b');
     expect(keywordSuffix('x'.repeat(200))).toHaveLength(64);
+  });
+});
+
+describe('applyTagRouting', () => {
+  const peopleDecision: AccountDecision = { bucket: 'people', mailbox: 'INBOX', keyword: '$People', reasons: ['people: reason'], scores: {} };
+  const junkDecision: AccountDecision = { bucket: 'junk', mailbox: 'Junk', keyword: null, reasons: ['junk: blocked'], scores: {} };
+
+  it('routes a plus tag equal to a bucket name to that bucket, with a reason', () => {
+    const routed = applyTagRouting(peopleDecision, ['receipts']);
+    expect(routed.bucket).toBe('receipts');
+    expect(routed.mailbox).toBe('Receipts');
+    expect(routed.reasons).toContain('plus-address tag receipts');
+  });
+
+  it('matches case-insensitively', () => {
+    expect(applyTagRouting(peopleDecision, ['Receipts']).bucket).toBe('receipts');
+    expect(applyTagRouting(peopleDecision, ['NEWSLETTERS']).bucket).toBe('newsletters');
+  });
+
+  it('never overrides junk', () => {
+    expect(applyTagRouting(junkDecision, ['receipts'])).toBe(junkDecision);
+  });
+
+  it('leaves an unrelated tag alone (keyword-only)', () => {
+    expect(applyTagRouting(peopleDecision, ['github'])).toBe(peopleDecision);
+  });
+
+  it('has no bucket-matching tags to route on when there are none', () => {
+    expect(applyTagRouting(peopleDecision, [])).toBe(peopleDecision);
   });
 });
 

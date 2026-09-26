@@ -1,0 +1,1 @@
+redirect "bart@example.com";

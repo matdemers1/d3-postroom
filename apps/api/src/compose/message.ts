@@ -25,6 +25,12 @@ export interface OutgoingMessage {
   readonly includeBcc?: boolean;
   readonly subject: string;
   readonly text: string;
+  /**
+   * Sanitized HTML rendered from `text` (PST-T-9.2, PST-REQ-145). When present the body is sent as
+   * multipart/alternative — `text` as text/plain, this as text/html — instead of a single text/plain
+   * part; `text` is always what the account actually typed (the Markdown source), never dropped.
+   */
+  readonly html?: string | null;
   /** Bracketed msg-ids. */
   readonly messageId: string;
   readonly inReplyTo: string | null;
@@ -129,6 +135,37 @@ export function textPart(text: string): { encoding: '7bit' | 'quoted-printable';
   return { encoding: 'quoted-printable', body: qp.endsWith('\r\n') ? qp : `${qp}\r\n` };
 }
 
+/**
+ * The message's main content: either a single text/plain part, or (when `html` is set) a
+ * multipart/alternative of exactly two parts — text/plain with the Markdown source, text/html with
+ * the sanitized rendering — in that order, plain first (RFC 2046 §5.1.4: alternatives are ordered
+ * from least to most preferred rendering). Returns the header lines the caller places after the
+ * message headers, and the body bytes that follow the blank line.
+ */
+function bodyContent(m: OutgoingMessage): { headerLines: string[]; body: string } {
+  const plain = textPart(m.text);
+  if (m.html === undefined || m.html === null) {
+    return { headerLines: ['Content-Type: text/plain; charset=utf-8', `Content-Transfer-Encoding: ${plain.encoding}`], body: plain.body };
+  }
+  const html = textPart(m.html);
+  const boundary = generateBoundary();
+  const body = [
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=utf-8',
+    `Content-Transfer-Encoding: ${plain.encoding}`,
+    '',
+    plain.body,
+    `--${boundary}`,
+    'Content-Type: text/html; charset=utf-8',
+    `Content-Transfer-Encoding: ${html.encoding}`,
+    '',
+    html.body,
+    `--${boundary}--`,
+    '',
+  ].join('\r\n');
+  return { headerLines: [`Content-Type: multipart/alternative;\r\n boundary="${boundary}"`], body };
+}
+
 function headerBlock(m: OutgoingMessage): string[] {
   const lines = [addressHeader('From', [m.from])];
   if (m.to.length > 0) lines.push(addressHeader('To', m.to));
@@ -143,11 +180,11 @@ function headerBlock(m: OutgoingMessage): string[] {
   return lines;
 }
 
-/** A text-only message (a reply, a new message, a draft), as bytes. */
+/** A text-only (or, with `html` set, multipart/alternative) message: a reply, a new message, a draft. */
 export function buildTextMessage(m: OutgoingMessage): Buffer {
-  const part = textPart(m.text);
-  const lines = [...headerBlock(m), 'Content-Type: text/plain; charset=utf-8', `Content-Transfer-Encoding: ${part.encoding}`];
-  return Buffer.from(`${lines.join('\r\n')}\r\n\r\n${part.body}`, 'utf8');
+  const content = bodyContent(m);
+  const lines = [...headerBlock(m), ...content.headerLines];
+  return Buffer.from(`${lines.join('\r\n')}\r\n\r\n${content.body}`, 'utf8');
 }
 
 /**
@@ -156,16 +193,9 @@ export function buildTextMessage(m: OutgoingMessage): Buffer {
  */
 export function buildOutgoingStream(m: OutgoingMessage, original: Readable | null, boundary: string = generateBoundary()): Readable {
   if (original === null) return Readable.from([buildTextMessage(m)]);
-  const part = textPart(m.text);
+  const content = bodyContent(m);
   const head = [...headerBlock(m), `Content-Type: multipart/mixed;\r\n boundary="${boundary}"`].join('\r\n');
-  const first = [
-    `${head}\r\n`,
-    `--${boundary}`,
-    'Content-Type: text/plain; charset=utf-8',
-    `Content-Transfer-Encoding: ${part.encoding}`,
-    '',
-    part.body,
-  ].join('\r\n');
+  const first = [`${head}\r\n`, `--${boundary}`, ...content.headerLines, '', content.body].join('\r\n');
   const attachHead = [`--${boundary}`, 'Content-Type: message/rfc822', 'Content-Disposition: attachment; filename="forwarded-message.eml"', 'Content-Transfer-Encoding: 8bit', '', ''].join('\r\n');
   return Readable.from(
     (async function* forward(): AsyncGenerator<Buffer> {

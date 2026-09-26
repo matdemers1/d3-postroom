@@ -24,9 +24,15 @@
     "@postroom/crypto": "workspace:*",
     "@postroom/attachments": "workspace:*",
     "@postroom/dsn": "workspace:*",
+    "@postroom/imap-proto": "workspace:*",
     "@postroom/audit": "workspace:*",
     "@postroom/search": "workspace:*",
-    "@postroom/threading": "workspace:*"
+    "@postroom/threading": "workspace:*",
+    "@postroom/classifier": "workspace:*",
+    "@postroom/sieve": "workspace:*",
+    "@postroom/submission": "workspace:*",
+    "@postroom/dav-store": "workspace:*",
+    "@postroom/reports": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

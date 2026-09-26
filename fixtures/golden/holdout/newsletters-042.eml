@@ -1,0 +1,12 @@
+From: The Sunday Post <editor@sundaypost.example.org>
+List-Id: sundaypost.sundaypost.example.org
+List-Unsubscribe: <https://sundaypost.example.org/unsubscribe>
+To: sam@d3cloud.io
+Subject: Reading list #2
+Date: Mon, 07 Sep 2026 11:16:32 +0000
+Message-ID: <golden-0095.20260926@sundaypost.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=sundaypost.example.org; dkim=pass header.d=sundaypost.example.org; dmarc=pass header.from=sundaypost.example.org
+
+Reading list #2
+
+Read online: https://sundaypost.example.org/issues/2

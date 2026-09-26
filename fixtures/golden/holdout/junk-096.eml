@@ -1,0 +1,11 @@
+From: Bonus Reward Hub <deals@bonusrewardhub.example.net>
+To: sam@d3cloud.io
+Subject: Confirm your details to continue
+Date: Sun, 13 Sep 2026 22:16:43 +0000
+Message-ID: <golden-0198.20260926@bonusrewardhub.example.net>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=bonusrewardhub.example.net; dkim=none header.d=bonusrewardhub.example.net; dmarc=none header.from=bonusrewardhub.example.net
+Precedence: junk
+
+Confirm your details to continue
+
+Click here: https://bonusrewardhub.example.net/claim

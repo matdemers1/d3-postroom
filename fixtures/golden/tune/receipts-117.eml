@@ -1,0 +1,10 @@
+From: Loomworks <hello@shop.loomworks.example.net>
+To: dana@d3cloud.io
+Subject: Order #4417 is confirmed
+Date: Tue, 15 Sep 2026 09:06:28 +0000
+Message-ID: <golden-0219.20260926@shop.loomworks.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=shop.loomworks.example.net; dkim=pass header.d=shop.loomworks.example.net; dmarc=pass header.from=shop.loomworks.example.net
+
+Order #4417 is confirmed
+
+Details: https://shop.loomworks.example.net/m/2002

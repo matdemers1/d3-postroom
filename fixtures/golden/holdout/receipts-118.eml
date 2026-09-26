@@ -1,0 +1,10 @@
+From: Flicker Films <subscriptions@flicker.example.org>
+To: sam@d3cloud.io
+Subject: Your membership has renewed
+Date: Thu, 17 Sep 2026 15:34:01 +0000
+Message-ID: <golden-0254.20260926@flicker.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=flicker.example.org; dkim=pass header.d=flicker.example.org; dmarc=pass header.from=flicker.example.org
+
+Your membership has renewed
+
+Details: https://flicker.example.org/m/2004

@@ -1,0 +1,11 @@
+From: Buildwatch <ci@buildwatch.example.org>
+To: dana@d3cloud.io
+Subject: Your build passed
+List-Unsubscribe: <https://buildwatch.example.org/notifications/unsubscribe>
+Date: Fri, 11 Sep 2026 18:03:56 +0000
+Message-ID: <golden-0163.20260926@buildwatch.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=buildwatch.example.org; dkim=pass header.d=buildwatch.example.org; dmarc=pass header.from=buildwatch.example.org
+
+Your build passed
+
+Open Buildwatch: https://buildwatch.example.org/open

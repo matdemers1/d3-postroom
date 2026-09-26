@@ -1,0 +1,12 @@
+From: Basalt & Co <invoices@basaltco.example.org>
+To: sam@d3cloud.io
+Subject: Thanks for shopping with Basalt & Co
+X-MC-User: mandrill-1004
+Feedback-ID: receipt:basaltco.example.org:esp
+Date: Thu, 10 Sep 2026 19:39:16 +0000
+Message-ID: <golden-0150.20260926@basaltco.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=basaltco.example.org; dkim=pass header.d=basaltco.example.org; dmarc=pass header.from=basaltco.example.org
+
+Thanks for shopping with Basalt & Co
+
+Order total: $23.99

@@ -17,7 +17,7 @@ import type { Express } from 'express';
 import { request } from '../loopback.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
-import { MailboxList, MessageBody, MessageDetail, MessageList, ThreadDetail, MailboxChangedEvent, MessageNewEvent } from '../../src/mail/schemas.js';
+import { MailboxList, MailboxSplit, MessageBody, MessageDetail, MessageList, ThreadDetail, MailboxChangedEvent, MessageNewEvent } from '../../src/mail/schemas.js';
 import { KEK_BASE64, TestClock, baseConfig, cookieHeader, cookiesOf, createAccount, randomLogin, totpCode } from './helpers.js';
 
 const baseUrl = process.env['DATABASE_URL'];
@@ -328,7 +328,7 @@ describe.skipIf(!baseUrl)('mail API (PST-T-3.9)', () => {
     const thread = await db.thread.create({ data: { accountId: alice.id, subject: 'secret', messageCount: 1 } });
     const m = await file(alice.inbox, rfc5322({ subject: 'secret' }), { subject: 'secret', threadId: thread.id });
     const as = (p: Person, url: string) => request(app).get(url).set('cookie', p.cookie);
-    for (const url of [`/api/messages/${m.id}`, `/api/messages/${m.id}/body`, `/api/messages/${m.id}/raw`, `/api/messages/${m.id}/attachments/1`, `/api/mailboxes/${alice.inbox}/messages`, `/api/threads/${thread.id}`]) {
+    for (const url of [`/api/messages/${m.id}`, `/api/messages/${m.id}/body`, `/api/messages/${m.id}/raw`, `/api/messages/${m.id}/attachments/1`, `/api/mailboxes/${alice.inbox}/messages`, `/api/mailboxes/${alice.inbox}/split`, `/api/threads/${thread.id}`]) {
       expect((await as(bob, url)).status, url).toBe(404);
     }
     expect((await request(app).patch(`/api/messages/${m.id}`).set(CSRF).set('cookie', bob.cookie).set('if-match', '*').send({ flags: { add: ['\\Seen'] } })).status).toBe(404);
@@ -336,6 +336,22 @@ describe.skipIf(!baseUrl)('mail API (PST-T-3.9)', () => {
     expect((await request(app).patch(`/api/messages/${m.id}`).set(CSRF).set('cookie', alice.cookie).set('if-match', '*').send({ mailboxId: bob.inbox })).status).toBe(404);
     expect((await db.message.findUniqueOrThrow({ where: { id: m.id } })).flags).toEqual([]);
     expect(MailboxList.parse((await as(bob, '/api/mailboxes')).body).mailboxes.map((mb) => mb.id)).not.toContain(alice.inbox);
+  });
+
+  it('the Inbox split: keyword filter lists only that segment, /split counts it, and other keywords are refused (PST-DA-001)', async () => {
+    const me = await person();
+    await file(me.inbox, rfc5322({ subject: 'boss' }), { subject: 'boss', flags: ['$Priority'] });
+    await file(me.inbox, rfc5322({ subject: 'friend' }), { subject: 'friend', flags: ['$People', '\\Seen'] });
+    await file(me.inbox, rfc5322({ subject: 'promo' }), { subject: 'promo' });
+    const get = (url: string) => request(app).get(url).set('cookie', me.cookie);
+    const subjects = async (keyword: string) => MessageList.parse((await get(`/api/mailboxes/${me.inbox}/messages?keyword=${encodeURIComponent(keyword)}`)).body).messages.map((m) => m.subject);
+    expect(await subjects('$Priority')).toEqual(['boss']);
+    expect(await subjects('$People')).toEqual(['friend']);
+    expect(MessageList.parse((await get(`/api/mailboxes/${me.inbox}/messages`)).body).messages).toHaveLength(3);
+    const split = MailboxSplit.parse((await get(`/api/mailboxes/${me.inbox}/split`)).body);
+    expect(split).toMatchObject({ priority: { unseen: 1 }, people: { unseen: 0 } });
+    // Only the two split keywords: the filter cannot be used to probe arbitrary keywords.
+    expect((await get(`/api/mailboxes/${me.inbox}/messages?keyword=${encodeURIComponent('$Postroom.tag.x')}`)).status).toBe(400);
   });
 
   it('serves a thread oldest first', async () => {

@@ -16,6 +16,7 @@
 // same transaction that clears the markers, so a retried replay job does not clear them again.
 import type { Blob as BlobRow, Db, InboundMessage, Prisma } from '@postroom/db';
 import type { BlobStore } from '@postroom/blobstore';
+import type { Kek } from '@postroom/crypto';
 
 export const STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify'] as const;
 export type StageName = (typeof STAGES)[number];
@@ -98,7 +99,21 @@ export interface ParseResult {
   readonly [key: string]: Json;
 }
 
-export type Bucket = 'inbox' | 'junk';
+/** Where a copy is filed (PST-REQ-101): INBOX's Priority/People halves, a bucket folder, or Junk. */
+export type Bucket = 'priority' | 'people' | 'newsletters' | 'updates' | 'receipts' | 'notifications' | 'junk';
+
+/** One recipient account's sorting decision (PST-T-5.1): each account has its own reply graph and model. */
+export interface AccountDecision {
+  readonly bucket: Bucket;
+  /** The mailbox this account's copy goes to ('INBOX', 'Newsletters', ..., or the Junk mailbox). */
+  readonly mailbox: string;
+  /** $Priority or $People for an INBOX copy; null otherwise. */
+  readonly keyword: string | null;
+  /** Every signal and rule that produced the decision (PST-REQ-103); never empty. */
+  readonly reasons: string[];
+  readonly scores: { readonly [key: string]: number };
+  readonly [key: string]: Json;
+}
 
 export interface AttachmentFindingJson {
   readonly partId: string;
@@ -110,7 +125,11 @@ export interface AttachmentFindingJson {
 }
 
 export interface ClassifyResult {
-  readonly bucket: Bucket;
+  /** 'junk' when a junk rule (quarantine, dangerous attachment) decided for every account; else
+   * 'sorted', and each account's bucket is in `accounts`. */
+  readonly bucket: 'junk' | 'sorted';
+  /** Per recipient account, keyed by account id. */
+  readonly accounts: { readonly [accountId: string]: AccountDecision };
   readonly senderHasHistory: boolean;
   readonly attachmentQuarantine: boolean;
   readonly attachments: AttachmentFindingJson[];
@@ -118,9 +137,61 @@ export interface ClassifyResult {
   readonly [key: string]: Json;
 }
 
+/** One keep or fileinto the script decided on (PST-T-9.5). `keep` files into the account's INBOX bucket. */
+export interface SieveDeliveryJson {
+  readonly kind: 'keep' | 'fileinto';
+  readonly mailbox: string;
+  /** imap4flags flags for this copy, or null when the script does not use imap4flags. */
+  readonly flags: string[] | null;
+  /** RFC 5490 :create. */
+  readonly create: boolean;
+  readonly implicit: boolean;
+  readonly line: number;
+  readonly [key: string]: Json;
+}
+
+export interface SieveRedirectJson {
+  readonly address: string;
+  /** Only to an address the account owns (PST-REQ-053); delivered to the account itself, never relayed. */
+  readonly allowed: boolean;
+  readonly reason: string | null;
+  readonly line: number;
+  readonly [key: string]: Json;
+}
+
+export interface SieveVacationJson {
+  readonly to: string;
+  readonly handle: string;
+  readonly days: number;
+  /** The interpreter (or this stage's own rules) wanted a reply. */
+  readonly respond: boolean;
+  /** A reply is queued for this message (now, or by an earlier run). */
+  readonly sent: boolean;
+  readonly reason: string;
+  readonly outboundMessageId: string | null;
+  readonly [key: string]: Json;
+}
+
+/** What one account's active script decided, with its reasons (PST-T-9.5, PST-REQ-148). */
+export interface SieveAccountOutcome {
+  script: string;
+  deliveries: SieveDeliveryJson[];
+  discard: boolean;
+  redirects: SieveRedirectJson[];
+  /** vnd.postroom.bucket: overrides the classifier's bucket for a keep. */
+  bucket: string | null;
+  vacation: SieveVacationJson | null;
+  error: string | null;
+  reasons: string[];
+  /** "line:column event", bounded. */
+  trace: string[];
+}
+
 export interface SieveResult {
   readonly applied: boolean;
   readonly reasons: string[];
+  /** Per recipient account WITH an active script, keyed by account id (a marker from before PST-T-9.5 has none). */
+  readonly accounts: { readonly [accountId: string]: Json };
   readonly [key: string]: Json;
 }
 
@@ -133,11 +204,13 @@ export interface FiledCopy {
   /** False when this run found the copy already filed (a replay or a resumed crash). */
   readonly created: boolean;
   readonly keywords: string[];
+  /** The bucket this copy was filed into (for a copy found already filed: the one it was filed with). */
+  readonly bucket: Bucket | null;
   readonly [key: string]: Json;
 }
 
 export interface FileResult {
-  readonly bucket: Bucket;
+  readonly bucket: 'junk' | 'sorted';
   readonly copies: FiledCopy[];
   readonly created: number;
   readonly [key: string]: Json;
@@ -163,6 +236,10 @@ export interface StageDeps {
   readonly log: Log;
   readonly now: () => Date;
   readonly faults?: PipelineFaults;
+  /** The KEK, for DKIM-signing a Sieve vacation reply (PST-T-9.5). Without it no reply is sent, and the reason says so. */
+  readonly kek?: () => Kek;
+  /** Vacation replies one account may send per rolling 24 hours (default 200). */
+  readonly vacationDailyCap?: number;
 }
 
 /** What a stage sees: the spool row and the results of the stages before it. */

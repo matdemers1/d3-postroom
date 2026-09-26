@@ -59,6 +59,13 @@ services:
     network_mode: "service:wireguard"
     environment: { <<: *app-env, HEALTH_PORT: "9103" }
     depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
+  # ManageSieve (RFC 5804) on 4190 with STARTTLS (PST-T-9.5): the edge forwards 4190 over the tunnel.
+  managesieve:
+    <<: *app
+    command: ["managesieve"]
+    network_mode: "service:wireguard"
+    environment: { <<: *app-env, HEALTH_PORT: "9107" }
+    depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
   delivery:
     <<: *app
     command: ["delivery"]

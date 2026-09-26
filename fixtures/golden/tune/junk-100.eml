@@ -1,0 +1,11 @@
+From: CryptoBoost <deals@cryptoboost.example.org>
+To: dana@d3cloud.io
+Subject: Claim your free gift now
+Date: Sun, 13 Sep 2026 13:16:54 +0000
+Message-ID: <golden-0192.20260926@cryptoboost.example.org>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=cryptoboost.example.org; dkim=none header.d=cryptoboost.example.org; dmarc=none header.from=cryptoboost.example.org
+Precedence: junk
+
+Claim your free gift now
+
+Click here: https://cryptoboost.example.org/claim

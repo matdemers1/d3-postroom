@@ -1,0 +1,12 @@
+From: Rosa Kim <rosa.kim@corp.example.org>
+To: sam@d3cloud.io
+Subject: Can we push the meeting?
+Date: Thu, 03 Sep 2026 08:07:37 +0000
+Message-ID: <golden-0027.20260926@corp.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=corp.example.org; dkim=pass header.d=corp.example.org; dmarc=pass header.from=corp.example.org
+
+Can we push the meeting?
+
+Rosa Kim
+
+Sent from my phone
