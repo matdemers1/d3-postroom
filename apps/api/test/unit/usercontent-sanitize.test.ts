@@ -150,6 +150,58 @@ describe('sanitizeHtml: images', () => {
   });
 });
 
+describe('sanitizeHtml: trackers and link cleaning (PST-T-6.2, PST-REQ-116)', () => {
+  it('a newsletter fixture with 3 known trackers reports "3 trackers blocked", drops them from the output, keeps real images, and cleans links', () => {
+    const html =
+      '<p>Hello</p>' +
+      '<img src="https://us1.list-manage.com/track/open.php?u=abc&id=123" width=1 height=1 alt="">' + // Mailchimp
+      '<img src="https://ct.sendgrid.net/wf/open?upn=abc" width="1" height="1">' + // SendGrid
+      '<img src="https://track.hubspotemail.net/e2t/o/1" alt="">' + // HubSpot
+      '<img src="https://cdn.example.com/photo1.jpg" width="600" height="400" alt="a real photo">' +
+      '<img src="https://cdn.example.com/photo2.png" alt="another real photo">' +
+      '<a href="https://example.com/sale?utm_source=newsletter&utm_medium=email&fbclid=abc123">Shop now</a>' +
+      '<a href="https://ct.sendgrid.net/ls/click?u=https%3A%2F%2Fexample.com%2Fdeal">Deal</a>' +
+      '<a href="https://example.com/plain">Plain link</a>';
+
+    const r = sanitizeHtml(html);
+
+    expect(r.trackersBlocked).toBe(3);
+    expect(r.linksCleaned).toBe(2);
+    expect(r.html).not.toMatch(/list-manage|sendgrid\.net\/wf\/open|hubspotemail/);
+    expect(r.html).toContain('photo1.jpg');
+    expect(r.html).toContain('photo2.png');
+    expect(r.html).toContain('<a href="https://example.com/sale" target="_blank" rel="noopener noreferrer">Shop now</a>');
+    expect(r.html).toContain('<a href="https://example.com/deal" target="_blank" rel="noopener noreferrer">Deal</a>');
+    expect(r.html).toContain('<a href="https://example.com/plain" target="_blank" rel="noopener noreferrer">Plain link</a>');
+
+    // Real images route through the proxy once the reader asks; trackers stay absent even then.
+    const loaded = sanitizeHtml(html, { remoteImage: (u) => `https://uc.example/img?u=${encodeURIComponent(u)}` });
+    expect(loaded.trackersBlocked).toBe(3);
+    expect(loaded.html).not.toMatch(/list-manage|sendgrid\.net\/wf\/open|hubspotemail/);
+    expect(loaded.html).toContain('uc.example/img?u');
+    expect((loaded.html.match(/uc\.example\/img/g) ?? []).length).toBe(2);
+  });
+
+  it('drops a tracking pixel by size/style even on an unrecognised host, and never re-emits it as a blocked placeholder', () => {
+    const r = sanitizeHtml('<img src="https://cdn.example.net/spacer.gif" width="1" height="1"><img src="https://cdn.example.net/hidden.png" style="display:none">');
+    expect(r.trackersBlocked).toBe(2);
+    expect(r.blockedImages).toBe(0);
+    expect(r.html).toBe('');
+  });
+
+  it('leaves an ordinary link with no tracking parameters unchanged apart from target/rel', () => {
+    const r = sanitizeHtml('<a href="https://example.com/page?id=1">x</a>');
+    expect(r.linksCleaned).toBe(0);
+    expect(r.html).toBe('<a href="https://example.com/page?id&#61;1" target="_blank" rel="noopener noreferrer">x</a>');
+  });
+
+  it('is idempotent with trackers and cleaned links present', () => {
+    const html = '<img src="https://us1.list-manage.com/track/open.php" width=1 height=1><a href="https://example.com/x?utm_source=a">y</a>';
+    const once = sanitizeHtml(html).html;
+    expect(sanitizeHtml(once).html).toBe(once);
+  });
+});
+
 describe('css', () => {
   it('keeps safe declarations and drops the rest', () => {
     expect(sanitizeInlineStyle('color:red;background:url(x);font-family:"Helvetica Neue", Arial;position:absolute;width:calc(100% - 2px)')).toBe(

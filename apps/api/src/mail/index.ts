@@ -264,13 +264,15 @@ export function mailRoutes(deps: ApiDeps): Router {
       const store = blobStore(res);
       if (store === null) return;
       const summary = await collectMessage(await store.get(message.blobSha256));
-      const remoteImages = summary.html === null ? 0 : sanitizeHtml(summary.html.text).remoteImages;
+      const stats = summary.html === null ? { remoteImages: 0, trackersBlocked: 0, linksCleaned: 0 } : sanitizeHtml(summary.html.text);
       const me = currentSession(req);
       const images = query.images === '1';
       const ticket: RenderTicketJson = {
         ...mintRenderUrl(config, { messageId: message.id, accountId: me.accountId, sessionId: me.sessionId, images }, rt.now()),
         images,
-        remoteImages,
+        remoteImages: stats.remoteImages,
+        trackersBlocked: stats.trackersBlocked,
+        linksCleaned: stats.linksCleaned,
       };
       res.setHeader('Cache-Control', 'private, no-store');
       res.json(ticket);

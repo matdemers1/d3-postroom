@@ -89,6 +89,9 @@ importers:
       '@postroom/threading':
         specifier: workspace:*
         version: link:../../packages/threading
+      '@postroom/trackers':
+        specifier: workspace:*
+        version: link:../../packages/trackers
       argon2:
         specifier: ^0.45.1
         version: 0.45.1
@@ -588,6 +591,8 @@ importers:
       '@postroom/db':
         specifier: workspace:*
         version: link:../db
+
+  packages/trackers: {}
 
   packages/vcard: {}
 

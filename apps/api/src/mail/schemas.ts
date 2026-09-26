@@ -153,6 +153,8 @@ export const RenderTicket = z.object({
   expiresAt: Iso,
   images: z.boolean().describe('Whether remote images load (through the proxy) in this render.'),
   remoteImages: z.number().int().describe('Remote images in the message. Above 0 with images false means some are blocked.'),
+  trackersBlocked: z.number().int().describe('Known tracking pixels dropped entirely from this message, never loaded even with images on (PST-REQ-116).'),
+  linksCleaned: z.number().int().describe('Links with a tracking parameter stripped or a known redirect wrapper unwrapped (PST-REQ-116).'),
 });
 
 export const SearchResult = z.object({
