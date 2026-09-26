@@ -16,10 +16,11 @@
 // and an HTML-only message says so.
 import { forwardRef, useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, Skeleton, Stack } from '@d3cloud/ui';
-import { api, ApiError, attachmentUrl, type MessageBody, type MessageDetail, type RenderTicket } from '../api';
+import { api, ApiError, attachmentUrl, type MessageBody, type MessageDetail, type Phish, type RenderTicket } from '../api';
 import { byteSize, fullDate, header } from './format';
 import { PaperclipIcon, StarIcon } from './icons';
 import { isStarred } from './list';
+import { PHISH_TONE_OF, phishWarningTitle, sortPhishWarnings } from './phish';
 
 export interface OpenMessage {
   id: string;
@@ -121,6 +122,7 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
             <time dateTime={detail.date}>{fullDate(detail.date)}</time>
           </DescriptionItem>
         </DescriptionList>
+        <PhishBanner phish={detail.phish} />
         {children}
         <MessageText body={body} status={open.bodyStatus} onRetry={onRetry} />
         {attachments.length > 0 ? (
@@ -145,6 +147,39 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
     </article>
   );
 });
+
+// --- Phishing/lookalike warnings (PST-T-6.5, PST-REQ-120) ---------------------------------------
+//
+// One warning per detection, worst first, each with its full reason (never just the kind label —
+// the label is a heading, the reason is the sentence that says why). A `high`-severity warning is
+// what actually happened to *this* message just now, so it interrupts like any other dynamic error
+// (role="alert"); `medium`/`low` sit quietly in the same named region, discoverable by landmark
+// navigation without a screen reader announcing over whatever the reader was doing. Sorting and
+// labelling live in ./phish.ts, unit tested there.
+
+function PhishBanner({ phish }: { phish: Phish | null }) {
+  if (phish === null || phish.warnings.length === 0) return null;
+  const sorted = sortPhishWarnings(phish.warnings);
+  return (
+    <section aria-label="Phishing and authentication warnings" className="pr-reader__phish" data-testid="phish-warnings">
+      <Stack gap="8">
+        {sorted.map((w, index) => (
+          <Alert
+            key={`${w.kind}-${String(index)}`}
+            tone={PHISH_TONE_OF[w.severity]}
+            title={phishWarningTitle(w.kind)}
+            dynamic={w.severity === 'high'}
+            data-testid="phish-warning"
+            data-phish-kind={w.kind}
+            data-phish-severity={w.severity}
+          >
+            {w.reason}
+          </Alert>
+        ))}
+      </Stack>
+    </section>
+  );
+}
 
 /** The frame's sandbox: popups only, so a link (target=_blank, noopener) opens in a normal tab. No scripts, no same-origin. */
 export const MAIL_FRAME_SANDBOX = 'allow-popups allow-popups-to-escape-sandbox';
