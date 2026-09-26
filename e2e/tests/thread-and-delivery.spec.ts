@@ -171,7 +171,7 @@ test('doneWhen: opening a message with replies shows the conversation in order, 
   const composer = page.getByRole('region', { name: 'Reply', exact: true });
   await expect(composer).toBeVisible();
   await page.keyboard.type(`Friday it is ${t}.`);
-  await composer.getByRole('button', { name: 'Send' }).click();
+  await composer.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(composer).toBeHidden();
   await expect(page.getByRole('heading', { name: subject, level: 2 })).toBeVisible();
 

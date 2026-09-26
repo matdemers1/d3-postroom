@@ -61,12 +61,13 @@ test('the Newsletters feed scrolls three newsletters, marks them all read, and t
   const newsletters = await mailboxByName('Newsletters');
   for (const m of seeded) await moveTo(m, newsletters.id);
 
-  await page.goto('/');
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Newsletters/ }).click();
+  // Straight to the feed: the sidebar is a drawer at phone width, and the feed is the route.
+  await page.goto(`/mail/${newsletters.id}`);
 
   const feed = page.getByTestId('feed');
   await expect(feed).toBeVisible();
-  const items = page.getByTestId('feed-item');
+  // Other specs file newsletters into the same shared account, so count this test's own three.
+  const items = page.getByTestId('feed-item').filter({ hasText: t });
   await expect(items).toHaveCount(3);
 
   // Scrolling reveals each item's body frame, lazily.
@@ -77,15 +78,15 @@ test('the Newsletters feed scrolls three newsletters, marks them all read, and t
   }
 
   // None of these carry RFC 8058 headers (the seed route cannot set them) — the button says so.
-  const firstItem = page.getByTestId('feed-item').first();
+  const firstItem = items.first();
   await firstItem.getByTestId('unsubscribe-button').click();
   await expect(firstItem.getByTestId('unsubscribe-not-offered')).toBeVisible();
 
   // Mark all read.
-  await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: new RegExp(`^Newsletters, \\d+ unread$`) })).toBeVisible();
+  expect((await mailboxByName('Newsletters')).unseen).toBeGreaterThan(0);
   await page.getByTestId('mark-all-read').click();
   await expect(page.getByTestId('mark-all-read')).toBeDisabled();
-  await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Newsletters$/ })).toBeVisible();
+  await expect.poll(async () => (await mailboxByName('Newsletters')).unseen).toBe(0);
 
   // The sender profile, linked from a feed item's From line, for this fixture sender.
   await page.getByRole('link', { name: from }).first().click();

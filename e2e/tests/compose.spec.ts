@@ -121,7 +121,7 @@ test('doneWhen: r, type, Send — the reply is in the thread and in Sent, withou
   await expect(reply.getByRole('textbox', { name: 'Message' })).toBeFocused();
   await page.keyboard.type(`Friday works for me ${t}.`);
   await expectNoAxeViolations(page, 'composer');
-  await reply.getByRole('button', { name: 'Send' }).click();
+  await reply.getByRole('button', { name: 'Send', exact: true }).click();
 
   // The composer closes back to the message it answered (PST-T-3.15), which is still open — and the
   // reply is already in its thread, without a reload.
@@ -197,7 +197,7 @@ test('a forward carries the original, attached whole', async ({ page }) => {
   await expect(forward).toBeVisible();
   await expect(forward.getByText('The original message is attached in full.')).toBeVisible();
   await forward.getByRole('textbox', { name: 'To' }).fill('Erin <erin@example.org>');
-  await forward.getByRole('button', { name: 'Send' }).click();
+  await forward.getByRole('button', { name: 'Send', exact: true }).click();
 
   // The composer closes back to the forwarded message itself (the one it was opened from).
   await expect(forward).toBeHidden();
