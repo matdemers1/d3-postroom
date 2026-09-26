@@ -137,6 +137,7 @@ model Account {
   identityLinks    IdentityLink[]
   addresses        Address[]
   addressTargets   AddressTarget[]
+  correspondents   Correspondent[]
   mailboxes        Mailbox[]
   appPasswords     AppPassword[]
   sessions         Session[]
@@ -188,6 +189,24 @@ model SenderPin {
   @@unique([accountId, address])
   @@index([accountId])
   @@map("sender_pin")
+}
+
+/// One address this account has written to (PST-T-5.8, PST-REQ-102): the reply graph, indexed for a
+/// single lookup at classify time instead of a substring scan over Sent. Maintained on send (the
+/// submission accept transaction upserts count+1/lastWrittenAt) and backfilled from
+/// OutboundRecipient/OutboundMessage.
+model Correspondent {
+  accountId      String   @map("account_id") @db.Uuid
+  /// Lowercased, +tag-stripped (@postroom/classifier's normalizeAddress).
+  address        String
+  firstWrittenAt DateTime @map("first_written_at") @db.Timestamptz(6)
+  lastWrittenAt  DateTime @map("last_written_at") @db.Timestamptz(6)
+  count          Int      @default(0)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, address])
+  @@map("correspondent")
 }
 
 /// An external identity (D3 Auth OIDC) linked by (issuer, subject). Email is informational only.

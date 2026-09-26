@@ -103,6 +103,47 @@ function domainOf(address: string): string {
 }
 
 /**
+ * Lowercase, strip a `+tag` from the local part, and strip a trailing dot from the domain — the
+ * same normalization @postroom/classifier's `normalizeAddress` applies (kept local here rather than
+ * adding a new workspace dependency; PST-T-5.8, PST-REQ-102).
+ */
+function normalizeCorrespondentAddress(address: string): string {
+  const trimmed = address.trim().toLowerCase();
+  const at = trimmed.lastIndexOf('@');
+  if (at < 0) return trimmed;
+  let local = trimmed.slice(0, at);
+  const plus = local.indexOf('+');
+  if (plus >= 0) local = local.slice(0, plus);
+  const domain = trimmed.slice(at + 1).replace(/\.+$/, '');
+  return `${local}@${domain}`;
+}
+
+/**
+ * Record this account as having written to each recipient (the reply graph, PST-T-5.8): one upsert
+ * per distinct normalized address, bumping count and lastWrittenAt. Runs inside the accepting
+ * transaction, so a message is queued and its correspondents are updated together, or neither is.
+ * Never records the account's own addresses (a self-send is not evidence of a reply graph).
+ */
+async function recordCorrespondents(
+  tx: Prisma.TransactionClient,
+  input: { accountId: string; recipients: readonly { readonly address: string }[]; ownAddresses: ReadonlySet<string>; now: Date },
+): Promise<void> {
+  const addresses = new Set<string>();
+  for (const r of input.recipients) {
+    const normalized = normalizeCorrespondentAddress(r.address);
+    if (normalized === '' || input.ownAddresses.has(normalized)) continue;
+    addresses.add(normalized);
+  }
+  for (const address of addresses) {
+    await tx.correspondent.upsert({
+      where: { accountId_address: { accountId: input.accountId, address } },
+      create: { accountId: input.accountId, address, firstWrittenAt: input.now, lastWrittenAt: input.now, count: 1 },
+      update: { lastWrittenAt: input.now, count: { increment: 1 } },
+    });
+  }
+}
+
+/**
  * The account's live addresses (`local@domain`, lowercased): the ones it may send as. The same
  * query protocol login answers with (credentials' verifyProtocolLogin), for callers that have a web
  * session rather than an app password.
@@ -200,6 +241,12 @@ export async function acceptSubmission(body: Readable, input: AcceptInput, deps:
           ...(input.dsnEnvid === undefined ? {} : { dsnEnvid: input.dsnEnvid }),
           submittedVia: input.submittedVia,
           recipients: input.recipients,
+        });
+        await recordCorrespondents(dbTx, {
+          accountId: submitter.accountId,
+          recipients: input.recipients,
+          ownAddresses: submitter.addresses,
+          now: deps.now(),
         });
         await recordAudit(dbTx, {
           actor: { kind: 'account', accountId: submitter.accountId },

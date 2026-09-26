@@ -11,8 +11,9 @@
 // Account context:
 //   · addresses: the account's own addresses (primary, masked, service), the aliases that reach it,
 //     and the addresses this message was delivered to it at;
-//   · reply graph: has this account sent to the sender — an OutboundRecipient row of the account's,
-//     or a message in its Sent mailbox addressed to them — before this message was received;
+//   · reply graph: has this account sent to the sender — one indexed lookup against its
+//     correspondent table (PST-T-5.8), maintained on send, bounded by firstWrittenAt — before this
+//     message was received;
 //   · contacts: empty until CardDAV lands (PST-P-9); pins: none until PST-T-5.4.
 // Everything read is bounded by this message's receivedAt, so a replay reaches the same rule
 // decision. (The Bayes model can have learned more by a replay; a replay of classify after the file
@@ -75,27 +76,21 @@ export async function accountAddresses(db: Db, accountId: string, recipients: re
   return [...out].sort();
 }
 
-/** Whether this account wrote to `address` before `before`: an outbound recipient row, or a Sent copy addressed to it. */
+/**
+ * Whether this account had written to `address` before `before` (PST-T-5.8, PST-REQ-102): one
+ * indexed lookup against the per-account correspondent table (maintained on send by
+ * acceptSubmission), keyed by the same normalization the classifier and sender pins use, bounded by
+ * comparing its firstWrittenAt — so a replay of an older message still reaches the same rule
+ * decision even though the account has gone on writing to this address since.
+ */
 export async function inReplyGraph(db: Db, input: { accountId: string; address: string | null; before: Date }): Promise<boolean> {
   if (input.address === null || input.address === '') return false;
-  const exact = input.address.trim().toLowerCase();
   const normalized = normalizeAddress(input.address);
-  const outbound = await db.$queryRaw<{ ok: number }[]>`
-    SELECT 1 AS ok FROM outbound_recipient r
-    JOIN outbound_message m ON m.id = r.outbound_message_id
-    WHERE m.account_id = ${input.accountId}::uuid AND m.created_at < ${input.before}
-      AND lower(r.address) IN (${exact}, ${normalized})
-    LIMIT 1`;
-  if (outbound.length > 0) return true;
-  const sent = await db.$queryRaw<{ ok: number }[]>`
-    SELECT 1 AS ok FROM message msg
-    JOIN mailbox mb ON mb.id = msg.mailbox_id
-    JOIN message_search s ON s.message_id = msg.id
-    WHERE mb.account_id = ${input.accountId}::uuid AND mb.special_use = 'sent'::special_use
-      AND msg.internal_date < ${input.before}
-      AND (position(${exact} in lower(s.to_text)) > 0 OR position(${normalized} in lower(s.to_text)) > 0)
-    LIMIT 1`;
-  return sent.length > 0;
+  const row = await db.correspondent.findUnique({
+    where: { accountId_address: { accountId: input.accountId, address: normalized } },
+    select: { firstWrittenAt: true },
+  });
+  return row !== null && row.firstWrittenAt < input.before;
 }
 
 function authVerdicts(verdicts: unknown): AuthVerdicts {
