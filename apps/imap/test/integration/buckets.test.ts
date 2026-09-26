@@ -14,7 +14,7 @@ const BUCKETS = ['Newsletters', 'Notifications', 'Receipts', 'Updates'];
 
 /** The backfill section of the migration, exactly as `prisma migrate deploy` runs it. */
 function backfillSql(): string {
-  const path = fileURLToPath(new URL('../../../../packages/db/prisma/migrations/20260926120000_bucket_folders/migration.sql', import.meta.url));
+  const path = fileURLToPath(new URL('../../../../packages/db/prisma/migrations/20260926050500_bucket_folders/migration.sql', import.meta.url));
   const sql = readFileSync(path, 'utf8');
   const at = sql.indexOf('-- Backfill');
   if (at < 0) throw new Error('backfill section not found in the migration');

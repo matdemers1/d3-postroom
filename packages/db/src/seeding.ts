@@ -7,7 +7,7 @@ import { normalizeDomain, randomUidValidity } from './normalize.js';
  * The mailboxes every account starts with, in the order a client lists them. The last four are the
  * sorting buckets (PST-REQ-101, PST-T-5.1): real, subscribed IMAP folders with no special use, so
  * every client (iPhone Mail included) lists them, and a move between them from any client trains the
- * account's model. The migration 20260926120000_bucket_folders backfills them for older accounts.
+ * account's model. The migration 20260926050500_bucket_folders backfills them for older accounts.
  */
 export const DEFAULT_MAILBOXES: readonly { readonly name: string; readonly specialUse: SpecialUse | null }[] = [
   { name: 'INBOX', specialUse: SpecialUse.inbox },
