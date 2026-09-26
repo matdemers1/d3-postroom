@@ -11,7 +11,9 @@ import { adminQueueRoutes } from './admin-queue/index.js';
 import { serviceAccountRoutes } from './admin-service/index.js';
 import { appPasswordRoutes } from './app-passwords/index.js';
 import { autoconfigRoutes } from './autoconfig/index.js';
+import { calendarRoutes } from './calendar/index.js';
 import { composeRoutes } from './compose/index.js';
+import { contactsRoutes } from './contacts/index.js';
 import { mailRoutes } from './mail/index.js';
 import { usercontentConfig, usercontentDispatch } from './usercontent/index.js';
 import { deliveryRoutes } from './delivery/index.js';
@@ -106,6 +108,8 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/export', requireSession(deps), exportRoutes(deps));
   app.use('/api/compose', requireSession(deps), composeRoutes(deps));
   app.use('/api/import', requireSession(deps), importRoutes(deps));
+  app.use('/api/calendar', requireSession(deps), calendarRoutes(deps));
+  app.use('/api/contacts', requireSession(deps), contactsRoutes(deps));
   app.use('/api', requireSession(deps), mailRoutes(deps));
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not_found' });

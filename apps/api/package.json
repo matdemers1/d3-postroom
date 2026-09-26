@@ -39,7 +39,10 @@
     "@postroom/phish": "workspace:*",
     "@postroom/trackers": "workspace:*",
     "@postroom/submission": "workspace:*",
-    "@postroom/alerts": "workspace:*"
+    "@postroom/alerts": "workspace:*",
+    "@postroom/dav-store": "workspace:*",
+    "@postroom/ical": "workspace:*",
+    "@postroom/vcard": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

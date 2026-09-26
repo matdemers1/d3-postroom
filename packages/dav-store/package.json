@@ -1,0 +1,30 @@
+{
+  "name": "@postroom/dav-store",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The one write path for calendars and address books: encrypted DAV resources, sync tokens and audit rows, shared by the DAV daemon, the webmail API and submission",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/audit": "workspace:*",
+    "@postroom/crypto": "workspace:*",
+    "@postroom/dav-proto": "workspace:*",
+    "@postroom/db": "workspace:*",
+    "@postroom/mime": "workspace:*",
+    "@postroom/vcard": "workspace:*"
+  },
+  "devDependencies": {}
+}

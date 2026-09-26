@@ -6,23 +6,27 @@
 //   PST-REQ-038  DKIM-signed (Ed25519 + RSA) for the From domain, or refused — never sent unsigned;
 //   PST-REQ-043  the authoritative recipient-cap check, inside the accepting transaction;
 //   PST-REQ-060  the signed blob is fsynced and its queue rows, jobs and audit row committed as one;
-//   PST-REQ-009  one `submission.accept` audit row per accepted message.
+//   PST-REQ-009  one `submission.accept` audit row per accepted message;
+//   PST-REQ-138  after the commit, To/Cc recipients in none of the account's address books are
+//                added to its "Collected" address book (@postroom/dav-store's harvest).
 //
 // What differs between the callers is passed in: who the submitter is (an app password, or a web
 // session with none), how caps are enforced for them, the audit context, and an optional hook that
 // runs inside the same transaction (the webmail files its Sent copy there, so a message is either
 // queued AND in Sent, or neither).
 import { Readable } from 'node:stream';
-import { HeaderTooLargeError, signMessage, splitMessage } from '@postroom/auth-checks';
+import { HeaderTooLargeError, signMessage, splitMessage, type HeaderField } from '@postroom/auth-checks';
 import { recordAudit, type RequestContext } from '@postroom/audit';
+import { contactIndexFor, DavStore, DEFAULT_DAV_LIMITS, harvestRecipients, type DavLimits } from '@postroom/dav-store';
 import { tmpDir, type BlobStore } from '@postroom/blobstore';
 import type { Kek } from '@postroom/crypto';
 import type { Db, Prisma } from '@postroom/db';
 import { enqueueOutbound } from '@postroom/delivery';
+import { parseMailboxes } from '@postroom/mime';
 import { reply, type SmtpReply } from '@postroom/smtp-proto';
 import { CapExceededError } from './caps-seam.js';
 import { loadSigningKeys } from './dkim.js';
-import { inspectHeaders, rewriteHeaders } from './headers.js';
+import { fieldValue, inspectHeaders, rewriteHeaders } from './headers.js';
 import { Spool } from './spool.js';
 
 export const AcceptReplies = {
@@ -68,6 +72,8 @@ export interface AcceptDeps {
   readonly maxHeaderBytes?: number;
   /** Test seam: runs inside the accepting transaction, after every write, before the commit. */
   readonly beforeCommit?: (tx: Prisma.TransactionClient) => Promise<void>;
+  /** The DAV caps the contact harvest writes under (default: the DAV daemon's defaults). */
+  readonly davLimits?: DavLimits;
 }
 
 export interface AcceptInput {
@@ -114,6 +120,29 @@ export async function sendableAddresses(db: Db, accountId: string): Promise<stri
     orderBy: [{ kind: 'asc' }, { createdAt: 'asc' }],
   });
   return rows.map((a) => `${a.localPart}@${a.domain.name}`.toLowerCase());
+}
+
+/**
+ * Contact auto-harvest (PST-REQ-138), after the commit: the message is accepted whatever happens
+ * here, so a failure is logged and never answered. Idempotent (one card per address, written
+ * If-None-Match: *), so a retried submission cannot duplicate a card. To and Cc only — a Bcc
+ * recipient was deliberately kept out of the message.
+ */
+async function harvestContacts(deps: AcceptDeps, kek: Kek, input: AcceptInput, fields: readonly HeaderField[]): Promise<void> {
+  try {
+    const named = fields.filter((f) => f.key === 'to' || f.key === 'cc').flatMap((f) => parseMailboxes(fieldValue(f)));
+    if (named.length === 0) return;
+    const store = new DavStore(deps.db, kek, deps.davLimits ?? DEFAULT_DAV_LIMITS);
+    const result = await harvestRecipients(deps.db, store, contactIndexFor(deps.db, kek), {
+      accountId: input.submitter.accountId,
+      recipients: named,
+      context: input.auditContext,
+      now: deps.now(),
+    });
+    if (result.added.length > 0) deps.log('contacts-harvested', { session: input.sessionId, accountId: input.submitter.accountId, added: result.added.length });
+  } catch (err) {
+    deps.log('contacts-harvest-failed', { session: input.sessionId, accountId: input.submitter.accountId, error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 /**
@@ -238,6 +267,7 @@ export async function acceptSubmission(body: Readable, input: AcceptInput, deps:
       }, TX_OPTIONS);
 
       deps.log('accepted', { session: input.sessionId, accountId: submitter.accountId, outboundMessageId: accepted.outboundId, recipients: recipients.length });
+      await harvestContacts(deps, storage.kek, input, headers.fields);
       return { ok: true, ...accepted };
     } catch (err) {
       if (err instanceof CapExceededError) {

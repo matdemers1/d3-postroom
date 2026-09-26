@@ -16,6 +16,7 @@ import { trainingMove } from '@postroom/classifier';
 import type { Db, Message, MessageVerdict, Prisma } from '@postroom/db';
 import { collectMessage, parseMailboxes } from '@postroom/mime';
 import { detectPhish, type PhishAuthVerdicts, type PhishLink } from '@postroom/phish';
+import { contactIndexOf } from '../contacts/dav.js';
 import type { MailboxJson, MessageDetailJson, MessageSummaryJson, PhishJson } from './schemas.js';
 
 export const MAILBOX_CHANNEL = 'postroom_mailbox';
@@ -183,6 +184,13 @@ export async function knownSenderContext(db: Db, accountId: string, opts: { excl
   return { addresses, domains };
 }
 
+/** Known senders plus the account's contact addresses (and their domains). */
+function mergeKnown(known: { addresses: string[]; domains: string[] }, contacts: readonly string[]): { addresses: string[]; domains: string[] } {
+  const addresses = [...new Set([...known.addresses, ...contacts.map((a) => a.trim().toLowerCase())])];
+  const domains = [...new Set([...known.domains, ...contacts.map((a) => a.split('@')[1]?.trim().toLowerCase()).filter((d): d is string => d !== undefined && d !== '')])];
+  return { addresses, domains };
+}
+
 /** The phishing/lookalike verdict for one message, or null when there is nothing stored to check
  * (no message_verdict — e.g. this account's own Sent copy) or no blob store is configured. */
 /**
@@ -211,14 +219,18 @@ async function computeMessagePhish(db: Db, blobs: BlobStore | null, accountId: s
   const replyToHeader = headerValue(headers, 'reply-to');
   const replyToMailbox = replyToHeader === null ? undefined : parseMailboxes(replyToHeader)[0];
 
-  const context = await knownSenderContext(db, accountId, { excludeMessageId: message.id, before: message.internalDate });
+  const known = await knownSenderContext(db, accountId, { excludeMessageId: message.id, before: message.internalDate });
+  // The account's address books (PST-T-8.5): contacts are known senders too, and their names are what
+  // the display-name-spoofing rule compares against. Cached per account on the books' sync tokens.
+  const contacts = (await contactIndexOf(db)?.entries(accountId)) ?? [];
+  const context = contacts.length === 0 ? known : mergeKnown(known, contacts.map((c) => c.address));
 
   const result = detectPhish({
     from: { address: fromAddress, displayName: fromMailbox?.name ?? null },
     replyTo: replyToMailbox === undefined ? null : { address: replyToMailbox.address, displayName: replyToMailbox.name },
     returnPath: headerValue(headers, 'return-path'),
     authVerdicts: message.verdict.auth as PhishAuthVerdicts,
-    account: { knownSenders: context, contacts: [] }, // CardDAV contacts arrive in PST-P-9.
+    account: { knownSenders: context, contacts: contacts.map((c) => ({ name: c.name, address: c.address })) },
     subject: message.subject,
     links: extractLinks(summary.html?.text ?? null),
   });
