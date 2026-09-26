@@ -13,7 +13,7 @@
 // too. Saving again REPLACES the draft: a new message is filed and the old one expunged in the same
 // transaction (a message's bytes are immutable; that is how IMAP clients do it as well).
 import { randomUUID } from 'node:crypto';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import { audited, getAuditContext, recordAudit } from '@postroom/audit';
 import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
@@ -28,17 +28,22 @@ import { currentSession, handle } from '../auth/middleware.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 import { DEFAULT_BLOB_ROOT } from '../mail/index.js';
+import { updateMessage } from '../mail/store.js';
+import { renderMarkdownDocument } from './markdown.js';
+import { buildMdn } from './mdn.js';
 import { bracketMsgId, buildOutgoingStream, buildTextMessage, parseRecipients, type OutgoingMessage } from './message.js';
 import {
   DraftParams,
   DraftQuery,
   DraftRequest,
   MAX_AHEAD_MS,
+  MdnParams,
   PendingParams,
   PendingPatch,
   SendRequest,
   type DraftJson,
   type DraftSavedJson,
+  type MdnResponseJson,
   type PendingSendJson,
   type SendResponseJson,
 } from './schemas.js';
@@ -207,6 +212,10 @@ export function composeRoutes(deps: ApiDeps): Router {
         const date = hold?.releaseAt ?? now;
         const domain = from.address.slice(from.address.lastIndexOf('@') + 1);
         const { inReplyTo, references } = threading(body.inReplyTo, body.references);
+        // PST-T-9.2: Markdown is rendered to sanitized HTML and sent multipart/alternative
+        // (PST-REQ-145); "Request read receipt" adds Disposition-Notification-To (PST-REQ-146).
+        const html = body.format === 'markdown' ? renderMarkdownDocument(body.text) : null;
+        const extraHeaders: [string, string][] = body.requestReceipt ? [['Disposition-Notification-To', from.address]] : [];
         const message: OutgoingMessage = {
           from,
           to,
@@ -214,10 +223,12 @@ export function composeRoutes(deps: ApiDeps): Router {
           bcc,
           subject: body.subject,
           text: body.text,
+          html,
           messageId: `<${randomUUID()}@${domain}>`,
           inReplyTo,
           references,
           date,
+          extraHeaders,
         };
         const denorm: Denorm = {
           messageIdHeader: message.messageId,
@@ -720,4 +731,166 @@ export function composeRoutes(deps: ApiDeps): Router {
   }
 
   return router;
+}
+
+// --- Read receipts: RFC 8098 MDNs (PST-T-9.2, PST-REQ-146) ----------------------------------------
+//
+// Mounted separately, at /api/messages (disjoint path from delivery/index.ts's routes there, the
+// same pattern unsubscribe/index.ts already uses): POST /api/messages/:id/mdn sends the MDN for one
+// of the caller's own inbound messages that asked for one, through the same submission path as any
+// other outbound mail, and marks it with the IMAP keyword $MDNSent so it is offered at most once (and
+// so any RFC 3503-aware client agrees).
+
+const REPORTING_UA_DEFAULT = 'postroom; Postroom';
+
+export function mdnRoutes(deps: ApiDeps): Router {
+  const rt = runtimeFor(deps);
+  const { db } = rt;
+  const router = Router();
+  const log = (event: string, fields: Record<string, unknown> = {}): void => {
+    process.stdout.write(`${JSON.stringify({ daemon: 'api', component: 'mdn', event, ...fields })}\n`);
+  };
+  const capsOptions = {
+    db,
+    hourlyDefault: envInt(deps.env, 'SUBMISSION_CAP_HOURLY', 100),
+    dailyDefault: envInt(deps.env, 'SUBMISSION_CAP_DAILY', 500),
+    sendAlert: createAlertSender(
+      { url: envString(deps.env, 'MAIL_RELAY_URL', ''), token: envString(deps.env, 'MAIL_RELAY_TOKEN', ''), to: envString(deps.env, 'ALERT_TO', '') },
+      { log },
+    ),
+    log,
+  };
+  const webmailCaps = createWebmailCapsEnforcer(capsOptions);
+
+  router.post(
+    '/:id/mdn',
+    handle(async (req, res) => {
+      const params = parse(MdnParams, req.params, res);
+      if (params === null) return;
+      const me = currentSession(req);
+      const ctx = getAuditContext(req);
+      if (rt.kek === null) {
+        res.status(503).json({ error: 'blobstore_not_configured', message: 'POSTROOM_KEK is not set' });
+        return;
+      }
+      const root = deps.env['BLOB_ROOT']?.trim() ?? '';
+      const blobs = createBlobStore({ root: root === '' ? DEFAULT_BLOB_ROOT : root, db, kek: rt.kek });
+      const store: SubmissionStorage = { blobs, kek: rt.kek };
+
+      const found = await db.message.findFirst({
+        where: { id: params.id, mailbox: { accountId: me.accountId } },
+        select: { id: true, mailboxId: true, uid: true, flags: true, blobSha256: true, messageIdHeader: true },
+      });
+      if (found === null) {
+        notFound(res);
+        return;
+      }
+      if (found.flags.includes('$MDNSent')) {
+        res.status(409).json({ error: 'already_sent', message: 'A read receipt for this message was already sent.' });
+        return;
+      }
+      const summary = await collectMessage(await store.blobs.get(found.blobSha256));
+      const requested = summary.headers.get('Disposition-Notification-To');
+      if (requested === null || requested.trim() === '') {
+        res.status(409).json({ error: 'not_requested', message: 'This message did not ask for a read receipt.' });
+        return;
+      }
+      const to = parseMailboxes(requested)[0];
+      if (to === undefined) {
+        res.status(409).json({ error: 'not_requested', message: 'Disposition-Notification-To has no usable address.' });
+        return;
+      }
+      const addresses = await sendableAddresses(db, me.accountId);
+      const finalRecipient = addresses[0];
+      if (finalRecipient === undefined) throw new HttpRefusal(403, 'from_not_owned', 'You have no address to send from');
+      const account = await db.account.findUnique({ where: { id: me.accountId }, select: { displayName: true } });
+      const from: Mailbox = { name: account?.displayName ?? '', address: finalRecipient };
+      const originalMessageId = found.messageIdHeader === null ? `<${found.id}@local>` : bracketMsgId(found.messageIdHeader) ?? `<${found.id}@local>`;
+      const subject = decodeEncodedWords(summary.headers.get('Subject') ?? '').trim();
+      const now = rt.now();
+      const domain = finalRecipient.slice(finalRecipient.lastIndexOf('@') + 1);
+      const mdnMessageId = `<${randomUUID()}@${domain}>`;
+      const raw = buildMdn({
+        from,
+        to,
+        subject,
+        originalMessageId,
+        finalRecipient,
+        reportingUa: envString(deps.env, 'MDN_REPORTING_UA', REPORTING_UA_DEFAULT),
+        date: now,
+        messageId: mdnMessageId,
+      });
+
+      try {
+        let sentCopy: { id: string; mailboxId: string } | null = null;
+        const outcome = await acceptSubmission(
+          Readable.from([raw]),
+          {
+            submitter: { accountId: me.accountId, addresses: new Set(addresses) },
+            envelopeFrom: from.address,
+            recipients: [{ address: to.address }],
+            sessionId: ctx.requestId,
+            submittedVia: 'webmail',
+            enforceCaps: (tx, recipients, at) => webmailCaps(tx, me.accountId, recipients, at),
+            auditContext: ctx,
+            withinTransaction: async (tx, accepted) => {
+              const copy = await fileCopy(tx, {
+                accountId: me.accountId,
+                use: 'sent',
+                blobSha256: accepted.blobSha256,
+                size: accepted.size,
+                flags: SENT_FLAGS,
+                denorm: {
+                  messageIdHeader: mdnMessageId,
+                  subject: `Read: ${subject}`,
+                  fromAddress: from.address,
+                  to: to.address,
+                  sentAt: now,
+                  inReplyTo: null,
+                  references: [],
+                  bodyText: '',
+                },
+                now,
+                takeReference: true,
+              });
+              sentCopy = copy;
+              const marked = await updateMessage(tx, { accountId: me.accountId, messageId: found.id, ifMatch: '*', add: ['$MDNSent'], remove: [], moveTo: undefined });
+              await recordAudit(tx, {
+                actor: { kind: 'account', accountId: me.accountId },
+                action: 'compose.mdn',
+                entityType: 'message',
+                entityId: found.id,
+                before: null,
+                after: { sentMessageId: copy.id, outboundId: accepted.outboundId, messageId: accepted.messageId },
+                context: ctx,
+              });
+              if (marked === null) throw new Error('message vanished while sending its MDN');
+            },
+          },
+          { db, storage: () => store, now: rt.now, log },
+        );
+        if (!outcome.ok) {
+          const { status, error } = refusalStatus(outcome);
+          res.status(status).json({ error, message: outcome.reply.lines.join(' ') });
+          return;
+        }
+        const filed = sentCopy as { id: string; mailboxId: string } | null;
+        if (filed === null) throw new Error('the MDN Sent copy was not filed');
+        const json: MdnResponseJson = { messageId: outcome.messageId, outboundId: outcome.outboundId, sentMessageId: filed.id };
+        res.status(201).json(json);
+      } catch (error) {
+        if (!answerLocal(res, error)) throw error;
+      }
+    }),
+  );
+
+  return router;
+}
+
+function answerLocal(res: Response, error: unknown): boolean {
+  if (error instanceof HttpRefusal) {
+    res.status(error.status).json({ error: error.code, message: error.message });
+    return true;
+  }
+  return false;
 }

@@ -13,6 +13,8 @@ export const COMPOSE_COMPONENTS: Record<string, z.ZodType> = {
   // PST-T-9.1: held sends, and (from mail/snooze.ts) snoozed conversations.
   PendingSend: C.PendingSend,
   PendingSendList: C.PendingSendList,
+  // PST-T-9.2: RFC 8098 read receipts.
+  MdnResponse: C.MdnResponse,
   ...SNOOZE_COMPONENTS,
 };
 
@@ -133,5 +135,23 @@ export const COMPOSE_ROUTES: RouteSpec[] = [
     params: C.DraftParams,
     headers: CSRF,
     responses: { '204': { description: 'Removed.' }, ...COMMON, '404': err('Not a draft of the caller.') },
+  },
+  {
+    method: 'post',
+    path: '/api/messages/{id}/mdn',
+    operationId: 'sendMdn',
+    tag: 'Compose',
+    summary: 'Send an RFC 8098 read receipt (MDN) for one of the caller’s inbound messages (PST-REQ-146).',
+    description: 'Only once per message: marks the message $MDNSent. Audited. Needs x-postroom-csrf: 1.',
+    params: C.MdnParams,
+    headers: CSRF,
+    responses: {
+      '201': { description: 'The MDN was sent and filed in Sent.', schema: 'MdnResponse' },
+      '401': COMMON['401'],
+      '403': COMMON['403'],
+      '404': err('Not a message of the caller.'),
+      '409': err('It already asked and got one, or it never asked for one.'),
+      '503': COMMON['503'],
+    },
   },
 ];

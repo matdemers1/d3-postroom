@@ -100,6 +100,13 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/contacts/address-books/{addressBookId}/cards/{name}',
         'PUT /api/contacts/address-books/{addressBookId}/cards/{name}',
         'DELETE /api/contacts/address-books/{addressBookId}/cards/{name}',
+        // PST-T-9.2: read receipts (MDN) and compose templates.
+        'POST /api/messages/{id}/mdn',
+        'GET /api/templates',
+        'GET /api/templates/{id}',
+        'POST /api/templates',
+        'PUT /api/templates/{id}',
+        'DELETE /api/templates/{id}',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit']);

@@ -5,6 +5,7 @@ import { api, redirectFor, type AuthState } from './api';
 import { Calendar } from './calendar/Calendar';
 import { Contacts } from './contacts/Contacts';
 import { MailProvider } from './mail/MailContext';
+import { TemplatesScreen } from './compose/TemplatesScreen';
 import { AdminDeliverability } from './screens/AdminDeliverability';
 import { AdminHealth } from './screens/AdminHealth';
 import { AdminJobs } from './screens/AdminJobs';
@@ -92,6 +93,7 @@ function Gate() {
         <Route path="/account/import" element={<Import />} />
         <Route path="/account/device-setup" element={<DeviceSetup />} />
         <Route path="/account/rules" element={<Rules />} />
+        <Route path="/account/templates" element={<TemplatesScreen />} />
         <Route path="/admin/sessions" element={<AdminSessions />} />
         <Route path="/admin/health" element={<AdminHealth />} />
         <Route path="/admin/jobs" element={<AdminJobs />} />

@@ -23,6 +23,9 @@ export const MAX_REMIND_SECONDS = 90 * 86_400;
 
 export const ComposeMode = z.enum(['new', 'reply', 'replyall', 'forward']);
 
+/** PST-T-9.2: plain text as always, or Markdown rendered to sanitized HTML and sent multipart/alternative. */
+export const ComposeFormat = z.enum(['plain', 'markdown']);
+
 const Fields = {
   to: AddressField,
   cc: AddressField,
@@ -32,12 +35,14 @@ const Fields = {
   inReplyTo: MsgId.nullable().optional(),
   references: z.array(MsgId).max(100).default([]),
   forwardOf: Uuid.nullable().optional().describe('Forward: the id of one of the caller’s messages, attached whole as message/rfc822.'),
+  format: ComposeFormat.default('plain').describe('markdown: text is Markdown, sent multipart/alternative with sanitized HTML (PST-REQ-145).'),
 };
 
 export const SendRequest = z.object({
   from: Line.min(3).max(320).describe('One of the caller’s own addresses.'),
   ...Fields,
   draftId: Uuid.nullable().optional().describe('The draft this send replaces; it is removed from Drafts in the same transaction.'),
+  requestReceipt: z.boolean().default(false).describe('Add Disposition-Notification-To: the sender’s own address (PST-REQ-146).'),
   // PST-T-9.1: undo send (PST-REQ-140), scheduled send (PST-REQ-141), remind-if-no-reply (PST-REQ-143).
   undoSeconds: z
     .number()
@@ -132,3 +137,15 @@ export type PendingSendJson = z.infer<typeof PendingSend>;
 export type SendResponseJson = z.infer<typeof SendResponse>;
 export type DraftSavedJson = z.infer<typeof DraftSaved>;
 export type DraftJson = z.infer<typeof Draft>;
+
+// PST-T-9.2: RFC 8098 read receipts (MDNs).
+
+export const MdnParams = z.object({ id: Uuid });
+
+export const MdnResponse = z.object({
+  messageId: z.string().describe('The Message-ID header of the MDN that was sent.'),
+  outboundId: Uuid,
+  sentMessageId: Uuid.describe('The copy filed in Sent.'),
+});
+
+export type MdnResponseJson = z.infer<typeof MdnResponse>;

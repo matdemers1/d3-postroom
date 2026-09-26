@@ -14,7 +14,9 @@ import { appPasswordRoutes } from './app-passwords/index.js';
 import { autoconfigRoutes } from './autoconfig/index.js';
 import { calendarRoutes } from './calendar/index.js';
 import { composeRoutes } from './compose/index.js';
+import { mdnRoutes } from './compose/index.js';
 import { contactsRoutes } from './contacts/index.js';
+import { templateRoutes } from './templates/index.js';
 import { mailRoutes } from './mail/index.js';
 import { usercontentConfig, usercontentDispatch } from './usercontent/index.js';
 import { deliveryRoutes } from './delivery/index.js';
@@ -117,6 +119,9 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/messages', requireSession(deps), unsubscribeRoutes(deps));
   app.use('/api/export', requireSession(deps), exportRoutes(deps));
   app.use('/api/compose', requireSession(deps), composeRoutes(deps));
+  // PST-T-9.2: RFC 8098 read receipts. Same prefix as deliveryRoutes/unsubscribeRoutes above, disjoint path (.../mdn).
+  app.use('/api/messages', requireSession(deps), mdnRoutes(deps));
+  app.use('/api/templates', requireSession(deps), templateRoutes(deps));
   app.use('/api/import', requireSession(deps), importRoutes(deps));
   app.use('/api/mobileconfig', requireSession(deps), mobileconfigRoutes(deps));
   app.use('/api/calendar', requireSession(deps), calendarRoutes(deps));
