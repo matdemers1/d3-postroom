@@ -11,9 +11,12 @@
 // same transaction, so it is delivered exactly when the change commits.
 // A move between two sorting buckets also writes a bayes_training_event in that transaction
 // (PST-T-5.3, PST-REQ-104) — the same event an IMAP MOVE writes; the worker trains on it.
+import type { BlobStore } from '@postroom/blobstore';
 import { trainingMove } from '@postroom/classifier';
 import type { Db, Message, MessageVerdict, Prisma } from '@postroom/db';
-import type { MailboxJson, MessageDetailJson, MessageSummaryJson } from './schemas.js';
+import { collectMessage, parseMailboxes } from '@postroom/mime';
+import { detectPhish, type PhishAuthVerdicts, type PhishLink } from '@postroom/phish';
+import type { MailboxJson, MessageDetailJson, MessageSummaryJson, PhishJson } from './schemas.js';
 
 export const MAILBOX_CHANNEL = 'postroom_mailbox';
 
@@ -82,14 +85,87 @@ export function summaryJson(m: MessageWithVerdict): MessageSummaryJson {
   };
 }
 
-export function detailJson(m: Message & { verdict: MessageVerdict | null }): MessageDetailJson {
+export function detailJson(m: Message & { verdict: MessageVerdict | null }, phish: PhishJson | null = null): MessageDetailJson {
   return {
     ...summaryJson(m),
     messageIdHeader: m.messageIdHeader,
     inReplyTo: m.inReplyTo,
     references: m.references,
     verdict: m.verdict === null ? null : { bucket: m.verdict.bucket, reasons: m.verdict.reasons, auth: m.verdict.auth },
+    phish,
   };
+}
+
+// --- Phishing/lookalike warnings (PST-T-6.5, PST-REQ-120) ---------------------------------------
+//
+// Computed on read, not stored at filing time: the worker's file stage (PST-P-2) already runs
+// before this account's reply graph and known-sender history exist for *this* message, and storing
+// a verdict there would go stale as the account corresponds with more senders over time (the same
+// From address that looks brand-new today is a known sender next month). Computing it on
+// GET /messages/:id instead means every read sees the account's current view of the world, at the
+// cost of one more blob fetch — acceptable at Postroom's single-account, personal scale.
+//
+// The stored auth verdicts (message_verdict.auth: spf/dkim/dmarc/arc) are reused as-is; only the
+// display name, Reply-To, Return-Path and HTML links need a pass over the message's headers/body.
+
+function headerValue(headers: readonly { name: string; value: string }[], name: string): string | null {
+  const lower = name.toLowerCase();
+  return headers.find((h) => h.name.toLowerCase() === lower)?.value ?? null;
+}
+
+/** A minimal `<a href="...">text</a>` extractor: good enough for a mismatch heuristic, not a renderer. */
+function extractLinks(html: string | null): PhishLink[] {
+  if (html === null) return [];
+  const out: PhishLink[] = [];
+  const re = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) !== null) {
+    const href = match[1] ?? match[2] ?? match[3] ?? '';
+    const text = (match[4] ?? '').replace(/<[^>]*>/g, '').trim();
+    if (href !== '' && text !== '') out.push({ text, href });
+  }
+  return out;
+}
+
+/** Distinct From addresses/domains this account has already received mail from, before `before`. */
+export async function knownSenderContext(db: Db, accountId: string, opts: { excludeMessageId: string; before: Date }): Promise<{ addresses: string[]; domains: string[] }> {
+  const rows = await db.message.findMany({
+    where: { mailbox: { accountId }, fromAddress: { not: null }, id: { not: opts.excludeMessageId }, internalDate: { lt: opts.before } },
+    distinct: ['fromAddress'],
+    select: { fromAddress: true },
+    take: 2000,
+  });
+  const addresses = rows.map((r) => r.fromAddress).filter((a): a is string => a !== null);
+  const domains = [...new Set(addresses.map((a) => a.split('@')[1]?.toLowerCase()).filter((d): d is string => d !== undefined))];
+  return { addresses, domains };
+}
+
+/** The phishing/lookalike verdict for one message, or null when there is nothing stored to check
+ * (no message_verdict — e.g. this account's own Sent copy) or no blob store is configured. */
+export async function messagePhish(db: Db, blobs: BlobStore | null, accountId: string, message: Message & { verdict: MessageVerdict | null }): Promise<PhishJson | null> {
+  if (message.verdict === null || blobs === null) return null;
+  const stream = await blobs.get(message.blobSha256);
+  const summary = await collectMessage(stream);
+  const headers = summary.headers.fields;
+  const fromHeader = headerValue(headers, 'from');
+  const fromMailbox = fromHeader === null ? undefined : parseMailboxes(fromHeader)[0];
+  const fromAddress = fromMailbox?.address !== undefined && fromMailbox.address !== '' ? fromMailbox.address : (message.fromAddress ?? '');
+
+  const replyToHeader = headerValue(headers, 'reply-to');
+  const replyToMailbox = replyToHeader === null ? undefined : parseMailboxes(replyToHeader)[0];
+
+  const context = await knownSenderContext(db, accountId, { excludeMessageId: message.id, before: message.internalDate });
+
+  const result = detectPhish({
+    from: { address: fromAddress, displayName: fromMailbox?.name ?? null },
+    replyTo: replyToMailbox === undefined ? null : { address: replyToMailbox.address, displayName: replyToMailbox.name },
+    returnPath: headerValue(headers, 'return-path'),
+    authVerdicts: message.verdict.auth as PhishAuthVerdicts,
+    account: { knownSenders: context, contacts: [] }, // CardDAV contacts arrive in PST-P-9.
+    subject: message.subject,
+    links: extractLinks(summary.html?.text ?? null),
+  });
+  return result;
 }
 
 export async function ownMailbox(db: Db | Tx, accountId: string, id: string): Promise<{ id: string } | null> {

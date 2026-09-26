@@ -423,6 +423,58 @@
                 "type": "null"
               }
             ]
+          },
+          "phish": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "warnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "display-name-spoofing",
+                            "lookalike-domain",
+                            "punycode-domain",
+                            "first-time-brand-sender",
+                            "auth-failure",
+                            "link-mismatch"
+                          ]
+                        },
+                        "severity": {
+                          "type": "string",
+                          "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "severity",
+                        "reason"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "warnings"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -441,7 +493,8 @@
           "messageIdHeader",
           "inReplyTo",
           "references",
-          "verdict"
+          "verdict",
+          "phish"
         ],
         "additionalProperties": false
       },
