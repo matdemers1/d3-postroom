@@ -18,6 +18,7 @@ import { deliveryRoutes } from './delivery/index.js';
 import { exportRoutes } from './export/index.js';
 import { senderRoutes } from './senders/index.js';
 import { importRoutes } from './import/index.js';
+import { mobileconfigRoutes } from './mobileconfig/index.js';
 import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import { isSecureOrigin } from './auth/sessions.js';
 import type { ApiDeps } from './deps.js';
@@ -106,6 +107,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/export', requireSession(deps), exportRoutes(deps));
   app.use('/api/compose', requireSession(deps), composeRoutes(deps));
   app.use('/api/import', requireSession(deps), importRoutes(deps));
+  app.use('/api/mobileconfig', requireSession(deps), mobileconfigRoutes(deps));
   app.use('/api', requireSession(deps), mailRoutes(deps));
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not_found' });

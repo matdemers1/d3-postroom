@@ -12,6 +12,7 @@ import * as S from '../mail/schemas.js';
 import * as E from '../export/schemas.js';
 import * as SP from '../senders/schemas.js';
 import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
+import { MOBILECONFIG_ROUTES } from '../mobileconfig/openapi.js';
 
 type Json = Record<string, unknown>;
 
@@ -289,6 +290,7 @@ export const ROUTES: RouteSpec[] = [
     responses: { '200': { description: 'The screen decision after the change.', schema: 'SenderScreenResult' }, ...COMMON, '403': err('Missing CSRF header.') },
   },
   ...COMPOSE_ROUTES,
+  ...MOBILECONFIG_ROUTES,
 ];
 
 function strip(schema: Json): Json {

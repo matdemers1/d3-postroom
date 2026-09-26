@@ -3095,6 +3095,80 @@
         }
       }
     },
+    "/api/mobileconfig": {
+      "post": {
+        "operationId": "generateMobileconfig",
+        "tags": [
+          "Mobileconfig"
+        ],
+        "summary": "A configuration profile for Mail, Calendar and Contacts on this account (PST-REQ-139).",
+        "description": "Mints one fresh app password scoped for imap+smtp+dav and embeds it in an Apple configuration profile (Content-Type application/x-apple-aspen-config). Signed as CMS SignedData when a signing certificate is configured (X-Postroom-Mobileconfig-Signed: 1); otherwise served unsigned (: 0) and iOS shows it as Unverified. Step-up and audited.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The .mobileconfig, signed or not.",
+            "content": {
+              "application/x-apple-aspen-config": {
+                "schema": {
+                  "type": "string",
+                  "contentEncoding": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header, or step-up required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The account has no primary address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Auth is not configured (no password pepper).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/search": {
       "get": {
         "operationId": "search",

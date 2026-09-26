@@ -91,6 +91,15 @@ function ImportIcon() {
   );
 }
 
+function DeviceSetupIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <rect x="7" y="2" width="10" height="20" rx="2" />
+      <path d="M11 18h2" />
+    </svg>
+  );
+}
+
 /** The signed-in frame: sidebar (a drawer below `lg`), the account menu, and the page. */
 export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: () => Promise<void> }) {
   const location = useLocation();
@@ -167,6 +176,9 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
             </SideNavItem>
             <SideNavItem asChild icon={<ImportIcon />} label="Import mail" current={location.pathname === '/account/import'}>
               <RouterLink to="/account/import" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<DeviceSetupIcon />} label="Set up iPhone / Mac" current={location.pathname === '/account/device-setup'}>
+              <RouterLink to="/account/device-setup" />
             </SideNavItem>
           </SideNavGroup>
           {account?.isAdmin === true ? (
