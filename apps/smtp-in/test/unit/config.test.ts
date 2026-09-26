@@ -17,6 +17,7 @@ describe('loadConfig', () => {
       maxErrors: 10,
       tlsCertFile: undefined,
       tlsKeyFile: undefined,
+      spamhausDqsKey: undefined,
     });
     expect(MAX_MESSAGE_SIZE).toBe(104_857_600);
   });
@@ -26,6 +27,11 @@ describe('loadConfig', () => {
     expect(c.edgePeers).toEqual(['10.77.0.1', 'fd00::1']);
     expect(c.tlsCertFile).toBe('/c.pem');
     expect(c.port).toBe(2525);
+  });
+
+  it('reads the Spamhaus DQS key (PST-REQ-063)', () => {
+    expect(loadConfig({ SPAMHAUS_DQS_KEY: 'abc123' }).spamhausDqsKey).toBe('abc123');
+    expect(loadConfig({}).spamhausDqsKey).toBeUndefined();
   });
 });
 
