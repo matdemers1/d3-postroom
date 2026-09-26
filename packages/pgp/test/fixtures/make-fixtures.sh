@@ -223,6 +223,41 @@ if want authority; then
   pgp_mime_signed "$WORK/pay.part" "$WORK/pay-dave-sub.sig" 'Dave Test <dave@example.test>' 'pay' > "$OUT/pgp-mime-signed-dave-subkey.eml"
 fi # authority
 
-# @@SMIMEBER@@
+# ---- S/MIME streamed as BER (PST-T-12.4), each beside its DER twin -------------------------------
+# `openssl cms -stream` writes what Thunderbird/NSS send: indefinite lengths closed by
+# end-of-contents, and the content as a constructed OCTET STRING. Each twin pair is the same part
+# signed (or encrypted) by carol's committed test identity, once without -stream (DER), once with.
+if want smime-ber; then
+  CAROL="$OUT/carol-smime.pem"
+  CAROL_KEY="$OUT/carol-smime.TEST-ONLY.key.pem"
+  INT="$OUT/smime-intermediate.pem"
+  printf 'Content-Type: text/plain; charset=us-ascii\n\nHello from Carol.\nThis message was signed as a stream.\n' | crlf > "$WORK/stream.part"
+  smime_detached() { # $1 part  $2 p7s (binary)  $3 subject
+    {
+      printf 'From: Carol Test <carol@example.test>\nTo: Me <me@d3cloud.io>\nSubject: %s\nDate: %s\nMIME-Version: 1.0\n' "$3" "$DATE"
+      printf 'Content-Type: multipart/signed; protocol="application/pkcs7-signature"; micalg="sha-256"; boundary="sm-b"\n\n'
+      printf 'This is an S/MIME signed message\n\n--sm-b\n'
+    } | crlf
+    cat "$1"
+    {
+      printf -- '\n--sm-b\nContent-Type: application/pkcs7-signature; name="smime.p7s"\nContent-Transfer-Encoding: base64\nContent-Disposition: attachment; filename="smime.p7s"\n\n'
+      "$OPENSSL" base64 -e -in "$2"
+      printf -- '\n--sm-b--\n'
+    } | crlf
+  }
+  # Detached: -stream with -outform DER is BER, and (openssl's way) carries the content as eContent too.
+  "$OPENSSL" cms -sign -binary -outform DER -in "$WORK/stream.part" -signer "$CAROL" -inkey "$CAROL_KEY" -certfile "$INT" -md sha256 -out "$WORK/der.p7s"
+  "$OPENSSL" cms -sign -binary -stream -outform DER -in "$WORK/stream.part" -signer "$CAROL" -inkey "$CAROL_KEY" -certfile "$INT" -md sha256 -out "$WORK/ber.p7s"
+  smime_detached "$WORK/stream.part" "$WORK/der.p7s" 'S/MIME detached, DER' > "$OUT/smime-der-detached.eml"
+  smime_detached "$WORK/stream.part" "$WORK/ber.p7s" 'S/MIME detached, BER' > "$OUT/smime-ber-detached.eml"
+  # Opaque signed-data (application/pkcs7-mime; smime-type=signed-data).
+  for mode in der ber; do
+    stream=(); [ "$mode" = ber ] && stream=(-stream)
+    "$OPENSSL" cms -sign -nodetach "${stream[@]}" -in "$WORK/stream.part" -signer "$CAROL" -inkey "$CAROL_KEY" -certfile "$INT" -md sha256 -crlfeol \
+      -from 'Carol Test <carol@example.test>' -to 'Me <me@d3cloud.io>' -subject "S/MIME opaque, $mode" > "$OUT/smime-$mode-opaque.eml"
+    "$OPENSSL" cms -encrypt -aes256 "${stream[@]}" -in "$WORK/stream.part" -crlfeol \
+      -from 'Dave <dave@example.test>' -to 'Carol Test <carol@example.test>' -subject "S/MIME encrypted, $mode" "$CAROL" > "$OUT/smime-$mode-encrypted.eml"
+  done
+fi # smime-ber
 
 echo "fixtures written to $OUT"

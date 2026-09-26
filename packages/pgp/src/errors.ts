@@ -40,6 +40,18 @@ export class NotDerError extends DerError {
   }
 }
 
+/**
+ * Malformed BER (X.690 §8), read in the BER mode: no end-of-contents for an indefinite length, an
+ * indefinite length on a primitive, end-of-contents where a value belongs, or indefinite lengths
+ * nested past the cap. A DerError too, so "the reader throws only DerError" holds.
+ */
+export class BerError extends DerError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BerError';
+  }
+}
+
 /** Malformed or unsupported CMS/PKCS#7 structure. */
 export class CmsError extends Error {
   readonly reason: string;

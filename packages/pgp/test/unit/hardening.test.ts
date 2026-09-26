@@ -3,7 +3,8 @@
 //   2. analyzeMessage is total (see properties.test.ts for the fixed counterexample);
 //   3. revoked / expired keys, expired and future-dated signatures are never verified-known-key;
 //   4. S/MIME: SHA-1, a certificate outside its validity window, or not for e-mail, never either;
-//   5. strict DER: BER and non-DER signed attributes are refused by name; two literals are malformed.
+//   5. strict DER for signed bytes: non-DER signed attributes are refused by name (BER wrappers are
+//      read since PST-T-12.4 — see smime-ber.test.ts); two literals are malformed.
 import { describe, expect, it } from 'vitest';
 import { analyzeMessage, children, decodeArmor, derSetOf, encodePacket, parseContentInfo, parseSignedData, readPackets, Tag, type KnownKey } from '../../src/index.js';
 import { readMessagePackets } from '../../src/decrypt.js';
@@ -248,14 +249,17 @@ describe('hardening (d)(f): strict DER, and one literal packet', () => {
     }
   });
 
-  it('a BER (indefinite-length) CMS signature → unsupported:ber-encoding', async () => {
+  it('a BER (indefinite-length) outer ContentInfo verifies like its DER twin (PST-T-12.4: BER wrappers are read)', async () => {
     const cert = forgeCert();
     const der = signedData(cert, SIGNED_PART);
     // Re-frame the outer ContentInfo SEQUENCE with an indefinite length.
     const header = der[1] === undefined ? 0 : der[1] < 0x80 ? 2 : 2 + (der[1] & 0x7f);
     const ber = Buffer.concat([Buffer.of(0x30, 0x80), der.subarray(header), Buffer.of(0, 0)]);
     const r = await analyzeMessage([smimeSigned(SIGNED_PART, ber)], [cert.known()], { now: NOW });
-    expect(r.signature.status).toBe('unsupported:ber-encoding');
+    expect(r.signature.status).toBe('verified-known-key');
+    // Unterminated, it is malformed BER, named as such.
+    const cut = await analyzeMessage([smimeSigned(SIGNED_PART, ber.subarray(0, ber.length - 2))], [cert.known()], { now: NOW });
+    expect(cut.signature.status).toBe('unsupported:malformed-ber');
   });
 
   it('more than one literal packet → failed:malformed-message (readMessagePackets and the drawer)', async () => {

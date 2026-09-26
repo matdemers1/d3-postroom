@@ -243,6 +243,9 @@ export interface CertOptions {
   keyUsage?: number | null;
   /** EKU OIDs; null = no extension. */
   eku?: string[] | null;
+  /** Subject/issuer CN and serial (vary them for several certificates in one message). */
+  cn?: string;
+  serial?: Buffer;
 }
 
 export interface ForgedCert {
@@ -256,8 +259,8 @@ export interface ForgedCert {
 
 export function forgeCert(o: CertOptions = {}): ForgedCert {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-  const cn = 'Erin Test (TEST ONLY)';
-  const serial = Buffer.of(0x01, 0x23, 0x45);
+  const cn = o.cn ?? 'Erin Test (TEST ONLY)';
+  const serial = o.serial ?? Buffer.of(0x01, 0x23, 0x45);
   const exts = [ext('2.5.29.17', seq(encodeTlv(TagClass.Context, false, 1, Buffer.from(o.email ?? 'erin@example.test', 'latin1'))))];
   const ku = o.keyUsage === undefined ? 0x80 : o.keyUsage;
   if (ku !== null) exts.push(ext('2.5.29.15', encodeTlv(TagClass.Universal, false, UTag.BitString, Buffer.of(0, ku))));
@@ -295,6 +298,17 @@ export interface SmimeOptions {
 
 /** A CMS ContentInfo(SignedData), detached, by `cert` over `content`. */
 export function signedData(cert: ForgedCert, content: Buffer, o: SmimeOptions = {}): Buffer {
+  return signedDataOf([signerInfo(cert, content, o)], [cert.der], o.digest ?? 'sha256');
+}
+
+/** ContentInfo(SignedData), detached, around the given SignerInfos and certificates, in that order. */
+export function signedDataOf(signerInfos: readonly Buffer[], certs: readonly Buffer[], digest: 'sha1' | 'sha256' = 'sha256'): Buffer {
+  const sd = seq(int(Buffer.of(1)), set(seq(oid(OID[digest]))), seq(oid('1.2.840.113549.1.7.1')), ...(certs.length === 0 ? [] : [ctx(0, Buffer.concat(certs))]), set(...signerInfos));
+  return seq(oid('1.2.840.113549.1.7.2'), ctx(0, sd));
+}
+
+/** One SignerInfo by `cert` over `content`. `bogus` signs other bytes, so it never verifies. */
+export function signerInfo(cert: ForgedCert, content: Buffer, o: SmimeOptions & { bogus?: boolean } = {}): Buffer {
   const digest = o.digest ?? 'sha256';
   const attrs = [
     seq(oid('1.2.840.113549.1.9.3'), set(oid('1.2.840.113549.1.7.1'))),
@@ -314,9 +328,8 @@ export function signedData(cert: ForgedCert, content: Buffer, o: SmimeOptions = 
     implicit = derSetOf(attrs, TagClass.Context, 0);
     signed = derSetOf(attrs);
   }
-  const signerInfo = seq(int(Buffer.of(1)), seq(cert.issuerName, int(cert.serial)), seq(oid(OID[digest])), implicit, seq(oid(o.signatureAlgorithm ?? ED25519)), octet(sign(null, signed, cert.priv)));
-  const sd = seq(int(Buffer.of(1)), set(seq(oid(OID[digest]))), seq(oid('1.2.840.113549.1.7.1')), ctx(0, cert.der), set(signerInfo));
-  return seq(oid('1.2.840.113549.1.7.2'), ctx(0, sd));
+  const sig = sign(null, o.bogus === true ? Buffer.concat([signed, Buffer.of(0)]) : signed, cert.priv);
+  return seq(int(Buffer.of(1)), seq(cert.issuerName, int(cert.serial)), seq(oid(OID[digest])), implicit, seq(oid(o.signatureAlgorithm ?? ED25519)), octet(sig));
 }
 
 /** RFC 8551 §3.5.3 multipart/signed around `part` with `cms` (DER) as the signature. */

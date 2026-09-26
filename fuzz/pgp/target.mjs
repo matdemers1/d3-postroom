@@ -3,7 +3,9 @@
 // The same bytes go through every hand-written format reader in the package: OpenPGP packet
 // framing (old/new format, partial lengths), transferable keys, v4 signature packets, the whole
 // decrypt path with no keys (PKESK and SEIPD framing), ASCII armor and the cleartext framework,
-// the strict DER reader, and the CMS ContentInfo / SignedData / EnvelopedData / certificate readers.
+// the DER reader in both modes (strict DER, and BER with indefinite lengths, padded lengths and
+// segmented OCTET STRINGs — PST-T-12.4), and the CMS ContentInfo / SignedData / EnvelopedData /
+// certificate readers (BER wrappers by default, and strict DER).
 // The invariant: each fails only with the package's own error types (PgpError and its subclasses,
 // DerError, CmsError) and decryptMessage never throws at all. A crasher becomes a fixture under
 // fuzz/pgp/fixtures before the parser is fixed — see docs/runbooks/fuzz-crasher.md.
@@ -44,7 +46,20 @@ export function exercise(bytes) {
     for (const t of pgp.readAll(buf)) if (t.constructed) pgp.readAll(t.content);
   });
   own(() => {
+    for (const t of pgp.readAll(buf, 0, 100_000, 'ber')) if (t.constructed) for (const c of pgp.children(t)) if (c.constructed) pgp.definiteForm(c);
+  });
+  own(() => {
+    const t = pgp.readTlv(buf, 0, 0, 'ber');
+    if (t.constructed) pgp.octets(t);
+  });
+  own(() => {
     const ci = pgp.parseContentInfo(buf);
+    const sd = pgp.parseSignedData(ci.content);
+    // The strict re-read of each SignerInfo's signed attributes (verifySigner's first step).
+    for (const si of sd.signers) if (si.signedAttrs !== null) pgp.children(pgp.readTlv(Buffer.from(si.signedAttrs.raw), 0, 0, 'der'));
+  });
+  own(() => {
+    const ci = pgp.parseContentInfo(buf, 'der');
     pgp.parseSignedData(ci.content);
   });
   own(() => {
