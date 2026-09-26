@@ -314,7 +314,7 @@ function ContactPane({
           {contact.org === '' ? null : <DescriptionItem term="Organisation">{contact.org}</DescriptionItem>}
           {contact.emails.map((e, i) => (
             <DescriptionItem key={`e${String(i)}`} term={e.type === null ? 'E-mail' : `E-mail (${e.type})`}>
-              <a href={`mailto:${e.address}`}>{e.address}</a>
+              <a className="pr-contacts__email" href={`mailto:${e.address}`}>{e.address}</a>
             </DescriptionItem>
           ))}
           {contact.tels.map((t, i) => (

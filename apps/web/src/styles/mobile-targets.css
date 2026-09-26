@@ -1,42 +1,35 @@
-/* PST-T-11.2: at phone width, every interactive element needs a 44×44 CSS px hit area, or an
- * equivalent one. @d3cloud/ui's own control heights (sm 28px, md 34px, even lg 40px for a button;
- * 26px for the password-reveal toggle) are all under that — and the package is not ours to edit
- * (only apps/web is owned here) — so this file gives them an *invisible* hit-area extension instead
- * of resizing them visually: a ::after with a negative inset, which participates in hit-testing (a
- * pointer event landing on generated content still targets its real host element) without widening
- * anything a design review would see. Text inputs are different — ::before/::after do not render on
- * a replaced element like <input>, so those are stretched to fill their wrapper's height instead,
- * which is a visible (if small) change but the only one that actually works.
+/* PST-T-11.2: at phone width, every interactive element needs a 44×44 CSS px hit area of its own.
+ * @d3cloud/ui's control heights (sm 28px, md 34px, even lg 40px for a button; 26px for the
+ * password-reveal toggle) are all under that, and the package is not ours to edit, so this file
+ * sizes them here.
  *
- * `--hit-w`/`--hit-h` record the resulting hit area in CSS custom properties so a test can read the
- * true tap target size without re-deriving each component's own layout math (see
- * e2e/tests/mobile.spec.ts's assertMobileFriendly). No raw hex, no shadows, no invented tokens: only
- * `inset`, `position`, and the two custom properties this file itself defines.
+ * Two ways, and which one depends on the neighbours:
+ *   - REAL SIZE (min-height/min-width): buttons, icon buttons, the brand mark, the mail view's back
+ *     links. These sit in rows and stacks with a small gap (4-8px): an invisible extension there
+ *     reaches into the next control's box, and because a later sibling paints on top, a tap meant
+ *     for one control lands on the other (the Outbound queue's Retry / Force SES, the reading pane's
+ *     Reply / Reply all). A real box is the only honest fix.
+ *   - INVISIBLE EXTENSION (a ::after with a negative inset, which hit-tests as its host): only where
+ *     nothing else is within reach — the password toggle inside its field, a lone standalone link.
+ *
+ * e2e/tests/mobile.spec.ts proves it by hit-testing every control (document.elementFromPoint at its
+ * centre and 20px out each way): each probe lands on the control itself, and never on another one.
+ * No raw hex, no shadows, no invented tokens: only sizes, `inset`, `position` and spacing tokens.
  */
 @media (max-width: 599px) {
-  /* Every @d3cloud/ui Button size is under 44px tall at least one way (sm 28, md 34, lg 40): give
-   * all three the same invisible extension rather than special-casing which screen used which size. */
+  /* Every @d3cloud/ui Button size is under 44px tall (sm 28, md 34, lg 40). Grown for real: a row
+   * of small buttons wraps onto more lines instead of sharing one tap area. */
   .d3-btn--sm,
   .d3-btn--md,
   .d3-btn--lg {
-    position: relative;
-    --hit-w: 44px;
-    --hit-h: 44px;
-  }
-  .d3-btn--sm::after,
-  .d3-btn--md::after,
-  .d3-btn--lg::after {
-    content: '';
-    position: absolute;
-    inset: -12px;
+    min-height: 44px;
+    min-width: 44px;
   }
 
   /* The password-reveal toggle inside a sign-in/setup/change-password field: 26px (22px in a small
    * field), positioned over the input's own padding, so its extension stays inside that field. */
   .d3-pw__toggle {
     position: relative;
-    --hit-w: 44px;
-    --hit-h: 44px;
   }
   .d3-pw__toggle::after {
     content: '';
@@ -44,37 +37,31 @@
     inset: -10px;
   }
 
-  /* The icon-only buttons (28/34/40px square: "Open navigation", the shell's icon actions) — same
-   * invisible extension as the labelled buttons above. */
+  /* The icon-only buttons (28/34/40px square: "Open navigation", the shell's icon actions). */
   .d3-ibtn--sm,
   .d3-ibtn--md,
   .d3-ibtn--lg {
-    position: relative;
-    --hit-w: 44px;
-    --hit-h: 44px;
-  }
-  .d3-ibtn--sm::after,
-  .d3-ibtn--md::after,
-  .d3-ibtn--lg::after {
-    content: '';
-    position: absolute;
-    inset: -12px;
+    min-height: 44px;
+    min-width: 44px;
   }
 
-  /* The shell's brand mark/wordmark (the "Postroom" home link, 26px tall) and a standalone nav
-   * link like the mobile "‹ Mailboxes" back link (17px tall, @d3cloud/ui's `variant="standalone"`
-   * Link, which shares the plain `.d3-lnk` class with every other Link — there is no separate
-   * modifier to target more narrowly) are not inline text inside a sentence — WCAG 2.5.8's inline
-   * exception does not cover them — so they get the same treatment. An inline text link inside a
-   * message body or a description list also carries `.d3-lnk`; enlarging its invisible hit area
-   * too is harmless (it is already allowlisted below on its own terms). */
+  /* The shell's brand mark/wordmark (the "Postroom" home link, 26px tall), and the mail view's
+   * "‹ Mailboxes" / "‹ Inbox" back links (17px tall, directly under the top bar's "Open
+   * navigation" button — an extension upwards would reach into it). Grown for real. */
   .d3-shell-brand,
+  .pr-back a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  /* Any other standalone link (@d3cloud/ui's `variant="standalone"` Link shares the plain `.d3-lnk`
+   * class with every inline one, so there is no narrower hook). An inline text link inside a message
+   * body or a description list also carries `.d3-lnk`; it is allowlisted in the spec on its own
+   * terms (WCAG 2.5.8's inline exception). */
   .d3-lnk {
     position: relative;
-    --hit-w: 44px;
-    --hit-h: 44px;
   }
-  .d3-shell-brand::after,
   .d3-lnk::after {
     content: '';
     position: absolute;
@@ -102,24 +89,16 @@
     padding-inline: var(--space-8);
   }
 
-  /* Tabs (e.g. Rules' "Rules" / "Edit as Sieve" toggle, 28px tall). */
+  /* Tabs (e.g. Rules' "Rules" / "Edit as Sieve" toggle, 28px tall). The tab list scrolls
+   * sideways (overflow-x: auto), which clips anything drawn outside a tab — grown for real. */
   .d3-tabs__tab {
-    position: relative;
-    --hit-w: 44px;
-    --hit-h: 44px;
-  }
-  .d3-tabs__tab::after {
-    content: '';
-    position: absolute;
-    inset: -8px;
+    min-height: 44px;
   }
 
   /* PageHeader's "back" link (e.g. Contacts' "All contacts", 19px tall) — a standalone navigation
    * link above the title, not inline text inside a sentence. */
   .d3-ph__back a {
     position: relative;
-    --hit-w: 44px;
-    --hit-h: 44px;
   }
   .d3-ph__back a::after {
     content: '';
@@ -131,8 +110,6 @@
    * screen as a 36px-tall row. */
   .d3-snav__item {
     position: relative;
-    --hit-w: 44px;
-    --hit-h: 44px;
   }
   .d3-snav__item::after {
     content: '';
@@ -141,16 +118,27 @@
   }
 
   /* The Checkbox's visible 17×17 box (the actual toggle button — the native <input> beside it is
-   * Radix's aria-hidden form-association shim, excluded in e2e/tests/mobile.spec.ts). */
+   * Radix's aria-hidden form-association shim, excluded in e2e/tests/mobile.spec.ts). Its row is
+   * made 44px tall, so the box's 13px extension stays inside its own row even when checkboxes are
+   * stacked; sideways, the extension runs under the checkbox's own <label>, which toggles it too. */
+  .d3-cbx {
+    min-height: 44px;
+  }
   .d3-cbx__box {
     position: relative;
-    --hit-w: 44px;
-    --hit-h: 44px;
   }
   .d3-cbx__box::after {
     content: '';
     position: absolute;
     inset: -13px;
+  }
+
+  /* A contact's e-mail address: a value on its own line in the card, not a link inside a sentence,
+   * and a long one wraps to two lines (39px). */
+  .pr-contacts__email {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
   }
 
   /* Text/search/date fields: the visible box (`.d3-inp`) is 28/34/40px tall with the control itself
