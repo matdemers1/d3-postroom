@@ -23,10 +23,21 @@ export interface Classified {
   readonly reason: string | null;
 }
 
-/** A DMARC report is ours when its published policy domain is one of ours. */
+/**
+ * Whether a reported domain is one of ours or a subdomain of one. A subdomain that publishes its own
+ * DMARC record (or is reported under `sp=`) is reported under its own name, and it is still ours.
+ * Domain names are case-insensitive (RFC 4343), so everything is compared, and stored, lowercased.
+ */
+export function isOurDomain(domain: string, ourDomains: ReadonlySet<string>): boolean {
+  const d = domain.toLowerCase().replace(/\.$/, '');
+  for (const ours of ourDomains) if (d === ours || d.endsWith(`.${ours}`)) return true;
+  return false;
+}
+
+/** A DMARC report is ours when its published policy domain is one of ours or a subdomain of one. */
 export function classifyDmarc(policyDomain: string, ourDomains: ReadonlySet<string>): Classified {
   const domain = policyDomain.toLowerCase();
-  if (ourDomains.has(domain)) return { status: 'ours', reason: null };
+  if (isOurDomain(domain, ourDomains)) return { status: 'ours', reason: null };
   return { status: 'foreign', reason: `policy_published domain "${domain}" is not one of our domains` };
 }
 
@@ -34,7 +45,7 @@ export function classifyDmarc(policyDomain: string, ourDomains: ReadonlySet<stri
  * can (per RFC 8460) cover several policy domains at once, so it is foreign only when none match. */
 export function classifyTlsRpt(policyDomains: readonly string[], ourDomains: ReadonlySet<string>): Classified {
   const domains = [...new Set(policyDomains.map((d) => d.toLowerCase()))];
-  if (domains.some((d) => ourDomains.has(d))) return { status: 'ours', reason: null };
+  if (domains.some((d) => isOurDomain(d, ourDomains))) return { status: 'ours', reason: null };
   const list = domains.length === 0 ? '(none reported)' : domains.join(', ');
   return { status: 'foreign', reason: `policy domain(s) ${list} are not one of our domains` };
 }

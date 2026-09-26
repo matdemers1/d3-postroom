@@ -30,7 +30,7 @@ async function storeDmarc(tx: Tx, r: DmarcAggregateReport, messageId: string, ou
   const { status, reason } = classifyDmarc(r.policy.domain, ourDomains);
   const inserted = await tx.$queryRaw<{ id: string }[]>`
     INSERT INTO dmarc_report (org_name, report_id, email, domain, range_begin, range_end, policy_published, message_id, status, reason)
-    VALUES (${r.orgName}, ${r.reportId}, ${r.email}, ${r.policy.domain}, to_timestamp(${r.begin}), to_timestamp(${r.end}),
+    VALUES (${r.orgName}, ${r.reportId}, ${r.email}, ${r.policy.domain.toLowerCase()}, to_timestamp(${r.begin}), to_timestamp(${r.end}),
             ${json(r.policy)}::jsonb, ${messageId}::uuid, ${status}, ${reason})
     ON CONFLICT (org_name, report_id) DO NOTHING
     RETURNING id::text AS id`;
@@ -61,7 +61,7 @@ async function storeDmarc(tx: Tx, r: DmarcAggregateReport, messageId: string, ou
     action: 'reports.dmarc.ingest',
     entityType: 'dmarc_report',
     entityId: row.id,
-    after: { org: r.orgName, reportId: r.reportId, domain: r.policy.domain, records: r.records.length, messages, passed, messageId, status, reason },
+    after: { org: r.orgName, reportId: r.reportId, domain: r.policy.domain.toLowerCase(), records: r.records.length, messages, passed, messageId, status, reason },
   });
   return { id: row.id, created: true };
 }
@@ -83,7 +83,7 @@ async function storeTlsRpt(tx: Tx, r: TlsRptReport, messageId: string, ourDomain
       data: {
         reportId: row.id,
         policyType: p.policyType,
-        policyDomain: p.policyDomain,
+        policyDomain: p.policyDomain.toLowerCase(),
         policyString: [...p.policyString],
         mxHost: [...p.mxHost],
         successCount: p.totalSuccessful,

@@ -101,7 +101,7 @@ function window(now: Date): { from: Date; to: Date; days: string[] } {
 async function proposalForDomain(db: Db, env: NodeJS.ProcessEnv, domain: string, now: Date): Promise<ProposalResult> {
   const { from, to, days } = window(now);
   const reports = await db.dmarcReport.findMany({
-    where: { domain, status: 'ours', rangeBegin: { gte: from, lt: to } },
+    where: { domain: { equals: domain, mode: 'insensitive' }, status: 'ours', rangeBegin: { gte: from, lt: to } },
     include: { records: true },
     orderBy: { rangeBegin: 'asc' },
   });

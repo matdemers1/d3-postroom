@@ -280,14 +280,14 @@ describe.skipIf(!baseUrl)('DMARC progression proposals (PST-T-7.2, PST-REQ-123)'
   async function reportOnDay(
     reportId: string,
     dayOffset: number,
-    opts: { sourceIp?: string; disposition?: string; dkim?: string | null; spf?: string | null } = {},
+    opts: { sourceIp?: string; disposition?: string; dkim?: string | null; spf?: string | null; domain?: string } = {},
   ): Promise<void> {
     const dayStart = todayStartUtc() + dayOffset * 86_400_000;
     await db.dmarcReport.create({
       data: {
         orgName: 'google.com',
         reportId,
-        domain: 'd3cloud.io',
+        domain: opts.domain ?? 'd3cloud.io',
         rangeBegin: new Date(dayStart),
         rangeEnd: new Date(dayStart + 86_400_000 - 1000),
         policyPublished: { domain: 'd3cloud.io', p: 'none', pct: 100, adkim: 'r', aspf: 'r' },
@@ -352,6 +352,16 @@ describe.skipIf(!baseUrl)('DMARC progression proposals (PST-T-7.2, PST-REQ-123)'
     expect(p?.proposal?.txtValue).toBe('v=DMARC1; p=quarantine; pct=100; adkim=r; aspf=r; rua=mailto:dmarc@d3cloud.io');
     expect(p?.proposal?.evidence.days).toHaveLength(14);
     expect(p?.proposal?.evidence.days.every((d) => d.reports === 1 && d.messages === 10 && d.sources.includes(EDGE_IP) && d.orgs.includes('google.com'))).toBe(true);
+  });
+
+  it('a policy domain reported in another case still counts (RFC 4343)', async () => {
+    clock.advance(75 * 86_400_000);
+    admin = await signIn();
+    for (let i = 1; i <= 14; i++) await reportOnDay(`case-${String(i)}`, -i, { domain: 'D3cloud.IO' });
+    const res = await request(app).get('/api/admin/deliverability/proposals').set('cookie', admin);
+    const p = (res.body as { proposals: ProposalResult[] }).proposals.find((r) => r.domain === 'd3cloud.io');
+    expect(p?.eligible).toBe(true);
+    expect(p?.proposal?.evidence.days).toHaveLength(14);
   });
 
   it('a source outside the authorized set never counts toward the streak', async () => {
