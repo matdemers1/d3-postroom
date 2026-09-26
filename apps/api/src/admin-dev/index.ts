@@ -151,5 +151,68 @@ export function adminDevRoutes(deps: ApiDeps): Router {
       res.status(201).json({ messages: filed });
     }),
   );
+
+  // POST /api/admin/dev/fake-delivery { outboundId } — for a stack with no reachable MX (the docker
+  // e2e stack: its delivery daemon cannot reach a fake MX on the runner, and nothing may be sent to
+  // the real internet). Records ONE delivered attempt per still-queued/deferred recipient of the
+  // caller's own outbound message, marked transport "e2e-stub" so no timeline can mistake it for a
+  // real delivery, exactly as the worker's commit step would (guarded on state, attempt + recipient
+  // in one audited transaction). Mounted only with POSTROOM_E2E_SEED=1, like /seed.
+  router.post(
+    '/fake-delivery',
+    handle(async (req, res) => {
+      if (!adminDevEnabled(deps.env)) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      const parsed = FakeDeliveryBody.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: 'invalid_request' });
+        return;
+      }
+      const me = currentSession(req);
+      const message = await db.outboundMessage.findFirst({ where: { id: parsed.data.outboundId, accountId: me.accountId }, select: { id: true } });
+      if (message === null) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      const now = rt.now();
+      const delivered = await audited(
+        db,
+        { kind: 'account', accountId: me.accountId },
+        { action: 'dev.fake_delivery', entityType: 'outbound_message', context: getAuditContext(req) },
+        async (tx) => {
+          const recipients = await tx.outboundRecipient.findMany({ where: { outboundMessageId: message.id, state: { in: ['queued', 'deferred'] } }, select: { id: true, address: true } });
+          const done: string[] = [];
+          for (const r of recipients) {
+            const moved = await tx.outboundRecipient.updateMany({
+              where: { id: r.id, state: { in: ['queued', 'deferred'] } },
+              data: { state: 'delivered', attempts: { increment: 1 }, deliveredAt: now, lastCode: 250, lastEnhanced: '2.0.0', lastText: 'OK (e2e stub: no real MX was contacted)' },
+            });
+            if (moved.count === 0) continue;
+            await tx.deliveryAttempt.create({
+              data: {
+                recipientId: r.id,
+                startedAt: now,
+                finishedAt: now,
+                transport: 'e2e-stub',
+                mxHost: 'fake-mx.invalid',
+                mxIp: '127.0.0.1',
+                remoteCode: 250,
+                remoteEnhanced: '2.0.0',
+                remoteText: 'OK (e2e stub: no real MX was contacted)',
+                outcome: 'delivered',
+              },
+            });
+            done.push(r.address);
+          }
+          return { entityId: message.id, before: null, after: { delivered: done, transport: 'e2e-stub' }, result: done };
+        },
+      );
+      res.json({ delivered });
+    }),
+  );
   return router;
 }
+
+const FakeDeliveryBody = z.object({ outboundId: z.uuid() });

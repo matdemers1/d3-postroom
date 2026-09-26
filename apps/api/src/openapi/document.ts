@@ -10,6 +10,8 @@ import { z } from 'zod';
 import { SESSION_COOKIE } from '../auth/sessions.js';
 import * as S from '../mail/schemas.js';
 import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
+import { ADMIN_DNS_COMPONENTS, ADMIN_DNS_ROUTES } from '../admin-dns/openapi.js';
+import { SETUP_WIZARD_COMPONENTS, SETUP_WIZARD_ROUTES } from '../setup-wizard/openapi.js';
 
 type Json = Record<string, unknown>;
 
@@ -53,6 +55,8 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   MailboxChangedEvent: S.MailboxChangedEvent,
   MessageNewEvent: S.MessageNewEvent,
   ...COMPOSE_COMPONENTS,
+  ...ADMIN_DNS_COMPONENTS,
+  ...SETUP_WIZARD_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -198,6 +202,8 @@ export const ROUTES: RouteSpec[] = [
     },
   },
   ...COMPOSE_ROUTES,
+  ...ADMIN_DNS_ROUTES,
+  ...SETUP_WIZARD_ROUTES,
 ];
 
 function strip(schema: Json): Json {

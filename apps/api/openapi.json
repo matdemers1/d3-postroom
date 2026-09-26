@@ -70,6 +70,160 @@
         ],
         "additionalProperties": false
       },
+      "DnsCheckRow": {
+        "type": "object",
+        "properties": {
+          "record": {
+            "type": "string",
+            "enum": [
+              "MX",
+              "SPF",
+              "DKIM",
+              "DMARC",
+              "PTR",
+              "MTA-STS",
+              "MTA-STS host",
+              "TLS-RPT",
+              "SRV",
+              "autoconfig",
+              "autodiscover"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "The owner name."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "MX",
+              "TXT",
+              "PTR",
+              "SRV",
+              "CNAME"
+            ]
+          },
+          "expected": {
+            "description": "The value to publish; null when it cannot be known yet (no edge, no DKIM key).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "afterGoLive": {
+            "type": "boolean",
+            "description": "Published only after the security gate (PST-REQ-086); absent before then is pending."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "live": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the resolver answers now."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "missing",
+              "pending",
+              "unknown"
+            ],
+            "description": "unknown means the resolver did not answer; it is never a pass."
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "record",
+          "name",
+          "type",
+          "expected",
+          "afterGoLive",
+          "note",
+          "live",
+          "status",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "DnsReport": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "resolver": {
+            "type": "string",
+            "description": "The resolver the answers came from (DNS_RESOLVER)."
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "pass": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "fail": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "missing": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "pending": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unknown": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "pass",
+              "fail",
+              "missing",
+              "pending",
+              "unknown"
+            ],
+            "additionalProperties": false
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DnsCheckRow"
+            }
+          }
+        },
+        "required": [
+          "domain",
+          "resolver",
+          "checkedAt",
+          "summary",
+          "rows"
+        ],
+        "additionalProperties": false
+      },
       "Draft": {
         "type": "object",
         "properties": {
@@ -962,6 +1116,157 @@
           "messages"
         ],
         "additionalProperties": false
+      },
+      "WizardDkimKey": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string"
+          },
+          "algorithm": {
+            "type": "string",
+            "enum": [
+              "ed25519-sha256",
+              "rsa-sha256"
+            ]
+          },
+          "dnsName": {
+            "type": "string",
+            "description": "Where the TXT record goes: <selector>._domainkey.<domain>."
+          },
+          "dnsRecord": {
+            "type": "string",
+            "description": "The TXT value to publish."
+          }
+        },
+        "required": [
+          "selector",
+          "algorithm",
+          "dnsName",
+          "dnsRecord"
+        ],
+        "additionalProperties": false
+      },
+      "WizardView": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "dkim",
+              "dns",
+              "mailbox",
+              "test",
+              "done"
+            ],
+            "description": "The furthest step reached; done once completed."
+          },
+          "completed": {
+            "type": "boolean"
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suggestedDomain": {
+            "type": "string",
+            "description": "The domain to offer when none is chosen yet."
+          },
+          "dkim": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WizardDkimKey"
+            }
+          },
+          "dnsAcknowledgedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mailbox": {
+            "description": "The address the test is sent from.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The operator’s own addresses at the chosen domain."
+          },
+          "test": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "outboundId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "to": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "sentAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "outboundId",
+                  "to",
+                  "sentAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "step",
+          "completed",
+          "completedAt",
+          "domain",
+          "suggestedDomain",
+          "dkim",
+          "dnsAcknowledgedAt",
+          "mailbox",
+          "addresses",
+          "test"
+        ],
+        "additionalProperties": false
       }
     },
     "securitySchemes": {
@@ -978,6 +1283,615 @@
     }
   ],
   "paths": {
+    "/api/admin/dns": {
+      "get": {
+        "operationId": "checkDns",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Expected vs live DNS for one of Postroom’s domains, with pass/fail per record (PST-REQ-099).",
+        "description": "MX, SPF (evaluated for EDGE_PUBLIC_IP), DKIM (p= compared per live selector), DMARC (parsed), PTR (forward-confirmed), MTA-STS, TLS-RPT, SRV and autoconfig/autodiscover. Answers come from Postroom’s own resolver (DNS_RESOLVER). A resolver that does not answer makes a row unknown, never pass. Nothing at a no-reply subdomain is ever checked. Admin only.",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "description": "One of Postroom’s domains; default the primary.",
+            "schema": {
+              "description": "One of Postroom’s domains; default the primary.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253,
+              "pattern": "^[A-Za-z0-9.-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DnsReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid domain, or a no-reply subdomain (Cloudflare Email Service’s, never touched).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a domain Postroom serves.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/setup-wizard": {
+      "get": {
+        "operationId": "getSetupWizard",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "The setup wizard’s state (PST-REQ-098): resumable, stored server-side.",
+        "responses": {
+          "200": {
+            "description": "The wizard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/setup-wizard/complete": {
+      "post": {
+        "operationId": "setupWizardComplete",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Finish the wizard (a test must have been sent).",
+        "description": "Admin only, needs a fresh step-up, audited.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The wizard after the step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or step_up_required (a TOTP code in the last five minutes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step is not done yet (step_not_reached), or the step conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/setup-wizard/dkim": {
+      "post": {
+        "operationId": "setupWizardDkim",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Generate the domain’s Ed25519 and RSA-2048 DKIM keys (idempotent) and show their TXT records.",
+        "description": "Admin only, needs a fresh step-up, audited.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The wizard after the step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or step_up_required (a TOTP code in the last five minutes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step is not done yet (step_not_reached), or the step conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/setup-wizard/dns": {
+      "post": {
+        "operationId": "setupWizardDns",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Record that the live DNS check (GET /api/admin/dns) was reviewed.",
+        "description": "Admin only, needs a fresh step-up, audited.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The wizard after the step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or step_up_required (a TOTP code in the last five minutes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step is not done yet (step_not_reached), or the step conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/setup-wizard/domain": {
+      "post": {
+        "operationId": "setupWizardDomain",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create or confirm the mail domain.",
+        "description": "Admin only, needs a fresh step-up, audited.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "domain": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 253,
+                    "pattern": "^(?=.{3,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+                  }
+                },
+                "required": [
+                  "domain"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The wizard after the step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or step_up_required (a TOTP code in the last five minutes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step is not done yet (step_not_reached), or the step conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/setup-wizard/mailbox": {
+      "post": {
+        "operationId": "setupWizardMailbox",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Choose the address the test is sent from: the operator’s own, or a new one of theirs.",
+        "description": "Admin only, needs a fresh step-up, audited.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "localPart": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-z0-9](?:[a-z0-9._+-]*[a-z0-9])?$"
+                  }
+                },
+                "required": [
+                  "localPart"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The wizard after the step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or step_up_required (a TOTP code in the last five minutes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step is not done yet (step_not_reached), or the step conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/setup-wizard/test": {
+      "post": {
+        "operationId": "setupWizardTest",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Record the test message sent through POST /api/compose/send; its timeline is GET /api/messages/{id}/delivery.",
+        "description": "Admin only, needs a fresh step-up, audited.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "outboundId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "description": "The outbound id POST /api/compose/send answered for the test message."
+                  }
+                },
+                "required": [
+                  "outboundId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The wizard after the step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or step_up_required (a TOTP code in the last five minutes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a sent message of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step is not done yet (step_not_reached), or the step conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/compose/drafts": {
       "get": {
         "operationId": "listDrafts",
