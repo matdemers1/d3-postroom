@@ -54,7 +54,7 @@ test('Setup with a common password names which rule failed', async ({ page, requ
   const setupToken = process.env['E2E_SETUP_TOKEN'];
   if (setupToken !== undefined && setupToken !== '') await page.getByLabel('Setup token').fill(setupToken);
   await page.getByRole('textbox', { name: 'Display name' }).fill('E2E Operator');
-  await page.getByRole('textbox', { name: 'Login' }).fill('operator');
+  await page.getByRole('textbox', { name: 'Username' }).fill('operator');
   await page.getByLabel('Password', { exact: true }).fill(COMMON_PASSWORD);
   await page.getByLabel('Confirm password').fill(COMMON_PASSWORD);
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -100,7 +100,7 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   // PST-DA-040: signing out away from '/' remembers the page as ?next=.
   await expect(page).toHaveURL(/\/signin\?next=%2Faccount%2Fpassword$/);
 
-  await page.getByRole('textbox', { name: 'Login' }).fill(operator.login);
+  await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
   await page.getByLabel('Password', { exact: true }).fill(operator.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));

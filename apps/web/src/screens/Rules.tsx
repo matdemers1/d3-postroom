@@ -197,7 +197,7 @@ type Mode = 'builder' | 'sieve';
 function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: number; onChange: (next: Rule) => void; onRemove: () => void }) {
   const n = String(index + 1);
   return (
-    <Section title={`Rule ${n}`} headingLevel={3} actions={<Button variant="danger-ghost" size="sm" onClick={onRemove}>Remove rule {n}</Button>}>
+    <Section title={`Rule ${n}`} headingLevel={3} actions={<Button variant="danger-ghost" size="sm" aria-label={`Remove rule ${n}`} onClick={onRemove}>Remove</Button>}>
       <Cluster gap="12" align="end">
         <FormField label="When">
           <Select
@@ -390,7 +390,7 @@ export function Rules() {
       if (activate) await sieveApi.activate(name);
       if (mode === 'builder') setSource(content);
       await load();
-      setNotice(activate ? `Saved. "${name}" now runs on new mail.` : `Saved "${name}".`);
+      setNotice(activate ? `Saved. “${name}” now runs on new mail.` : `Saved “${name}”.`);
     });
   };
 
@@ -408,7 +408,7 @@ export function Rules() {
       setConfirming(null);
       const list = await load();
       if (target === name) await open(list?.find((s) => s.active)?.name ?? BUILDER_SCRIPT);
-      setNotice(`Deleted "${target}".`);
+      setNotice(`Deleted “${target}”.`);
     });
   };
 
@@ -468,7 +468,7 @@ export function Rules() {
       ) : (
         <Stack gap="24">
           <Section
-            title={`Editing "${name}"`}
+            title={`Editing “${name}”`}
             description={current?.active === true ? 'This script runs on every new message.' : 'This script is not running. Save and turn it on to use it.'}
           >
             <form onSubmit={save(false)} noValidate>
@@ -553,7 +553,7 @@ export function Rules() {
 
                 <FormActions>
                   <Button onClick={check} disabled={busy}>
-                    Check
+                    Check syntax
                   </Button>
                   <Button type="submit" disabled={busy}>
                     Save
@@ -597,7 +597,7 @@ export function Rules() {
         }}
         destructive
         title="Delete this script?"
-        description={confirming === null ? '' : `"${confirming}" is deleted for good. This cannot be undone.`}
+        description={confirming === null ? '' : `“${confirming}” is deleted for good. This cannot be undone.`}
         footer={
           <>
             <ModalClose>

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type SyntheticEvent } from 'react';
 import { Link as RouterLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Alert, Button, EmptyState, Input, Link, SegmentedControl, Skeleton, Stack } from '@d3cloud/ui';
-import { api, ApiError, type Mailbox, type MailboxSplit, type MessageDetail, type MessageSummary } from '../api';
+import { api, ApiError, serverUnreachable, type Mailbox, type MailboxSplit, type MessageDetail, type MessageSummary } from '../api';
 import { CommandPalette } from './CommandPalette';
 import { Composer } from './Composer';
 import { draftFor } from './compose';
@@ -527,7 +527,7 @@ function MailPanes({ route }: { route: MailRoute }) {
       <div className="pr-mail pr-mail--state" ref={rootRef}>
         <h1 className="pr-vh">Mail</h1>
         <EmptyState kind="error" heading="Could not load your mailboxes" size="page" headingLevel={2} action={<Button onClick={() => void refreshMailboxes()}>Try again</Button>}>
-          Postroom did not answer. Check your connection.
+          {serverUnreachable('Check your connection.')}
         </EmptyState>
       </div>
     );
@@ -846,7 +846,7 @@ function ListBody({
     return (
       <div className="pr-list pr-list--state">
         <EmptyState kind="error" heading="Could not load these messages" size="inline" headingLevel={3} action={<Button onClick={onRetry}>Try again</Button>}>
-          Postroom did not answer. Check your connection.
+          {serverUnreachable('Check your connection.')}
         </EmptyState>
       </div>
     );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, INBOUND_STAGES, describeError, isSafeNextPath, queuePath, redirectFor, type AuthState } from '../../src/api';
+import { ApiError, INBOUND_STAGES, describeError, isSafeNextPath, queuePath, redirectFor, serverUnreachable, type AuthState } from '../../src/api';
 
 const base: AuthState = { setupRequired: false, oidcConfigured: false, oidcAvailable: false, signedIn: false };
 const signedIn = (isAdmin: boolean): AuthState => ({
@@ -88,6 +88,21 @@ describe('queuePath (PST-T-6.6)', () => {
 
   it('encodes a domain with special characters', () => {
     expect(queuePath({ kind: 'domain', domain: 'exämple.test' })).toBe('/api/admin/queue/domains/ex%C3%A4mple.test');
+  });
+});
+
+describe('serverUnreachable (PST-DA-050, COPY-18)', () => {
+  it('gives one default sentence for "the server did not answer at all"', () => {
+    expect(serverUnreachable()).toBe('Postroom did not answer. Check your connection and try again.');
+  });
+
+  it('lets a caller name a consequence or next step, without inventing its own wording for the shared part', () => {
+    expect(serverUnreachable('Nothing changed.')).toBe('Postroom did not answer. Nothing changed.');
+    expect(serverUnreachable('Try again.')).toBe('Postroom did not answer. Try again.');
+  });
+
+  it('is what describeError falls back to for a non-ApiError failure, so the two never drift apart', () => {
+    expect(describeError(new Error('network'))).toBe(serverUnreachable());
   });
 });
 

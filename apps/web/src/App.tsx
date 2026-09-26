@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Alert, AuthLayout, Spinner, ThemeProvider } from '@d3cloud/ui';
-import { api, redirectFor, type AuthState } from './api';
+import { Alert, AuthLayout, Button, Spinner, ThemeProvider } from '@d3cloud/ui';
+import { api, redirectFor, serverUnreachable, type AuthState } from './api';
 import { titleForPath } from './title';
 import { Calendar } from './calendar/Calendar';
 import { Contacts } from './contacts/Contacts';
@@ -59,8 +59,12 @@ function Gate() {
   if (failed) {
     return (
       <AuthLayout title="Postroom is not answering">
-        <Alert tone="danger" title="Could not reach the server">
-          Reload the page in a moment.
+        <Alert
+          tone="danger"
+          title="Could not reach the server"
+          actions={<Button size="sm" onClick={() => void refresh()}>Try again</Button>}
+        >
+          {serverUnreachable()}
         </Alert>
       </AuthLayout>
     );

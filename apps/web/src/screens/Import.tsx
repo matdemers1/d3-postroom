@@ -28,7 +28,7 @@ const STATUS_LABEL: Record<ImportStatus['status'], string> = {
   running: 'Importing',
   done: 'Finished',
   failed: 'Failed',
-  cancelled: 'Cancelled',
+  cancelled: 'Canceled',
 };
 
 function importError(error: unknown): string {
@@ -167,7 +167,7 @@ export function Import() {
       .cancel(id)
       .then((next) => {
         setCurrent(next);
-        setNotice(next.status === 'cancelled' ? 'Import cancelled.' : 'Stopping after the current message. What is already imported stays.');
+        setNotice(next.status === 'cancelled' ? 'Import canceled.' : 'Stopping after the current message. What is already imported stays.');
       })
       .catch((caught: unknown) => {
         setNotice(importError(caught));

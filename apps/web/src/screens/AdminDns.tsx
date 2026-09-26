@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Badge, Button, EmptyState, Page, PageHeader, Skeleton, Stack, Table, type TableColumn } from '@d3cloud/ui';
-import { api, DNS_STATUS, dnsSummary, type DnsCheckRow, type DnsReport } from '../api';
+import { api, DNS_STATUS, dnsSummary, serverUnreachable, type DnsCheckRow, type DnsReport } from '../api';
 
 // A DNS value is long and unbroken (a DKIM RSA key is ~400 characters): wrap it anywhere, in the
 // monospace face, so a 390 px screen never scrolls sideways because of one.
@@ -166,7 +166,7 @@ export function AdminDns() {
       />
       {failed ? (
         <EmptyState kind="error" heading="Could not check DNS" headingLevel={2} action={<Button onClick={() => void check()}>Try again</Button>}>
-          The server did not answer.
+          {serverUnreachable()}
         </EmptyState>
       ) : report === null ? (
         <Skeleton variant="block" />

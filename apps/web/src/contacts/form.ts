@@ -69,8 +69,8 @@ export function inputOf(f: ContactForm): ContactInput {
 /** A problem the form can name before asking the server, or null. */
 export function contactProblem(f: ContactForm): string | null {
   const input = inputOf(f);
-  if ([input.fn, input.given, input.family, input.org].every((x) => x === '') && input.emails.length === 0) return 'Give the contact a name, an organisation or an e-mail address.';
+  if ([input.fn, input.given, input.family, input.org].every((x) => x === '') && input.emails.length === 0) return 'Give the contact a name, an organization or an email address.';
   const bad = input.emails.find((e) => !/^[^\s@<>]+@[^\s@<>]+$/.test(e.address));
-  if (bad !== undefined) return `“${bad.address}” is not an e-mail address.`;
+  if (bad !== undefined) return `“${bad.address}” is not an email address.`;
   return null;
 }

@@ -48,6 +48,7 @@ import {
   type MessageSummary,
   type Phish,
   type RenderTicket,
+  serverUnreachable,
 } from '../api';
 import { byteSize, displayName, fullDate, header } from './format';
 import { ChevronIcon, DangerIcon, InfoIcon, PaperclipIcon, StarIcon, WarningIcon } from './icons';
@@ -126,7 +127,7 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
       <section className="pr-reader" aria-label="Reading pane">
         {back}
         <EmptyState kind="error" heading="Could not open this message" size="inline" headingLevel={2} action={<Button onClick={onRetry}>Try again</Button>}>
-          Postroom did not answer. Check your connection.
+          {serverUnreachable('Check your connection.')}
         </EmptyState>
       </section>
     );
@@ -538,7 +539,7 @@ function DeliverySection({ messageId, mailboxId }: { messageId: string; mailboxI
   if (state.status === 'error') {
     return (
       <Alert tone="warning" title="The delivery timeline could not be loaded" actions={<Button size="sm" onClick={load}>Try again</Button>}>
-        Postroom did not answer. Check your connection.
+        {serverUnreachable('Check your connection.')}
       </Alert>
     );
   }
@@ -698,7 +699,7 @@ function HtmlFrame({ messageId, fallback, note: lead }: { messageId: string; fal
   if (state.status === 'error') {
     return (
       <Alert tone="warning" title="The formatted message could not be shown" actions={<Button size="sm" onClick={() => { setAttempt((n) => n + 1); }}>Try again</Button>}>
-        Postroom did not answer. Check your connection.
+        {serverUnreachable('Check your connection.')}
       </Alert>
     );
   }

@@ -381,7 +381,7 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
         <FormField label="Cc" optional>
           <Input value={state.cc} autoComplete="off" onChange={(e) => { edit({ cc: e.target.value }); }} />
         </FormField>
-        <FormField label="Blind copy" optional help="Recipients here get the message but are not shown to anyone.">
+        <FormField label="Bcc" optional help="Recipients here get the message but are not shown to anyone.">
           <Input value={state.bcc} autoComplete="off" onChange={(e) => { edit({ bcc: e.target.value }); }} />
         </FormField>
         <FormField label="Subject">

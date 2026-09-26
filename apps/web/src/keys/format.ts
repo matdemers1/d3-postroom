@@ -2,7 +2,7 @@
 // which keys are usable, whether Sign / Encrypt can be offered for a message and why not, which
 // recipients lack a key, and how a refusal reads. The server decides again on send (a recipient
 // without a key is a 409, never a plaintext send); this only says so before the person presses Send.
-import { ApiError } from '../api';
+import { ApiError, serverUnreachable } from '../api';
 import { addressOf, splitAddresses } from '../mail/format';
 import type { CryptoKeyJson, KeyKind } from './api';
 
@@ -70,7 +70,7 @@ export function cryptoRequest(kind: KeyKind, sign: boolean, encrypt: boolean, av
 
 /** How a refused key or crypto request reads. */
 export function keyErrorText(error: unknown): string {
-  if (!(error instanceof ApiError)) return 'Postroom did not answer. Check your connection and try again.';
+  if (!(error instanceof ApiError)) return serverUnreachable();
   const body = error.body as { message?: unknown; recipients?: unknown } | null;
   const message = typeof body?.message === 'string' ? body.message : null;
   switch (error.code) {

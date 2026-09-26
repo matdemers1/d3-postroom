@@ -34,7 +34,7 @@ test('first run: setup enrols TOTP, then lands in the shell', async ({ page, req
   const setupToken = process.env['E2E_SETUP_TOKEN'];
   if (setupToken !== undefined && setupToken !== '') await page.getByLabel('Setup token').fill(setupToken);
   await page.getByRole('textbox', { name: 'Display name' }).fill(OPERATOR_DEFAULTS.displayName);
-  await page.getByRole('textbox', { name: 'Login' }).fill(OPERATOR_DEFAULTS.login);
+  await page.getByRole('textbox', { name: 'Username' }).fill(OPERATOR_DEFAULTS.login);
   await page.getByLabel('Password', { exact: true }).fill(OPERATOR_DEFAULTS.password);
   await page.getByLabel('Confirm password').fill(OPERATOR_DEFAULTS.password);
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -96,7 +96,7 @@ test('sign out, then sign in with password + TOTP and reach the admin Sessions p
 test('a wrong password is refused without saying which half was wrong', async ({ page }) => {
   const operator = requireOperator();
   await page.goto('/signin');
-  await page.getByRole('textbox', { name: 'Login' }).fill(operator.login);
+  await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
   await page.getByLabel('Password', { exact: true }).fill('not the password at all');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByText('Those details did not match.')).toBeVisible();

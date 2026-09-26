@@ -27,7 +27,7 @@ const SCOPES: { scope: AppPasswordScope; label: string }[] = [
   { scope: 'imap', label: 'Read mail (IMAP)' },
   { scope: 'smtp', label: 'Send mail (SMTP)' },
   { scope: 'dav', label: 'Calendars and contacts (DAV)' },
-  { scope: 'sieve', label: 'Filters (ManageSieve)' },
+  { scope: 'sieve', label: 'Rules (ManageSieve)' },
 ];
 
 const when = (iso: string | null): string =>

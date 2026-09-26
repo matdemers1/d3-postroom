@@ -10,7 +10,7 @@ export const STATE_LABEL: Readonly<Record<DeliveryState, string>> = {
   deferred: 'Deferred',
   delivered: 'Delivered',
   bounced: 'Bounced',
-  cancelled: 'Cancelled',
+  cancelled: 'Canceled',
 };
 
 /** `neutral` for anything in progress, parked or terminal; `attention` where seeing it should

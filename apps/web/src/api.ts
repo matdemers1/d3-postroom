@@ -926,9 +926,20 @@ function describeWeakPassword(body: unknown): string {
   return `That password ${problems.map((p) => PASSWORD_PROBLEM_LABEL[p]).join('; ')}.`;
 }
 
+/**
+ * The one wording for "the server didn't answer at all" (PST-DA-050, COPY-18) — a network failure,
+ * a timeout, anything that never reached `describeError`'s `switch`. Every screen that used to
+ * invent its own version of this sentence calls this instead, so "Postroom" and "server", and
+ * "Check your connection" and "Try again", never drift apart from each other. `next` names what to
+ * do about it, or what didn't happen as a result; it defaults to the plain retry.
+ */
+export function serverUnreachable(next = 'Check your connection and try again.'): string {
+  return `Postroom did not answer. ${next}`;
+}
+
 /** A human sentence for an API refusal on the sign-in, setup and account-security screens. */
 export function describeError(error: unknown): string {
-  if (!(error instanceof ApiError)) return 'Postroom did not answer. Check your connection and try again.';
+  if (!(error instanceof ApiError)) return serverUnreachable();
   switch (error.code) {
     case 'invalid_credentials':
       return 'Those details did not match.';
@@ -939,7 +950,7 @@ export function describeError(error: unknown): string {
     case 'too_many_attempts':
       return 'Too many attempts. Wait a moment and try again.';
     case 'totp_not_enrolled':
-      return 'This account has no authenticator enrolled. Ask the operator to set one up.';
+      return 'This account has no authenticator enrolled, so it cannot finish signing in. If Sign in with D3 Auth is set up for it, use that instead.';
     case 'setup_complete':
       return 'Setup is already complete. Sign in instead.';
     case 'setup_token_required':

@@ -121,7 +121,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                   }}
                 />
               </FormField>
-              <FormField label="Login" help={`Just the name. It becomes your address: name@${DOMAIN}.`} {...(loginError === undefined ? {} : { error: loginError })}>
+              <FormField label="Username" help={`Just the name. It becomes your address: name@${DOMAIN}.`} {...(loginError === undefined ? {} : { error: loginError })}>
                 <Input
                   name="login"
                   autoComplete="username"
