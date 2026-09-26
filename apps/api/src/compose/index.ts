@@ -847,9 +847,10 @@ export function mdnRoutes(deps: ApiDeps): Router {
               // here the second one blocks on FOR UPDATE until the first commits (adding
               // $MDNSent), then re-reads the now-current flags and is refused — so at most one
               // withinTransaction ever reaches enqueueOutbound's commit, and at most one MDN is
-              // ever queued. The lock is on the message row itself (not the mailbox
-              // `updateMessage` locks afterwards), so this is always acquired before it and never
-              // races against it for a different lock order.
+              // ever queued. Lock order matches every other flag change: the message's mailbox
+              // first (the row `updateMessage` locks), then the message — so a concurrent PATCH or
+              // IMAP STORE on the same message waits on the same first lock instead of deadlocking.
+              await tx.$queryRaw`SELECT 1 FROM mailbox WHERE id = ${found.mailboxId}::uuid FOR UPDATE`;
               const claim = await tx.$queryRaw<{ flags: string[] }[]>`
                 SELECT flags FROM message WHERE id = ${found.id}::uuid FOR UPDATE`;
               const claimed = claim[0];
