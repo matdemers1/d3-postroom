@@ -263,6 +263,11 @@ describe('expansion', () => {
       }));
     fc.assert(
       fc.property(dtstartArb, productive, (dtstart, { count, rule }) => {
+        // "Productive" means every period yields an instance. A MONTHLY/YEARLY rule from day 29–31
+        // skips months (and 29 February skips non-leap years, 2100 and 2200 included — RFC 5545
+        // §3.3.10), so it is not productive and its COUNT may land past this window.
+        const day = Number(/(\d{8})T?/.exec(dtstart.slice(dtstart.lastIndexOf(':') + 1))?.[1]?.slice(6, 8) ?? '1');
+        fc.pre(!(day > 28 && /FREQ=(MONTHLY|YEARLY)/.test(rule)));
         const cal = parseICalendar(eventCalendar(dtstart, rule));
         // The range covers every instance (YEARLY;INTERVAL=4;COUNT=30 from 2030 ends in 2146).
         const r = expandCalendar(cal, { start: Date.UTC(1990, 0, 1), end: Date.UTC(2300, 0, 1), maxInstances: 1000, maxIterations: 2_000_000 });
