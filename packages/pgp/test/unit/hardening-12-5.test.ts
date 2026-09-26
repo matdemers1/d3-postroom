@@ -198,8 +198,9 @@ describe('(3) BER parsing is linear in the bytes, not bytes × indefinite depth'
     walk(der);
     const tBer = fastest(() => walk(ber), 7);
     const tDer = fastest(() => walk(der), 7);
-    // Before PST-T-12.5 each indefinite level rescanned its subtree: about 9× here.
-    expect(tBer / tDer, `ber ${tBer.toFixed(1)} ms, definite ${tDer.toFixed(1)} ms`).toBeLessThan(2.5);
+    // Before PST-T-12.5 each indefinite level rescanned its subtree: about 9× here. The linear
+    // reader is ~1.6× locally; 5× leaves room for a noisy shared CI runner and still fails the old one.
+    expect(tBer / tDer, `ber ${tBer.toFixed(1)} ms, definite ${tDer.toFixed(1)} ms`).toBeLessThan(5);
   });
 
   it('a deep indefinite chain costs linear work too (each value is scanned once)', () => {
@@ -215,7 +216,9 @@ describe('(3) BER parsing is linear in the bytes, not bytes × indefinite depth'
     expect(walk(ber)).toBe(walk(der));
     const tBer = fastest(() => walk(ber), 7);
     const tDer = fastest(() => walk(der), 7);
-    expect(tBer / tDer, `ber ${tBer.toFixed(1)} ms, definite ${tDer.toFixed(1)} ms`).toBeLessThan(2.5);
+    // The quadratic reader this replaced measured 16× here; a shared CI runner has shown 3.3× for
+    // the linear one. 8× keeps a clear margin on both sides.
+    expect(tBer / tDer, `ber ${tBer.toFixed(1)} ms, definite ${tDer.toFixed(1)} ms`).toBeLessThan(8);
   });
 });
 
