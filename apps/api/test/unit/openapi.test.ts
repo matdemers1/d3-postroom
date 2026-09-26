@@ -32,6 +32,8 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
     expect(ops.sort()).toEqual(
       [
         'GET /api/events',
+        'GET /api/export/{id}',
+        'GET /api/export/{id}/download',
         'GET /api/mailboxes',
         'GET /api/mailboxes/{id}/messages',
         'GET /api/messages/{id}',
@@ -42,6 +44,7 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/search',
         'GET /api/threads/{id}',
         'PATCH /api/messages/{id}',
+        'POST /api/export',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit']);

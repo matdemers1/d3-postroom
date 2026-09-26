@@ -5,13 +5,14 @@ import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
 import { createDb } from '@postroom/db';
-import { envInt, envString, runDaemon } from '@postroom/daemon';
+import { envInt, envString, revision, runDaemon } from '@postroom/daemon';
 import { startWorker } from '@postroom/queue';
 import { backupHandler, BACKUP_QUEUE } from './backup/job.js';
 import { DRILL_QUEUE, startNightly } from './backup/schedule.js';
 import { maintenanceDeps } from './backup/wire.js';
 import { DAEMON } from './daemon.js';
 import { drillHandler } from './drill/drill.js';
+import { createExportSweeper, exportHandler, EXPORT_QUEUE } from './export/index.js';
 import { inboundHealth, maintenanceHealth } from './health.js';
 import { buildMonitors, createMonitorRunner } from './monitors/index.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
@@ -90,6 +91,30 @@ await runDaemon({
     const retention = startRetentionLoop({ db, blobs: lazyBlobs, intervalMs: envInt(ctx.env, 'RETENTION_SWEEP_MS', 3_600_000), log: ctx.log });
     ctx.onShutdown(() => retention.stop());
 
+    // PST-T-10.1 (PST-REQ-151): the full-data export, on its own queue and worker (a 10 GB mailbox
+    // must not hold up inbound mail), plus a sweep that deletes an archive 24 h after it finishes.
+    // Its own block and its own shutdown hook, so it merges beside the other registrations.
+    const exportWorker = await startWorker({
+      db,
+      databaseUrl,
+      queues: { [EXPORT_QUEUE]: exportHandler({ db, blobs: lazyBlobs, revision: revision(ctx.env), log: ctx.log }) },
+      pollMs: 5_000,
+      leaseMs: envInt(ctx.env, 'EXPORT_LEASE_MS', 3_600_000),
+      log: ctx.log,
+    });
+    const exportSweepMs = envInt(ctx.env, 'EXPORT_SWEEP_MS', 60_000);
+    const exportSweep = createExportSweeper({ db, blobs: lazyBlobs, log: ctx.log });
+    const runExportSweep = (): void => {
+      exportSweep().catch((err: unknown) => {
+        ctx.log('export-sweep-error', { error: err instanceof Error ? err.message : String(err) });
+      });
+    };
+    runExportSweep();
+    const exportSweepTimer = setInterval(runExportSweep, exportSweepMs);
+    ctx.onShutdown(async () => {
+      clearInterval(exportSweepTimer);
+      await exportWorker.stop();
+    });
 
     // Health alerts through the D3 Auth relay (PST-T-4.7, PST-REQ-096, PST-REQ-097): tunnel,
     // backlog, cert expiry, disk, blocklist, backup/drill and NTP skew, each alerting once on
