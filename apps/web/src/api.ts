@@ -702,7 +702,6 @@ export function redirectFor(state: AuthState, pathname: string): string | null {
   if (pathname === '/setup') return '/signin';
   if (!state.signedIn) return pathname === '/signin' ? null : '/signin';
   if (pathname === '/signin') return '/';
-  if (pathname.startsWith('/admin') && state.account?.isAdmin !== true) return '/';
   return null;
 }
 

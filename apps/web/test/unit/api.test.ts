@@ -28,14 +28,16 @@ describe('redirectFor', () => {
     expect(redirectFor(signedIn(false), '/')).toBeNull();
   });
 
-  it('keeps non-admins out of admin screens (PST-REQ-007)', () => {
-    expect(redirectFor(signedIn(false), '/admin/sessions')).toBe('/');
+  // A non-admin on /admin/* is not bounced to the inbox: the Shell renders the designed no-access
+  // state there (PST-T-11.1), and the server refuses every /api/admin call regardless (PST-REQ-007).
+  it('does not silently redirect non-admins away from admin screens (PST-REQ-007, PST-T-11.1)', () => {
+    expect(redirectFor(signedIn(false), '/admin/sessions')).toBeNull();
     expect(redirectFor(signedIn(true), '/admin/sessions')).toBeNull();
   });
 
-  it('keeps non-admins out of Health and Jobs too (PST-REQ-127, PST-REQ-128)', () => {
-    expect(redirectFor(signedIn(false), '/admin/health')).toBe('/');
-    expect(redirectFor(signedIn(false), '/admin/jobs')).toBe('/');
+  it('Health and Jobs likewise render no-access for a non-admin rather than redirecting (PST-REQ-127, PST-REQ-128)', () => {
+    expect(redirectFor(signedIn(false), '/admin/health')).toBeNull();
+    expect(redirectFor(signedIn(false), '/admin/jobs')).toBeNull();
     expect(redirectFor(signedIn(true), '/admin/health')).toBeNull();
     expect(redirectFor(signedIn(true), '/admin/jobs')).toBeNull();
   });
