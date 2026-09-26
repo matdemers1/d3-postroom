@@ -216,3 +216,31 @@ describe('withCancelled: THISANDFUTURE edges (PST-T-8.9)', () => {
     expect(starts.filter((s) => s >= '2026-09-14')).toEqual([]);
   });
 });
+
+describe('withCancelled: THISANDFUTURE only ever tightens a series (PST-T-8.9)', () => {
+  const daily = (rule: string): Component =>
+    parseICalendar(
+      ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//test//EN', 'BEGIN:VEVENT', 'UID:daily@example.com', 'DTSTAMP:20260101T000000Z', 'DTSTART:20260101T090000Z', 'DTEND:20260101T100000Z', `RRULE:${rule}`, 'SUMMARY:Daily', 'ORGANIZER:mailto:org@example.com', 'END:VEVENT', 'END:VCALENDAR', ''].join('\r\n'),
+    );
+  const starts = (c: Component): string[] =>
+    expandCalendar(parseICalendar(serializeICalendar(c)), { start: new Date('2026-01-01T00:00:00Z'), end: new Date('2026-02-01T00:00:00Z') }).instances.map((i) => new Date(i.start).toISOString().slice(0, 10));
+  const cutAt = (value: string) => ({ value, params: { RANGE: ['THISANDFUTURE'] } });
+
+  it('an UNTIL already before the cut is left alone: no occurrence is invented', () => {
+    const before = daily('FREQ=DAILY;UNTIL=20260105T090000Z');
+    const after = withCancelled(before, cutAt('20260110T090000Z'));
+    expect(starts(after)).toEqual(starts(before));
+    expect(starts(after)).toHaveLength(5);
+  });
+
+  it('a COUNT that ends before the cut is left alone', () => {
+    const before = daily('FREQ=DAILY;COUNT=3');
+    const after = withCancelled(before, cutAt('20260110T090000Z'));
+    expect(starts(after)).toEqual(['2026-01-01', '2026-01-02', '2026-01-03']);
+  });
+
+  it('a COUNT or UNTIL that runs past the cut is cut there', () => {
+    expect(starts(withCancelled(daily('FREQ=DAILY;COUNT=10'), cutAt('20260104T090000Z')))).toEqual(['2026-01-01', '2026-01-02', '2026-01-03']);
+    expect(starts(withCancelled(daily('FREQ=DAILY;UNTIL=20260120T090000Z'), cutAt('20260104T090000Z')))).toEqual(['2026-01-01', '2026-01-02', '2026-01-03']);
+  });
+});

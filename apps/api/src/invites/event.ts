@@ -6,6 +6,7 @@ import {
   calAddressEmail,
   createTimeZoneResolver,
   dateTimeToUtc,
+  expandComponent,
   formatRecur,
   getProperty,
   parseDateOrDateTime,
@@ -107,10 +108,18 @@ function dropRdatesFrom(c: Component, cut: number, resolver: TimeZoneResolver): 
   return { ...c, properties };
 }
 
-function truncateRrules(c: Component, until: ICalDateValue): Component {
+function truncateRrules(c: Component, until: ICalDateValue, cut: number, resolver: TimeZoneResolver, calendar: Component): Component {
   const properties = c.properties.map((p): Property => {
     if (p.name !== 'RRULE') return p;
     const rule = parseRecur(p.value);
+    // Only ever tighten (PST-T-8.9): a rule that already ends before the cut is left exactly as it
+    // is — replacing its UNTIL or COUNT with the cut would extend the series and invent occurrences.
+    if (rule.until !== null && instantOf(rule.until, resolver) < cut) return p;
+    if (rule.count !== null) {
+      const alone: Component = { ...c, properties: c.properties.filter((q) => q.name !== 'RRULE' && q.name !== 'RDATE' && q.name !== 'EXDATE').concat(p) };
+      const before = expandComponent(alone, { start: 0, end: cut * 1000, maxInstances: rule.count + 1, calendar }).instances.length;
+      if (before >= rule.count) return p;
+    }
     return { ...p, value: formatRecur({ ...rule, until, count: null }) };
   });
   return { ...c, properties };
@@ -166,7 +175,7 @@ export function withCancelled(calendar: Component, recurrenceId: { value: string
     components: calendar.components.map((c) => {
       if (isSchedulable(c.name) && cancelled(c)) return cancel(c);
       if (c !== main) return c;
-      if (isRange) return dropRdatesFrom(truncateRrules(c, untilBefore(wanted, masterAllDay, resolver)), wantedInstant, resolver);
+      if (isRange) return dropRdatesFrom(truncateRrules(c, untilBefore(wanted, masterAllDay, resolver), wantedInstant, resolver, calendar), wantedInstant, resolver);
       if (hasExactOverride) return c;
       return { ...c, properties: [...c.properties, { name: 'EXDATE', params: shapeParams(recurrenceId.params), value: formatValue(wanted) }] };
     }),
