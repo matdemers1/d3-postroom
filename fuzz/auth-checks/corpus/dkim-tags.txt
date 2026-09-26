@@ -1,0 +1,2 @@
+v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUA
+v=1; a=rsa-sha256; d=example.com; s=selector; c=relaxed/relaxed; h=from:to:subject; bh=abc123==; b=def456==
