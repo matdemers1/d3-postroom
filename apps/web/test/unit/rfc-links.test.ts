@@ -70,7 +70,7 @@ describe('rfc-links registry (PST-REQ-115)', () => {
     expect(at(headerRef('Subject'))).toBe('5322§3.6.5');
     expect(at(headerRef('Return-Path'))).toBe('5322§3.6.7');
     expect(at(headerRef('List-Unsubscribe'))).toBe('2369§3.2');
-    expect(at(headerRef('List-Unsubscribe-Post'))).toBe('8058§3.1');
+    expect(at(headerRef('List-Unsubscribe-Post'))).toBe('8058§5');
     expect(at(headerRef('Disposition-Notification-To'))).toBe('8098§2.1');
     expect(at(headerRef('Content-Type'))).toBe('2045§5');
     expect(headerRef('X-Mailer')).toBeNull();

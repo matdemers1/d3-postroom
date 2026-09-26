@@ -13,7 +13,7 @@
 //             (Subject/Comments/Keywords), §3.6.6 Resent-*, §3.6.7 trace (Return-Path)
 //   RFC 2045  §4 MIME-Version, §5 Content-Type, §6 Content-Transfer-Encoding, §7 Content-ID,
 //             §8 Content-Description;  RFC 2183 §2 Content-Disposition
-//   RFC 2369  §3.1 List-Help … §3.6 List-Archive;  RFC 8058 §3.1 List-Unsubscribe-Post
+//   RFC 2369  §3.1 List-Help … §3.6 List-Archive;  RFC 8058 §5 Header Syntax (List-Unsubscribe-Post)
 //   RFC 3463  §3.1–§3.8 enhanced status code subjects X.0–X.7
 //   RFC 3834  §5 Auto-Submitted
 //   RFC 3848  §1 ESMTPS/ESMTPA/ESMTPSA transmission types
@@ -83,7 +83,7 @@ export const HEADER_REFS: Readonly<Record<string, RfcRef>> = {
   'list-post': r(2369, '3.4', 'List-Post'),
   'list-owner': r(2369, '3.5', 'List-Owner'),
   'list-archive': r(2369, '3.6', 'List-Archive'),
-  'list-unsubscribe-post': r(8058, '3.1', 'List-Unsubscribe-Post (one-click)'),
+  'list-unsubscribe-post': r(8058, '5', 'List-Unsubscribe-Post header syntax (one-click)'),
   'auto-submitted': r(3834, '5', 'Auto-Submitted header field'),
   'disposition-notification-to': r(8098, '2.1', 'Disposition-Notification-To (read-receipt request)'),
   'disposition-notification-options': r(8098, '2.2', 'Disposition-Notification-Options'),
