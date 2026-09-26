@@ -74,6 +74,23 @@ export interface AcceptDeps {
   readonly beforeCommit?: (tx: Prisma.TransactionClient) => Promise<void>;
   /** The DAV caps the contact harvest writes under (default: the DAV daemon's defaults). */
   readonly davLimits?: DavLimits;
+  /**
+   * PST-T-9.6: set when this acceptance runs inside a transaction the caller commits (a held send's
+   * further copies, accepted through a savepoint in the release's own transaction). Nothing that
+   * must wait for a commit is then done here; it is handed to the caller instead. Unset (every
+   * single send), the post-commit effects run here, exactly as before.
+   */
+  readonly deferred?: DeferredEffects;
+}
+
+/** Where an acceptance inside someone else's transaction hands its post-commit effects (PST-T-9.6). */
+export interface DeferredEffects {
+  /** The handle the deferred effects run against: by then the outer transaction's own is closed. */
+  readonly db: Db;
+  /** The 'accepted' log line and the contact harvest: to run only once the outer transaction has committed, and never if it rolls back. */
+  readonly afterCommit: (effect: () => Promise<void>) => void;
+  /** A cap refusal's alert: to run once the outer transaction (and so the caps advisory lock) has ended, committed or rolled back. */
+  readonly afterEnd: (effect: () => Promise<void>) => void;
 }
 
 export interface AcceptInput {
@@ -356,15 +373,21 @@ export async function acceptSubmission(body: Readable, input: AcceptInput, deps:
         return message;
       }, TX_OPTIONS);
 
-      deps.log('accepted', { session: input.sessionId, accountId: submitter.accountId, outboundMessageId: accepted.outboundId, recipients: recipients.length });
-      await harvestContacts(deps, storage, input, headers.fields);
+      const afterCommit = async (): Promise<void> => {
+        deps.log('accepted', { session: input.sessionId, accountId: submitter.accountId, outboundMessageId: accepted.outboundId, recipients: recipients.length });
+        await harvestContacts(deps.deferred === undefined ? deps : { ...deps, db: deps.deferred.db }, storage, input, headers.fields);
+      };
+      if (deps.deferred === undefined) await afterCommit();
+      else deps.deferred.afterCommit(afterCommit);
       return { ok: true, ...accepted };
     } catch (err) {
       if (err instanceof CapExceededError) {
         deps.log('caps-refused', { session: input.sessionId, accountId: submitter.accountId, stage: 'data' });
         // Only after the transaction has rolled back: alerting is a network call and must not
-        // hold the advisory lock (or the row lock backing it) open.
-        await err.alert?.();
+        // hold the advisory lock (or the row lock backing it) open. Inside an outer transaction the
+        // lock is that transaction's, so the alert waits until it has ended (PST-T-9.6).
+        if (deps.deferred === undefined) await err.alert?.();
+        else if (err.alert !== undefined) deps.deferred.afterEnd(async () => err.alert?.());
         return { ok: false, reason: 'cap-exceeded', reply: err.reply };
       }
       throw err;

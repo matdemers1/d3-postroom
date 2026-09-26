@@ -17,7 +17,10 @@
 // main copy for the To/Cc envelope, one per Bcc recipient, and — only when there is no main copy — the
 // one Sent keeps. The first sendable copy is the accepting one; every other copy is accepted through
 // the same submission path INSIDE its transaction (a savepoint per copy; see nestedDb), each to its
-// own envelope. All of them are queued with the held → released transition, or none are: a refusal
+// own envelope. PST-T-9.6: those copies' post-commit effects (the 'accepted' log line, the contact
+// harvest) are collected and run only after the release commits, against the real database, so a
+// harvest error can never abort the release; a cap refusal's alert runs only after the release's
+// transaction — and so the caps advisory lock — has ended. All of them are queued with the held → released transition, or none are: a refusal
 // of any copy rolls the whole release back and fails it. Sent keeps the main copy (or the 'sent'
 // one), once. A row with no copies (any other send, and every row made before copies existed) is
 // released from heldBlobSha256 exactly as before.
@@ -49,6 +52,17 @@ export interface ReleaseDeps {
   readonly log?: Log;
   /** Test seam: runs inside the accepting transaction just before it commits (a crash there). */
   readonly beforeCommit?: (tx: Prisma.TransactionClient) => Promise<void>;
+}
+
+/** Deferred effects run one by one; a failure is logged and never changes the release's outcome. */
+async function runEffects(effects: readonly (() => Promise<void>)[], log: Log, id: string): Promise<void> {
+  for (const effect of effects) {
+    try {
+      await effect();
+    } catch (error) {
+      log('pending-send-effect-failed', { id, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
 }
 
 export type ReleaseOutcome = 'released' | 'cancelled' | 'failed' | 'skipped';
@@ -150,6 +164,11 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
   const auditContext = { requestId: `pending-send:${row.id}` };
   let filed: { id: string; mailboxId: string } | null = null;
   const reaped: string[] = [];
+  // PST-T-9.6: the further copies' post-commit effects, and any cap-refusal alert, held until the
+  // release's transaction has ended (see DeferredEffects in @postroom/submission).
+  const afterCommit: (() => Promise<void>)[] = [];
+  const afterEnd: (() => Promise<void>)[] = [];
+  const deferred = { db: deps.db, afterCommit: (fn: () => Promise<void>): void => void afterCommit.push(fn), afterEnd: (fn: () => Promise<void>): void => void afterEnd.push(fn) };
   let outcome;
   try {
     outcome = await acceptSubmission(
@@ -197,7 +216,7 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
                   await ctx.pendingSendCopy.update({ where: { id: c.id }, data: { outboundId: copyAccepted.outboundId } });
                 },
               },
-              { db: nestedDb(tx), storage: () => storage, now: deps.now, log },
+              { db: nestedDb(tx), storage: () => storage, now: deps.now, log, deferred },
             );
             if (!got.ok) throw new CopyRefused(got.reason, got.reply.lines, c.recipients);
             copyOutbound.push({ role: c.role, recipients: c.recipients.length, outboundId: got.outboundId });
@@ -256,6 +275,8 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
       { db: deps.db, storage: () => storage, now: deps.now, log, ...(deps.beforeCommit === undefined ? {} : { beforeCommit: deps.beforeCommit }) },
     );
   } catch (error) {
+    // Rolled back: nothing the copies queued exists, so nothing of theirs is announced; an alert still goes, now that the lock is gone.
+    await runEffects(afterEnd, log, id);
     if (error instanceof AlreadyHandled) return 'skipped';
     if (error instanceof DraftGone) return (await finishUnsent(deps, id, 'cancelled', 'the draft was removed')) ? 'cancelled' : 'skipped';
     if (error instanceof CopyRefused) {
@@ -264,6 +285,9 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
     }
     throw error;
   }
+  // The accepting transaction has ended (committed when ok, never begun or rolled back when not).
+  await runEffects(afterEnd, log, id);
+  if (outcome.ok) await runEffects(afterCommit, log, id);
   if (!outcome.ok) {
     log('pending-send-refused', { id, reason: outcome.reason });
     return (await finishUnsent(deps, id, 'failed', `${outcome.reason}: ${outcome.reply.lines.join(' ')}`)) ? 'failed' : 'skipped';

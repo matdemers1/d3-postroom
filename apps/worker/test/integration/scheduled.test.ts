@@ -10,6 +10,9 @@
 //   PST-REQ-161  (PST-T-12.7) a held send with several copies — main, one per Bcc, a Sent copy —
 //                releases them in one transaction, each to its own envelope, exactly once and all or
 //                nothing; an undo releases every copy's blob; a row with no copies releases as before.
+//   PST-REQ-140  (PST-T-9.6) the further copies' contact harvest and 'accepted' log lines run after the
+//                release commits, so a harvest SQL error never aborts it; a cap refusal on a later copy
+//                alerts only once the release's transaction, and its caps advisory lock, has ended.
 import { randomInt, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -24,6 +27,7 @@ import { fileLocalMessage } from '@postroom/dsn';
 import { CapExceededError } from '@postroom/submission';
 import { ensureDkimKeys } from '@postroom/submission/dkim';
 import { assignThread } from '@postroom/threading';
+import type { Prisma } from '@postroom/db';
 import { checkDue, releaseDue, releaseOne, returnDue, REMIND_FLAGS, type ReleaseDeps } from '../../src/scheduled/index.js';
 import { ensureMailbox, MAILBOX_CHANNEL, moveMessages, SNOOZED_MAILBOX } from '../../src/scheduled/mailbox.js';
 import { Clock } from './helpers.js';
@@ -119,7 +123,7 @@ describe.skipIf(baseUrl === undefined)('scheduled loop (PST-T-9.1)', () => {
   const outboundFor = (me: Person, messageId: string) => db.outboundMessage.findMany({ where: { accountId: me.id, messageId }, include: { recipients: true } });
 
   beforeAll(async () => {
-    t = await createTestDatabase(baseUrl ?? '', 'pst_t127_worker');
+    t = await createTestDatabase(baseUrl ?? '', 'pst_t96_worker');
     db = t.db;
     blobRoot = mkdtempSync(join(tmpdir(), 'pst-t91-blobs-'));
     kek = generateKek();
@@ -468,6 +472,124 @@ describe.skipIf(baseUrl === undefined)('scheduled loop (PST-T-9.1)', () => {
     expect(await db.message.count({ where: { id: pending.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
     expect(await db.message.count({ where: { mailboxId: me.box.Sent } })).toBe(0);
     expect(await db.blob.count({ where: { sha256: { in: shas } } })).toBe(0);
+  });
+
+  // --- PST-T-9.6: the copies' post-commit effects wait for the release's own commit ----------------
+
+  type Logged = { event: string; fields: Record<string, unknown> | undefined };
+
+  /**
+   * `base`, except that the contact harvest's first read (ownAddresses: address.findMany with an OR)
+   * runs a failing statement first — on the transaction it is called in, when it is called in one,
+   * which aborts that transaction just as a real SQL error in there would.
+   */
+  const failingHarvestReads = (base: Db, failures: { n: number }): Db => {
+    type Raw = { $queryRawUnsafe(q: string): Promise<unknown> };
+    const wrap = <T extends object>(client: T, raw: Raw): T =>
+      new Proxy(client, {
+        get(target, prop, receiver): unknown {
+          if (prop === 'address') {
+            const model = Reflect.get(target, prop, receiver) as Db['address'];
+            return new Proxy(model, {
+              get(m, p, r): unknown {
+                if (p !== 'findMany') return Reflect.get(m, p, r) as unknown;
+                return async (args: Parameters<Db['address']['findMany']>[0]) => {
+                  if (args?.where?.OR !== undefined) {
+                    failures.n++;
+                    await raw.$queryRawUnsafe('SELECT 1/0');
+                  }
+                  return m.findMany(args);
+                };
+              },
+            });
+          }
+          if (prop === '$transaction') {
+            return (fn: (tx: Prisma.TransactionClient) => Promise<unknown>, opts?: unknown) =>
+              (target as unknown as Db).$transaction((tx) => fn(wrap(tx, tx)), opts as never);
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      });
+    return wrap(base, base as unknown as Raw);
+  };
+
+  it('multi-copy: a SQL error in the harvest reads never aborts the release — released once, every copy queued, the failure logged', async () => {
+    const me = await person();
+    const { pending } = await holdCopies(me, { releaseAt: clock.now() });
+    const logged: Logged[] = [];
+    const failures = { n: 0 };
+    const faulty: ReleaseDeps = { ...deps, db: failingHarvestReads(db, failures), log: (event, fields) => void logged.push({ event, fields }) };
+
+    expect(await releaseOne(faulty, pending.id)).toBe('released');
+    const out = await envelopes(me, pending.messageIdHeader);
+    expect(out.map((o) => o.to)).toEqual([['alice@example.org'], ['bob@example.org'], ['carol@example.org']]);
+    expect((await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id } })).state).toBe('released');
+    // The harvest did read, did fail — for the accepting copy and for each further one — and said so.
+    expect(failures.n).toBeGreaterThanOrEqual(3);
+    const harvestFailed = logged.filter((l) => l.event === 'contacts-harvest-failed').map((l) => l.fields?.['session']);
+    expect(harvestFailed).toEqual(expect.arrayContaining([`pending:${pending.id}`, `pending:${pending.id}:1`, `pending:${pending.id}:2`]));
+    expect(logged.map((l) => l.event)).toContain('pending-send-released');
+    // Exactly once.
+    expect(await releaseOne(faulty, pending.id)).toBe('skipped');
+    expect(await outboundFor(me, pending.messageIdHeader)).toHaveLength(3);
+  });
+
+  it("multi-copy: the copies' 'accepted' log lines come only after the release commits", async () => {
+    const me = await person();
+    const { pending } = await holdCopies(me, { releaseAt: clock.now() });
+    const order: string[] = [];
+    const traced: ReleaseDeps = {
+      ...deps,
+      log: (event, fields) => void order.push(`${event}:${typeof fields?.['session'] === 'string' ? fields['session'] : ''}`),
+      beforeCommit: () => {
+        order.push('before-commit');
+        return Promise.resolve();
+      },
+    };
+    expect(await releaseOne(traced, pending.id)).toBe('released');
+    const commit = order.indexOf('before-commit');
+    expect(commit).toBeGreaterThanOrEqual(0);
+    for (const session of [`pending:${pending.id}`, `pending:${pending.id}:1`, `pending:${pending.id}:2`]) {
+      const at = order.indexOf(`accepted:${session}`);
+      expect(at, session).toBeGreaterThan(commit);
+    }
+    expect(order.filter((e) => e.startsWith('accepted:'))).toHaveLength(3);
+  });
+
+  it('multi-copy: a cap refusal on a later copy alerts only after the release transaction, and its advisory lock, has ended', async () => {
+    const me = await person();
+    const { pending, shas } = await holdCopies(me, { releaseAt: clock.now() });
+    const LOCK = 960_006;
+    const atAlert: { locks: number; openTransactions: number }[] = [];
+    const events: string[] = [];
+    const capped: ReleaseDeps = {
+      ...deps,
+      log: (event) => void events.push(event),
+      caps: async (tx, _account, recipients) => {
+        // What the real enforcer does first: the caps advisory lock, held until the transaction ends.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK}::bigint)`;
+        if (recipients.length === 1 && recipients[0] === 'carol@example.org') {
+          throw new CapExceededError({ code: 452, enhanced: '4.5.3', lines: ['Recipient cap reached'] }, async () => {
+            events.push('alert');
+            // From another connection: is the lock still held, is any transaction still open?
+            const [locks] = await db.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND classid = 0 AND objid = ${LOCK} AND granted`;
+            const [open] = await db.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%'`;
+            atAlert.push({ locks: locks?.n ?? -1, openTransactions: open?.n ?? -1 });
+          });
+        }
+      },
+    };
+    expect(await releaseOne(capped, pending.id)).toBe('failed');
+    // All or nothing: no copy queued, the draft stays.
+    expect(await outboundFor(me, pending.messageIdHeader)).toHaveLength(0);
+    expect((await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id } })).state).toBe('failed');
+    expect(await db.message.count({ where: { id: pending.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
+    expect(await db.blob.count({ where: { sha256: { in: shas } } })).toBe(0);
+    // The alert went, once, with the lock released and no transaction open.
+    expect(atAlert).toEqual([{ locks: 0, openTransactions: 0 }]);
+    // And nothing was announced as accepted for a release that rolled back.
+    expect(events).not.toContain('accepted');
+    expect(events.indexOf('alert')).toBeGreaterThanOrEqual(0);
   });
 
   it('a pre-migration-shaped held row (one blob, no copies) still releases, to its whole envelope', async () => {
