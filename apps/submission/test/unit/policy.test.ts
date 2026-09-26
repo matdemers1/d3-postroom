@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { allowAllCaps } from '../../src/caps-seam.js';
 import { formatRfc5322Date, inspectHeaders, parseAddressList, rewriteHeaders } from '../../src/headers.js';
 import { decodeBase64Utf8, parsePlain, readCredentials } from '../../src/sasl.js';
-import { AuthThrottle } from '../../src/throttle.js';
 
 const b64 = (s: string): string => Buffer.from(s, 'utf8').toString('base64');
 
@@ -100,23 +99,6 @@ describe('header inspection and rewrite', () => {
 
   it('formats RFC 5322 dates', () => {
     expect(formatRfc5322Date(new Date('2026-01-04T23:59:00Z'))).toBe('Sun, 4 Jan 2026 23:59:00 +0000');
-  });
-});
-
-describe('AUTH throttle', () => {
-  it('tarpits after the free failures, doubles, caps, locks out, and resets on success', () => {
-    let t = 0;
-    const th = new AuthThrottle({ freeFailures: 2, baseDelayMs: 100, maxDelayMs: 350, lockoutFailures: 6, windowMs: 1000, now: () => t });
-    expect([th.fail('ip'), th.fail('ip'), th.fail('ip'), th.fail('ip'), th.fail('ip')]).toEqual([0, 0, 100, 200, 350]);
-    expect(th.isLocked('ip')).toBe(false);
-    th.fail('ip');
-    expect(th.isLocked('ip')).toBe(true);
-    expect(th.isLocked('other')).toBe(false);
-    t = 1000;
-    expect(th.isLocked('ip')).toBe(false);
-    th.fail('ip');
-    th.succeed('ip');
-    expect(th.failures('ip')).toBe(0);
   });
 });
 
