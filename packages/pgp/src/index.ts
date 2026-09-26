@@ -27,6 +27,7 @@ export {
 export { delimiterKind, splitLines, walkMultipart, type ByteSource, type Line, type PartSink } from './stream.js';
 export {
   analyzeMessage,
+  DEFAULT_MAX_ENCRYPTED_BYTES,
   type AnalyzeOptions,
   type CryptoReport,
   type DecryptionStatus,

@@ -38,7 +38,7 @@ import { ArmorError, CmsError, DerError, PgpError, UnsupportedError } from './er
 import { allMaterials, parseKeys, userIdAddress, type KeyMaterial, type OpenPgpKey } from './keys.js';
 import { readPackets, Tag } from './packets.js';
 import { digestFor, finishDigest, hashName, isDocumentSignature, parseSignaturePacket, signatureTypeReason, verifyDigest, type SignaturePacket } from './signature.js';
-import { keyState, revokedAt, signingAuthority, type AuthorityProblem } from './validity.js';
+import { keyState, revokedAt, signingAuthority, withAttachedRevocations, type AuthorityProblem } from './validity.js';
 import { CollectSink, HashSink, splitLines, walkMultipart, type ByteSource, type Line } from './stream.js';
 
 export type SignatureStatus = 'verified-known-key' | 'valid-signature-unknown-key' | 'bad-signature' | 'not-signed' | `unsupported:${string}`;
@@ -116,7 +116,7 @@ export interface CryptoReport {
 }
 
 export interface AnalyzeOptions {
-  /** Cap on an encrypted part or opaque S/MIME body held for decryption (default 64 MiB). */
+  /** Cap on an encrypted part or opaque S/MIME body held for decryption (default DEFAULT_MAX_ENCRYPTED_BYTES, 32 MiB). */
   maxEncryptedBytes?: number;
   /** Cap on a detached signature part (default 1 MiB). */
   maxSignatureBytes?: number;
@@ -127,6 +127,12 @@ export interface AnalyzeOptions {
   /** The time signatures are judged against (default: now). */
   now?: Date;
 }
+
+/**
+ * The default cap on an encrypted part or opaque S/MIME body (PST-T-12.5): parsing is synchronous
+ * CPU on the event loop, so what one message can make it hold is bounded — 32 MiB.
+ */
+export const DEFAULT_MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
 
 /** How far in the future a signature's creation time may be before it is refused (clock skew). */
 const FUTURE_SKEW_MS = 5 * 60 * 1000;
@@ -221,9 +227,15 @@ function resolveSigner(ring: Keyring, attached: readonly OpenPgpKey[], sig: Sign
     ...ring.pgp.map((e) => ({ key: e.key, known: e.known, source: 'account' as const })),
     ...attached.map((key) => ({ key, known: null, source: 'message' as const })),
   ];
+  // A stored key that matches the issuer decides for its own primary: an attached copy of the same
+  // key is not tried after it (PST-T-12.5 — an attached copy only ever makes a stored key stricter,
+  // through withAttachedRevocations; it never stands in for one that may not sign).
+  const decided = new Set<string>();
   for (const { key, known, source } of pools) {
+    if (source === 'message' && decided.has(key.primary.fingerprint)) continue;
     for (const material of allMaterials(key)) {
       if (!issuedBy(material, sig)) continue;
+      if (source === 'account') decided.add(key.primary.fingerprint);
       const r: Resolved = { key, material, known, source, problem: signingAuthority(key, material) };
       if (r.problem === null) return r;
       first ??= r;
@@ -316,7 +328,10 @@ function checkPgpSignatures(
         return { ...NOT_SIGNED, status: 'bad-signature', format, reasons, signer };
       }
       reasons.push(`valid ${found.material.algorithmName} signature (${signer.hash ?? 'hash'}) by ${found.material.fingerprint}`);
-      const invalid = pgpValidity(sig, found, known, now);
+      // A stored key is judged with any revocation a copy of it attached to the message carries
+      // (checked against the stored primary; nothing else from the copy is read).
+      const stateKey = source === 'account' ? withAttachedRevocations(found.key, attached) : found.key;
+      const invalid = pgpValidity(sig, { key: stateKey, material: found.material }, known, now);
       if (invalid !== null) return { ...NOT_SIGNED, status: `unsupported:${invalid.reason}`, format, reasons: [...reasons, invalid.text], signer };
       if (source === 'account') {
         reasons.push(`the key is one of this account's ${known?.owner === 'own' ? 'own keys' : 'contact keys'}`);
@@ -354,6 +369,10 @@ function pgpValidity(sig: SignaturePacket, found: { key: OpenPgpKey; material: K
   }
   if (state.expiresAt !== null && state.expiresAt.getTime() <= at.getTime()) {
     return { reason: 'key-expired', text: `the key expired at ${state.expiresAt.toISOString()} (its self-signature says so), before the signature was made (${at.toISOString()})` };
+  }
+  if (state.selfSignatureExpiresAt !== null && state.selfSignatureExpiresAt.getTime() <= Math.max(now.getTime(), at.getTime())) {
+    const what = found.material.fingerprint === found.key.primary.fingerprint ? "the key's self-signature" : "the self-signature or subkey binding (0x18) the signing subkey rests on";
+    return { reason: 'key-expired', text: `${what} expired at ${state.selfSignatureExpiresAt.toISOString()} (its own signature expiration, RFC 9580 §5.2.3.18): it no longer says the key may sign` };
   }
   if (at.getTime() > now.getTime() + FUTURE_SKEW_MS) return { reason: 'signature-from-future', text: `the signature claims to have been made at ${at.toISOString()}, in the future` };
   if (sig.expiresSeconds !== null && sig.expiresSeconds > 0) {
@@ -663,7 +682,7 @@ export async function analyzeMessage(source: ByteSource, keys: readonly KnownKey
 }
 
 async function analyze(source: ByteSource, ring: Keyring, opts: AnalyzeOptions, depth: number, outerFrom: string | null): Promise<CryptoReport> {
-  const maxEnc = opts.maxEncryptedBytes ?? 64 * 1024 * 1024;
+  const maxEnc = opts.maxEncryptedBytes ?? DEFAULT_MAX_ENCRYPTED_BYTES;
   const maxSig = opts.maxSignatureBytes ?? 1024 * 1024;
   const maxInline = opts.maxInlineBytes ?? 4 * 1024 * 1024;
   const now = opts.now ?? new Date();

@@ -55,16 +55,40 @@ export interface Tlv {
 export type Encoding = 'der' | 'ber';
 
 export const MAX_DEPTH = 48;
-/** BER: how many indefinite-length values may nest (each one is scanned once per indefinite ancestor). */
+/** BER: how many indefinite-length values may nest. */
 export const MAX_INDEFINITE_DEPTH = 16;
 const MAX_ELEMENTS = 100_000;
 const MAX_TAG = 0x1fffff;
 
-export function readTlv(buf: Buffer, offset = 0, depth = 0, encoding: Encoding = 'der'): Tlv {
-  return read(buf, offset, depth, encoding, 0);
+/**
+ * BER cost bound (PST-T-12.5). Finding where an indefinite value ends means walking its subtree to
+ * the matching end-of-contents; done afresh at every level, a tree d levels deep costs bytes × d
+ * (the whole subtree was rescanned by each indefinite ancestor, and again by each `children()`).
+ * So every scan records where each indefinite value it passed ends, keyed by its absolute position
+ * in the underlying memory, and the map travels with the parse tree: each Tlv read in BER mode
+ * carries (here) the map of the read that made it, and `children()` reuses it. One tree, one map:
+ * a fresh `readTlv`/`readAll` starts a fresh one, so nothing is shared between inputs. The
+ * scan itself builds no Tlv, only reads headers; the total cost is linear in the bytes.
+ */
+type Ends = Map<number, number>;
+const endsOf = new WeakMap<Tlv, Ends>();
+
+interface Header {
+  tagClass: number;
+  constructed: boolean;
+  tag: number;
+  /** Offset of the contents octets. */
+  start: number;
+  /** Null: indefinite (BER, constructed). */
+  length: number | null;
 }
 
-function read(buf: Buffer, offset: number, depth: number, encoding: Encoding, indefiniteDepth: number): Tlv {
+export function readTlv(buf: Buffer, offset = 0, depth = 0, encoding: Encoding = 'der'): Tlv {
+  return read(buf, offset, depth, encoding, 0, new Map());
+}
+
+/** The identifier and length octets at `offset`, checked; the contents are not looked at. */
+function header(buf: Buffer, offset: number, depth: number, encoding: Encoding): Header {
   if (depth > MAX_DEPTH) throw new DerError('nesting too deep');
   let p = offset;
   const at = (i: number): number => {
@@ -97,16 +121,7 @@ function read(buf: Buffer, offset: number, depth: number, encoding: Encoding, in
     if (!ber) throw new NotDerError('indefinite length (BER, not DER)');
     // X.690 §8.1.3.6: constructed only; the contents run to a matching end-of-contents.
     if (!constructed) throw new BerError('indefinite length on a primitive value');
-    if (indefiniteDepth >= MAX_INDEFINITE_DEPTH) throw new BerError('indefinite lengths nested too deep');
-    const start = p;
-    let count = 0;
-    for (;;) {
-      if (p + 1 >= buf.length) throw new BerError('indefinite length without end-of-contents');
-      if (buf[p] === 0 && buf[p + 1] === 0) break;
-      if (++count > MAX_ELEMENTS) throw new DerError('too many elements');
-      p += read(buf, p, depth + 1, encoding, indefiniteDepth + 1).raw.length;
-    }
-    return { tagClass, constructed, tag, offset, headerLength: start - offset, content: buf.subarray(start, p), raw: buf.subarray(offset, p + 2), encoding, indefinite: true };
+    return { tagClass, constructed, tag, start: p, length: null };
   } else {
     const n = l0 & 0x7f;
     if (n > 4 || l0 === 0xff) throw new DerError('length too long');
@@ -116,28 +131,64 @@ function read(buf: Buffer, offset: number, depth: number, encoding: Encoding, in
     // with a leading zero octet, is BER (X.690 §8.1.3.5 allows it there).
     if (!ber && (length < 0x80 || (n > 1 && buf[p - n] === 0))) throw new NotDerError('length not in its shortest form (BER, not DER)');
   }
-  const headerLength = p - offset;
   if (p + length > buf.length) throw new DerError('length past end of input');
-  return { tagClass, constructed, tag, offset, headerLength, content: buf.subarray(p, p + length), raw: buf.subarray(offset, p + length), encoding, indefinite: false };
+  return { tagClass, constructed, tag, start: p, length };
+}
+
+/** Where the end-of-contents of the indefinite value whose contents start at `start` begins. */
+function indefiniteEnd(buf: Buffer, start: number, depth: number, encoding: Encoding, indefiniteDepth: number, ends: Ends): number {
+  if (indefiniteDepth >= MAX_INDEFINITE_DEPTH) throw new BerError('indefinite lengths nested too deep');
+  const key = buf.byteOffset + start;
+  const known = ends.get(key);
+  if (known !== undefined && known - buf.byteOffset + 1 < buf.length) return known - buf.byteOffset;
+  let p = start;
+  let count = 0;
+  for (;;) {
+    if (p + 1 >= buf.length) throw new BerError('indefinite length without end-of-contents');
+    if (buf[p] === 0 && buf[p + 1] === 0) break;
+    if (++count > MAX_ELEMENTS) throw new DerError('too many elements');
+    const h = header(buf, p, depth + 1, encoding);
+    p = h.length === null ? indefiniteEnd(buf, h.start, depth + 1, encoding, indefiniteDepth + 1, ends) + 2 : h.start + h.length;
+  }
+  ends.set(key, buf.byteOffset + p);
+  return p;
+}
+
+function read(buf: Buffer, offset: number, depth: number, encoding: Encoding, indefiniteDepth: number, ends: Ends): Tlv {
+  const h = header(buf, offset, depth, encoding);
+  const { tagClass, constructed, tag, start } = h;
+  let t: Tlv;
+  if (h.length === null) {
+    const eoc = indefiniteEnd(buf, start, depth, encoding, indefiniteDepth, ends);
+    t = { tagClass, constructed, tag, offset, headerLength: start - offset, content: buf.subarray(start, eoc), raw: buf.subarray(offset, eoc + 2), encoding, indefinite: true };
+  } else {
+    t = { tagClass, constructed, tag, offset, headerLength: start - offset, content: buf.subarray(start, start + h.length), raw: buf.subarray(offset, start + h.length), encoding, indefinite: false };
+  }
+  if (encoding === 'ber') endsOf.set(t, ends);
+  return t;
 }
 
 /** Every TLV in `buf`, back to back, covering it exactly. */
 export function readAll(buf: Buffer, depth = 0, max = MAX_ELEMENTS, encoding: Encoding = 'der'): Tlv[] {
+  return readAllWith(buf, depth, max, encoding, new Map());
+}
+
+function readAllWith(buf: Buffer, depth: number, max: number, encoding: Encoding, ends: Ends): Tlv[] {
   const out: Tlv[] = [];
   let p = 0;
   while (p < buf.length) {
     if (out.length >= max) throw new DerError('too many elements');
-    const t = readTlv(buf, p, depth, encoding);
+    const t = read(buf, p, depth, encoding, 0, ends);
     out.push(t);
     p += t.raw.length;
   }
   return out;
 }
 
-/** The values inside a constructed value, read in the mode it was read in. */
+/** The values inside a constructed value, read in the mode it was read in (reusing its scan). */
 export function children(t: Tlv, depth = 0): Tlv[] {
   if (!t.constructed) throw new DerError('not a constructed value');
-  return readAll(t.content, depth + 1, MAX_ELEMENTS, t.encoding);
+  return readAllWith(t.content, depth + 1, MAX_ELEMENTS, t.encoding, endsOf.get(t) ?? new Map<number, number>());
 }
 
 export function isUniversal(t: Tlv, tag: number): boolean {
