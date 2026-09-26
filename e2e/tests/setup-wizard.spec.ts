@@ -282,7 +282,7 @@ test('a fresh install walks the wizard to a delivered test message with its time
   await expect(page.getByText('Answers come from Postroom’s own resolver')).toBeVisible();
   const spfRow = page.getByRole('row').filter({ hasText: /SPF\s*TXT/ });
   await expect(spfRow).toBeVisible({ timeout: 30_000 });
-  await expect(spfRow.getByRole('button', { name: /^Copy expected SPF value/ }).or(spfRow.getByText('not provisioned'))).toBeVisible();
+  await expect(spfRow.getByRole('button', { name: /^Copy expected SPF value/ }).or(spfRow.getByText('not provisioned')).first()).toBeVisible();
   if (FAKE_MX) {
     // PST-REQ-099's acceptance: a deliberately wrong SPF shows fail, with the reason.
     await expect(spfRow).toContainText('Fail');
