@@ -136,7 +136,7 @@ export function keyState(key: OpenPgpKey, material: KeyMaterial): KeyState {
  * the same key attached to the message carries — so a revocation that reached this message before
  * it reached the account's key row is applied to this analysis (PST-T-12.5). Only revocations are
  * taken, and only from a copy whose primary fingerprint is the stored key's; each is then checked
- * by keyState against the STORED primary, as any revocation is. Nothing else in an attached copy
+ * against the STORED primary here and applied only if it verifies (an uncheckable one is dropped). Nothing else in an attached copy
  * (a newer self-signature, a binding, key flags, another subkey) is ever read: it can only make a
  * stored key stricter, never give it authority.
  */
@@ -146,12 +146,17 @@ export function withAttachedRevocations(stored: OpenPgpKey, attached: readonly O
     if (copy.primary.fingerprint !== stored.primary.fingerprint) continue;
     for (const ks of copy.signatures) {
       const t = ks.target;
-      if (ks.sig.type === SignatureType.KeyRevocation && t.kind === 'key') extra.push({ sig: ks.sig, target: { kind: 'key' } });
+      let candidate: KeySignature | null = null;
+      if (ks.sig.type === SignatureType.KeyRevocation && t.kind === 'key') candidate = { sig: ks.sig, target: { kind: 'key' } };
       else if (ks.sig.type === SignatureType.SubkeyRevocation && t.kind === 'subkey') {
         // Re-pointed at the stored subkey, so what is verified is hashed over the stored bytes.
         const mine = stored.subkeys.find((m) => m.fingerprint === t.subkey.fingerprint);
-        if (mine !== undefined) extra.push({ sig: ks.sig, target: { kind: 'subkey', subkey: mine } });
+        if (mine !== undefined) candidate = { sig: ks.sig, target: { kind: 'subkey', subkey: mine } };
       }
+      // An attached revocation counts only when it VERIFIES against the stored primary. A stored
+      // key's own unverifiable revocation is honoured (fail safe), but one carried in by a message
+      // is not: anyone can write an uncheckable one (an unknown or MD5 hash) from a public key.
+      if (candidate !== null && check(stored.primary, candidate) === 'valid') extra.push(candidate);
     }
   }
   return extra.length === 0 ? stored : { ...stored, signatures: [...stored.signatures, ...extra] };

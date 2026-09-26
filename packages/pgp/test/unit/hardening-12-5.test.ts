@@ -103,6 +103,23 @@ describe('(2) a revocation that arrives only in an attached copy of a stored key
     expect((await analyse(stored, k.fingerprint, k.armored, (p) => k.sign(p, { created }))).status).toBe('verified-known-key');
   });
 
+  it('an attached revocation that cannot be checked at all (unknown or MD5 hash) is ignored, not honoured', async () => {
+    const k = forgeKey({ revocation: { created: new Date('2026-02-01T00:00:00Z'), forged: true } });
+    const stored = without(k.armored, [0x20]);
+    for (const hash of [100, 1]) {
+      const a = decodeArmor(k.armored);
+      if (a === null) throw new Error('no armor');
+      const patched = readPackets(a.data).map((pk) => {
+        if (pk.tag !== Tag.Signature || pk.body[1] !== 0x20) return encodePacket(pk.tag, pk.body);
+        const body = Buffer.from(pk.body);
+        body[3] = hash;
+        return encodePacket(pk.tag, body);
+      });
+      const attached = encodeArmor('PGP PUBLIC KEY BLOCK', Buffer.concat(patched));
+      expect((await analyse(stored, k.fingerprint, attached, (p) => k.sign(p, { created }))).status).toBe('verified-known-key');
+    }
+  });
+
   it("a revocation in some other key's block is never applied to the stored key", async () => {
     const k = forgeKey();
     const other = forgeKey({ revocation: { created: new Date('2026-02-01T00:00:00Z') } });
