@@ -1,0 +1,12 @@
+From: Wren Novak <wren.novak@mail.example.com>
+To: sam@d3cloud.io
+Subject: Urgent: Loved your talk
+Date: Sun, 06 Sep 2026 23:05:04 +0000
+Message-ID: <golden-0079.20260926@mail.example.com>
+Authentication-Results: mx.d3cloud.io; spf=fail smtp.mailfrom=mail.example.com; dkim=fail header.d=mail.example.com; dmarc=fail header.from=mail.example.com
+
+Hello,
+
+Loved your talk
+
+Wren Novak

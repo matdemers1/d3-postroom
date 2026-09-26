@@ -1,0 +1,13 @@
+From: Sam Novak <sam.novak@example.org>
+To: team-list@example.org
+Cc: dana@d3cloud.io
+Subject: Nice to e-meet you
+Date: Sun, 06 Sep 2026 03:22:32 +0000
+Message-ID: <golden-0066.20260926@example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass header.from=example.org
+
+Hello,
+
+Nice to e-meet you
+
+Sam Novak

@@ -1,0 +1,12 @@
+From: Pixel & Thread <orders@pixelthread.example.com>
+To: sam@d3cloud.io
+Subject: Your invoice is ready
+X-SG-EID: sg-eid-1003
+Feedback-ID: receipt:pixelthread.example.com:sendgrid
+Date: Thu, 10 Sep 2026 12:49:51 +0000
+Message-ID: <golden-0134.20260926@pixelthread.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=pixelthread.example.com; dkim=pass header.d=pixelthread.example.com; dmarc=pass header.from=pixelthread.example.com
+
+Your invoice is ready
+
+Order total: $22.99

@@ -1,0 +1,12 @@
+From: Anchorline Books <orders@anchorline.example.org>
+To: sam@d3cloud.io
+Subject: Order confirmed
+X-SG-EID: sg-eid-1001
+Feedback-ID: receipt:anchorline.example.org:sendgrid
+Date: Thu, 10 Sep 2026 10:44:48 +0000
+Message-ID: <golden-0132.20260926@anchorline.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=anchorline.example.org; dkim=pass header.d=anchorline.example.org; dmarc=pass header.from=anchorline.example.org
+
+Order confirmed
+
+Order total: $20.99

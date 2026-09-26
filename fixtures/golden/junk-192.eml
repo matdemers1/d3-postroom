@@ -1,0 +1,11 @@
+From: CryptoBoost <deals@cryptoboost.example.org>
+To: sam@d3cloud.io
+Subject: Your account needs verification
+Date: Mon, 14 Sep 2026 11:58:39 +0000
+Message-ID: <golden-0192.20260926@cryptoboost.example.org>
+Authentication-Results: mx.d3cloud.io; spf=none smtp.mailfrom=cryptoboost.example.org; dkim=none header.d=cryptoboost.example.org; dmarc=none header.from=cryptoboost.example.org
+Precedence: junk
+
+Your account needs verification
+
+Click here: https://cryptoboost.example.org/claim

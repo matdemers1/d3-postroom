@@ -1,0 +1,12 @@
+From: Noah Chen <noah.chen@example.com>
+To: sam@d3cloud.io
+Subject: Can you take a look?
+Date: Thu, 03 Sep 2026 16:57:19 +0000
+Message-ID: <golden-0030.20260926@example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.com; dkim=pass header.d=example.com; dmarc=pass header.from=example.com
+
+Hi,
+
+Can you take a look?
+
+Noah Chen

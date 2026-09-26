@@ -1,0 +1,13 @@
+From: Kitchen Table <newsletter@kitchentable.example.net>
+To: dana@d3cloud.io
+Subject: This week: five things worth your time
+List-Id: Kitchen Table <newsletter.kitchentable.example.net>
+List-Unsubscribe: <https://kitchentable.example.net/unsubscribe>
+Precedence: bulk
+Date: Mon, 07 Sep 2026 15:12:55 +0000
+Message-ID: <golden-0089.20260926@kitchentable.example.net>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=kitchentable.example.net; dkim=pass header.d=kitchentable.example.net; dmarc=pass header.from=kitchentable.example.net
+
+This week: five things worth your time
+
+Read online: https://kitchentable.example.net/issues/9

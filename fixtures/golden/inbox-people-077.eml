@@ -1,0 +1,12 @@
+From: Rosa Novak <rosa.novak@mail.example.com>
+To: sam@d3cloud.io
+Subject: Introduction from the conference
+Date: Sun, 06 Sep 2026 19:53:00 +0000
+Message-ID: <golden-0077.20260926@mail.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=mail.example.com; dkim=pass header.d=mail.example.com; dmarc=pass header.from=mail.example.com
+
+Hello,
+
+Introduction from the conference
+
+Rosa Novak

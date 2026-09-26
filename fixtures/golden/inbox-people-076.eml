@@ -1,0 +1,12 @@
+From: Owen Novak <owen.novak@mail.example.com>
+To: dana@d3cloud.io
+Subject: Urgent: Nice to e-meet you
+Date: Sun, 06 Sep 2026 17:22:12 +0000
+Message-ID: <golden-0076.20260926@mail.example.com>
+Authentication-Results: mx.d3cloud.io; spf=fail smtp.mailfrom=mail.example.com; dkim=fail header.d=mail.example.com; dmarc=fail header.from=mail.example.com
+
+Hello,
+
+Nice to e-meet you
+
+Owen Novak

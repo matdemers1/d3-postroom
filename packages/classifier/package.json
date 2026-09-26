@@ -15,7 +15,7 @@
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --project unit --passWithNoTests",
+    "test": "vitest run --project unit --passWithNoTests && vitest run --config test/golden/vitest.config.ts --passWithNoTests",
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
   "dependencies": {

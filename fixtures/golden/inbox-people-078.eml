@@ -1,0 +1,13 @@
+From: Theo Novak <theo.novak@mail.example.com>
+To: team-list@example.org
+Cc: dana@d3cloud.io
+Subject: Cc-ing you on this thread
+Date: Sun, 06 Sep 2026 21:27:49 +0000
+Message-ID: <golden-0078.20260926@mail.example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=mail.example.com; dkim=pass header.d=mail.example.com; dmarc=pass header.from=mail.example.com
+
+Hello,
+
+Cc-ing you on this thread
+
+Theo Novak

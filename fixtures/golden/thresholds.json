@@ -1,0 +1,17 @@
+{
+  "note": "Per-bucket precision/recall floors for the fixtures/golden replay (PST-REQ-107). Bootstrapped from the current classifier by `node scripts/golden/replay.mjs --write-thresholds`. Lowering any value here is a reviewed change — see docs/runbooks/calibration.md.",
+  "buckets": {
+    "priority": {
+      "precision": 1,
+      "recall": 1
+    },
+    "people": {
+      "precision": 1,
+      "recall": 1
+    },
+    "other": {
+      "precision": 1,
+      "recall": 1
+    }
+  }
+}

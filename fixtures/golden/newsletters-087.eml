@@ -1,0 +1,13 @@
+From: The Long Read <newsletter@thelongread.example.org>
+To: dana@d3cloud.io
+Subject: What we read this week
+List-Id: The Long Read <newsletter.thelongread.example.org>
+List-Unsubscribe: <https://thelongread.example.org/unsubscribe>
+Precedence: bulk
+Date: Mon, 07 Sep 2026 12:10:37 +0000
+Message-ID: <golden-0087.20260926@thelongread.example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=thelongread.example.org; dkim=pass header.d=thelongread.example.org; dmarc=pass header.from=thelongread.example.org
+
+What we read this week
+
+Read online: https://thelongread.example.org/issues/7

@@ -1,0 +1,12 @@
+From: Yuki Doe <yuki.doe@example.com>
+To: dana@d3cloud.io
+Subject: Can you take a look?
+Date: Tue, 01 Sep 2026 22:19:21 +0000
+Message-ID: <golden-0005.20260926@example.com>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.com; dkim=pass header.d=example.com; dmarc=pass header.from=example.com
+
+Hi,
+
+Can you take a look?
+
+Yuki Doe

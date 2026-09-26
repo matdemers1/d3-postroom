@@ -1,0 +1,69 @@
+#!/usr/bin/env node
+// CI guard for PST-REQ-108: the private calibration corpus (real mail) is never committed. Only
+// fixtures/golden (synthetic) is. This walks `git ls-files` — the tracked-file list, exactly what
+// a commit or a PR would ship — and fails if anything lands under a forbidden corpus path, or any
+// stray `.eml` shows up outside the directories that are allowed to hold one today.
+//
+// Allow-list of `.eml` locations, produced by `git ls-files '*.eml'` on the day this was written
+// (PST-T-5.5): fixtures/golden/**, fuzz/*/corpus/**, fuzz/*/fixtures/** (mime's crasher fixtures
+// promoted from the fuzzer are `.eml`-shaped; the other fuzz targets' fixtures dirs are currently
+// empty but a mime-style crasher there is legitimate too). No other directory has ever held one —
+// a `.eml` anywhere else is either a mistake or a real message that should not be here.
+import { execFileSync } from 'node:child_process';
+
+const FORBIDDEN_DIR_PREFIXES = [
+  'corpus/', // gitignored local calibration corpus (PST-REQ-108)
+  'fixtures/private/',
+  'fixtures/spamassassin/',
+];
+
+// A path segment `/corpus/` is allowed only directly under `fuzz/<target>/corpus/` — those are
+// synthetic protocol-fuzzing seeds, not mail, and .gitignore re-includes them on purpose.
+function isAllowedCorpusPath(path) {
+  return /^fuzz\/[^/]+\/corpus\//.test(path);
+}
+
+function isForbiddenCorpusPath(path) {
+  if (isAllowedCorpusPath(path)) return false;
+  if (FORBIDDEN_DIR_PREFIXES.some((prefix) => path.startsWith(prefix))) return true;
+  // Catch a corpus/ or fixtures/private|spamassassin dropped anywhere else in the tree too, not
+  // just at the repo root (e.g. a nested package's corpus/ directory).
+  return /(^|\/)corpus\//.test(path) && !isAllowedCorpusPath(path);
+}
+
+const EML_ALLOW_PATTERNS = [
+  /^fixtures\/golden\//,
+  /^fuzz\/[^/]+\/corpus\//,
+  /^fuzz\/[^/]+\/fixtures\//,
+];
+
+function isForbiddenEml(path) {
+  if (!path.endsWith('.eml')) return false;
+  return !EML_ALLOW_PATTERNS.some((re) => re.test(path));
+}
+
+function main() {
+  const output = execFileSync('git', ['ls-files'], { encoding: 'utf8' });
+  const files = output.split('\n').filter((line) => line.length > 0);
+
+  const problems = [];
+  for (const path of files) {
+    if (isForbiddenCorpusPath(path)) {
+      problems.push(`${path}: tracked under a corpus path that PST-REQ-108 requires stay local/gitignored`);
+    }
+    if (isForbiddenEml(path)) {
+      problems.push(`${path}: a tracked .eml outside fixtures/golden/, fuzz/*/corpus/ or fuzz/*/fixtures/`);
+    }
+  }
+
+  if (problems.length > 0) {
+    console.error('check-no-corpus: found tracked path(s) that must never be committed (PST-REQ-108):');
+    for (const p of problems) console.error(`  - ${p}`);
+    console.error('\nRemove them from the index (git rm --cached) and keep them under the gitignored corpus/ directory.');
+    process.exit(1);
+  }
+
+  console.log(`check-no-corpus: ${files.length} tracked file(s) checked, no corpus path committed.`);
+}
+
+main();

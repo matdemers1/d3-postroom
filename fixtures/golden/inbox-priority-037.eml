@@ -1,0 +1,12 @@
+From: Rosa Chen <rosa.chen@example.org>
+To: dana@d3cloud.io
+Subject: Quick question about Saturday
+Date: Fri, 04 Sep 2026 03:53:14 +0000
+Message-ID: <golden-0037.20260926@example.org>
+Authentication-Results: mx.d3cloud.io; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass header.from=example.org
+
+Hi,
+
+Quick question about Saturday
+
+Rosa Chen

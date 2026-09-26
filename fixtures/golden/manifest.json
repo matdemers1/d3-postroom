@@ -1,0 +1,7598 @@
+{
+  "seed": 20260926,
+  "generatedBy": "scripts/golden/generate.mjs",
+  "entries": [
+    {
+      "file": "inbox-priority-001.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "jane.doe@example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "jane.doe@example.com"
+    },
+    {
+      "file": "inbox-priority-002.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "alex.doe@example.com"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "alex.doe@example.com"
+    },
+    {
+      "file": "inbox-priority-003.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "priya.doe@example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "priya.doe@example.com"
+    },
+    {
+      "file": "inbox-priority-004.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "marco.doe@example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "marco.doe@example.com"
+    },
+    {
+      "file": "inbox-priority-005.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "yuki.doe@example.com"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "yuki.doe@example.com"
+    },
+    {
+      "file": "inbox-priority-006.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "sam.doe@example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "sam.doe@example.com"
+    },
+    {
+      "file": "inbox-priority-007.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "lena.doe@example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "lena.doe@example.com"
+    },
+    {
+      "file": "inbox-priority-008.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "omar.doe@example.org"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "omar.doe@example.org"
+    },
+    {
+      "file": "inbox-priority-009.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "grace.doe@example.org"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "grace.doe@example.org"
+    },
+    {
+      "file": "inbox-priority-010.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "noah.doe@example.org"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "noah.doe@example.org"
+    },
+    {
+      "file": "inbox-priority-011.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "ivy.doe@example.org"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "ivy.doe@example.org"
+    },
+    {
+      "file": "inbox-priority-012.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "deshawn.doe@example.org"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deshawn.doe@example.org"
+    },
+    {
+      "file": "inbox-priority-013.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "maria.doe@example.org"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "maria.doe@example.org"
+    },
+    {
+      "file": "inbox-priority-014.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "felix.doe@example.org"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "felix.doe@example.org"
+    },
+    {
+      "file": "inbox-priority-015.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "nadia.doe@example.net"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "nadia.doe@example.net"
+    },
+    {
+      "file": "inbox-priority-016.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "owen.doe@example.net"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "owen.doe@example.net"
+    },
+    {
+      "file": "inbox-priority-017.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "rosa.doe@example.net"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "rosa.doe@example.net"
+    },
+    {
+      "file": "inbox-priority-018.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "theo.doe@example.net"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "theo.doe@example.net"
+    },
+    {
+      "file": "inbox-priority-019.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "wren.doe@example.net"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "wren.doe@example.net"
+    },
+    {
+      "file": "inbox-priority-020.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "kian.doe@example.net"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "kian.doe@example.net"
+    },
+    {
+      "file": "inbox-priority-021.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "jane.chen@example.net"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "jane.chen@example.net"
+    },
+    {
+      "file": "inbox-priority-022.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "alex.chen@mail.example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "alex.chen@mail.example.com"
+    },
+    {
+      "file": "inbox-priority-023.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "priya.chen@mail.example.com"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "priya.chen@mail.example.com"
+    },
+    {
+      "file": "inbox-priority-024.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "marco.chen@mail.example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "marco.chen@mail.example.com"
+    },
+    {
+      "file": "inbox-priority-025.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "yuki.chen@mail.example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "yuki.chen@mail.example.com"
+    },
+    {
+      "file": "inbox-priority-026.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "sam.chen@mail.example.com"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "sam.chen@mail.example.com"
+    },
+    {
+      "file": "inbox-priority-027.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "lena.chen@mail.example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "lena.chen@mail.example.com"
+    },
+    {
+      "file": "inbox-priority-028.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "omar.chen@mail.example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "omar.chen@mail.example.com"
+    },
+    {
+      "file": "inbox-priority-029.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "grace.chen@example.com"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "grace.chen@example.com"
+    },
+    {
+      "file": "inbox-priority-030.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "noah.chen@example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "noah.chen@example.com"
+    },
+    {
+      "file": "inbox-priority-031.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "ivy.chen@example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "ivy.chen@example.com"
+    },
+    {
+      "file": "inbox-priority-032.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "deshawn.chen@example.com"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deshawn.chen@example.com"
+    },
+    {
+      "file": "inbox-priority-033.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "maria.chen@example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "maria.chen@example.com"
+    },
+    {
+      "file": "inbox-priority-034.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "felix.chen@example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "felix.chen@example.com"
+    },
+    {
+      "file": "inbox-priority-035.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "nadia.chen@example.com"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "nadia.chen@example.com"
+    },
+    {
+      "file": "inbox-priority-036.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "owen.chen@example.org"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "owen.chen@example.org"
+    },
+    {
+      "file": "inbox-priority-037.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "rosa.chen@example.org"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "rosa.chen@example.org"
+    },
+    {
+      "file": "inbox-priority-038.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "contact"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "theo.chen@example.org"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "theo.chen@example.org"
+    },
+    {
+      "file": "inbox-priority-039.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "vip-authenticated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "wren.chen@example.org"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "wren.chen@example.org"
+    },
+    {
+      "file": "inbox-priority-040.eml",
+      "expectedRuleBucket": "priority",
+      "expectedFinalBucket": "inbox-priority",
+      "tags": [
+        "reply-graph"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "kian.chen@example.org"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "kian.chen@example.org"
+    },
+    {
+      "file": "inbox-people-041.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "jane.reyes@example.net"
+    },
+    {
+      "file": "inbox-people-042.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "alex.reyes@example.net"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "alex.reyes@example.net"
+    },
+    {
+      "file": "inbox-people-043.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "priya.reyes@example.net"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "priya.reyes@example.net"
+    },
+    {
+      "file": "inbox-people-044.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "marco.reyes@example.net"
+    },
+    {
+      "file": "inbox-people-045.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "yuki.reyes@example.net"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "yuki.reyes@example.net"
+    },
+    {
+      "file": "inbox-people-046.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "sam.reyes@mail.example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "sam.reyes@mail.example.com"
+    },
+    {
+      "file": "inbox-people-047.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "lena.reyes@mail.example.com"
+    },
+    {
+      "file": "inbox-people-048.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "omar.reyes@mail.example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "omar.reyes@mail.example.com"
+    },
+    {
+      "file": "inbox-people-049.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "grace.reyes@mail.example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "grace.reyes@mail.example.com"
+    },
+    {
+      "file": "inbox-people-050.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "noah.reyes@mail.example.com"
+    },
+    {
+      "file": "inbox-people-051.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "ivy.reyes@mail.example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "ivy.reyes@mail.example.com"
+    },
+    {
+      "file": "inbox-people-052.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "deshawn.reyes@mail.example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deshawn.reyes@mail.example.com"
+    },
+    {
+      "file": "inbox-people-053.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "maria.reyes@example.com"
+    },
+    {
+      "file": "inbox-people-054.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "felix.reyes@example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "felix.reyes@example.com"
+    },
+    {
+      "file": "inbox-people-055.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "nadia.reyes@example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "nadia.reyes@example.com"
+    },
+    {
+      "file": "inbox-people-056.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "owen.reyes@example.com"
+    },
+    {
+      "file": "inbox-people-057.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "rosa.reyes@example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "rosa.reyes@example.com"
+    },
+    {
+      "file": "inbox-people-058.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "theo.reyes@example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "theo.reyes@example.com"
+    },
+    {
+      "file": "inbox-people-059.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "wren.reyes@example.com"
+    },
+    {
+      "file": "inbox-people-060.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "kian.reyes@example.org"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "kian.reyes@example.org"
+    },
+    {
+      "file": "inbox-people-061.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "jane.novak@example.org"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "jane.novak@example.org"
+    },
+    {
+      "file": "inbox-people-062.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "alex.novak@example.org"
+    },
+    {
+      "file": "inbox-people-063.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "priya.novak@example.org"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "priya.novak@example.org"
+    },
+    {
+      "file": "inbox-people-064.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "marco.novak@example.org"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "marco.novak@example.org"
+    },
+    {
+      "file": "inbox-people-065.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "yuki.novak@example.org"
+    },
+    {
+      "file": "inbox-people-066.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "sam.novak@example.org"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "sam.novak@example.org"
+    },
+    {
+      "file": "inbox-people-067.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "lena.novak@example.net"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "lena.novak@example.net"
+    },
+    {
+      "file": "inbox-people-068.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "omar.novak@example.net"
+    },
+    {
+      "file": "inbox-people-069.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "grace.novak@example.net"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "grace.novak@example.net"
+    },
+    {
+      "file": "inbox-people-070.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "noah.novak@example.net"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "noah.novak@example.net"
+    },
+    {
+      "file": "inbox-people-071.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "ivy.novak@example.net"
+    },
+    {
+      "file": "inbox-people-072.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "deshawn.novak@example.net"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deshawn.novak@example.net"
+    },
+    {
+      "file": "inbox-people-073.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "maria.novak@example.net"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "maria.novak@example.net"
+    },
+    {
+      "file": "inbox-people-074.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "felix.novak@mail.example.com"
+    },
+    {
+      "file": "inbox-people-075.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [
+          "nadia.novak@mail.example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "nadia.novak@mail.example.com"
+    },
+    {
+      "file": "inbox-people-076.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "owen.novak@mail.example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "owen.novak@mail.example.com"
+    },
+    {
+      "file": "inbox-people-077.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "rosa.novak@mail.example.com"
+    },
+    {
+      "file": "inbox-people-078.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "cc-only"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [
+          "theo.novak@mail.example.com"
+        ],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "theo.novak@mail.example.com"
+    },
+    {
+      "file": "inbox-people-079.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "vip-spoof-dmarc-fail",
+        "dmarc-fail"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [
+            "wren.novak@mail.example.com"
+          ],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "fail"
+        },
+        "dkim": [
+          {
+            "result": "fail"
+          }
+        ],
+        "dmarc": {
+          "result": "fail"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "wren.novak@mail.example.com"
+    },
+    {
+      "file": "inbox-people-080.eml",
+      "expectedRuleBucket": "people",
+      "expectedFinalBucket": "inbox-people",
+      "tags": [
+        "first-time-human"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "kian.novak@mail.example.com"
+    },
+    {
+      "file": "newsletters-081.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "bulk-from-contact"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [
+          "newsletter@weeklysignal.example.com"
+        ],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+0@weeklysignal.example.com"
+    },
+    {
+      "file": "newsletters-082.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+1@thelongread.example.org"
+    },
+    {
+      "file": "newsletters-083.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+2@foundersdigest.example.com"
+    },
+    {
+      "file": "newsletters-084.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+3@kitchentable.example.net"
+    },
+    {
+      "file": "newsletters-085.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+4@trailhead.example.org"
+    },
+    {
+      "file": "newsletters-086.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+5@weeklysignal.example.com"
+    },
+    {
+      "file": "newsletters-087.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+6@thelongread.example.org"
+    },
+    {
+      "file": "newsletters-088.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+7@foundersdigest.example.com"
+    },
+    {
+      "file": "newsletters-089.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+8@kitchentable.example.net"
+    },
+    {
+      "file": "newsletters-090.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+9@trailhead.example.org"
+    },
+    {
+      "file": "newsletters-091.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+10@weeklysignal.example.com"
+    },
+    {
+      "file": "newsletters-092.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+11@thelongread.example.org"
+    },
+    {
+      "file": "newsletters-093.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+12@foundersdigest.example.com"
+    },
+    {
+      "file": "newsletters-094.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+13@kitchentable.example.net"
+    },
+    {
+      "file": "newsletters-095.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+14@trailhead.example.org"
+    },
+    {
+      "file": "newsletters-096.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+15@weeklysignal.example.com"
+    },
+    {
+      "file": "newsletters-097.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+16@thelongread.example.org"
+    },
+    {
+      "file": "newsletters-098.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+17@foundersdigest.example.com"
+    },
+    {
+      "file": "newsletters-099.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+18@kitchentable.example.net"
+    },
+    {
+      "file": "newsletters-100.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+19@trailhead.example.org"
+    },
+    {
+      "file": "newsletters-101.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+20@weeklysignal.example.com"
+    },
+    {
+      "file": "newsletters-102.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+21@thelongread.example.org"
+    },
+    {
+      "file": "newsletters-103.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+22@foundersdigest.example.com"
+    },
+    {
+      "file": "newsletters-104.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+23@kitchentable.example.net"
+    },
+    {
+      "file": "newsletters-105.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "newsletters",
+      "tags": [
+        "newsletter"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "bounce+24@trailhead.example.org"
+    },
+    {
+      "file": "updates-106.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "noreply"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@parcelhop.example.com"
+    },
+    {
+      "file": "updates-107.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@freightwise.example.net"
+    },
+    {
+      "file": "updates-108.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@cloudboard.example.org"
+    },
+    {
+      "file": "updates-109.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@ridepool.example.com"
+    },
+    {
+      "file": "updates-110.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@parcelhop.example.com"
+    },
+    {
+      "file": "updates-111.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "noreply"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@freightwise.example.net"
+    },
+    {
+      "file": "updates-112.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@cloudboard.example.org"
+    },
+    {
+      "file": "updates-113.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@ridepool.example.com"
+    },
+    {
+      "file": "updates-114.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@parcelhop.example.com"
+    },
+    {
+      "file": "updates-115.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@freightwise.example.net"
+    },
+    {
+      "file": "updates-116.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "noreply"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@cloudboard.example.org"
+    },
+    {
+      "file": "updates-117.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@ridepool.example.com"
+    },
+    {
+      "file": "updates-118.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@parcelhop.example.com"
+    },
+    {
+      "file": "updates-119.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@freightwise.example.net"
+    },
+    {
+      "file": "updates-120.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@cloudboard.example.org"
+    },
+    {
+      "file": "updates-121.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "noreply"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@ridepool.example.com"
+    },
+    {
+      "file": "updates-122.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@parcelhop.example.com"
+    },
+    {
+      "file": "updates-123.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@freightwise.example.net"
+    },
+    {
+      "file": "updates-124.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@cloudboard.example.org"
+    },
+    {
+      "file": "updates-125.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@ridepool.example.com"
+    },
+    {
+      "file": "updates-126.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "noreply"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@parcelhop.example.com"
+    },
+    {
+      "file": "updates-127.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@freightwise.example.net"
+    },
+    {
+      "file": "updates-128.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@cloudboard.example.org"
+    },
+    {
+      "file": "updates-129.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@ridepool.example.com"
+    },
+    {
+      "file": "updates-130.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "updates",
+      "tags": [
+        "update",
+        "automated"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "updates@parcelhop.example.com"
+    },
+    {
+      "file": "receipts-131.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@northbendmarket.example.com"
+    },
+    {
+      "file": "receipts-132.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@anchorline.example.org"
+    },
+    {
+      "file": "receipts-133.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@fernwood.example.net"
+    },
+    {
+      "file": "receipts-134.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@pixelthread.example.com"
+    },
+    {
+      "file": "receipts-135.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@northbendmarket.example.com"
+    },
+    {
+      "file": "receipts-136.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@anchorline.example.org"
+    },
+    {
+      "file": "receipts-137.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@fernwood.example.net"
+    },
+    {
+      "file": "receipts-138.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@pixelthread.example.com"
+    },
+    {
+      "file": "receipts-139.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@northbendmarket.example.com"
+    },
+    {
+      "file": "receipts-140.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@anchorline.example.org"
+    },
+    {
+      "file": "receipts-141.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@fernwood.example.net"
+    },
+    {
+      "file": "receipts-142.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@pixelthread.example.com"
+    },
+    {
+      "file": "receipts-143.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@northbendmarket.example.com"
+    },
+    {
+      "file": "receipts-144.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@anchorline.example.org"
+    },
+    {
+      "file": "receipts-145.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@fernwood.example.net"
+    },
+    {
+      "file": "receipts-146.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@pixelthread.example.com"
+    },
+    {
+      "file": "receipts-147.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@northbendmarket.example.com"
+    },
+    {
+      "file": "receipts-148.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@anchorline.example.org"
+    },
+    {
+      "file": "receipts-149.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@fernwood.example.net"
+    },
+    {
+      "file": "receipts-150.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@pixelthread.example.com"
+    },
+    {
+      "file": "receipts-151.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@northbendmarket.example.com"
+    },
+    {
+      "file": "receipts-152.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@anchorline.example.org"
+    },
+    {
+      "file": "receipts-153.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@fernwood.example.net"
+    },
+    {
+      "file": "receipts-154.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@pixelthread.example.com"
+    },
+    {
+      "file": "receipts-155.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "receipts",
+      "tags": [
+        "receipt"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "orders@northbendmarket.example.com"
+    },
+    {
+      "file": "notifications-156.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@boardline.example.com"
+    },
+    {
+      "file": "notifications-157.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@chatterframe.example.org"
+    },
+    {
+      "file": "notifications-158.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@pingset.example.net"
+    },
+    {
+      "file": "notifications-159.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@loopcast.example.com"
+    },
+    {
+      "file": "notifications-160.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@boardline.example.com"
+    },
+    {
+      "file": "notifications-161.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@chatterframe.example.org"
+    },
+    {
+      "file": "notifications-162.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@pingset.example.net"
+    },
+    {
+      "file": "notifications-163.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@loopcast.example.com"
+    },
+    {
+      "file": "notifications-164.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@boardline.example.com"
+    },
+    {
+      "file": "notifications-165.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@chatterframe.example.org"
+    },
+    {
+      "file": "notifications-166.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@pingset.example.net"
+    },
+    {
+      "file": "notifications-167.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@loopcast.example.com"
+    },
+    {
+      "file": "notifications-168.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@boardline.example.com"
+    },
+    {
+      "file": "notifications-169.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@chatterframe.example.org"
+    },
+    {
+      "file": "notifications-170.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@pingset.example.net"
+    },
+    {
+      "file": "notifications-171.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@loopcast.example.com"
+    },
+    {
+      "file": "notifications-172.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@boardline.example.com"
+    },
+    {
+      "file": "notifications-173.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@chatterframe.example.org"
+    },
+    {
+      "file": "notifications-174.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@pingset.example.net"
+    },
+    {
+      "file": "notifications-175.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@loopcast.example.com"
+    },
+    {
+      "file": "notifications-176.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@boardline.example.com"
+    },
+    {
+      "file": "notifications-177.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@chatterframe.example.org"
+    },
+    {
+      "file": "notifications-178.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@pingset.example.net"
+    },
+    {
+      "file": "notifications-179.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@loopcast.example.com"
+    },
+    {
+      "file": "notifications-180.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "notifications",
+      "tags": [
+        "notification"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "pass"
+        },
+        "dkim": [
+          {
+            "result": "pass"
+          }
+        ],
+        "dmarc": {
+          "result": "pass"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "notifications@boardline.example.com"
+    },
+    {
+      "file": "junk-181.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "blocked-pin"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": [
+            "deals@megasavingsnow.example.com"
+          ]
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@megasavingsnow.example.com"
+    },
+    {
+      "file": "junk-182.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "bulk-junk"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@prizealert.example.net"
+    },
+    {
+      "file": "junk-183.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "blocked-pin"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": [
+            "deals@cryptoboost.example.org"
+          ]
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@cryptoboost.example.org"
+    },
+    {
+      "file": "junk-184.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "bulk-junk"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@megasavingsnow.example.com"
+    },
+    {
+      "file": "junk-185.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "blocked-pin"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": [
+            "deals@prizealert.example.net"
+          ]
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@prizealert.example.net"
+    },
+    {
+      "file": "junk-186.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "bulk-junk"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@cryptoboost.example.org"
+    },
+    {
+      "file": "junk-187.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "blocked-pin"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": [
+            "deals@megasavingsnow.example.com"
+          ]
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@megasavingsnow.example.com"
+    },
+    {
+      "file": "junk-188.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "bulk-junk"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@prizealert.example.net"
+    },
+    {
+      "file": "junk-189.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "blocked-pin"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": [
+            "deals@cryptoboost.example.org"
+          ]
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@cryptoboost.example.org"
+    },
+    {
+      "file": "junk-190.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "bulk-junk"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@megasavingsnow.example.com"
+    },
+    {
+      "file": "junk-191.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "blocked-pin"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": [
+            "deals@prizealert.example.net"
+          ]
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@prizealert.example.net"
+    },
+    {
+      "file": "junk-192.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "bulk-junk"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@cryptoboost.example.org"
+    },
+    {
+      "file": "junk-193.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "blocked-pin"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": [
+            "deals@megasavingsnow.example.com"
+          ]
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@megasavingsnow.example.com"
+    },
+    {
+      "file": "junk-194.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "bulk-junk"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@prizealert.example.net"
+    },
+    {
+      "file": "junk-195.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "blocked-pin"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": [
+            "deals@cryptoboost.example.org"
+          ]
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@cryptoboost.example.org"
+    },
+    {
+      "file": "junk-196.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "bulk-junk"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@megasavingsnow.example.com"
+    },
+    {
+      "file": "junk-197.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "blocked-pin"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": [
+            "deals@prizealert.example.net"
+          ]
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@prizealert.example.net"
+    },
+    {
+      "file": "junk-198.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "bulk-junk"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@cryptoboost.example.org"
+    },
+    {
+      "file": "junk-199.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "blocked-pin"
+      ],
+      "owner": "dana@d3cloud.io",
+      "account": {
+        "addresses": [
+          "dana@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": [
+            "deals@megasavingsnow.example.com"
+          ]
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@megasavingsnow.example.com"
+    },
+    {
+      "file": "junk-200.eml",
+      "expectedRuleBucket": "other",
+      "expectedFinalBucket": "junk",
+      "tags": [
+        "bulk-junk"
+      ],
+      "owner": "sam@d3cloud.io",
+      "account": {
+        "addresses": [
+          "sam@d3cloud.io"
+        ],
+        "replyGraph": [],
+        "contacts": [],
+        "pins": {
+          "vip": [],
+          "blocked": []
+        }
+      },
+      "authVerdicts": {
+        "spf": {
+          "result": "none"
+        },
+        "dkim": [
+          {
+            "result": "none"
+          }
+        ],
+        "dmarc": {
+          "result": "none"
+        },
+        "arc": {
+          "result": "none"
+        }
+      },
+      "envelopeFrom": "deals@prizealert.example.net"
+    }
+  ]
+}
