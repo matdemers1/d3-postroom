@@ -1,0 +1,169 @@
+/* PST-T-11.2: at phone width, every interactive element needs a 44×44 CSS px hit area, or an
+ * equivalent one. @d3cloud/ui's own control heights (sm 28px, md 34px, even lg 40px for a button;
+ * 26px for the password-reveal toggle) are all under that — and the package is not ours to edit
+ * (only apps/web is owned here) — so this file gives them an *invisible* hit-area extension instead
+ * of resizing them visually: a ::after with a negative inset, which participates in hit-testing (a
+ * pointer event landing on generated content still targets its real host element) without widening
+ * anything a design review would see. Text inputs are different — ::before/::after do not render on
+ * a replaced element like <input>, so those are stretched to fill their wrapper's height instead,
+ * which is a visible (if small) change but the only one that actually works.
+ *
+ * `--hit-w`/`--hit-h` record the resulting hit area in CSS custom properties so a test can read the
+ * true tap target size without re-deriving each component's own layout math (see
+ * e2e/tests/mobile.spec.ts's assertMobileFriendly). No raw hex, no shadows, no invented tokens: only
+ * `inset`, `position`, and the two custom properties this file itself defines.
+ */
+@media (max-width: 599px) {
+  /* Every @d3cloud/ui Button size is under 44px tall at least one way (sm 28, md 34, lg 40): give
+   * all three the same invisible extension rather than special-casing which screen used which size. */
+  .d3-btn--sm,
+  .d3-btn--md,
+  .d3-btn--lg {
+    position: relative;
+    --hit-w: 44px;
+    --hit-h: 44px;
+  }
+  .d3-btn--sm::after,
+  .d3-btn--md::after,
+  .d3-btn--lg::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+
+  /* The password-reveal toggle inside a sign-in/setup/change-password field: 26px (22px in a small
+   * field), positioned over the input's own padding, so its extension stays inside that field. */
+  .d3-pw__toggle {
+    position: relative;
+    --hit-w: 44px;
+    --hit-h: 44px;
+  }
+  .d3-pw__toggle::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+
+  /* The icon-only buttons (28/34/40px square: "Open navigation", the shell's icon actions) — same
+   * invisible extension as the labelled buttons above. */
+  .d3-ibtn--sm,
+  .d3-ibtn--md,
+  .d3-ibtn--lg {
+    position: relative;
+    --hit-w: 44px;
+    --hit-h: 44px;
+  }
+  .d3-ibtn--sm::after,
+  .d3-ibtn--md::after,
+  .d3-ibtn--lg::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+
+  /* The shell's brand mark/wordmark (the "Postroom" home link, 26px tall) and a standalone nav
+   * link like the mobile "‹ Mailboxes" back link (17px tall, @d3cloud/ui's `variant="standalone"`
+   * Link, which shares the plain `.d3-lnk` class with every other Link — there is no separate
+   * modifier to target more narrowly) are not inline text inside a sentence — WCAG 2.5.8's inline
+   * exception does not cover them — so they get the same treatment. An inline text link inside a
+   * message body or a description list also carries `.d3-lnk`; enlarging its invisible hit area
+   * too is harmless (it is already allowlisted below on its own terms). */
+  .d3-shell-brand,
+  .d3-lnk {
+    position: relative;
+    --hit-w: 44px;
+    --hit-h: 44px;
+  }
+  .d3-shell-brand::after,
+  .d3-lnk::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+
+  /* The segmented control (Month/Week/Day view switcher, 24px tall, some labels under 44px wide):
+   * its items sit flush against each other with no gap, so an invisible ::after extension would
+   * silently steal taps from the neighbour instead of giving this one an honest larger target —
+   * grown for real instead, with existing spacing tokens. */
+  .d3-seg__item {
+    min-height: 44px;
+    min-width: 44px;
+    padding-inline: var(--space-12);
+  }
+
+  /* A single-word text link inside a compact table cell (e.g. the Outbound queue's "View", 16px
+   * tall) — a table cell (`.d3-tbl__td`) clips overflow for its own ellipsis rule, so an outside
+   * ::after extension would be clipped along with it; grown for real with padding instead, which
+   * the row's own auto height simply accommodates. */
+  .pr-tbl-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-inline: var(--space-8);
+  }
+
+  /* Tabs (e.g. Rules' "Rules" / "Edit as Sieve" toggle, 28px tall). */
+  .d3-tabs__tab {
+    position: relative;
+    --hit-w: 44px;
+    --hit-h: 44px;
+  }
+  .d3-tabs__tab::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+  }
+
+  /* PageHeader's "back" link (e.g. Contacts' "All contacts", 19px tall) — a standalone navigation
+   * link above the title, not inline text inside a sentence. */
+  .d3-ph__back a {
+    position: relative;
+    --hit-w: 44px;
+    --hit-h: 44px;
+  }
+  .d3-ph__back a::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+
+  /* The sidebar (a drawer below tablet width, Shell.tsx) lists every mailbox and every account/admin
+   * screen as a 36px-tall row. */
+  .d3-snav__item {
+    position: relative;
+    --hit-w: 44px;
+    --hit-h: 44px;
+  }
+  .d3-snav__item::after {
+    content: '';
+    position: absolute;
+    inset: -4px 0;
+  }
+
+  /* The Checkbox's visible 17×17 box (the actual toggle button — the native <input> beside it is
+   * Radix's aria-hidden form-association shim, excluded in e2e/tests/mobile.spec.ts). */
+  .d3-cbx__box {
+    position: relative;
+    --hit-w: 44px;
+    --hit-h: 44px;
+  }
+  .d3-cbx__box::after {
+    content: '';
+    position: absolute;
+    inset: -13px;
+  }
+
+  /* Text/search/date fields: the visible box (`.d3-inp`) is 28/34/40px tall with the control itself
+   * shorter still (line-height only) and vertically centered — stretching the control to the
+   * wrapper's cross size, and the wrapper itself to at least 44px, makes the *actual* <input> the
+   * full tap target rather than an invisible extension nobody could verify. */
+  .d3-inp {
+    /* +2px over 44 accounts for the wrapper's own 1px top/bottom border: align-items: stretch
+     * fills the control to the flex container's *content* box, not its border box. */
+    min-height: 46px;
+    align-items: stretch;
+  }
+  .d3-inp__control {
+    padding-block: var(--space-12);
+  }
+}
