@@ -539,9 +539,17 @@ importers:
         specifier: workspace:*
         version: link:../db
 
+  packages/ical: {}
+
   packages/imap-proto: {}
 
   packages/mime: {}
+
+  packages/phish:
+    dependencies:
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
 
   packages/proxy-protocol: {}
 
@@ -564,6 +572,12 @@ importers:
         specifier: workspace:*
         version: link:../db
 
+  packages/sieve:
+    dependencies:
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../mime
+
   packages/smtp-proto: {}
 
   packages/threading:
@@ -571,6 +585,8 @@ importers:
       '@postroom/db':
         specifier: workspace:*
         version: link:../db
+
+  packages/vcard: {}
 
   security/adversarial:
     dependencies:

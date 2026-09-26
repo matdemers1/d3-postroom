@@ -1,0 +1,23 @@
+{
+  "name": "@postroom/vcard",
+  "private": true,
+  "version": "0.0.0",
+  "description": "vCard (RFC 6350) parser and serializer",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
