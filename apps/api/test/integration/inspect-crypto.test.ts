@@ -11,6 +11,7 @@ import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { kekFromBase64 } from '@postroom/crypto';
 import { randomUidValidity, seed, SpecialUse, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
+import { decodeArmor, encodeArmor, encodePacket, readPackets, Tag } from '@postroom/pgp';
 import type { Express } from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
@@ -134,12 +135,46 @@ describe.skipIf(!baseUrl)('Inspect: signature and encryption (PST-T-12.1, PST-RE
     expect(body.crypto.signature.signer?.keySource).toBe('message');
   });
 
-  it('a revoked key is not used', async () => {
+  it('a revoked key is never verified, and the drawer says why', async () => {
     const me = await person();
     const key = await aliceKey(me.id, 'contact', false);
     await db.cryptoKey.update({ where: { id: key.id }, data: { revokedAt: new Date() } });
     const m = await file(me.inbox, fixture('pgp-mime-signed-ed25519.eml'));
-    expect((await inspect(me.cookie, m.id)).crypto.signature.status).toBe('valid-signature-unknown-key');
+    const body = await inspect(me.cookie, m.id);
+    expect(body.crypto.signature.status).toBe('unsupported:key-revoked');
+    expect(body.crypto.signature.signer).toMatchObject({ keySource: 'account', knownKeyId: key.id });
+  });
+
+  it('a key that expired before the signature was made is never verified', async () => {
+    const me = await person();
+    const key = await aliceKey(me.id, 'contact', false);
+    await db.cryptoKey.update({ where: { id: key.id }, data: { expiresAt: new Date('2020-01-01T00:00:00Z') } });
+    const m = await file(me.inbox, fixture('pgp-mime-signed-ed25519.eml'));
+    expect((await inspect(me.cookie, m.id)).crypto.signature.status).toBe('unsupported:key-expired');
+  });
+
+  it("the verifier's forgery — alice's public self-certification replayed as a document signature — is refused", async () => {
+    const me = await person();
+    await aliceKey(me.id, 'contact', false);
+    const armored = decodeArmor(fixture('alice-ed25519.pub.asc').toString('utf8'));
+    if (armored === null) throw new Error('alice key');
+    const packets = readPackets(armored.data);
+    const key = packets.find((p) => p.tag === Tag.PublicKey);
+    const uidAt = packets.findIndex((p) => p.tag === Tag.UserId);
+    const uid = packets[uidAt];
+    const cert = packets.slice(uidAt + 1).find((p) => p.tag === Tag.Signature && p.body[1] === 0x13);
+    if (key === undefined || uid === undefined || cert === undefined) throw new Error('alice key shape');
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(uid.body.length, 0);
+    const signed = Buffer.concat([Buffer.of(0x99, key.body.length >> 8, key.body.length & 0xff), key.body, Buffer.of(0xb4), len, uid.body]);
+    const sig = encodeArmor('PGP SIGNATURE', encodePacket(Tag.Signature, cert.body)).replace(/\r?\n/g, '\r\n');
+    const raw = Buffer.concat([
+      Buffer.from('From: Alice Test <alice@example.test>\r\nTo: me@d3cloud.io\r\nSubject: forged\r\nMIME-Version: 1.0\r\nContent-Type: multipart/signed; micalg=pgp-sha256; protocol="application/pgp-signature"; boundary="b"\r\n\r\n--b\r\n', 'latin1'),
+      signed,
+      Buffer.from(`\r\n--b\r\nContent-Type: application/pgp-signature\r\n\r\n${sig}\r\n--b--\r\n`, 'latin1'),
+    ]);
+    const m = await file(me.inbox, raw);
+    expect((await inspect(me.cookie, m.id)).crypto.signature.status).toBe('unsupported:signature-type-0x13');
   });
 
   it('an encrypted fixture decrypts with a private key sealed under the KEK', async () => {

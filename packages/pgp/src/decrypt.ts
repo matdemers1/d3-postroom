@@ -199,6 +199,9 @@ export function readMessagePackets(data: Buffer, max: number, depth = 0): Opened
       return readMessagePackets(out, max, depth + 1);
     }
     if (p.tag === Tag.Literal) {
+      // RFC 9580 §10.3: an OpenPGP message holds exactly one literal. With two, which one a
+      // signature covers is ambiguous — refused rather than guessed.
+      if (literal !== null) throw new PgpError('malformed-message', 'more than one literal data packet');
       const r = new Reader(p.body, (m) => new PgpError('literal-truncated', m));
       r.u8(); // format: b, t, u, m
       filename = r.bytes(r.u8()).toString('utf8');

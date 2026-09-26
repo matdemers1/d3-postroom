@@ -46,6 +46,8 @@ try {
       for (let i = 0; i < eml.length; i += size) chunks.push(eml.subarray(i, i + size));
       const r = await analyzeMessage(chunks, []);
       if (typeof r.signature.status !== 'string' || typeof r.encryption.status !== 'string') throw new Error('no report');
+      // Total, and not by accident: a bug caught by the last-resort handler is still a bug.
+      if (r.signature.status === 'unsupported:internal-error' || r.encryption.status === 'failed:internal-error') throw new Error(`internal error: ${r.signature.reasons.join('; ')}${r.encryption.reasons.join('; ')}`);
     }),
     { numRuns: 300, seed },
   );

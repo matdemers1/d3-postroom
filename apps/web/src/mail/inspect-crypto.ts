@@ -53,9 +53,52 @@ export function formatFingerprint(fp: string): string {
   return fp.replace(/[^0-9a-fA-F]/g, '').toUpperCase().replace(/(.{4})(?=.)/g, '$1 ');
 }
 
+/**
+ * Why a signature was not trusted, as a sentence — for the `unsupported:<reason>` statuses the
+ * analyzer names (PST-REQ-160). Each one is a signature that may even verify mathematically, but
+ * that the drawer will not call verified.
+ */
+const SIGNATURE_REASONS: Record<string, string> = {
+  'key-revoked': 'Signed with a key that has been revoked, so the signature is not trusted.',
+  'key-expired': 'Signed after the key had expired, so the signature is not trusted.',
+  'signature-expired': 'The signature has expired, so it is no longer trusted.',
+  'signature-from-future': "The signature claims to have been made in the future, so it is not trusted: the sender's clock, or the signature, is wrong.",
+  'signature-no-creation-time': 'The signature does not say when it was made, so it is not trusted.',
+  'weak-hash-sha1': 'The signature uses SHA-1, which can be forged, so it is not trusted.',
+  'certificate-expired': "The signer's certificate was not valid when the message was signed (expired, or not yet valid), so the signature is not trusted.",
+  'certificate-not-for-email': "The signer's certificate is not issued for signing e-mail, so the signature is not trusted.",
+  'ber-encoding': 'The signature is not in strict DER encoding, so it was not checked.',
+  'signed-attributes-not-der': "The signature's signed attributes are not in the one encoding (DER) that can be checked without ambiguity, so it was not checked.",
+  'malformed-certificate': "The signer's certificate is malformed, so the signature could not be checked.",
+  'signer-key-unavailable': "The signer's key is not one of yours and did not come with the message, so the signature could not be checked.",
+  'internal-error': 'The signature could not be checked because of a fault in Postroom; the message itself may be fine.',
+  'analysis-failed': 'The message could not be read back to check its signature.',
+};
+
+const DECRYPTION_REASONS: Record<string, string> = {
+  'malformed-message': 'Decrypted, but the result holds more than one literal data packet, so which part is the message is ambiguous and none is shown.',
+  'internal-error': 'Decryption failed because of a fault in Postroom; the message itself may be fine.',
+};
+
+function reasonOf(status: string): string {
+  const i = status.indexOf(':');
+  return i < 0 ? '' : status.slice(i + 1);
+}
+
+/** The sentence for an `unsupported:<reason>` signature status, or null for one without its own. */
+export function signatureReasonSentence(status: string): string | null {
+  if (!status.startsWith('unsupported:')) return null;
+  const reason = reasonOf(status);
+  const type = /^signature-type-0x([0-9a-f]{2})$/.exec(reason);
+  if (type !== null) {
+    return `This is not a signature over the message: its type (0x${type[1] ?? ''}) is one that signs a key, not a message, and it proves nothing about what you are reading. Presenting one as a message signature is a known forgery trick.`;
+  }
+  return SIGNATURE_REASONS[reason] ?? null;
+}
+
 export function signatureTone(status: string): CryptoTone {
   if (status === 'verified-known-key' || status === 'not-signed') return 'neutral';
-  if (status === 'bad-signature') return 'danger';
+  if (status === 'bad-signature' || status === 'unsupported:key-revoked' || status.startsWith('unsupported:signature-type-')) return 'danger';
   return 'attention';
 }
 
@@ -77,7 +120,7 @@ function signatureHeadline(c: InspectCrypto['signature']): string {
     case 'not-signed':
       return 'Not signed.';
     default:
-      return `The signature could not be checked: ${humanReason(c.status)}.`;
+      return signatureReasonSentence(c.status) ?? `The signature could not be checked: ${humanReason(c.status)}.`;
   }
 }
 
@@ -92,7 +135,7 @@ function encryptionHeadline(c: InspectCrypto['encryption']): string {
     case 'failed:private-key-unavailable':
       return 'Encrypted to one of your keys, but its private half could not be opened.';
     default:
-      return `Decryption failed: ${humanReason(c.status)}.`;
+      return (c.status.startsWith('failed:') ? DECRYPTION_REASONS[reasonOf(c.status)] : undefined) ?? `Decryption failed: ${humanReason(c.status)}.`;
   }
 }
 

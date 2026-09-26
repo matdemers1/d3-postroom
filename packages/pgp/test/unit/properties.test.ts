@@ -9,11 +9,13 @@ import {
   crc24,
   decodeArmor,
   decodeOid,
+  derSetOf,
   DerError,
   encodeArmor,
   encodeOid,
   encodePacket,
   encodeTlv,
+  NotDerError,
   parseKeys,
   parseSignaturePacket,
   PgpError,
@@ -24,7 +26,7 @@ import {
   readTlv,
   type Tlv,
 } from '../../src/index.js';
-import { alice, fixture } from './fixtures.js';
+import { alice, bob, carol, fixture } from './fixtures.js';
 
 describe('armor', () => {
   it('radix-64 round-trips and matches RFC 4648', () => {
@@ -136,13 +138,29 @@ describe('DER reader', () => {
     );
   });
 
-  it('reads BER indefinite lengths', () => {
+  it('refuses BER: an indefinite length, or a long-form length not in its shortest form, is NotDerError', () => {
     const inner = encodeTlv(0, false, 4, Buffer.from('abc'));
     const ber = Buffer.concat([Buffer.of(0x24, 0x80), inner, inner, Buffer.of(0, 0)]);
-    const t = readTlv(ber);
-    expect(t.indefinite).toBe(true);
-    expect(t.raw.length).toBe(ber.length);
-    expect(readAll(t.content)).toHaveLength(2);
+    expect(() => readTlv(ber)).toThrow(NotDerError);
+    expect(() => readTlv(Buffer.of(0x04, 0x81, 0x03, 1, 2, 3))).toThrow(NotDerError);
+    expect(() => readTlv(Buffer.concat([Buffer.of(0x04, 0x82, 0x00, 0x90), Buffer.alloc(0x90)]))).toThrow(NotDerError);
+    // Still a DerError, so "the reader throws only DerError" holds.
+    expect(() => readTlv(ber)).toThrow(DerError);
+    // The shortest long form is read.
+    expect(readTlv(Buffer.concat([Buffer.of(0x04, 0x81, 0x90), Buffer.alloc(0x90)])).content.length).toBe(0x90);
+  });
+
+  it('derSetOf sorts a SET OF per X.690 §11.6 and is independent of input order', () => {
+    fc.assert(
+      fc.property(fc.array(fc.uint8Array({ maxLength: 20 }), { maxLength: 6 }), (items) => {
+        const els = items.map((b) => encodeTlv(0, false, 4, b));
+        const a = derSetOf(els);
+        const b = derSetOf([...els].reverse());
+        expect(Buffer.compare(a, b)).toBe(0);
+        const kids = readAll(readTlv(a).content).map((t) => Buffer.from(t.raw));
+        for (let i = 1; i < kids.length; i++) expect(Buffer.compare(kids[i - 1] ?? Buffer.alloc(0), kids[i] ?? Buffer.alloc(0))).toBeLessThanOrEqual(0);
+      }),
+    );
   });
 });
 
@@ -198,16 +216,46 @@ describe('streaming', () => {
     );
   });
 
-  it('arbitrary mutations of a signed message never throw', async () => {
-    const eml = fixture('smime-signed.eml');
-    await fc.assert(
-      fc.asyncProperty(fc.array(fc.tuple(fc.nat({ max: eml.length - 1 }), fc.integer({ min: 0, max: 255 })), { minLength: 1, maxLength: 8 }), async (edits) => {
-        const m = Buffer.from(eml);
-        for (const [at, v] of edits) m[at] = v;
-        const r = await analyzeMessage([m], []);
-        expect(typeof r.signature.status).toBe('string');
-      }),
-      { numRuns: 150 },
-    );
+  // PST-REQ-160: analyzeMessage is total. Every status is one of the binding set.
+  const STATUS = /^(verified-known-key|valid-signature-unknown-key|bad-signature|not-signed|unsupported:.+)$/s;
+  const DECRYPTION = /^(decrypted|no-key|not-encrypted|failed:.+)$/s;
+
+  it("regression: the verifier's counterexample (edit [[868,47]] on smime-signed.eml) is a status, not a RangeError", async () => {
+    const m = Buffer.from(fixture('smime-signed.eml'));
+    m[868] = 47;
+    const r = await analyzeMessage([m], []);
+    expect(r.signature.status).toMatch(STATUS);
+    expect(r.signature.status).not.toBe('unsupported:internal-error');
+    expect(r.signature.status).toBe('unsupported:malformed-certificate');
   });
+
+  it('regression: a certificate whose public key node:crypto decodes lazily (and fails on) is a status, not a throw', async () => {
+    // Found by this property once it also refused 'unsupported:internal-error': X509Certificate
+    // parses, then its publicKey getter throws "decode error" at first use.
+    for (const [name, at, v] of [['smime-cms-signed.eml', 2254, 47], ['smime-signed.eml', 2285, 69], ['smime-signed.eml', 2264, 45]] as const) {
+      const m = Buffer.from(fixture(name));
+      m[at] = v;
+      const r = await analyzeMessage([m], [alice('own', true), bob('own', true), carol('own', true)]);
+      expect(r.signature.status).toMatch(STATUS);
+      expect(r.signature.status).not.toBe('unsupported:internal-error');
+    }
+  });
+
+  for (const name of ['smime-signed.eml', 'smime-cms-signed.eml', 'pgp-mime-signed-ed25519.eml', 'pgp-mime-signed-encrypted.eml', 'smime-encrypted.eml', 'pgp-clearsigned.eml']) {
+    it(`arbitrary mutations of ${name} never throw, and never leave the status set`, async () => {
+      const eml = fixture(name);
+      const keys = [alice('own', true), bob('own', true), carol('own', true)];
+      await fc.assert(
+        fc.asyncProperty(fc.array(fc.tuple(fc.nat({ max: eml.length - 1 }), fc.integer({ min: 0, max: 255 })), { minLength: 1, maxLength: 8 }), async (edits) => {
+          const m = Buffer.from(eml);
+          for (const [at, v] of edits) m[at] = v;
+          const r = await analyzeMessage([m], keys);
+          expect(r.signature.status).toMatch(STATUS);
+          expect(r.encryption.status).toMatch(DECRYPTION);
+          expect(r.signature.status).not.toBe('unsupported:internal-error');
+        }),
+        { numRuns: 400 },
+      );
+    });
+  }
 });

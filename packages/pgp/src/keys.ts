@@ -12,6 +12,7 @@ import { createHash, createPrivateKey, createPublicKey, type KeyObject } from 'n
 import { Reader, b64url, padStart } from './bytes.js';
 import { PgpError, UnsupportedError } from './errors.js';
 import { readMpi, readPackets, Tag, type Packet } from './packets.js';
+import { parseSignaturePacket, type SignaturePacket } from './signature.js';
 
 export const PublicKeyAlgorithm = {
   RSA: 1,
@@ -89,12 +90,23 @@ export interface KeyMaterial {
   body: Buffer;
 }
 
+/** A signature inside a transferable key, with what it speaks about (RFC 9580 §5.2.4, §10.1). */
+export interface KeySignature {
+  sig: SignaturePacket;
+  target: { kind: 'key' } | { kind: 'uid'; uid: Buffer } | { kind: 'subkey'; subkey: KeyMaterial };
+}
+
 export interface OpenPgpKey {
   primary: KeyMaterial;
   subkeys: KeyMaterial[];
   userIds: string[];
   /** True when parsed from a secret key block. */
   secret: boolean;
+  /**
+   * Self-signatures, bindings and revocations as they appeared, unverified: validity.ts checks
+   * them before believing an expiry or a revocation.
+   */
+  signatures: KeySignature[];
 }
 
 /** v4 fingerprint: SHA-1 over 0x99 || two-octet length || public key packet body. */
@@ -340,26 +352,43 @@ export function parseKeys(data: Uint8Array): OpenPgpKey[] {
 export function keysFromPackets(packets: readonly Packet[]): OpenPgpKey[] {
   const keys: OpenPgpKey[] = [];
   let current: OpenPgpKey | null = null;
+  // What a signature packet at this point speaks about; null after a user attribute or a dropped subkey.
+  let target: KeySignature['target'] | null = null;
   for (const p of packets) {
     if (p.tag === Tag.PublicKey || p.tag === Tag.SecretKey) {
       const secret = p.tag === Tag.SecretKey;
-      current = { primary: secret ? parseSecretKeyPacket(p.body) : parsePublicKeyPacket(p.body), subkeys: [], userIds: [], secret };
+      current = { primary: secret ? parseSecretKeyPacket(p.body) : parsePublicKeyPacket(p.body), subkeys: [], userIds: [], secret, signatures: [] };
       keys.push(current);
+      target = { kind: 'key' };
     } else if (current === null) {
       if (p.tag === Tag.Marker) continue;
       throw new PgpError('key-block-no-primary', `packet tag ${String(p.tag)} before any primary key`);
     } else if (p.tag === Tag.UserId) {
       current.userIds.push(p.body.toString('utf8'));
+      target = { kind: 'uid', uid: p.body };
+    } else if (p.tag === Tag.UserAttribute) {
+      target = null;
     } else if (p.tag === Tag.PublicSubkey || p.tag === Tag.SecretSubkey) {
+      target = null;
       try {
-        current.subkeys.push(p.tag === Tag.SecretSubkey ? parseSecretKeyPacket(p.body) : parsePublicKeyPacket(p.body));
+        const subkey = p.tag === Tag.SecretSubkey ? parseSecretKeyPacket(p.body) : parsePublicKeyPacket(p.body);
+        current.subkeys.push(subkey);
+        target = { kind: 'subkey', subkey };
       } catch (err) {
         // An unsupported subkey does not make the rest of the key unusable.
         if (!(err instanceof UnsupportedError)) throw err;
       }
+    } else if (p.tag === Tag.Signature && target !== null) {
+      // A key in the account's keyring is trusted because the account put it there (import is
+      // PST-T-12.2), not because of its self-signatures; they are kept only for what they say
+      // about expiry and revocation. One that will not parse says nothing and is skipped.
+      try {
+        current.signatures.push({ sig: parseSignaturePacket(p.body), target });
+      } catch (err) {
+        if (!(err instanceof PgpError)) throw err;
+      }
     }
-    // Signatures, trust and user attributes are skipped: a key in the account's keyring is trusted
-    // because the account put it there (import is PST-T-12.2), not because of its self-signatures.
+    // Trust packets and user attributes are skipped.
   }
   return keys;
 }

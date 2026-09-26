@@ -54,9 +54,14 @@ export function openPrivateKey(kek: Kek | null, row: SealedRow): Buffer | string
   return plain.subarray(0, 5).toString('latin1') === '-----' ? plain.toString('utf8') : plain;
 }
 
-/** Every usable (not revoked) key of the account, with a lazy opener for its private half. */
+/**
+ * Every key of the account, with a lazy opener for its private half. Revoked and expired rows are
+ * included with their dates, so a signature by one reads as unsupported:key-revoked / key-expired
+ * rather than falling back to "the key came with the message"; the analyzer never opens a revoked
+ * key's private half.
+ */
 export async function loadAccountKeys(db: Db, accountId: string, kek: Kek | null): Promise<KnownKey[]> {
-  const rows = await db.cryptoKey.findMany({ where: { accountId, revokedAt: null }, orderBy: { createdAt: 'asc' } });
+  const rows = await db.cryptoKey.findMany({ where: { accountId }, orderBy: { createdAt: 'asc' } });
   const out: KnownKey[] = [];
   for (const row of rows) {
     if ((row.kind !== 'pgp' && row.kind !== 'smime') || (row.owner !== 'own' && row.owner !== 'contact')) continue;
@@ -67,7 +72,9 @@ export async function loadAccountKeys(db: Db, accountId: string, kek: Kek | null
       address: row.address.toLowerCase(),
       fingerprint: row.fingerprint,
       publicKey: row.publicKey,
-      openPrivate: row.owner === 'own' && row.sealedPrivate !== null ? () => Promise.resolve(openPrivateKey(kek, row)) : undefined,
+      openPrivate: row.owner === 'own' && row.sealedPrivate !== null && row.revokedAt === null ? () => Promise.resolve(openPrivateKey(kek, row)) : undefined,
+      revokedAt: row.revokedAt,
+      expiresAt: row.expiresAt,
     });
   }
   return out;

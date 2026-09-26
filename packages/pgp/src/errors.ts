@@ -28,6 +28,18 @@ export class DerError extends Error {
   }
 }
 
+/**
+ * Valid BER that is not DER (X.690 §10): an indefinite length, or a length not in its shortest
+ * form. Its own type so a caller can name "this sender used BER" apart from "this is garbage";
+ * it is still a DerError, so "the DER reader throws only DerError" holds.
+ */
+export class NotDerError extends DerError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotDerError';
+  }
+}
+
 /** Malformed or unsupported CMS/PKCS#7 structure. */
 export class CmsError extends Error {
   readonly reason: string;
