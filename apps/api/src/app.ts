@@ -5,6 +5,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { auditContext, mutationAuditGuard } from '@postroom/audit';
 import { schemaRevision } from '@postroom/db';
 import { adminJobRoutes } from './admin-jobs/index.js';
+import { serviceAccountRoutes } from './admin-service/index.js';
 import { appPasswordRoutes } from './app-passwords/index.js';
 import { autoconfigRoutes } from './autoconfig/index.js';
 import { mailRoutes } from './mail/index.js';
@@ -57,6 +58,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api', express.json({ limit: '1mb' }), auditContext(), mutationAuditGuard(deps.db), csrfGuard(deps));
   app.use('/api/auth', authRoutes(deps));
   app.use('/api/admin/jobs', requireAdmin(deps), adminJobRoutes(deps));
+  app.use('/api/admin/service-accounts', requireAdmin(deps), serviceAccountRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
   app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));
   app.use('/api/messages', requireSession(deps), deliveryRoutes(deps));

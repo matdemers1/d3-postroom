@@ -41,6 +41,7 @@ import { decide, type Decision, type DnsblVerdict } from './decide.js';
 import { buildAuthenticationResults } from './headers.js';
 import type { RecipientAccepted } from './recipients.js';
 import { HeaderTap, InboundSpool } from './spool.js';
+import { streamFinalMessage } from './trace-rewrite.js';
 
 export type { DnsblVerdict } from './decide.js';
 
@@ -269,15 +270,7 @@ export function createAcceptMessage(storage: InboundStorage): AcceptMessage {
       // Pass 3, inside the one transaction: trace headers + spool → the final blob (fsynced before
       // put() returns), the session and spool rows, the job or the Rejects copies, the audit row.
       const outcome = await db.$transaction(async (tx) => {
-        const blob = await blobs.put(
-          ReadableStream.from(
-            (async function* finalMessage(): AsyncGenerator<Buffer> {
-              yield trace;
-              for await (const chunk of spool.open()) yield chunk as Buffer;
-            })(),
-          ),
-          { tx },
-        );
+        const blob = await blobs.put(ReadableStream.from(streamFinalMessage(trace, header, spool.open(), ctx.hostname)), { tx });
         await tx.inboundSession.upsert({
           where: { id: ctx.sessionId },
           create: {
