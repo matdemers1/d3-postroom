@@ -38,9 +38,11 @@ import {
   statusResponse,
   taggedResponse,
   untaggedStatus,
+  vanishedResponse,
   writeResponse,
   type Command,
   type CommandName,
+  type QresyncParams,
   type ReaderEvent,
   type Response,
   type ResponseCode,
@@ -49,6 +51,8 @@ import {
 } from '@postroom/imap-proto';
 import { CapabilityRegistry, type CommandOutcome, type ExtensionSession } from './capabilities.js';
 import { createStructureCache, type StructureCache } from './content.js';
+import { CONDSTORE, enablesCondstore, mentionsModseq, withModseq } from './extensions/condstore.js';
+import { QRESYNC, qresyncSelectResponses, vanishedSince } from './extensions/qresync.js';
 import { runFetch } from './fetch.js';
 import { normalizeFlags, SYSTEM_FLAGS } from './flags.js';
 import { ChunkSource, TimeoutError, upgradeToTls } from './io.js';
@@ -333,6 +337,8 @@ export class ImapSession {
       outcome = await this.dispatch(cmd);
     } catch (err) {
       if (err instanceof Closed || this.stream.destroyed) throw new Closed();
+      // IDLE ran past its limit: the session says BYE (see run()).
+      if (err instanceof TimeoutError) throw err;
       if (err instanceof MailboxGoneError) {
         outcome = no('Mailbox no longer exists', { type: 'NONEXISTENT' });
       } else {
@@ -359,7 +365,12 @@ export class ImapSession {
   private async syncSelected(allowExpunge: boolean): Promise<void> {
     const view = this.view;
     if (view === null) return;
-    const result = await view.sync(this.o.store, { allowExpunge, utf8: this.utf8 });
+    const result = await view.sync(this.o.store, {
+      allowExpunge,
+      utf8: this.utf8,
+      condstore: this.enabled.has(CONDSTORE),
+      qresync: this.enabled.has(QRESYNC),
+    });
     if (result.gone) {
       await this.write(untaggedStatus('BYE', 'The selected mailbox was deleted'));
       this.close();
@@ -382,7 +393,15 @@ export class ImapSession {
   }
 
   private extensionSession(): ExtensionSession {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the getter below needs the session, not the literal
+    const self = this;
     return {
+      get closed() {
+        return self.closed;
+      },
+      close: () => {
+        this.close();
+      },
       accountId: this.accountId,
       selectedMailboxId: this.view?.mailboxId ?? null,
       utf8: this.utf8,
@@ -411,6 +430,8 @@ export class ImapSession {
     if (!this.allowed(cmd.name)) {
       return bad(this.state === 'not-authenticated' ? 'Authenticate first' : `${cmd.name} is not valid in this state`);
     }
+    // RFC 7162 §3.1: the first CONDSTORE enabling command makes the session CONDSTORE-aware.
+    if (enablesCondstore(cmd)) this.enabled.add(CONDSTORE);
     switch (cmd.name) {
       case 'CAPABILITY':
         await this.write(capabilityResponse(this.capabilities()));
@@ -441,7 +462,7 @@ export class ImapSession {
         return this.enable(cmd.capabilities);
       case 'SELECT':
       case 'EXAMINE':
-        return this.select(cmd.mailbox, cmd.name === 'EXAMINE', cmd.qresync !== null);
+        return this.select(cmd.mailbox, cmd.name === 'EXAMINE', cmd.qresync);
       case 'CREATE':
         return this.create(cmd.mailbox, cmd.specialUse);
       case 'DELETE':
@@ -581,6 +602,8 @@ export class ImapSession {
         now.push('IMAP4rev2');
       } else {
         if (upper === 'UTF8=ACCEPT') this.utf8 = true;
+        // QRESYNC implies CONDSTORE (RFC 7162 §3.2.3).
+        if (upper === QRESYNC) this.enabled.add(CONDSTORE);
         now.push(upper);
       }
     }
@@ -588,14 +611,14 @@ export class ImapSession {
     return ok('ENABLE completed');
   }
 
-  private async select(name: string, readOnly: boolean, qresync: boolean): Promise<Outcome> {
+  private async select(name: string, readOnly: boolean, qresync: QresyncParams | null): Promise<Outcome> {
     if (this.view !== null) {
       this.view = null;
       this.saved = null;
       this.state = 'authenticated';
-      if (this.rev2) await this.write(untaggedStatus('OK', 'Previous mailbox is now closed', { type: 'CLOSED' }));
+      if (this.rev2 || this.enabled.has(QRESYNC)) await this.write(untaggedStatus('OK', 'Previous mailbox is now closed', { type: 'CLOSED' }));
     }
-    if (qresync) return bad('QRESYNC is not enabled');
+    if (qresync !== null && !this.enabled.has(QRESYNC)) return bad('QRESYNC is not enabled');
     const mb = await this.o.store.findMailbox(this.meta().accountId, canonicalName(name));
     if (mb === null) return no('No such mailbox', { type: 'NONEXISTENT' });
     const opened = await MailboxView.open(this.o.store, mb, readOnly);
@@ -618,6 +641,9 @@ export class ImapSession {
       }),
     );
     await this.write(untaggedStatus('OK', 'Highest', { type: 'HIGHESTMODSEQ', value: opened.highestModseq }));
+    if (qresync !== null) {
+      for (const r of await qresyncSelectResponses(this.o.store, opened.view, qresync, opened.uidnext)) await this.write(r);
+    }
     this.view = opened.view;
     this.saved = null;
     this.state = 'selected';
@@ -918,7 +944,7 @@ export class ImapSession {
     if (view.readOnly) return no('The mailbox is read-only', { type: 'READ-ONLY' });
     const uids = set === null ? null : view.resolveUids(set, this.saved).filter(([, u]) => !view.isExpunged(u)).map(([, u]) => u);
     const removed = await this.o.store.expunge(this.meta(), view.mailboxId, uids, set === null ? 'EXPUNGE' : 'UID EXPUNGE');
-    for (const r of view.expungeNow(removed)) await this.write(r);
+    for (const r of view.expungeNow(removed, this.enabled.has(QRESYNC))) await this.write(r);
     return ok(`${set === null ? 'EXPUNGE' : 'UID EXPUNGE'} completed`);
   }
 
@@ -932,9 +958,14 @@ export class ImapSession {
       cmd.criteria,
     );
     const numbers = cmd.uid ? uids : uids.map((u) => view.seqOf(u) ?? 0).filter((n) => n > 0);
+    // RFC 7162 §3.1.5: a MODSEQ search reports the highest mod-sequence of what it found.
+    let modseq: bigint | null = null;
+    if (uids.length > 0 && mentionsModseq(cmd.criteria)) {
+      for (const r of await this.o.store.rowsByUids(view.mailboxId, uids)) if (modseq === null || r.modseq > modseq) modseq = r.modseq;
+    }
     const opts = cmd.returnOpts;
     if (opts === null && !this.rev2) {
-      await this.write(searchResponse(numbers));
+      await this.write(searchResponse(numbers, modseq));
       return ok('SEARCH completed');
     }
     const wanted = new Set(opts === null || opts.length === 0 ? ['ALL'] : opts);
@@ -959,13 +990,23 @@ export class ImapSession {
         ...(wanted.has('MAX') ? { max: numbers[numbers.length - 1] ?? null } : {}),
         ...(wanted.has('COUNT') ? { count: numbers.length } : {}),
         ...(wanted.has('ALL') ? { all: numbers } : {}),
+        modseq,
       }),
     );
     return ok('SEARCH completed');
   }
 
-  private async fetch(cmd: Extract<Command, { name: 'FETCH' }>): Promise<Outcome> {
+  private async fetch(original: Extract<Command, { name: 'FETCH' }>): Promise<Outcome> {
     const view = this.selected();
+    const cmd = withModseq(original, this.enabled.has(CONDSTORE));
+    if (cmd.vanished) {
+      // UID FETCH … (CHANGEDSINCE m VANISHED): the set's expunges since m first (RFC 7162 §3.2.6).
+      if (!this.enabled.has(QRESYNC)) return bad('VANISHED requires ENABLE QRESYNC');
+      const uidnext = (await this.o.store.probe(view.mailboxId))?.uidnext ?? view.maxUid + 1;
+      const set = cmd.set.type === 'saved' ? sequenceSetFromNumbers(this.saved ?? []) : cmd.set;
+      const gone = await vanishedSince(this.o.store, view.mailboxId, cmd.changedSince ?? 0n, set, uidnext);
+      if (gone.length > 0) await this.write(vanishedResponse(gone, true));
+    }
     const r = await runFetch(
       {
         store: this.o.store,
@@ -1002,7 +1043,7 @@ export class ImapSession {
         fetchResponse(seq, [
           ...(cmd.uid ? [{ name: 'UID' as const, value: row.uid }] : []),
           { name: 'FLAGS', flags: row.flags },
-          ...(cmd.unchangedSince !== null ? [{ name: 'MODSEQ' as const, value: row.modseq }] : []),
+          ...(cmd.unchangedSince !== null || this.enabled.has(CONDSTORE) ? [{ name: 'MODSEQ' as const, value: row.modseq }] : []),
         ]),
       );
     }
@@ -1034,7 +1075,11 @@ export class ImapSession {
     };
     if (!move) return ok('COPY completed', code);
     await this.write(untaggedStatus('OK', 'Moved', code));
-    for (const resp of view.expungeNow(r.pairs.map(([s]) => s))) await this.write(resp);
+    for (const resp of view.expungeNow(
+      r.pairs.map(([s]) => s),
+      this.enabled.has(QRESYNC),
+    ))
+      await this.write(resp);
     return ok('MOVE completed');
   }
 }

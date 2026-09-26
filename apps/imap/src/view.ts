@@ -10,15 +10,21 @@
 //     [EXPUNGEISSUED]).
 //   - new messages, as "* n EXISTS";
 //   - flag changes, as "* n FETCH (UID u FLAGS (...))".
-// Detection is by polling the mailbox row at command boundaries (NOOP, and after every command).
-// IDLE's push (PST-T-3.3) calls the same `sync`.
-import { fetchResponse, normalizeSequenceSet, numberResponse, type Response, type SequenceSet } from '@postroom/imap-proto';
+// Detection is by polling the mailbox row at command boundaries (NOOP, and after every command);
+// IDLE's push (extensions/idle.ts) calls the same `sync` when the mailbox is notified.
+// Once CONDSTORE is enabled a flag change carries MODSEQ; once QRESYNC is, expunges are announced
+// as "* VANISHED uids" instead (RFC 7162 §3.2.10), under the same restrictions as EXPUNGE.
+import { fetchResponse, normalizeSequenceSet, numberResponse, vanishedResponse, type FetchResponseItem, type Response, type SequenceSet } from '@postroom/imap-proto';
 import type { MailStore } from './store.js';
 
 export interface SyncOptions {
   /** May "* n EXPUNGE" be sent now? */
   readonly allowExpunge: boolean;
   readonly utf8: boolean;
+  /** CONDSTORE is enabled: FETCH FLAGS carries MODSEQ. */
+  readonly condstore?: boolean;
+  /** QRESYNC is enabled: VANISHED instead of EXPUNGE. */
+  readonly qresync?: boolean;
 }
 
 export type SyncOutcome = { readonly gone: false; readonly responses: Response[] } | { readonly gone: true };
@@ -152,10 +158,26 @@ export class MailboxView {
     return lo;
   }
 
-  /** Our own EXPUNGE / MOVE removed these: answer "* n EXPUNGE" now (descending, so no renumbering). */
-  expungeNow(uids: readonly number[]): Response[] {
+  /**
+   * Our own EXPUNGE / MOVE removed these: answer "* n EXPUNGE" now (descending, so no renumbering),
+   * or one "* VANISHED uids" under QRESYNC.
+   */
+  expungeNow(uids: readonly number[], vanished = false): Response[] {
     const out: Response[] = [];
     const seqs: number[] = [];
+    if (vanished) {
+      const gone: number[] = [];
+      for (const u of uids) {
+        const s = this.seqOf(u);
+        if (s === null) continue;
+        this.uids.splice(s - 1, 1);
+        this.known.delete(u);
+        this.pending.delete(u);
+        gone.push(u);
+      }
+      if (gone.length > 0) out.push(vanishedResponse(gone.sort((a, b) => a - b), false));
+      return out;
+    }
     for (const u of uids) {
       const s = this.seqOf(u);
       if (s !== null) seqs.push(s);
@@ -174,9 +196,9 @@ export class MailboxView {
   }
 
   /** Deliver pending expunges (a command that allows them is completing). */
-  private flushPending(): Response[] {
+  private flushPending(vanished: boolean): Response[] {
     if (this.pending.size === 0) return [];
-    return this.expungeNow([...this.pending]);
+    return this.expungeNow([...this.pending], vanished);
   }
 
   async sync(store: MailStore, opts: SyncOptions): Promise<SyncOutcome> {
@@ -184,7 +206,7 @@ export class MailboxView {
     if (probe === null) return { gone: true };
     const responses: Response[] = [];
     if (probe.highestModseq === this.highestModseq) {
-      if (opts.allowExpunge) responses.push(...this.flushPending());
+      if (opts.allowExpunge) responses.push(...this.flushPending(opts.qresync === true));
       return { gone: false, responses };
     }
     const since = this.highestModseq;
@@ -196,7 +218,7 @@ export class MailboxView {
       const present = new Set(await store.uidsUpTo(this.mailboxId, maxUid));
       for (const u of this.uids) if (!present.has(u)) this.pending.add(u);
     }
-    if (opts.allowExpunge) responses.push(...this.flushPending());
+    if (opts.allowExpunge) responses.push(...this.flushPending(opts.qresync === true));
     // Arrivals: UIDs above everything we know, in UID order.
     const arrivals = changed.filter((r) => r.uid > maxUid);
     for (const r of arrivals) {
@@ -212,12 +234,12 @@ export class MailboxView {
       const seq = this.seqOf(r.uid);
       if (seq === null) continue;
       this.known.set(r.uid, r.modseq);
-      responses.push(
-        fetchResponse(seq, [
-          { name: 'UID', value: r.uid },
-          { name: 'FLAGS', flags: r.flags },
-        ]),
-      );
+      const items: FetchResponseItem[] = [
+        { name: 'UID', value: r.uid },
+        { name: 'FLAGS', flags: r.flags },
+      ];
+      if (opts.condstore === true) items.push({ name: 'MODSEQ', value: r.modseq });
+      responses.push(fetchResponse(seq, items));
     }
     this.highestModseq = probe.highestModseq;
     return { gone: false, responses };

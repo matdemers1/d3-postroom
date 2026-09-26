@@ -53,6 +53,7 @@ export async function start(ctx: DaemonContext): Promise<void> {
     maxAppendSize: config.maxAppendSize,
     structureCacheEntries: config.structureCacheEntries,
     log: ctx.log,
+    databaseUrl,
   });
   const listening: number[] = [];
   if (listeners.imaps !== null) listening.push((await listeners.listen(listeners.imaps, config.imapsPort, config.host)).port);

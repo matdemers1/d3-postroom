@@ -17,8 +17,11 @@
 // and DELETE removes a mailbox only on the client's explicit command — never INBOX or a special-use
 // mailbox — each with an audit row naming how many messages went.
 //
-// QRESYNC (PST-T-3.3) will need the UIDs an EXPUNGE removed, with their modseq, to answer VANISHED
-// (EARLIER), kept in expunged_message by `recordExpunged` below — the one place that writes it.
+// QRESYNC needs the UIDs an EXPUNGE removed, with their modseq, to answer VANISHED (EARLIER): they
+// are kept in expunged_message by `recordExpunged` below — the one place that writes it.
+//
+// Every transaction that changes a mailbox's messages ends with pg_notify('postroom_mailbox', id)
+// (`notifyMailbox`), so IDLE sessions — in this process and any other — and webmail tabs wake.
 import { randomInt, randomUUID } from 'node:crypto';
 import { recordAudit, type Actor } from '@postroom/audit';
 import type { BlobStore } from '@postroom/blobstore';
@@ -27,6 +30,7 @@ import { fileLocalMessage } from '@postroom/dsn';
 import type { StoreOperation } from '@postroom/imap-proto';
 import { parseDate, parseMailboxes, parseMessageId, parseMessageIdList, type HeaderList } from '@postroom/mime';
 import { applyFlags, DELETED, isKeyword, normalizeFlags, sameFlags, SEEN } from './flags.js';
+import { MAILBOX_CHANNEL } from './extensions/notify.js';
 import { isSelfOrChild, parentsOf } from './names.js';
 
 type Tx = Prisma.TransactionClient;
@@ -208,6 +212,13 @@ export class MailStore {
     return rows.map((r) => ({ uid: r.uid, flags: r.flags, modseq: r.modseq }));
   }
 
+  /** UIDs expunged (or moved out) after `modseq`, ascending — QRESYNC's VANISHED (EARLIER). */
+  async expungedSince(mailboxId: string, modseq: bigint): Promise<number[]> {
+    const rows = await this.db.$queryRaw<{ uid: number }[]>`
+      SELECT uid FROM expunged_message WHERE mailbox_id = ${mailboxId}::uuid AND modseq > ${modseq} ORDER BY uid`;
+    return rows.map((r) => r.uid);
+  }
+
   async uidsUpTo(mailboxId: string, maxUid: number): Promise<number[]> {
     const rows = await this.db.$queryRaw<{ uid: number }[]>`
       SELECT uid FROM message WHERE mailbox_id = ${mailboxId}::uuid AND uid <= ${maxUid} ORDER BY uid`;
@@ -303,6 +314,7 @@ export class MailStore {
           FROM jsonb_to_recordset(${JSON.stringify(updates)}::jsonb) AS v(uid int, flags text[])
           WHERE m.mailbox_id = ${mailboxId}::uuid AND m.uid = v.uid`;
         await tx.$executeRaw`UPDATE mailbox SET highest_modseq = ${modseq} WHERE id = ${mailboxId}::uuid`;
+        await notifyMailbox(tx, mailboxId);
       }
       const byUid = new Map(updates.map((u) => [u.uid, u.flags]));
       const rows = current
@@ -341,6 +353,7 @@ export class MailStore {
         before: { uids: removedUids, count: removedUids.length, via: reason },
         context: context(meta),
       });
+      await notifyMailbox(tx, mailboxId);
       return removedUids;
     }, TX_OPTIONS);
     await this.reap(released);
@@ -409,6 +422,7 @@ export class MailStore {
           SELECT ${filed.id}::uuid, auth, attachments, bucket, reasons FROM message_verdict WHERE message_id = ${r.id}::uuid`;
         pairs.push([r.uid, filed.uid]);
       }
+      await notifyMailbox(tx, targetId);
       return { uidvalidity: target.uidvalidity, pairs };
     }, TX_OPTIONS);
   }
@@ -451,6 +465,8 @@ export class MailStore {
         pairs.map(([s]) => s),
         modseq,
       );
+      await notifyMailbox(tx, targetId);
+      if (sourceId !== targetId) await notifyMailbox(tx, sourceId);
       return { uidvalidity: target.uidvalidity, pairs };
     }, TX_OPTIONS);
   }
@@ -475,6 +491,7 @@ export class MailStore {
         flags: normalizeFlags(input.flags),
       });
       if (input.denorm !== null) await tx.message.update({ where: { id: filed.id }, data: { ...input.denorm } });
+      await notifyMailbox(tx, mailboxId);
       return { uid: filed.uid, uidvalidity: mb.uidvalidity };
     }, TX_OPTIONS);
   }
@@ -543,6 +560,7 @@ export class MailStore {
         before: { name: mb.name, uidvalidity: mb.uidvalidity, messages: rows.length, via: 'imap' },
         context: context(meta),
       });
+      await notifyMailbox(tx, mb.id);
       return 'ok' as const;
     }, TX_OPTIONS);
     await this.reap(released);
@@ -556,7 +574,7 @@ export class MailStore {
     if (src === null) return 'nonexistent';
     try {
       await this.db.$transaction(async (tx) => {
-        await lockMailbox(tx, src.id);
+        const locked = await lockMailbox(tx, src.id);
         if (from === 'INBOX') {
           // RFC 3501 §6.3.6: INBOX's messages move to a new mailbox; INBOX stays, empty.
           await this.createParents(tx, meta, to, new Set());
@@ -566,8 +584,18 @@ export class MailStore {
             ON CONFLICT (account_id, name) DO NOTHING RETURNING id::text AS id`;
           const target = created[0];
           if (target === undefined) throw new Rollback('exists');
-          await tx.$executeRaw`UPDATE message SET mailbox_id = ${target.id}::uuid WHERE mailbox_id = ${src.id}::uuid`;
+          const moved = await tx.$queryRaw<{ uid: number }[]>`
+            UPDATE message SET mailbox_id = ${target.id}::uuid WHERE mailbox_id = ${src.id}::uuid RETURNING uid`;
           await tx.$executeRaw`UPDATE mailbox SET highest_modseq = highest_modseq + 1 WHERE id = ${src.id}::uuid`;
+          // To a QRESYNC client of INBOX, its messages vanished.
+          await recordExpunged(
+            tx,
+            src.id,
+            moved.map((m) => m.uid).sort((a, b) => a - b),
+            locked.highestModseq + 1n,
+          );
+          await notifyMailbox(tx, src.id);
+          await notifyMailbox(tx, target.id);
           await recordAudit(tx, {
             actor: actor(meta),
             action: 'mailbox.rename',
@@ -686,10 +714,17 @@ async function lockBlob(tx: Tx, sha256: string): Promise<void> {
 }
 
 /**
- * The seam for QRESYNC's VANISHED (PST-T-3.3): the UIDs a transaction removed from a mailbox and the
- * modseq that removal was given. It writes nothing yet — the schema has no expunged-message table
- * (the lead adds `expunged_message(mailbox_id uuid, uid int, modseq bigint)`, primary key
- * (mailbox_id, uid)); when it exists, this becomes one INSERT ... SELECT unnest(...).
+ * Wake whoever watches the mailbox — IMAP IDLE sessions in every daemon process and the webmail's
+ * live updates (PST-REQ-073). Inside the transaction, so it is delivered on commit and never for a
+ * change that rolled back.
+ */
+async function notifyMailbox(tx: Tx, mailboxId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_notify(${MAILBOX_CHANNEL}, ${mailboxId})`;
+}
+
+/**
+ * QRESYNC's VANISHED (EARLIER) record: the UIDs a transaction removed from a mailbox and the modseq
+ * that removal was given, in expunged_message (primary key (mailbox_id, uid)).
  */
 async function recordExpunged(tx: Tx, mailboxId: string, uids: readonly number[], modseq: bigint): Promise<void> {
   if (uids.length === 0) return;
