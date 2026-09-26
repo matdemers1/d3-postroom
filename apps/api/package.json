@@ -36,7 +36,9 @@
     "pg": "^8.23.0",
     "@postroom/dsn": "workspace:*",
     "@postroom/submission": "workspace:*",
-    "@postroom/alerts": "workspace:*"
+    "@postroom/alerts": "workspace:*",
+    "@postroom/dns": "workspace:*",
+    "@postroom/auth-checks": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
