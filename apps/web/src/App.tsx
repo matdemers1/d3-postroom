@@ -16,6 +16,7 @@ import { DeviceSetup } from './screens/DeviceSetup';
 import { Import } from './screens/Import';
 import { Mail } from './screens/Mail';
 import { Rules } from './screens/Rules';
+import { SenderProfile } from './screens/SenderProfile';
 import { Sessions } from './screens/Sessions';
 import { Setup } from './screens/Setup';
 import { Shell } from './screens/Shell';
@@ -81,6 +82,8 @@ function Gate() {
         <Route path="/contacts" element={<Contacts />} />
         <Route path="/contacts/new" element={<Contacts />} />
         <Route path="/contacts/:addressBookId/:name" element={<Contacts />} />
+        {/* PST-T-5.6: the sender profile, linked from the reading pane's From line. */}
+        <Route path="/senders/:address" element={<SenderProfile />} />
         <Route path="/app-passwords" element={<AppPasswords />} />
         <Route path="/account/password" element={<ChangePassword />} />
         <Route path="/account/sessions" element={<Sessions />} />

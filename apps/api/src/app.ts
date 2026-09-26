@@ -20,6 +20,7 @@ import { deliveryRoutes } from './delivery/index.js';
 import { deliverabilityRoutes } from './deliverability/index.js';
 import { exportRoutes } from './export/index.js';
 import { senderRoutes } from './senders/index.js';
+import { unsubscribeRoutes } from './unsubscribe/index.js';
 import { sieveRoutes } from './sieve/index.js';
 import { importRoutes } from './import/index.js';
 import { mobileconfigRoutes } from './mobileconfig/index.js';
@@ -110,6 +111,8 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/senders', requireSession(deps), senderRoutes(deps));
   app.use('/api/sieve', requireSession(deps), sieveRoutes(deps));
   app.use('/api/messages', requireSession(deps), deliveryRoutes(deps));
+  // PST-T-5.6: one-click unsubscribe. Same prefix as deliveryRoutes above, disjoint paths (.../unsubscribe).
+  app.use('/api/messages', requireSession(deps), unsubscribeRoutes(deps));
   app.use('/api/export', requireSession(deps), exportRoutes(deps));
   app.use('/api/compose', requireSession(deps), composeRoutes(deps));
   app.use('/api/import', requireSession(deps), importRoutes(deps));
