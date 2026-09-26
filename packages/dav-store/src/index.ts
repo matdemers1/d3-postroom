@@ -7,7 +7,7 @@ export { DavStore, newEtag } from './store.js';
 export type { Caller, Change, Collection, CollectionFields, DeleteOutcome, Kind, PutOutcome, Resource, ResourceMeta } from './store.js';
 export { openResource, sealResource } from './seal.js';
 export type { Sealed } from './seal.js';
-export { applyContactFields, buildContactCard, contactCardBytes, contactOf, revStamp } from './card.js';
+export { applyContactFields, buildContactCard, contactCardBytes, contactOf, contactOfBytes, revStamp } from './card.js';
 export type { ContactEmail, ContactFields, ContactTel, ContactView } from './card.js';
 export {
   COLLECTED_NAME,

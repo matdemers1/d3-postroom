@@ -91,6 +91,24 @@ function ImportIcon() {
   );
 }
 
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <rect x="4" y="5" width="16" height="15" rx="2" />
+      <path d="M4 10h16M9 3v4M15 3v4" />
+    </svg>
+  );
+}
+
+function ContactsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <circle cx="12" cy="9" r="3.5" />
+      <path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5" />
+    </svg>
+  );
+}
+
 /** The signed-in frame: sidebar (a drawer below `lg`), the account menu, and the page. */
 export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: () => Promise<void> }) {
   const location = useLocation();
@@ -154,6 +172,14 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
                 </SideNavItem>
               ))
             )}
+          </SideNavGroup>
+          <SideNavGroup title="Organise">
+            <SideNavItem asChild icon={<CalendarIcon />} label="Calendar" current={location.pathname === '/calendar'}>
+              <RouterLink to="/calendar" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<ContactsIcon />} label="Contacts" current={location.pathname.startsWith('/contacts')}>
+              <RouterLink to="/contacts" />
+            </SideNavItem>
           </SideNavGroup>
           <SideNavGroup title="Account">
             <SideNavItem asChild icon={<KeyIcon />} label="App passwords" current={location.pathname === '/app-passwords'}>

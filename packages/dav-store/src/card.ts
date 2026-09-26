@@ -10,6 +10,7 @@ import {
   escapeText,
   getProperty,
   nameOf,
+  parseVCard,
   serializeVCard,
   structuredOf,
   telsOf,
@@ -77,6 +78,11 @@ export function contactOf(card: VCard): ContactView {
     displayName: displayName(card),
     hasPhoto: getProperty(card, 'PHOTO') !== undefined,
   };
+}
+
+/** The editable fields of a stored card's bytes (one vCard). */
+export function contactOfBytes(data: Uint8Array): ContactView {
+  return contactOf(parseVCard(data, { maxCards: 1 }));
 }
 
 function formattedName(fields: ContactFields): string {

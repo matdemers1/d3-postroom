@@ -533,3 +533,166 @@ export const importApi = {
   start: (input: StartImportInput) => call<ImportStatus>('POST', '/api/import', input),
   cancel: (id: string) => call<ImportStatus>('POST', `/api/import/${encodeURIComponent(id)}/cancel`),
 };
+
+// --- Calendar and contacts (PST-T-8.5) --------------------------------------------------------
+// Writes go through the same DAV store an iPhone syncs with. Edits carry the etag last read as
+// If-Match: a 412 means the phone changed it since, and the screen reloads rather than overwrite.
+
+export type Weekday = 'MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU';
+export type Frequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+
+export interface Calendar {
+  id: string;
+  displayName: string;
+  color: string | null;
+  components: string[];
+  canHoldEvents: boolean;
+}
+
+export interface RecurrenceInput {
+  freq: Frequency;
+  interval: number;
+  byDay: Weekday[];
+  count: number | null;
+  until: string | null;
+}
+
+export interface EventInput {
+  summary: string;
+  description: string;
+  location: string;
+  allDay: boolean;
+  start: string;
+  end: string;
+  timezone: string;
+  /** Omitted on an update: keep the series' rule as stored. */
+  recurrence?: RecurrenceInput | null;
+}
+
+export interface EventInstance {
+  calendarId: string;
+  name: string;
+  etag: string;
+  uid: string;
+  recurrenceId: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  startDay: string | null;
+  endDay: string | null;
+  summary: string;
+  location: string;
+  recurring: boolean;
+  override: boolean;
+}
+
+export interface EventDetail {
+  calendarId: string;
+  name: string;
+  etag: string;
+  uid: string;
+  summary: string;
+  description: string;
+  location: string;
+  allDay: boolean;
+  start: string;
+  end: string;
+  timezone: string | null;
+  recurrence: { freq: string; interval: number; byDay: string[]; count: number | null; until: string | null; rule: string; editable: boolean } | null;
+  overrides: string[];
+  exdates: string[];
+}
+
+export interface EventSaved {
+  calendarId: string;
+  name: string;
+  uid: string;
+  etag: string;
+}
+
+const eventPath = (calendarId: string, name: string): string =>
+  `/api/calendar/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(name)}`;
+const ifMatch = (etag: string): Record<string, string> => ({ 'if-match': `"${etag}"` });
+
+export const calendarApi = {
+  calendars: () => call<{ calendars: Calendar[] }>('GET', '/api/calendar/calendars'),
+  events: (range: { start: string; end: string; tz: string; calendarId?: string }) =>
+    call<{ instances: EventInstance[]; truncated: boolean }>('GET', `/api/calendar/events?${new URLSearchParams(range).toString()}`),
+  event: (calendarId: string, name: string) => call<EventDetail>('GET', eventPath(calendarId, name)),
+  create: (calendarId: string, input: EventInput) => call<EventSaved>('POST', `/api/calendar/calendars/${encodeURIComponent(calendarId)}/events`, input),
+  update: (calendarId: string, name: string, etag: string, input: EventInput) => call<EventSaved>('PUT', eventPath(calendarId, name), input, ifMatch(etag)),
+  remove: (calendarId: string, name: string, etag: string) => call<null>('DELETE', eventPath(calendarId, name), undefined, ifMatch(etag)),
+  updateInstance: (calendarId: string, name: string, recurrenceId: string, etag: string, input: Omit<EventInput, 'recurrence'>) =>
+    call<EventSaved>('PUT', `${eventPath(calendarId, name)}/instances/${encodeURIComponent(recurrenceId)}`, input, ifMatch(etag)),
+  removeInstance: (calendarId: string, name: string, recurrenceId: string, etag: string) =>
+    call<EventSaved>('DELETE', `${eventPath(calendarId, name)}/instances/${encodeURIComponent(recurrenceId)}`, undefined, ifMatch(etag)),
+};
+
+export interface AddressBook {
+  id: string;
+  displayName: string;
+  slug: string;
+  count: number;
+}
+
+export interface ContactSummary {
+  addressBookId: string;
+  name: string;
+  etag: string;
+  uid: string;
+  displayName: string;
+  emails: string[];
+  org: string;
+  hasPhoto: boolean;
+}
+
+export interface ContactInput {
+  fn: string;
+  given: string;
+  family: string;
+  emails: { address: string; type: string | null }[];
+  tels: { value: string; type: string | null }[];
+  org: string;
+  note: string;
+}
+
+export interface ContactDetail extends ContactInput {
+  addressBookId: string;
+  name: string;
+  etag: string;
+  uid: string;
+  displayName: string;
+  hasPhoto: boolean;
+}
+
+export interface ContactSaved {
+  addressBookId: string;
+  name: string;
+  uid: string;
+  etag: string;
+}
+
+const cardPath = (addressBookId: string, name: string): string =>
+  `/api/contacts/address-books/${encodeURIComponent(addressBookId)}/cards/${encodeURIComponent(name)}`;
+
+export const contactsApi = {
+  addressBooks: () => call<{ addressBooks: AddressBook[] }>('GET', '/api/contacts/address-books'),
+  list: (opts: { q?: string; addressBookId?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.q !== undefined && opts.q.trim() !== '') q.set('q', opts.q.trim());
+    if (opts.addressBookId !== undefined) q.set('addressBookId', opts.addressBookId);
+    const qs = q.toString();
+    return call<{ contacts: ContactSummary[]; truncated: boolean }>('GET', `/api/contacts${qs === '' ? '' : `?${qs}`}`);
+  },
+  lookup: (address: string) =>
+    call<{ contact: { addressBookId: string; name: string; displayName: string } | null }>('GET', `/api/contacts/lookup?${new URLSearchParams({ address }).toString()}`),
+  get: (addressBookId: string, name: string) => call<ContactDetail>('GET', cardPath(addressBookId, name)),
+  create: (addressBookId: string, input: ContactInput) =>
+    call<ContactSaved>('POST', `/api/contacts/address-books/${encodeURIComponent(addressBookId)}/cards`, input),
+  update: (addressBookId: string, name: string, etag: string, input: ContactInput) => call<ContactSaved>('PUT', cardPath(addressBookId, name), input, ifMatch(etag)),
+  remove: (addressBookId: string, name: string, etag: string) => call<null>('DELETE', cardPath(addressBookId, name), undefined, ifMatch(etag)),
+};
+
+/** The contacts screen's URL for one card (the reading pane's sender link). */
+export const contactPath = (addressBookId: string, name: string): string =>
+  `/contacts/${encodeURIComponent(addressBookId)}/${encodeURIComponent(name)}`;
