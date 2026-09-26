@@ -9,6 +9,11 @@ name: security
 #   database, migrated and seeded the way ci.yml's e2e job does it; an operator is set up through
 #   the real first-run flow and ZAP scans the webmail and its API signed in as them. Any High fails
 #   the run; the report is kept either way and is what the gate cites.
+# - gitleaks, on every push to main and every pull request, and nightly (PST-REQ-162): the full
+#   history (fetch-depth 0), scanned with the pinned `gitleaks` binary verified against its
+#   published SHA-256 checksum before it runs. `.gitleaks.toml` extends the default rule set with a
+#   narrow, path-exact allowlist for documented synthetic test material only. Any finding fails the
+#   run — the public repo carries no secret and no private corpus in its history.
 #
 # Nightly rather than per push because an active scan is slow and noisy, and because what it finds
 # is rarely caused by the commit in front of it. Run it from the Actions tab after anything that
@@ -32,6 +37,27 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  gitleaks:
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Fetch gitleaks and verify its published SHA-256 checksum
+        run: |
+          set -euo pipefail
+          curl -sSLo gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+      - name: gitleaks over the full history (PST-REQ-162)
+        run: ./gitleaks git --redact --exit-code 1 .
+
   semgrep:
     if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

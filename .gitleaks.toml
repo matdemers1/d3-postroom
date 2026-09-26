@@ -1,0 +1,31 @@
+# gitleaks config for Postroom (PST-T-13.1, PST-REQ-162).
+#
+# Extends gitleaks' own default rule set (https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml)
+# rather than replacing it — Postroom writes its own crypto and credential code (KEK, DKIM, app
+# passwords), so the generic AWS/PEM/token/JWT/high-entropy rules are exactly what should run here.
+#
+# The allowlist below is deliberately narrow: one entry per exact path, each naming what the match
+# is and why it is synthetic. Nothing is allowlisted by a broad regex or a whole directory. A real
+# secret anywhere else in the tree still fails the scan.
+[extend]
+useDefault = true
+
+[allowlist]
+  description = "Documented synthetic test material only — see PST-T-13.1"
+
+  paths = [
+    # AWS's own published example credentials (docs.aws.amazon.com/IAM), used verbatim as a
+    # deterministic SigV4 test vector for the S3 backup uploader. Not a real key: this exact
+    # accessKeyId/secretAccessKey pair is AWS's own long-standing documentation example.
+    '''^apps/worker/test/unit/backup-sigv4\.test\.ts$''',
+
+    # A literal PEM-shaped string used only as filler bytes to exercise the streaming AEAD
+    # implementation's chunking at a realistic size. It is not parsed as a key anywhere and no
+    # real key material follows the header text.
+    '''^packages/crypto/test/unit/aead\.test\.ts$''',
+
+    # A self-signed test-only TLS certificate (CN=test.d3cloud.io, generated for this fixture,
+    # not used outside apps/worker's monitor test suite) — a public certificate, not a private
+    # key, and not the production TLS material (which terminates at home and is never committed).
+    '''^apps/worker/test/fixtures/cert\.crt$''',
+  ]
