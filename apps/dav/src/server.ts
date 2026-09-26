@@ -55,11 +55,12 @@ import { parseVCard } from '@postroom/vcard';
 import { createDavAuthenticator, parseBasicAuth, type DavAuthenticator } from './auth.js';
 import { trustedProxyList, type DavConfig } from './config.js';
 import { calendarMatches, cardMatches } from './filters.js';
-import { CONTEXT_PATH, collectionHref, objectHref, route, targetHref, type Target } from './paths.js';
+import { collectionHref, objectHref, route, targetHref, type Target } from './paths.js';
 import { applyUpdates, resourcetypeKind } from './proppatch.js';
 import { parseSyncToken, propstatsFor, syncToken, type Node, type PropEnv } from './props.js';
 import { DavStore, type Caller, type Collection, type Kind, type Resource, type ResourceMeta } from './store.js';
 import { validateCalendarObject, validateVCard, validResourceName } from './validate.js';
+import { wellKnownLocation } from './well-known.js';
 
 export type Log = (event: string, fields?: Record<string, unknown>) => void;
 
@@ -642,7 +643,7 @@ export function createDavServer(o: DavServerOptions): DavServer {
 
     if (route0.type === 'well-known') {
       // RFC 6764 §5: redirect to the context path, for any method (clients PROPFIND it).
-      sendStatus(res, 301, { Location: CONTEXT_PATH });
+      sendStatus(res, 301, { Location: wellKnownLocation() });
       return;
     }
     if (method === 'OPTIONS') {
