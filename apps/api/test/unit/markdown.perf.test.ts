@@ -41,13 +41,12 @@ describe('renderMarkdown: performance (PST-T-9.2)', () => {
       // one-off scheduler hiccups do not.
       const timings = sizes.map((size) => Math.min(timeRender(c.make(size)), timeRender(c.make(size)), timeRender(c.make(size))));
       console.log(`[perf] ${c.name}: ${sizes.map((s, idx) => `${String(s)}=${(timings[idx] ?? 0).toFixed(1)}ms`).join(', ')}`);
-      // Doubling the input should cost well under a quadratic 4x — allow generous headroom (3x) for
-      // noise, and a floor so sub-millisecond timings don't make the ratio meaningless.
-      for (let i = 1; i < timings.length; i += 1) {
-        const prev = Math.max(timings[i - 1] ?? 0, 1);
-        const curr = timings[i] ?? 0;
-        expect(curr / prev).toBeLessThan(3);
-      }
+      // Compare the ends, not each doubling: step-to-step ratios of 1–3 ms timings are dominated by
+      // scheduler noise. 8x the input is ~8x the work when linear and ~64x when quadratic; the bar
+      // sits far from both, with a 2 ms floor so a sub-millisecond base cannot inflate the ratio.
+      const first = Math.max(timings[0] ?? 0, 2);
+      const last = timings[timings.length - 1] ?? 0;
+      expect(last / first).toBeLessThan(20);
     });
   }
 });
