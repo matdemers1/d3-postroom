@@ -26,7 +26,11 @@
     "zod": "^4.6.5",
     "@postroom/credentials": "workspace:*",
     "@postroom/delivery": "workspace:*",
-    "@postroom/queue": "workspace:*"
+    "@postroom/queue": "workspace:*",
+    "@postroom/search": "workspace:*",
+    "@postroom/threading": "workspace:*",
+    "@postroom/mime": "workspace:*",
+    "@postroom/blobstore": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

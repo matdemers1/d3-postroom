@@ -6,6 +6,8 @@ import { auditContext, mutationAuditGuard } from '@postroom/audit';
 import { schemaRevision } from '@postroom/db';
 import { adminJobRoutes } from './admin-jobs/index.js';
 import { appPasswordRoutes } from './app-passwords/index.js';
+import { autoconfigRoutes } from './autoconfig/index.js';
+import { mailRoutes } from './mail/index.js';
 import { deliveryRoutes } from './delivery/index.js';
 import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import type { ApiDeps } from './deps.js';
@@ -49,12 +51,16 @@ export function createApp(deps: ApiDeps): Express {
     }
   });
 
+  // Public client autoconfiguration (PST-T-3.6): no session, no CSRF, GET/POST XML only.
+  app.use(autoconfigRoutes(deps));
+
   app.use('/api', express.json({ limit: '1mb' }), auditContext(), mutationAuditGuard(deps.db), csrfGuard(deps));
   app.use('/api/auth', authRoutes(deps));
   app.use('/api/admin/jobs', requireAdmin(deps), adminJobRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
   app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));
   app.use('/api/messages', requireSession(deps), deliveryRoutes(deps));
+  app.use('/api', requireSession(deps), mailRoutes(deps));
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not_found' });
   });

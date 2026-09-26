@@ -1,0 +1,25 @@
+{
+  "name": "@postroom/search",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Mail search: an operator query parser and a SQL builder over message_search, shared by the API and IMAP SEARCH",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests"
+  },
+  "dependencies": {
+    "@postroom/db": "workspace:*"
+  },
+  "devDependencies": {}
+}

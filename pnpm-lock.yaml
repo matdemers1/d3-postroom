@@ -44,6 +44,9 @@ importers:
       '@postroom/audit':
         specifier: workspace:*
         version: link:../../packages/audit
+      '@postroom/blobstore':
+        specifier: workspace:*
+        version: link:../../packages/blobstore
       '@postroom/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -62,9 +65,18 @@ importers:
       '@postroom/delivery':
         specifier: workspace:*
         version: link:../delivery
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../../packages/mime
       '@postroom/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@postroom/search':
+        specifier: workspace:*
+        version: link:../../packages/search
+      '@postroom/threading':
+        specifier: workspace:*
+        version: link:../../packages/threading
       argon2:
         specifier: ^0.45.1
         version: 0.45.1
@@ -461,6 +473,12 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
+
+  packages/search:
+    dependencies:
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../db
 
   packages/smtp-proto: {}
 
