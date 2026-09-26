@@ -259,7 +259,7 @@ export function mailRoutes(deps: ApiDeps): Router {
       const store = blobStore(res);
       if (store === null) return;
       res.setHeader('Cache-Control', 'private, no-store');
-      res.json(await inspectMessage(db, store, message));
+      res.json(await inspectMessage(db, store, message, { kek: rt.kek }));
     }),
   );
 

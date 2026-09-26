@@ -34,7 +34,7 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies(cookies);
 });
 
-const SECTIONS = ['Authentication', 'Received path', 'Why this bucket', 'Spam score breakdown', 'Trackers removed', 'MDN request', 'Headers', 'Raw source'];
+const SECTIONS = ['Authentication', 'Signature and encryption', 'Received path', 'Why this bucket', 'Spam score breakdown', 'Trackers removed', 'MDN request', 'Headers', 'Raw source'];
 
 const AUTH = {
   spf: { result: 'pass', domain: 'bounce.example.org', scope: 'mfrom', reasons: ['matched ip4:192.0.2.0/24'] },

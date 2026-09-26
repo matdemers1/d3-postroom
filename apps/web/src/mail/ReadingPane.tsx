@@ -30,6 +30,8 @@ import { Alert, Badge, Button, Cluster, DescriptionItem, DescriptionList, EmptyS
 import { attemptRemoteText, attemptSummary, deferralReason, deliveryPhase, dsnFiledAt, isPending, NO_DELIVERY_RECORD_TEXT, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
 import { InspectDrawer } from './InspectDrawer';
 import { InviteSection } from '../invites/InviteSection';
+import { ReceiptPrompt } from './ReceiptPrompt';
+import { wantsReceipt } from './receipt';
 import { useMail } from './MailContext';
 import { collapsedSummary, isConversation, mightJoinThread, threadRows, toggleRow } from './thread';
 import { trackersBlockedNote } from './trackers';
@@ -385,10 +387,14 @@ function MessageContent({
   bodyStatus: OpenMessage['bodyStatus'];
   onRetry: () => void;
 }) {
+  const { mailboxes } = useMail();
+  const use = mailboxes?.find((m) => m.id === detail.mailboxId)?.specialUse;
+  const ownMailbox = use === 'sent' || use === 'drafts';
   return (
     <Stack gap="16">
       <MessageMeta detail={detail} body={body} />
       <PhishBanner phish={detail.phish} />
+      {wantsReceipt(detail, body, ownMailbox) ? <ReceiptPrompt key={detail.id} messageId={detail.id} /> : null}
       <InviteSection messageId={detail.id} />
       <MessageText body={body} status={bodyStatus} onRetry={onRetry} />
       <Attachments messageId={detail.id} body={body} />
