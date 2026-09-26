@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import { audited, getAuditContext } from '@postroom/audit';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
+import type { Prisma } from '@postroom/db';
 import { Router } from 'express';
 import { z } from 'zod';
 import { currentSession, handle } from '../auth/middleware.js';
@@ -34,6 +35,11 @@ const SeedMessage = z.object({
   attachment: z.object({ filename: z.string().min(1).max(200).regex(/^[^"\\\r\n]+$/), contentType: Header.default('application/octet-stream'), content: z.string().max(100_000) }).optional(),
   flags: z.array(z.enum(['\\Seen', '\\Flagged', '\\Answered'])).default([]),
   date: z.iso.datetime().optional(),
+  /** Stored verbatim as this message's message_verdict.auth (PST-T-6.5, PST-REQ-120): the same
+   * spf/dkim/dmarc/arc shape smtp-in stores. Presence alone creates the MessageVerdict row (an
+   * empty object `{}` is a "no verdict yet" fixture with an authenticated-looking absence of
+   * signal); its absence leaves the message without one, as real Sent/Drafts copies have none. */
+  authVerdicts: z.record(z.string(), z.unknown()).optional(),
 });
 const SeedBody = z.object({ messages: z.array(SeedMessage).min(1).max(50) });
 
@@ -141,6 +147,10 @@ export function adminDevRoutes(deps: ApiDeps): Router {
               },
             });
             await tx.mailbox.update({ where: { id: mailbox.id }, data: { uidnext: mb.uidnext + 1, highestModseq: modseq } });
+            if (seed.authVerdicts !== undefined) {
+              const auth = JSON.parse(JSON.stringify(seed.authVerdicts)) as Prisma.InputJsonValue;
+              await tx.messageVerdict.create({ data: { messageId: created.id, auth, bucket: 'people', reasons: ['e2e seed'] } });
+            }
             await tx.$executeRaw`SELECT pg_notify(${MAILBOX_CHANNEL}, ${mailbox.id})`;
             const after = { mailboxId: mailbox.id, uid: created.uid, subject: seed.subject };
             return { entityId: created.id, before: null, after, result: created };

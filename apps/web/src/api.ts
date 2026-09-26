@@ -148,11 +148,24 @@ export interface MessagePage {
   nextCursor: string | null;
 }
 
+/** One phishing/lookalike warning (PST-T-6.5, PST-REQ-120): `reason` is the full, human-readable text to show — never just the kind. */
+export interface PhishWarning {
+  kind: 'display-name-spoofing' | 'lookalike-domain' | 'punycode-domain' | 'first-time-brand-sender' | 'auth-failure' | 'link-mismatch';
+  severity: 'low' | 'medium' | 'high';
+  reason: string;
+}
+
+export interface Phish {
+  warnings: PhishWarning[];
+}
+
 export interface MessageDetail extends MessageSummary {
   messageIdHeader: string | null;
   inReplyTo: string | null;
   references: string[];
   verdict: { bucket: string | null; reasons: string[]; auth: unknown } | null;
+  /** Null when there is nothing to check yet (no stored auth verdict). */
+  phish: Phish | null;
 }
 
 export interface MessageAttachment {

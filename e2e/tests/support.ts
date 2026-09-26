@@ -125,6 +125,9 @@ export interface SeedMessage {
   attachment?: { filename: string; contentType?: string; content: string };
   mailbox?: 'inbox' | 'archive' | 'trash' | 'sent' | 'drafts' | 'junk';
   flags?: ('\\Seen' | '\\Flagged' | '\\Answered')[];
+  /** Creates this message's MessageVerdict.auth (PST-T-6.5, PST-REQ-120): spf/dkim/dmarc/arc, the
+   * same shape smtp-in stores. Its presence is what makes GET /api/messages/:id compute `phish`. */
+  authVerdicts?: Record<string, unknown>;
 }
 
 export interface SeededMessage {
