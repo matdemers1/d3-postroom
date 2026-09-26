@@ -38,7 +38,7 @@ import type { ApiDeps } from '../deps.js';
 import { DEFAULT_BLOB_ROOT } from '../mail/index.js';
 import { findOwnMessage } from '../mail/store.js';
 import { cancelEligibility } from './cancel.js';
-import { attendeePartstat, isCancelled, storedOrganizer, storedSequence, withAttendeePartstat, withCancelled } from './event.js';
+import { attendeePartstat, cancelRecurrence, isCancelled, storedOrganizer, storedSequence, withAttendeePartstat, withCancelled } from './event.js';
 import { buildReplyStream } from './message.js';
 import { findCalendarPart } from './store.js';
 import { IdParams, InviteView, RespondBody, type InviteViewJson } from './schemas.js';
@@ -344,7 +344,7 @@ export function invitesRoutes(deps: ApiDeps): Router {
         return;
       }
       const base = stored;
-      const data = Buffer.from(serializeICalendar(withCancelled(base)), 'utf8');
+      const data = Buffer.from(serializeICalendar(withCancelled(base, cancelRecurrence(invite))), 'utf8');
       const ctx = getAuditContext(req);
       const putOutcome = await dav.store.putResource({ accountId, context: ctx }, calendar, { name, uid: invite.uid, componentType: 'VEVENT', data, preconditions: { ifMatch: `"${existing.etag}"` } });
       if (putOutcome.status !== 'updated' && putOutcome.status !== 'created') {

@@ -25,14 +25,32 @@ export function withAttendeePartstat(calendar: Component, email: string, partsta
   return { ...stripMethod(calendar), components: calendar.components.map(apply) };
 }
 
-/** The invite's calendar, with every schedulable component's STATUS set to CANCELLED. */
-export function withCancelled(calendar: Component): Component {
-  const apply = (c: Component): Component => {
-    if (!isSchedulable(c.name)) return c;
-    const properties: Property[] = [...c.properties.filter((p) => p.name !== 'STATUS'), { name: 'STATUS', params: {}, value: 'CANCELLED' }];
-    return { ...c, properties };
+/**
+ * The stored calendar with a CANCEL applied (RFC 5546 §3.2.5). Without a RECURRENCE-ID the whole
+ * series is cancelled: every schedulable component gets STATUS:CANCELLED. With one (PST-T-8.9) only
+ * that occurrence is: its override, if the calendar has one, gets STATUS:CANCELLED; otherwise the
+ * master gains an EXDATE for it, carrying the RECURRENCE-ID's own TZID/VALUE parameters.
+ */
+export function withCancelled(calendar: Component, recurrenceId: { value: string; params: Property['params'] } | null = null): Component {
+  const cancel = (c: Component): Component => ({
+    ...c,
+    properties: [...c.properties.filter((p) => p.name !== 'STATUS'), { name: 'STATUS', params: {}, value: 'CANCELLED' }],
+  });
+  const base = stripMethod(calendar);
+  if (recurrenceId === null) return { ...base, components: calendar.components.map((c) => (isSchedulable(c.name) ? cancel(c) : c)) };
+
+  const wanted = recurrenceId.value.trim();
+  const isOverride = (c: Component): boolean => isSchedulable(c.name) && getProperty(c, 'RECURRENCE-ID')?.value.trim() === wanted;
+  if (calendar.components.some(isOverride)) {
+    return { ...base, components: calendar.components.map((c) => (isOverride(c) ? cancel(c) : c)) };
+  }
+  const main = master(calendar);
+  return {
+    ...base,
+    components: calendar.components.map((c) =>
+      c === main ? { ...c, properties: [...c.properties, { name: 'EXDATE', params: recurrenceId.params, value: wanted }] } : c,
+    ),
   };
-  return { ...stripMethod(calendar), components: calendar.components.map(apply) };
 }
 
 /** The PARTSTAT of `email` in the master (non-override) schedulable component, or null. */
@@ -51,11 +69,8 @@ export function attendeePartstat(calendar: Component, email: string): string | n
 
 /** True when the master (non-override) schedulable component's STATUS is CANCELLED. */
 export function isCancelled(calendar: Component): boolean {
-  for (const c of calendar.components) {
-    if (!isSchedulable(c.name)) continue;
-    if ((getProperty(c, 'STATUS')?.value ?? '').toUpperCase() === 'CANCELLED') return true;
-  }
-  return false;
+  const c = master(calendar);
+  return c !== undefined && (getProperty(c, 'STATUS')?.value ?? '').toUpperCase() === 'CANCELLED';
 }
 
 /** The master (non-override) schedulable component, or undefined. */
@@ -76,4 +91,10 @@ export function storedSequence(calendar: Component): number {
   const c = master(calendar);
   const n = Number((c === undefined ? undefined : getProperty(c, 'SEQUENCE'))?.value ?? '0');
   return Number.isSafeInteger(n) && n >= 0 ? n : 0;
+}
+
+/** The RECURRENCE-ID a CANCEL names (value and TZID/VALUE parameters), or null for the whole series. */
+export function cancelRecurrence(invite: { component: Component }): { value: string; params: Property['params'] } | null {
+  const p = getProperty(invite.component, 'RECURRENCE-ID');
+  return p === undefined ? null : { value: p.value, params: p.params };
 }
