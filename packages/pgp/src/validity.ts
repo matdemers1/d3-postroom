@@ -30,6 +30,14 @@ export interface KeyState {
   revocations: Revocation[];
   /** When the key (the primary, or the subkey itself, whichever is sooner) stops being valid; null = never. */
   expiresAt: Date | null;
+  /**
+   * When the self-signature (and, for a subkey, the 0x18 binding) the key's authority rests on
+   * stops being valid by its OWN signature expiration (subpacket 3, RFC 9580 §5.2.3.18): after
+   * that, the statement that the key is this key, and may sign, is withdrawn — as gpg reads it.
+   * Judged against the present, not the signing time. The latest valid one is read; an older one
+   * without expiry never stands in for it. Null = never.
+   */
+  selfSignatureExpiresAt: Date | null;
 }
 
 function frame(m: KeyMaterial): Buffer {
@@ -81,6 +89,15 @@ function expiryFrom(ks: KeySignature | null, created: Date): Date | null {
   return secs === null || secs === 0 ? null : new Date(created.getTime() + secs * 1000);
 }
 
+/** When a self-signature or binding itself expires (subpacket 3, counted from its creation); null = never. */
+function signatureExpiry(ks: KeySignature | null): Date | null {
+  const secs = ks?.sig.expiresSeconds ?? null;
+  if (ks === null || secs === null || secs === 0) return null;
+  return new Date((ks.sig.created?.getTime() ?? 0) + secs * 1000);
+}
+
+const sooner = (a: Date | null, b: Date | null): Date | null => (a === null ? b : b === null ? a : a < b ? a : b);
+
 /** Revocations and expiry for `material` (the primary or one of its subkeys) of `key`. */
 export function keyState(key: OpenPgpKey, material: KeyMaterial): KeyState {
   const primary = key.primary;
@@ -101,6 +118,7 @@ export function keyState(key: OpenPgpKey, material: KeyMaterial): KeyState {
     mine.filter((ks) => (ks.target.kind === 'uid' && CERTIFICATIONS.has(ks.sig.type)) || (ks.target.kind === 'key' && ks.sig.type === SignatureType.DirectKey)),
   );
   let expiresAt = expiryFrom(selfSig, primary.created);
+  let selfSignatureExpiresAt = signatureExpiry(selfSig);
   if (isSubkey) {
     const binding = latestValid(
       primary,
@@ -108,8 +126,35 @@ export function keyState(key: OpenPgpKey, material: KeyMaterial): KeyState {
     );
     const sub = expiryFrom(binding, material.created);
     if (sub !== null && (expiresAt === null || sub < expiresAt)) expiresAt = sub;
+    selfSignatureExpiresAt = sooner(selfSignatureExpiresAt, signatureExpiry(binding));
   }
-  return { revocations, expiresAt };
+  return { revocations, expiresAt, selfSignatureExpiresAt };
+}
+
+/**
+ * `stored` with the revocations (0x20 on its primary, 0x28 on one of its subkeys) that a copy of
+ * the same key attached to the message carries — so a revocation that reached this message before
+ * it reached the account's key row is applied to this analysis (PST-T-12.5). Only revocations are
+ * taken, and only from a copy whose primary fingerprint is the stored key's; each is then checked
+ * by keyState against the STORED primary, as any revocation is. Nothing else in an attached copy
+ * (a newer self-signature, a binding, key flags, another subkey) is ever read: it can only make a
+ * stored key stricter, never give it authority.
+ */
+export function withAttachedRevocations(stored: OpenPgpKey, attached: readonly OpenPgpKey[]): OpenPgpKey {
+  const extra: KeySignature[] = [];
+  for (const copy of attached) {
+    if (copy.primary.fingerprint !== stored.primary.fingerprint) continue;
+    for (const ks of copy.signatures) {
+      const t = ks.target;
+      if (ks.sig.type === SignatureType.KeyRevocation && t.kind === 'key') extra.push({ sig: ks.sig, target: { kind: 'key' } });
+      else if (ks.sig.type === SignatureType.SubkeyRevocation && t.kind === 'subkey') {
+        // Re-pointed at the stored subkey, so what is verified is hashed over the stored bytes.
+        const mine = stored.subkeys.find((m) => m.fingerprint === t.subkey.fingerprint);
+        if (mine !== undefined) extra.push({ sig: ks.sig, target: { kind: 'subkey', subkey: mine } });
+      }
+    }
+  }
+  return extra.length === 0 ? stored : { ...stored, signatures: [...stored.signatures, ...extra] };
 }
 
 /** The revocation that makes a signature made at `at` untrustworthy, or null. */
