@@ -11,6 +11,7 @@ import { Router, type Request, type Response } from 'express';
 import { currentSession, handle } from '../auth/middleware.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
+import { findOwnMessage as findOwnMailboxMessage } from '../mail/store.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEFAULT_LIMIT = 25;
@@ -122,6 +123,39 @@ export function deliveryRoutes(deps: ApiDeps): Router {
         })),
         nextCursor,
       });
+    }),
+  );
+
+  /** A mailbox message's own outbound row (PST-T-6.7, PST-REQ-119): looks up the message's
+   *  Message-ID header, then this account's most recent OutboundMessage row bearing that same
+   *  Message-ID — an indexed lookup on (accountId, messageId), not a scan of recent sends. Null
+   *  covers both "never sent" and "sent, but not through Postroom" (e.g. a Sent copy another
+   *  client APPENDed): the caller shows the same "no delivery record" note either way. */
+  router.get(
+    '/:id/outbound',
+    handle(async (req, res) => {
+      const id = String(req.params['id']);
+      if (!UUID.test(id)) {
+        res.status(400).json({ error: 'invalid_request' });
+        return;
+      }
+      const me = currentSession(req);
+      const message = await findOwnMailboxMessage(db, me.accountId, id);
+      if (message === null) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      if (message.messageIdHeader === null || message.messageIdHeader === '') {
+        res.json({ outboundId: null });
+        return;
+      }
+      const outbound = await db.outboundMessage.findFirst({
+        where: { accountId: me.accountId, messageId: `<${message.messageIdHeader}>` },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { id: true },
+      });
+      res.json({ outboundId: outbound?.id ?? null });
     }),
   );
 

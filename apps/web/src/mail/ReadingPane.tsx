@@ -27,7 +27,7 @@
 import { forwardRef, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { Alert, Badge, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, Skeleton, Stack } from '@d3cloud/ui';
-import { attemptRemoteText, attemptSummary, deferralReason, dsnFiledAt, isPending, matchingOutbound, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
+import { attemptRemoteText, attemptSummary, deferralReason, deliveryPhase, dsnFiledAt, isPending, NO_DELIVERY_RECORD_TEXT, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
 import { useMail } from './MailContext';
 import { collapsedSummary, isConversation, mightJoinThread, threadRows, toggleRow } from './thread';
 import { trackersBlockedNote } from './trackers';
@@ -388,50 +388,46 @@ function MessageContent({
       <PhishBanner phish={detail.phish} />
       <MessageText body={body} status={bodyStatus} onRetry={onRetry} />
       <Attachments messageId={detail.id} body={body} />
-      <DeliverySection messageIdHeader={detail.messageIdHeader} />
+      <DeliverySection messageId={detail.id} />
     </Stack>
   );
 }
 
-// --- Delivery timeline (PST-T-6.4, PST-REQ-119) -------------------------------------------------
+// --- Delivery timeline (PST-T-6.4, PST-T-6.7, PST-REQ-119) --------------------------------------
 
 interface DeliverySectionState {
-  status: 'loading' | 'ready' | 'absent' | 'error';
+  status: 'loading' | 'ready' | 'no-record' | 'error';
   data: DeliveryDetail | null;
 }
 
 const LOADING_DELIVERY: DeliverySectionState = { status: 'loading', data: null };
 
-/** A sent message's per-recipient state and attempt log. Silent (renders nothing) for anything that
- *  was never handed to outbound delivery, or that this account's recent outbound rows do not name —
- *  there is no column linking a mailbox message to its OutboundMessage row, so the match is by
- *  Message-ID header against the caller's own recent sends (see mail/delivery.ts's matchingOutbound). */
-function DeliverySection({ messageIdHeader }: { messageIdHeader: string | null }) {
+/** A sent message's per-recipient state and attempt log, found with one indexed server-side lookup
+ *  (GET /api/messages/:id/outbound, PST-T-6.7) instead of scanning the account's recent sends. When
+ *  the lookup finds no linked OutboundMessage row — never sent through Postroom at all, or a Sent
+ *  copy another client APPENDed directly — an explicit note is shown rather than nothing, since that
+ *  silence used to look identical to "still loading". */
+function DeliverySection({ messageId }: { messageId: string }) {
   const { subscribe } = useMail();
   const [state, setState] = useState<DeliverySectionState>(LOADING_DELIVERY);
 
   const load = useCallback(() => {
-    if (messageIdHeader === null) {
-      setState({ status: 'absent', data: null });
-      return;
-    }
-    api.outboundMessages({ limit: 100 }).then(
-      (page) => {
-        const found = matchingOutbound(page.messages, messageIdHeader);
-        if (found === null) {
-          setState({ status: 'absent', data: null });
+    api.messageOutbound(messageId).then(
+      ({ outboundId }) => {
+        if (outboundId === null || deliveryPhase(outboundId) === 'no-record') {
+          setState({ status: 'no-record', data: null });
           return;
         }
-        api.messageDelivery(found.id).then(
+        api.messageDelivery(outboundId).then(
           (data) => { setState({ status: 'ready', data }); },
           (error: unknown) => {
-            setState({ status: error instanceof ApiError && error.status === 404 ? 'absent' : 'error', data: null });
+            setState({ status: error instanceof ApiError && error.status === 404 ? 'no-record' : 'error', data: null });
           },
         );
       },
       () => { setState({ status: 'error', data: null }); },
     );
-  }, [messageIdHeader]);
+  }, [messageId]);
 
   useEffect(() => {
     setState(LOADING_DELIVERY);
@@ -452,12 +448,22 @@ function DeliverySection({ messageIdHeader }: { messageIdHeader: string | null }
     return subscribe(() => { load(); });
   }, [pending, subscribe, load]);
 
-  if (state.status === 'loading' || state.status === 'absent') return null;
-  if (state.status === 'error' || state.data === null) {
+  if (state.status === 'loading') return null;
+  if (state.status === 'error') {
     return (
       <Alert tone="warning" title="The delivery timeline could not be loaded" actions={<Button size="sm" onClick={load}>Try again</Button>}>
         Postroom did not answer. Check your connection.
       </Alert>
+    );
+  }
+  if (state.status === 'no-record' || state.data === null) {
+    return (
+      <section aria-label="Delivery" className="pr-delivery" data-testid="delivery">
+        <h3 className="pr-reader__h3">Delivery</h3>
+        <p className="pr-delivery__attempts" data-testid="delivery-no-record">
+          {NO_DELIVERY_RECORD_TEXT}
+        </p>
+      </section>
     );
   }
   return (

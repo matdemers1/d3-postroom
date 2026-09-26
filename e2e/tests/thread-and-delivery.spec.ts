@@ -215,48 +215,24 @@ async function remember(subject: string): Promise<void> {
 test('doneWhen: a deferred outbound recipient shows its reason and next retry', async ({ page }) => {
   // dev-seed-deferred (PST-T-6.6, apps/api/src/admin-queue) files an OutboundMessage and a deferred
   // OutboundRecipient straight into the queue, with no corresponding Sent-mailbox Message — it was
-  // built for e2e/tests/admin-queue.spec.ts, which drives the admin queue screen directly. There is
-  // no column linking a mailbox Message to an OutboundMessage (only a shared Message-ID header links
-  // a REAL send's two rows — see mail/delivery.ts's matchingOutbound), so a message seeded this way
-  // cannot be opened in the reading pane at all.
-  //
-  // To exercise the real ReadingPane/DeliverySection rendering (not just the pure formatting, which
-  // delivery.test.ts already covers) against this real deferred fixture, this test seeds an ordinary
-  // message to open, then intercepts only the one lookup call that has no real counterpart —
-  // GET /api/messages/outbound — so it reports the real dev-seed-deferred row under the opened
-  // message's real Message-ID. Every other response (the delivery detail itself, its reason, its
-  // next-retry time) comes straight from the live server.
+  // built for e2e/tests/admin-queue.spec.ts, which drives the admin queue screen directly. PST-T-6.7
+  // gave the route an optional messageId, so this fixture can pass the opened message's own
+  // Message-ID header (bracketed, the way OutboundMessage stores it) and get a REAL link: the
+  // reading pane's GET /api/messages/:id/outbound then resolves this seeded row on its own, an
+  // indexed lookup, with nothing intercepted.
   const t = tag();
   const subject = `Renewal notice ${t}`;
   const [original] = await seedMail(api, [{ subject, from: 'Vendor <billing@example.org>', text: 'Your plan renews soon.' }]);
   if (original === undefined) throw new Error('seed returned nothing');
 
   const domain = `example-${t}.test`;
-  const seeded = await api.post('/api/admin/queue/dev-seed-deferred', { headers: CSRF, data: { domain } });
+  const seeded = await api.post('/api/admin/queue/dev-seed-deferred', {
+    headers: CSRF,
+    data: { domain, messageId: `<${original.messageIdHeader}>` },
+  });
   if (!seeded.ok()) throw new Error(`dev-seed-deferred answered ${String(seeded.status())}: ${await seeded.text()}`);
   const { messageId: outboundId, recipientId } = (await seeded.json()) as { messageId: string; recipientId: string };
   outbound.push(outboundId);
-
-  await page.route('**/api/messages/outbound*', async (routeHandler) => {
-    await routeHandler.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        messages: [
-          {
-            id: outboundId,
-            subject: 'e2e deferred seed',
-            headerFrom: 'E2E Operator <e2e@d3cloud.io>',
-            messageId: original.messageIdHeader,
-            createdAt: new Date().toISOString(),
-            size: 1,
-            recipients: [],
-          },
-        ],
-        nextCursor: null,
-      }),
-    });
-  });
 
   await openFromInbox(page, subject);
   const delivery = page.getByRole('region', { name: 'Delivery' });

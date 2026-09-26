@@ -51,6 +51,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   MessageSummary: S.MessageSummary,
   MessageList: S.MessageList,
   MessageDetail: S.MessageDetail,
+  OutboundLookup: z.object({ outboundId: z.uuid().nullable() }),
   Attachment: S.Attachment,
   MessageBody: S.MessageBody,
   RenderTicket: S.RenderTicket,
@@ -176,6 +177,17 @@ export const ROUTES: RouteSpec[] = [
       ...COMMON,
       '404': err('No such message or leaf part.'),
     },
+  },
+  {
+    method: 'get',
+    path: '/api/messages/{id}/outbound',
+    operationId: 'getMessageOutbound',
+    tag: 'Messages',
+    summary: 'The caller\'s own OutboundMessage id for this mailbox message, or null (PST-T-6.7, PST-REQ-119).',
+    description:
+      "Looks up the message's Message-ID header and matches it against this account's outbound queue (an indexed lookup, never a scan). outboundId is null both when the message was never sent and when it was sent by another client, not through Postroom.",
+    params: S.IdParams,
+    responses: { '200': { description: 'outboundId, or null.', schema: 'OutboundLookup' }, ...COMMON, '404': err('Not a message of the caller.') },
   },
   {
     method: 'get',
