@@ -1,0 +1,24 @@
+From: Alice Test <alice@example.test>
+To: Me <me@d3cloud.io>
+Subject: Clearsigned
+Date: Sat, 26 Sep 2026 12:00:00 +0000
+Message-ID: <1241630910@example.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Hello Bob,
+- - this line starts with a dash
+This line has trailing spaces   
+Alice
+-----BEGIN PGP SIGNATURE-----
+
+iJEEARYIADkWIQRacV8Xd8gwAZotV42Tt6J5HHpatAUCarfQ1BsUgAAAAAAEAA5t
+YW51MiwyLjUrMS4xMiwwLDMACgkQk7eieRx6WrQL+gD+KpsXNvT8SBXUKut5x6CJ
+IflCmasVUJgTbGybYT7pG/sA/0BDjbNV+QS4uhY0nFyQc4A6x5bvcXzH2AHhcxFe
+XQsO
+=y/Zr
+-----END PGP SIGNATURE-----

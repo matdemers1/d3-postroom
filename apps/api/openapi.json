@@ -2424,6 +2424,358 @@
               "size"
             ],
             "additionalProperties": false
+          },
+          "crypto": {
+            "type": "object",
+            "properties": {
+              "signature": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "description": "'verified-known-key' (valid, and the key is one of this account's own or contact keys) | 'valid-signature-unknown-key' (valid, but the key or certificate came only with the message) | 'bad-signature' | 'not-signed' | 'unsupported:<reason>'."
+                  },
+                  "format": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "pgp-mime",
+                          "pgp-inline",
+                          "pgp-encrypted",
+                          "smime",
+                          "smime-opaque"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "signer": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "keyId": {
+                            "description": "OpenPGP key ID, or the certificate serial number.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "fingerprint": {
+                            "description": "OpenPGP v4 fingerprint, or the certificate SHA-256.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "algorithm": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "hash": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "userIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "User IDs of the key, or the certificate subject."
+                          },
+                          "addresses": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Addresses the key or certificate speaks for (rfc822Name for S/MIME)."
+                          },
+                          "fromMatches": {
+                            "description": "Whether the From address is one of `addresses`; null when either is unknown.",
+                            "type": [
+                              "boolean",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Signature creation time (OpenPGP) or signingTime (S/MIME)."
+                          },
+                          "keySource": {
+                            "type": "string",
+                            "enum": [
+                              "account",
+                              "message",
+                              "none"
+                            ],
+                            "description": "Where the key came from: this account's keys, the message itself (never trusted on its own), or nowhere."
+                          },
+                          "knownKeyId": {
+                            "description": "The crypto_key row that matched.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "owner": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "own",
+                                  "contact"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "keyId",
+                          "fingerprint",
+                          "algorithm",
+                          "hash",
+                          "userIds",
+                          "addresses",
+                          "fromMatches",
+                          "createdAt",
+                          "keySource",
+                          "knownKeyId",
+                          "owner"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "certificates": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "subject": {
+                          "type": "string"
+                        },
+                        "issuer": {
+                          "type": "string"
+                        },
+                        "fingerprint": {
+                          "type": "string"
+                        },
+                        "serial": {
+                          "type": "string"
+                        },
+                        "notBefore": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "notAfter": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "rfc822Names": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "selfSigned": {
+                          "type": "boolean"
+                        },
+                        "signatureVerified": {
+                          "type": "boolean",
+                          "description": "Signed by the next certificate presented (or by itself, when self-signed)."
+                        }
+                      },
+                      "required": [
+                        "subject",
+                        "issuer",
+                        "fingerprint",
+                        "serial",
+                        "notBefore",
+                        "notAfter",
+                        "rfc822Names",
+                        "selfSigned",
+                        "signatureVerified"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "description": "S/MIME: the certificate chain as presented in the message, signer first."
+                  },
+                  "chain": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "verified": {
+                            "type": "boolean"
+                          },
+                          "endsAtSelfSigned": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "verified",
+                          "endsAtSelfSigned",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Whether the chain verifies up to what the message carried. No system trust store is consulted."
+                  }
+                },
+                "required": [
+                  "status",
+                  "format",
+                  "reasons",
+                  "signer",
+                  "certificates",
+                  "chain"
+                ],
+                "additionalProperties": false
+              },
+              "encryption": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "description": "'decrypted' | 'no-key' | 'not-encrypted' | 'failed:<reason>'."
+                  },
+                  "format": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "pgp-mime",
+                          "pgp-inline",
+                          "smime"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "recipients": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "algorithm": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "matchedKeyId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "algorithm",
+                        "matchedKeyId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "cipher": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "integrity": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "openedWithKeyId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "plaintextBytes": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "format",
+                  "reasons",
+                  "recipients",
+                  "cipher",
+                  "integrity",
+                  "openedWithKeyId",
+                  "plaintextBytes"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "signature",
+              "encryption"
+            ],
+            "additionalProperties": false,
+            "description": "PGP/MIME, inline PGP and S/MIME signature and decryption status (PST-REQ-160)."
           }
         },
         "required": [
@@ -2436,7 +2788,8 @@
           "trackers",
           "mdn",
           "headers",
-          "raw"
+          "raw",
+          "crypto"
         ],
         "additionalProperties": false
       },
@@ -7864,7 +8217,7 @@
           "Messages"
         ],
         "summary": "Everything Postroom knows about one message, with its reasons (PST-REQ-114).",
-        "description": "Authentication verdicts with their evidence, the Received path with TLS per hop, the session that delivered it, why it is in its bucket, the spam-score breakdown, trackers removed, the read-receipt request, every header, and where the raw source downloads from. A read: nothing is stored and nothing is fetched from anywhere else.",
+        "description": "Authentication verdicts with their evidence, the Received path with TLS per hop, the session that delivered it, why it is in its bucket, the spam-score breakdown, trackers removed, the read-receipt request, every header, where the raw source downloads from, and PGP/S/MIME signature and decryption status (PST-REQ-160). A read: nothing is stored and nothing is fetched from anywhere else.",
         "parameters": [
           {
             "name": "id",

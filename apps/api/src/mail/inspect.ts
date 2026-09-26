@@ -18,13 +18,19 @@
 //              §2.1), to whom, and whether Return-Path matches. Sending one is PST-T-9.2: never here.
 //   headers    Every top-level header field, in order, encoded-words decoded.
 //   raw        Where the RFC 5322 source downloads from, and its size.
+//   crypto     PGP/MIME, inline PGP and S/MIME: signature verification and decryption status
+//              (PST-T-12.1, PST-REQ-160), from @postroom/pgp over the stored message, with this
+//              account's crypto_key rows as the only keys that make a signature 'verified-known-key'.
 import { collectMessage, decodeEncodedWords, parseDate, parseMailboxes, type MessageSummary as MimeSummary } from '@postroom/mime';
 import type { Db, InboundMessage, InboundSession, Message, MessageVerdict } from '@postroom/db';
+import type { Kek } from '@postroom/crypto';
+import { analyzeMessage, type CryptoReport } from '@postroom/pgp';
 import { z } from 'zod';
 import type { BlobStore } from '@postroom/blobstore';
 import type { ResponseSpec, RouteSpec } from '../openapi/document.js';
 import { sanitizeHtml } from '../usercontent/sanitize.js';
 import { IdParams } from './schemas.js';
+import { loadAccountKeys } from './crypto-keys.js';
 
 // ---------------------------------------------------------------------------------------------
 // Response schema
@@ -151,6 +157,63 @@ export const InspectMdn = z.object({
   sent: z.boolean().describe('Postroom never sends a receipt on its own; sending one is a separate, explicit step (PST-T-9.2).'),
 });
 
+const SignatureStatus = z
+  .string()
+  .describe(
+    "'verified-known-key' (valid, and the key is one of this account's own or contact keys) | 'valid-signature-unknown-key' (valid, but the key or certificate came only with the message) | 'bad-signature' | 'not-signed' | 'unsupported:<reason>'.",
+  );
+const DecryptionStatus = z.string().describe("'decrypted' | 'no-key' | 'not-encrypted' | 'failed:<reason>'.");
+
+export const InspectCryptoSigner = z.object({
+  keyId: z.string().nullable().describe('OpenPGP key ID, or the certificate serial number.'),
+  fingerprint: z.string().nullable().describe('OpenPGP v4 fingerprint, or the certificate SHA-256.'),
+  algorithm: z.string().nullable(),
+  hash: z.string().nullable(),
+  userIds: z.array(z.string()).describe('User IDs of the key, or the certificate subject.'),
+  addresses: z.array(z.string()).describe('Addresses the key or certificate speaks for (rfc822Name for S/MIME).'),
+  fromMatches: z.boolean().nullable().describe('Whether the From address is one of `addresses`; null when either is unknown.'),
+  createdAt: Iso.nullable().describe('Signature creation time (OpenPGP) or signingTime (S/MIME).'),
+  keySource: z.enum(['account', 'message', 'none']).describe("Where the key came from: this account's keys, the message itself (never trusted on its own), or nowhere."),
+  knownKeyId: z.string().nullable().describe('The crypto_key row that matched.'),
+  owner: z.enum(['own', 'contact']).nullable(),
+});
+
+export const InspectCertificate = z.object({
+  subject: z.string(),
+  issuer: z.string(),
+  fingerprint: z.string(),
+  serial: z.string(),
+  notBefore: Iso,
+  notAfter: Iso,
+  rfc822Names: z.array(z.string()),
+  selfSigned: z.boolean(),
+  signatureVerified: z.boolean().describe('Signed by the next certificate presented (or by itself, when self-signed).'),
+});
+
+export const InspectCrypto = z.object({
+  signature: z.object({
+    status: SignatureStatus,
+    format: z.enum(['pgp-mime', 'pgp-inline', 'pgp-encrypted', 'smime', 'smime-opaque']).nullable(),
+    reasons: Reasons,
+    signer: InspectCryptoSigner.nullable(),
+    certificates: z.array(InspectCertificate).describe('S/MIME: the certificate chain as presented in the message, signer first.'),
+    chain: z
+      .object({ verified: z.boolean(), endsAtSelfSigned: z.boolean(), reason: z.string() })
+      .nullable()
+      .describe('Whether the chain verifies up to what the message carried. No system trust store is consulted.'),
+  }),
+  encryption: z.object({
+    status: DecryptionStatus,
+    format: z.enum(['pgp-mime', 'pgp-inline', 'smime']).nullable(),
+    reasons: Reasons,
+    recipients: z.array(z.object({ id: z.string(), algorithm: z.string().nullable(), matchedKeyId: z.string().nullable() })),
+    cipher: z.string().nullable(),
+    integrity: z.string().nullable(),
+    openedWithKeyId: z.string().nullable(),
+    plaintextBytes: z.number().int().nullable(),
+  }),
+});
+
 export const MessageInspect = z.object({
   id: z.uuid(),
   auth: InspectAuth,
@@ -162,10 +225,25 @@ export const MessageInspect = z.object({
   mdn: InspectMdn,
   headers: z.array(z.object({ name: z.string(), value: z.string() })),
   raw: z.object({ url: z.string(), size: z.number().int() }),
+  crypto: InspectCrypto.describe('PGP/MIME, inline PGP and S/MIME signature and decryption status (PST-REQ-160).'),
 });
 
 export type MessageInspectJson = z.infer<typeof MessageInspect>;
 export type ReceivedHopJson = z.infer<typeof ReceivedHop>;
+export type InspectCryptoJson = z.infer<typeof InspectCrypto>;
+
+/** What the drawer shows when the analysis could not run at all. */
+export function cryptoUnavailable(reason: string): InspectCryptoJson {
+  return {
+    signature: { status: `unsupported:${reason}`, format: null, reasons: [], signer: null, certificates: [], chain: null },
+    encryption: { status: 'not-encrypted', format: null, reasons: [], recipients: [], cipher: null, integrity: null, openedWithKeyId: null, plaintextBytes: null },
+  };
+}
+
+/** The pgp package's report, as the schema describes it. */
+export function cryptoSection(report: CryptoReport): InspectCryptoJson {
+  return { signature: report.signature, encryption: report.encryption };
+}
 
 // ---------------------------------------------------------------------------------------------
 // Received (RFC 5321 §4.4): a small, forgiving clause reader.
@@ -493,6 +571,7 @@ export function buildInspect(
   inbound: InboundWithSession | null,
   summary: MimeSummary,
   rawUrl: string,
+  crypto: InspectCryptoJson = cryptoUnavailable('not-analysed'),
 ): MessageInspectJson {
   const fields = summary.headers.fields;
   const headers = fields.map((f) => ({ name: f.name, value: decodeEncodedWords(f.value) }));
@@ -520,14 +599,36 @@ export function buildInspect(
     mdn: mdnSection(headers),
     headers,
     raw: { url: rawUrl, size: message.size },
+    crypto,
   };
 }
 
+export interface InspectOptions {
+  /** Opens this account's sealed private keys for decryption; without it, decryption reports failed:private-key-unavailable. */
+  kek?: Kek | null;
+}
+
+/**
+ * Signature and decryption status (PST-REQ-160): a second streamed read of the stored message
+ * through @postroom/pgp. A failure here never fails the rest of the drawer.
+ */
+export async function inspectCrypto(db: Db, blobs: BlobStore, message: Message, opts: InspectOptions = {}): Promise<InspectCryptoJson> {
+  const mailbox = await db.mailbox.findUnique({ where: { id: message.mailboxId }, select: { accountId: true } });
+  if (mailbox === null) return cryptoUnavailable('no-mailbox');
+  const keys = await loadAccountKeys(db, mailbox.accountId, opts.kek ?? null);
+  try {
+    return cryptoSection(await analyzeMessage(await blobs.get(message.blobSha256), keys));
+  } catch (err) {
+    return cryptoUnavailable(`analysis-failed:${err instanceof Error ? err.name : 'error'}`);
+  }
+}
+
 /** Reads the message back from the blob store and assembles the evidence. */
-export async function inspectMessage(db: Db, blobs: BlobStore, message: Message & { verdict: MessageVerdict | null }): Promise<MessageInspectJson> {
+export async function inspectMessage(db: Db, blobs: BlobStore, message: Message & { verdict: MessageVerdict | null }, opts: InspectOptions = {}): Promise<MessageInspectJson> {
   const inbound = message.inboundMessageId === null ? null : await db.inboundMessage.findUnique({ where: { id: message.inboundMessageId }, include: { session: true } });
   const summary = await collectMessage(await blobs.get(message.blobSha256));
-  return buildInspect(message, inbound, summary, `/api/messages/${message.id}/raw`);
+  const crypto = await inspectCrypto(db, blobs, message, opts);
+  return buildInspect(message, inbound, summary, `/api/messages/${message.id}/raw`, crypto);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -545,7 +646,7 @@ export const INSPECT_ROUTES: RouteSpec[] = [
     tag: 'Messages',
     summary: 'Everything Postroom knows about one message, with its reasons (PST-REQ-114).',
     description:
-      'Authentication verdicts with their evidence, the Received path with TLS per hop, the session that delivered it, why it is in its bucket, the spam-score breakdown, trackers removed, the read-receipt request, every header, and where the raw source downloads from. A read: nothing is stored and nothing is fetched from anywhere else.',
+      'Authentication verdicts with their evidence, the Received path with TLS per hop, the session that delivered it, why it is in its bucket, the spam-score breakdown, trackers removed, the read-receipt request, every header, where the raw source downloads from, and PGP/S/MIME signature and decryption status (PST-REQ-160). A read: nothing is stored and nothing is fetched from anywhere else.',
     params: IdParams,
     responses: {
       '200': { description: 'The evidence.', schema: 'MessageInspect' },

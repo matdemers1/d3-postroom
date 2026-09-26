@@ -1,0 +1,58 @@
+From: Alice Test <alice@example.test>
+To: Me <me@d3cloud.io>
+Subject: Signed with Ed25519
+Date: Sat, 26 Sep 2026 12:00:00 +0000
+Message-ID: <1722427158@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/signed; micalg=pgp-sha256; protocol="application/pgp-signature"; boundary="sig-b"
+
+This is an OpenPGP/MIME signed message (RFC 4880 and 3156)
+--sig-b
+Content-Type: multipart/mixed; boundary="inner-1"
+
+--inner-1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Hello Bob,
+
+This message is signed with an Ed25519 key, the way Proton sends it.
+A line with =3D in it, and trailing space =20
+
+-- 
+Alice
+--inner-1
+Content-Type: application/pgp-keys; name="publickey-alice@example.test.asc"
+Content-Disposition: attachment; filename="publickey-alice@example.test.asc"
+
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEarfQ0hYJKwYBBAHaRw8BAQdA/vjvswUjTSEGKrYAc4L7D8mjR1V9hZTIaQE1
+kpd5LVK0H0FsaWNlIFRlc3QgPGFsaWNlQGV4YW1wbGUudGVzdD6IqQQTFgoAURsU
+gAAAAAAEAA5tYW51MiwyLjUrMS4xMiwwLDMCGwMCF4AWIQRacV8Xd8gwAZotV42T
+t6J5HHpatAUCarfQ0wQLCQgHBBUKCQgEFgIBAAIeBQAKCRCTt6J5HHpatOvrAQCF
+AjzyH3yk72JWbTr4mYRwmNiEXOIrpGXGTGcsPMcMSQD9HLmHnooY7BM4cmfF7cbL
+8oCso3kU68WeP5YsZNye+QG4OARqt9DSEgorBgEEAZdVAQUBAQdA7sdNhANGp/LS
+kBzrENz5A3JbH9XJzrlj0Og/61LQgGoDAQgHiJQEGBYKADwWIQRacV8Xd8gwAZot
+V42Tt6J5HHpatAUCarfQ0hsUgAAAAAAEAA5tYW51MiwyLjUrMS4xMiwwLDMCGwwA
+CgkQk7eieRx6WrS9NAEA/sPol6yyeZsZe632uI/d0MiLrQwxQRyStNwcfsXFxJQB
+AKmjvlajniLmg9vFQ6bNTcHVybUZG8mCQwbrgbtQcysC
+=/dr5
+-----END PGP PUBLIC KEY BLOCK-----
+--inner-1--
+
+--sig-b
+Content-Type: application/pgp-signature; name="signature.asc"
+Content-Description: OpenPGP digital signature
+Content-Disposition: attachment; filename="signature.asc"
+
+-----BEGIN PGP SIGNATURE-----
+
+iJEEABYIADkWIQRacV8Xd8gwAZotV42Tt6J5HHpatAUCarfQ1BsUgAAAAAAEAA5t
+YW51MiwyLjUrMS4xMiwwLDMACgkQk7eieRx6WrRdIwEAgx4308PyRWQv/OP+Tc2R
+JiXw7FWJjOl2E7ic7jnTotwBANv+/oRuc8ZTA5hIFQJ2pK+6UAOws6zZE2ErjUhh
+cuME
+=TSNV
+-----END PGP SIGNATURE-----
+
+--sig-b--
