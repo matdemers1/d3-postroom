@@ -358,6 +358,12 @@ importers:
       '@postroom/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@postroom/search':
+        specifier: workspace:*
+        version: link:../../packages/search
+      '@postroom/threading':
+        specifier: workspace:*
+        version: link:../../packages/threading
     devDependencies:
       tsx:
         specifier: ^4.23.13

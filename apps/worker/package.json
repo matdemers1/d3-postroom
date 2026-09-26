@@ -22,7 +22,9 @@
     "@postroom/crypto": "workspace:*",
     "@postroom/attachments": "workspace:*",
     "@postroom/dsn": "workspace:*",
-    "@postroom/audit": "workspace:*"
+    "@postroom/audit": "workspace:*",
+    "@postroom/search": "workspace:*",
+    "@postroom/threading": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"
