@@ -14,7 +14,10 @@
 //   · reply graph: has this account sent to the sender — one indexed lookup against its
 //     correspondent table (PST-T-5.8), maintained on send, bounded by firstWrittenAt — before this
 //     message was received;
-//   · contacts: empty until CardDAV lands (PST-P-9); pins: none until PST-T-5.4.
+//   · contacts: every e-mail address on the account's CardDAV cards (PST-T-8.5), read through
+//     @postroom/dav-store's ContactIndex — cached per account on its address books' sync tokens and
+//     bounded in cards read — plus an Allow screen (PST-T-5.4). Contacts are the account's CURRENT
+//     cards, not bounded by receivedAt: the address books keep no history to bound them by.
 // Everything read is bounded by this message's receivedAt, so a replay reaches the same rule
 // decision. (The Bayes model can have learned more by a replay; a replay of classify after the file
 // stage ran changes nothing anyway, because the file stage finds its copies and files nothing new.)
@@ -28,6 +31,8 @@
 import { attachmentPolicy } from '@postroom/attachments';
 import type { BlobStore } from '@postroom/blobstore';
 import { bucketFor, extractSignals, FILING_BUCKETS, normalizeAddress, tokenize, type AuthVerdicts, type FilingBucket, type HeaderLike, type PinInput } from '@postroom/classifier';
+import { loadKek, type Kek } from '@postroom/crypto';
+import { contactIndexFor } from '@postroom/dav-store';
 import { SpecialUse, type Db, type SenderPin } from '@postroom/db';
 import { blobHeaderReader } from '../training/headers.js';
 import { loadBayesModel } from '../training/model.js';
@@ -108,9 +113,33 @@ export async function loadSenderPin(db: Db, accountId: string, address: string |
   return db.senderPin.findUnique({ where: { accountId_address: { accountId, address: normalizeAddress(address) } } });
 }
 
+/** The account's contact addresses (lower-cased), for the classifier's "contact" signal. */
+export type ContactLookup = (accountId: string) => Promise<readonly string[]>;
+
+let envKek: Kek | null | undefined;
+
+/**
+ * The default lookup: the worker's KEK from POSTROOM_KEK (the one its blob store is opened with).
+ * Without one, no contacts — logged once, never fatal: sorting still works, only less well.
+ */
+export function defaultContactLookup(db: Db): ContactLookup {
+  return async (accountId) => {
+    if (envKek === undefined) {
+      try {
+        envKek = loadKek({ env: process.env });
+      } catch (error) {
+        envKek = null;
+        process.stderr.write(`${JSON.stringify({ daemon: 'worker', event: 'contacts-unavailable', error: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+    }
+    if (envKek === null) return [];
+    return [...(await contactIndexFor(db, envKek).emails(accountId))];
+  };
+}
+
 export async function classifyStage(
   input: StageInput,
-  deps: { db: Db; blobs: BlobStore },
+  deps: { db: Db; blobs: BlobStore; contacts?: ContactLookup },
   prior: { verify: VerifyResult; parse: ParseResult; accountIds: readonly string[] },
 ): Promise<ClassifyResult> {
   const reasons: string[] = [];
@@ -179,7 +208,7 @@ export async function classifyStage(
     // A screen decision (PST-T-5.4, PST-REQ-106): Allow treats the sender as a known contact (so a
     // direct first-time human can reach Priority); Block routes their mail to Junk (the account's
     // blocked-pins signal, no authentication required — the same as PST-REQ-105's existing rule).
-    const contacts = sender !== null && pinRow?.screen === 'allow' ? [sender] : [];
+    const contacts = [...(await (deps.contacts ?? defaultContactLookup(deps.db))(accountId)), ...(sender !== null && pinRow?.screen === 'allow' ? [sender] : [])];
     const blocked = sender !== null && pinRow?.screen === 'block' ? [sender] : [];
     const signalsWith = (replyGraph: readonly string[]) =>
       extractSignals({
@@ -189,7 +218,7 @@ export async function classifyStage(
         account: {
           addresses,
           replyGraph,
-          contacts, // CardDAV contacts arrive in PST-P-9; an Allow screen acts as one meanwhile.
+          contacts, // The account's CardDAV cards, and an Allow screen.
           pins: { vip: [], blocked },
         },
       });

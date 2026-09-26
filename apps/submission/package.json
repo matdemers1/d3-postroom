@@ -41,7 +41,9 @@
     "@postroom/auth-checks": "workspace:*",
     "@postroom/audit": "workspace:*",
     "@postroom/auth-throttle": "workspace:*",
-    "@postroom/alerts": "workspace:*"
+    "@postroom/alerts": "workspace:*",
+    "@postroom/dav-store": "workspace:*",
+    "@postroom/mime": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

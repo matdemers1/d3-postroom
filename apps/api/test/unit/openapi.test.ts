@@ -66,6 +66,22 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'POST /api/sieve/scripts/{name}/activate',
         'POST /api/sieve/deactivate',
         'POST /api/sieve/check',
+        // PST-T-8.5: calendar and contacts.
+        'GET /api/calendar/calendars',
+        'GET /api/calendar/events',
+        'POST /api/calendar/calendars/{calendarId}/events',
+        'GET /api/calendar/calendars/{calendarId}/events/{name}',
+        'PUT /api/calendar/calendars/{calendarId}/events/{name}',
+        'DELETE /api/calendar/calendars/{calendarId}/events/{name}',
+        'PUT /api/calendar/calendars/{calendarId}/events/{name}/instances/{recurrenceId}',
+        'DELETE /api/calendar/calendars/{calendarId}/events/{name}/instances/{recurrenceId}',
+        'GET /api/contacts/address-books',
+        'GET /api/contacts',
+        'GET /api/contacts/lookup',
+        'POST /api/contacts/address-books/{addressBookId}/cards',
+        'GET /api/contacts/address-books/{addressBookId}/cards/{name}',
+        'PUT /api/contacts/address-books/{addressBookId}/cards/{name}',
+        'DELETE /api/contacts/address-books/{addressBookId}/cards/{name}',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit']);

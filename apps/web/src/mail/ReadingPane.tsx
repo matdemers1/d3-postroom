@@ -25,6 +25,7 @@
 // When the server has no usercontent origin configured (503), the text/plain part is shown instead
 // and an HTML-only message says so.
 import { forwardRef, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import { Alert, Badge, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, Skeleton, Stack } from '@d3cloud/ui';
 import { attemptRemoteText, attemptSummary, deferralReason, dsnFiledAt, isPending, matchingOutbound, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
 import { useMail } from './MailContext';
@@ -34,6 +35,8 @@ import {
   api,
   ApiError,
   attachmentUrl,
+  contactPath,
+  contactsApi,
   type DeliveryDetail,
   type DeliveryRecipient,
   type MessageBody,
@@ -310,9 +313,34 @@ function MessageMeta({ detail, body }: { detail: MessageDetail; body: MessageBod
   const from = header(body, 'From') ?? detail.from ?? '';
   const to = header(body, 'To');
   const cc = header(body, 'Cc');
+  // PST-REQ-137: a sender who is in the address book links to their card.
+  const [contact, setContact] = useState<{ addressBookId: string; name: string; displayName: string } | null>(null);
+  useEffect(() => {
+    setContact(null);
+    const address = detail.from;
+    if (address === null || address === '') return undefined;
+    let live = true;
+    contactsApi
+      .lookup(address)
+      .then((r) => {
+        if (live) setContact(r.contact);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [detail.from]);
   return (
     <DescriptionList className="pr-reader__meta">
-      <DescriptionItem term="From">{from === '' ? '(unknown sender)' : from}</DescriptionItem>
+      <DescriptionItem term="From">
+        {from === '' ? '(unknown sender)' : from}
+        {contact === null ? null : (
+          <>
+            {' · '}
+            <RouterLink to={contactPath(contact.addressBookId, contact.name)}>In contacts as {contact.displayName}</RouterLink>
+          </>
+        )}
+      </DescriptionItem>
       {to !== null ? <DescriptionItem term="To">{to}</DescriptionItem> : null}
       {cc !== null ? <DescriptionItem term="Cc">{cc}</DescriptionItem> : null}
       <DescriptionItem term="Date" numeric>

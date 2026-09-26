@@ -14,6 +14,8 @@ import * as SP from '../senders/schemas.js';
 import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
 import { MOBILECONFIG_ROUTES } from '../mobileconfig/openapi.js';
 import { SIEVE_COMPONENTS, SIEVE_ROUTES } from '../sieve/openapi.js';
+import { CALENDAR_COMPONENTS, CALENDAR_ROUTES } from '../calendar/openapi.js';
+import { CONTACTS_COMPONENTS, CONTACTS_ROUTES } from '../contacts/openapi.js';
 
 type Json = Record<string, unknown>;
 
@@ -61,6 +63,8 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   SenderScreenResult: SP.SenderScreenResult,
   ...COMPOSE_COMPONENTS,
   ...SIEVE_COMPONENTS,
+  ...CALENDAR_COMPONENTS,
+  ...CONTACTS_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -294,6 +298,8 @@ export const ROUTES: RouteSpec[] = [
   ...COMPOSE_ROUTES,
   ...MOBILECONFIG_ROUTES,
   ...SIEVE_ROUTES,
+  ...CALENDAR_ROUTES,
+  ...CONTACTS_ROUTES,
 ];
 
 function strip(schema: Json): Json {

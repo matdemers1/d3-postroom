@@ -20,6 +20,11 @@ services:
       # the api picks the usercontent app by Host, and localhost vs 127.0.0.1 is a different origin
       # AND a different site, so the session cookie for 127.0.0.1 is never sent to it.
       USERCONTENT_ORIGIN: http://localhost:3300
+      # The api only asks whether SES is configured (admin queue Force SES, PST-T-6.6); the delivery
+      # daemon keeps its own env without these, so nothing here ever dials SES.
+      SES_SMTP_HOST: ses.invalid
+      SES_SMTP_USER: e2e
+      SES_SMTP_PASSWORD: e2e
       # e2e/tests/html-render.spec.ts's listener stands in for a sender's server on the runner; the
       # image proxy may reach a private address only with POSTROOM_E2E_SEED=1 as well.
       IMAGE_PROXY_ALLOW_PRIVATE: "1"

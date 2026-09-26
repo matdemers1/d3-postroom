@@ -15,6 +15,7 @@ import { createBlobStore, tmpDir, type BlobStore } from '@postroom/blobstore';
 import { createAppPassword, hashAppPassword, revokeAppPassword } from '@postroom/credentials';
 import { createAuthThrottle } from '@postroom/auth-throttle';
 import { generateKek, type Kek } from '@postroom/crypto';
+import { COLLECTED_SLUG, contactOfBytes, DavStore, DEFAULT_DAV_LIMITS } from '@postroom/dav-store';
 import { AddressKind, seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -378,6 +379,25 @@ describe.skipIf(baseUrl === undefined)('submission daemon (PST-T-1.2)', () => {
     expect((await c.send(`MAIL FROM:<${acct.address}>`)).code).toBe(250);
     expect((await c.send('RCPT TO:<friend@example.com>')).code).toBe(250);
     expect((await c.data(message(acct.address, 'X-Crash: no'))).final?.code).toBe(250);
+    c.close();
+  });
+  it('PST-REQ-138: an accepted message adds its new To/Cc recipients to Collected — never Bcc, never twice', async () => {
+    const acct = await makeAccount();
+    const c = await over465();
+    expect((await authPlain(c, acct.address, acct.appPassword)).code).toBe(235);
+    const send = async (extra: string) => {
+      expect((await c.send(`MAIL FROM:<${acct.address}>`)).code).toBe(250);
+      for (const r of ['friend@example.com', 'colleague@example.net', 'hidden@example.org']) expect((await c.send(`RCPT TO:<${r}>`)).code).toBe(250);
+      expect((await c.data(message(acct.address, extra))).final?.code).toBe(250);
+    };
+    await send('Cc: Colleague Person <colleague@example.net>\r\nBcc: hidden@example.org');
+    const store = new DavStore(db, kek, DEFAULT_DAV_LIMITS);
+    const book = await store.getCollection(acct.id, 'addressbook', COLLECTED_SLUG);
+    if (book === null) throw new Error('no Collected address book');
+    const names = async () => (await store.getResources(book.id)).map((r) => contactOfBytes(r.data).displayName).sort();
+    expect(await names()).toEqual(['Colleague Person', 'Friend']);
+    await send('Cc: colleague@example.net');
+    expect(await names()).toEqual(['Colleague Person', 'Friend']);
     c.close();
   });
 });

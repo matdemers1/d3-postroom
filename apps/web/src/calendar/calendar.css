@@ -1,0 +1,367 @@
+/* The calendar (PST-T-8.5). System tokens only (d3-check-usage): no raw colours, no shadows —
+   events are tinted with the accent, days separated by boundaries. */
+
+.pr-cal-vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.pr-cal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.pr-cal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.pr-cal-heading {
+  margin: 0;
+  font-size: var(--text-20);
+  font-weight: var(--weight-title);
+}
+
+.pr-cal-note {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+}
+
+/* --- Event chips (every view) ----------------------------------------------------------------- */
+
+.pr-cal-chip {
+  display: flex;
+  gap: var(--space-4);
+  align-items: baseline;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-left: var(--space-2) solid var(--color-accent);
+  border-radius: var(--radius-xs);
+  background: var(--color-accent-muted);
+  color: var(--color-fg);
+  font: inherit;
+  font-size: var(--text-12);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.pr-cal-chip:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-cal-chip:focus-visible,
+.pr-cal-daynum:focus-visible,
+.pr-cal-more:focus-visible,
+.pr-cal-week__daybtn:focus-visible,
+.pr-cal-week__scroll:focus-visible,
+.pr-cal-agenda__event:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+.pr-cal-chip__time {
+  flex: none;
+  color: var(--color-fg-muted);
+}
+
+.pr-cal-chip__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+}
+
+/* --- Month ------------------------------------------------------------------------------------ */
+
+.pr-cal-month {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  background: var(--color-surface);
+}
+
+.pr-cal-month th {
+  padding: var(--space-6) var(--space-8);
+  border: var(--border-width) solid var(--color-border);
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+}
+
+.pr-cal-month abbr {
+  text-decoration: none;
+}
+
+.pr-cal-month td {
+  height: 7.5rem;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  vertical-align: top;
+}
+
+.pr-cal-month td[data-outside='true'] {
+  background: var(--color-bg-sunken);
+}
+
+.pr-cal-daynum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--space-24);
+  height: var(--space-24);
+  margin-bottom: var(--space-2);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  font-size: var(--text-13);
+  cursor: pointer;
+}
+
+.pr-cal-month td[data-outside='true'] .pr-cal-daynum {
+  color: var(--color-fg-muted);
+}
+
+.pr-cal-daynum:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-cal-month td[data-today='true'] .pr-cal-daynum,
+.pr-cal-week__dayhead[data-today='true'] .pr-cal-week__dom {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-cal-daylist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.pr-cal-more {
+  padding: 0 var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  font: inherit;
+  font-size: var(--text-12);
+  cursor: pointer;
+}
+
+.pr-cal-more:hover {
+  color: var(--color-fg);
+  text-decoration: underline;
+}
+
+/* --- Week and day ----------------------------------------------------------------------------- */
+
+.pr-cal-week {
+  --pr-cal-gutter: 4rem;
+  display: flex;
+  flex-direction: column;
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.pr-cal-week__row {
+  display: grid;
+  grid-template-columns: var(--pr-cal-gutter) repeat(var(--pr-cal-days), minmax(0, 1fr));
+}
+
+.pr-cal-week__head,
+.pr-cal-week__allday {
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.pr-cal-week__gutter {
+  padding: var(--space-4);
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+  text-align: right;
+}
+
+.pr-cal-week__dayhead {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4);
+  border-left: var(--border-width) solid var(--color-border);
+}
+
+.pr-cal-week__daybtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-8);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pr-cal-week__daybtn:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-cal-week__dow {
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+}
+
+.pr-cal-week__dom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--space-32);
+  height: var(--space-32);
+  border-radius: var(--radius-full);
+  font-size: var(--text-16);
+}
+
+.pr-cal-week__allday .pr-cal-daylist {
+  padding: var(--space-4);
+  border-left: var(--border-width) solid var(--color-border);
+}
+
+.pr-cal-week__scroll {
+  height: min(36rem, 65vh);
+  overflow-y: auto;
+}
+
+.pr-cal-week__body {
+  position: relative;
+}
+
+.pr-cal-week__hours {
+  position: relative;
+  padding: 0;
+}
+
+.pr-cal-week__hours span {
+  position: absolute;
+  right: var(--space-6);
+  transform: translateY(-50%);
+}
+
+.pr-cal-week__col {
+  position: relative;
+  border-left: var(--border-width) solid var(--color-border);
+  background-image: repeating-linear-gradient(to bottom, var(--color-border) 0, var(--color-border) var(--border-width), transparent var(--border-width), transparent 48px);
+  cursor: cell;
+}
+
+.pr-cal-week__col[data-today='true'] {
+  background-color: var(--color-bg-sunken);
+}
+
+.pr-cal-week__events {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+.pr-cal-week__event {
+  position: absolute;
+  padding: 0 var(--space-2) var(--space-2) 0;
+  pointer-events: auto;
+}
+
+.pr-cal-week__event .pr-cal-chip {
+  flex-direction: column;
+  gap: 0;
+  align-items: stretch;
+}
+
+/* --- Agenda (below 640 px) -------------------------------------------------------------------- */
+
+.pr-cal-agenda {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-cal-agenda__day {
+  margin: 0 0 var(--space-6);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-cal-agenda__day[data-today='true'] {
+  color: var(--color-accent);
+}
+
+.pr-cal-agenda__events {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-cal-agenda__event {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: var(--space-2) var(--space-12);
+  width: 100%;
+  padding: var(--space-8) var(--space-12);
+  border: var(--border-width) solid var(--color-border);
+  border-left: var(--space-4) solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pr-cal-agenda__event:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-cal-agenda__time,
+.pr-cal-agenda__where {
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+}
+
+.pr-cal-agenda__title {
+  font-weight: var(--weight-medium);
+}
+
+.pr-cal-agenda__where {
+  grid-column: 2;
+}

@@ -22,7 +22,8 @@
     "@postroom/audit": "workspace:*",
     "@postroom/crypto": "workspace:*",
     "@postroom/ical": "workspace:*",
-    "@postroom/vcard": "workspace:*"
+    "@postroom/vcard": "workspace:*",
+    "@postroom/dav-store": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

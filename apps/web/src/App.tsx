@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Alert, AuthLayout, Spinner, ThemeProvider } from '@d3cloud/ui';
 import { api, redirectFor, type AuthState } from './api';
+import { Calendar } from './calendar/Calendar';
+import { Contacts } from './contacts/Contacts';
 import { MailProvider } from './mail/MailContext';
 import { AdminHealth } from './screens/AdminHealth';
 import { AdminJobs } from './screens/AdminJobs';
@@ -74,6 +76,10 @@ function Gate() {
           <Route index element={null} />
           <Route path="/mail/*" element={null} />
         </Route>
+        <Route path="/calendar" element={<Calendar />} />
+        <Route path="/contacts" element={<Contacts />} />
+        <Route path="/contacts/new" element={<Contacts />} />
+        <Route path="/contacts/:addressBookId/:name" element={<Contacts />} />
         <Route path="/app-passwords" element={<AppPasswords />} />
         <Route path="/account/password" element={<ChangePassword />} />
         <Route path="/account/sessions" element={<Sessions />} />
