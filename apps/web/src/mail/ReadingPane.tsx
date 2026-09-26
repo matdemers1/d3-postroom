@@ -388,7 +388,7 @@ function MessageContent({
       <PhishBanner phish={detail.phish} />
       <MessageText body={body} status={bodyStatus} onRetry={onRetry} />
       <Attachments messageId={detail.id} body={body} />
-      <DeliverySection messageId={detail.id} />
+      <DeliverySection messageId={detail.id} mailboxId={detail.mailboxId} />
     </Stack>
   );
 }
@@ -407,8 +407,10 @@ const LOADING_DELIVERY: DeliverySectionState = { status: 'loading', data: null }
  *  the lookup finds no linked OutboundMessage row — never sent through Postroom at all, or a Sent
  *  copy another client APPENDed directly — an explicit note is shown rather than nothing, since that
  *  silence used to look identical to "still loading". */
-function DeliverySection({ messageId }: { messageId: string }) {
-  const { subscribe } = useMail();
+function DeliverySection({ messageId, mailboxId }: { messageId: string; mailboxId: string }) {
+  const { subscribe, mailboxes } = useMail();
+  // Received mail has no delivery of ours to show; only a copy in Sent says so out loud.
+  const inSent = mailboxes?.find((m) => m.id === mailboxId)?.specialUse === 'sent';
   const [state, setState] = useState<DeliverySectionState>(LOADING_DELIVERY);
 
   const load = useCallback(() => {
@@ -457,6 +459,7 @@ function DeliverySection({ messageId }: { messageId: string }) {
     );
   }
   if (state.status === 'no-record' || state.data === null) {
+    if (!inSent) return null;
     return (
       <section aria-label="Delivery" className="pr-delivery" data-testid="delivery">
         <h3 className="pr-reader__h3">Delivery</h3>
