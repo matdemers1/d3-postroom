@@ -116,6 +116,18 @@ export const api = {
   patchMessage: (id: string, modseq: string, patch: MessagePatch) =>
     call<MessageDetail>('PATCH', `/api/messages/${encodeURIComponent(id)}`, patch, { 'if-match': `"${modseq}"` }),
   thread: (id: string) => call<ThreadDetail>('GET', `/api/threads/${encodeURIComponent(id)}`),
+  /** The caller's outbound queue rows, newest first (PST-T-1.13) — keyed by OutboundMessage.id,
+   *  which is NOT a mailbox message's own id; ReadingPane matches one to the other by Message-ID
+   *  header (see mail/delivery.ts's matchingOutbound). */
+  outboundMessages: (opts: { limit?: number; cursor?: string | null } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+    if (opts.cursor !== undefined && opts.cursor !== null) q.set('cursor', opts.cursor);
+    const qs = q.toString();
+    return call<{ messages: OutboundListItem[]; nextCursor: string | null }>('GET', `/api/messages/outbound${qs === '' ? '' : `?${qs}`}`);
+  },
+  /** Per-recipient delivery state and attempt log for one outbound message (PST-T-6.4, PST-REQ-119). */
+  messageDelivery: (outboundId: string) => call<DeliveryDetail>('GET', `/api/messages/${encodeURIComponent(outboundId)}/delivery`),
   search: (q: string, opts: { mailboxId?: string; cursor?: string | null } = {}) => {
     const params = new URLSearchParams({ q });
     if (opts.mailboxId !== undefined) params.set('mailboxId', opts.mailboxId);
@@ -300,6 +312,66 @@ export interface ThreadDetail {
   messageCount: number;
   lastMessageAt: string;
   messages: MessageSummary[];
+}
+
+/** Matches apps/api/src/delivery/index.ts's attemptJson (PST-T-6.4). */
+export interface DeliveryAttemptView {
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  transport: string;
+  mxHost: string | null;
+  mxIp: string | null;
+  localIp: string | null;
+  tls: { version: string | null; cipher: string | null; peer: string | null };
+  remote: { code: number | null; enhanced: string | null; text: string | null };
+  outcome: string;
+  error: string | null;
+}
+
+/** Matches @postroom/db's RecipientState enum. */
+export type DeliveryState = 'queued' | 'attempting' | 'deferred' | 'delivered' | 'bounced' | 'cancelled';
+
+/** Matches apps/api/src/delivery/index.ts's recipientJson. */
+export interface DeliveryRecipient {
+  id: string;
+  address: string;
+  state: DeliveryState;
+  attempts: number;
+  nextAttemptAt: string;
+  lastCode: number | null;
+  lastEnhanced: string | null;
+  lastText: string | null;
+  deliveredAt: string | null;
+  dsn: { delaySentAt: string | null; failureSentAt: string | null };
+  transport: string;
+  attemptsLog: DeliveryAttemptView[];
+}
+
+/** Matches apps/api/src/delivery/index.ts's messageJson. */
+export interface DeliveryMessage {
+  id: string;
+  subject: string | null;
+  headerFrom: string;
+  messageId: string | null;
+  createdAt: string;
+  size: number;
+}
+
+export interface DeliveryDetail {
+  message: DeliveryMessage;
+  recipients: DeliveryRecipient[];
+}
+
+/** Matches GET /api/messages/outbound's row shape (apps/api/src/delivery/index.ts). */
+export interface OutboundListItem {
+  id: string;
+  subject: string | null;
+  headerFrom: string;
+  messageId: string | null;
+  createdAt: string;
+  size: number;
+  recipients: { id: string; address: string; state: DeliveryState; lastText: string | null }[];
 }
 
 export interface MailboxChangedEvent {

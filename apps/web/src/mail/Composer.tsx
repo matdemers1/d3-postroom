@@ -8,16 +8,16 @@
 // draft it left for the same message; pressing c (compose) with a draft open in Drafts resumes that
 // draft.
 //
-// After sending, the composer becomes a receipt: the conversation as the server now has it — the
-// reply in its thread — and a link to it in Sent. The mailbox list updates over SSE.
+// After sending, the composer closes back to the message it answered (PST-T-3.15): the server has
+// already filed and threaded the reply by the time send() resolves, so the open thread there shows
+// it without a reload — no separate "sent" screen needed to say so. The mailbox list updates over SSE.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link as RouterLink, useLocation } from 'react-router-dom';
-import { Alert, Button, FormActions, FormField, Input, Link, Stack, Textarea } from '@d3cloud/ui';
-import { api, ApiError, type DraftInput, type SendResult, type ThreadDetail } from '../api';
+import { useLocation } from 'react-router-dom';
+import { Alert, Button, FormActions, FormField, Input, Stack, Textarea } from '@d3cloud/ui';
+import { api, ApiError, type DraftInput } from '../api';
 import { fieldsOf, hasRecipients, initialState, resumableDraft, sendErrorText, stateFromSaved, type ComposeDraft, type ComposeState } from './compose';
-import { fullDate } from './format';
 import { useMail } from './MailContext';
-import { mailPath, parseMailRoute } from './route';
+import { parseMailRoute } from './route';
 
 const TITLES: Readonly<Record<ComposeDraft['mode'], string>> = {
   new: 'New message',
@@ -39,7 +39,6 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
   const [resumed, setResumed] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState<{ result: SendResult; thread: ThreadDetail | null } | null>(null);
   const toRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -179,11 +178,13 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
     // Let a save in flight land first, so the draft it made is the one the send removes.
     await chain.current;
     try {
-      const result = await api.send({ ...fieldsOf(latest.current), from: me, draftId: draftId.current });
+      await api.send({ ...fieldsOf(latest.current), from: me, draftId: draftId.current });
       finished.current = true;
-      const thread = result.threadId === null ? null : await api.thread(result.threadId).catch(() => null);
-      setSent({ result, thread });
       void refreshMailboxes();
+      // The server has already filed and threaded the reply: closing back to the message it
+      // answered shows it there, in the open thread, without a reload (PST-T-3.15).
+      onDiscard();
+      return;
     } catch (e) {
       setError(sendErrorText(e));
     } finally {
@@ -203,47 +204,6 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
     });
     onDiscard();
   };
-
-  if (sent !== null) {
-    const { result, thread } = sent;
-    return (
-      <section className="pr-reader pr-composer" aria-labelledby="pr-composer-title" data-compose-state="sent" data-thread-id={result.threadId ?? ''}>
-        {back}
-        <Stack gap="16">
-          <h2 id="pr-composer-title" className="pr-reader__subject" tabIndex={-1} ref={(el) => el?.focus()}>
-            Message sent
-          </h2>
-          <Alert tone="success" dynamic>
-            Your message is on its way, and a copy is in Sent.
-          </Alert>
-          {thread !== null ? (
-            <Stack as="ol" gap="8" aria-label="Conversation">
-              {thread.messages.map((m) => (
-                <li key={m.id} data-message-id={m.id}>
-                  <strong>{m.id === result.sentMessageId ? 'You' : (m.from ?? 'Unknown sender')}</strong>
-                  {' · '}
-                  {m.subject ?? '(no subject)'}
-                  {' · '}
-                  <span className="pr-reader__note">{fullDate(m.date)}</span>
-                </li>
-              ))}
-            </Stack>
-          ) : null}
-          <FormActions
-            leading={
-              <Link asChild variant="standalone">
-                <RouterLink to={mailPath(result.sentMailboxId, result.sentMessageId)}>Open in Sent</RouterLink>
-              </Link>
-            }
-          >
-            <Button type="button" variant="primary" onClick={onDiscard}>
-              Done
-            </Button>
-          </FormActions>
-        </Stack>
-      </section>
-    );
-  }
 
   const status =
     saveStatus.kind === 'saving'
