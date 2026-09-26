@@ -659,6 +659,17 @@ function MailPanes({ route }: { route: MailRoute }) {
         onNavigate={(path) => {
           void navigate(path);
         }}
+        onSnooze={(m, until) => {
+          if (m.threadId === null) return;
+          api
+            .snoozeThread(m.threadId, until.toISOString())
+            .then(() => {
+              say('info', 'Snoozed. It comes back when the time comes.');
+              reloadList();
+              void refreshMailboxes();
+            })
+            .catch(recover);
+        }}
       />
     </div>
   );

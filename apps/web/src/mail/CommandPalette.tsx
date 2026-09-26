@@ -18,6 +18,8 @@ export interface CommandPaletteProps {
   onAction: (action: MailAction) => void;
   onMove: (message: MessageSummary, mailbox: Mailbox) => void;
   onNavigate: (path: string) => void;
+  /** PST-T-9.1: snooze the target's conversation. Absent: no snooze commands. */
+  onSnooze?: (message: MessageSummary, until: Date) => void;
   isAdmin?: boolean;
 }
 
@@ -31,7 +33,7 @@ function highlighted(label: string, indices: readonly number[]): ReactNode {
     .map((ch, i) => (marks.has(i) ? <mark key={i}>{ch}</mark> : <span key={i}>{ch}</span>));
 }
 
-export function CommandPalette({ open, onOpenChange, mailboxes, target, onAction, onMove, onNavigate, isAdmin = true }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpenChange, mailboxes, target, onAction, onMove, onNavigate, onSnooze, isAdmin = true }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -49,8 +51,8 @@ export function CommandPalette({ open, onOpenChange, mailboxes, target, onAction
   }, [open]);
 
   const commands = useMemo<Command[]>(
-    () => buildCommands({ mailboxes, target, perform: onAction, move: onMove, navigate: onNavigate }, isAdmin),
-    [mailboxes, target, onAction, onMove, onNavigate, isAdmin],
+    () => buildCommands({ mailboxes, target, perform: onAction, move: onMove, navigate: onNavigate, ...(onSnooze === undefined ? {} : { snooze: onSnooze }) }, isAdmin),
+    [mailboxes, target, onAction, onMove, onNavigate, onSnooze, isAdmin],
   );
   const matches = useMemo<CommandMatch[]>(() => filterCommands(commands, query), [commands, query]);
 
