@@ -1014,6 +1014,7 @@ export class ImapSession {
         blobs: this.o.blobs,
         view,
         utf8: this.utf8,
+        condstore: this.enabled.has(CONDSTORE),
         saved: this.saved,
         write: (resp) => this.write(resp),
       },

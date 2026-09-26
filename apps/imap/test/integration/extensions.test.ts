@@ -296,6 +296,21 @@ describe.skipIf(!canRun)('IMAP extensions (PST-T-3.3)', () => {
       await a.command('STORE 1 +FLAGS.SILENT (\\Seen)');
       expect((await c.command('NOOP')).untagged).toEqual(['* 1 FETCH (UID 1 FLAGS (\\Seen) MODSEQ (2))']);
     });
+    it('an implicit \\Seen from a body fetch carries MODSEQ under CONDSTORE (RFC 7162 §3.1.4.1)', async () => {
+      const account = await makeAccount(h);
+      await seedMessage(h, account.id, 'INBOX', PLAIN);
+      const a = await login(account);
+      await a.command('ENABLE CONDSTORE');
+      await a.command('SELECT INBOX');
+      const r = await a.command('FETCH 1 (BODY[HEADER.FIELDS (SUBJECT)])');
+      expect(r.untagged.join('\n')).toMatch(/FLAGS \(\\Seen\) MODSEQ \(2\)\)$/);
+      // Without CONDSTORE the implicit FLAGS goes out alone.
+      await seedMessage(h, account.id, 'INBOX', PLAIN);
+      const b = await login(account);
+      await b.command('SELECT INBOX');
+      const plain = await b.command('FETCH 2 (BODY[HEADER.FIELDS (SUBJECT)])');
+      expect(plain.untagged.join('\n')).toMatch(/FLAGS \(\\Seen\)\)$/);
+    });
   });
 
   describe('QRESYNC (RFC 7162 §3.2)', () => {
