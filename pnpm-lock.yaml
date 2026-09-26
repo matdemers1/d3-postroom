@@ -162,9 +162,42 @@ importers:
 
   apps/imap:
     dependencies:
+      '@postroom/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@postroom/auth-throttle':
+        specifier: workspace:*
+        version: link:../../packages/auth-throttle
+      '@postroom/blobstore':
+        specifier: workspace:*
+        version: link:../../packages/blobstore
+      '@postroom/credentials':
+        specifier: workspace:*
+        version: link:../../packages/credentials
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@postroom/daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/dsn':
+        specifier: workspace:*
+        version: link:../../packages/dsn
+      '@postroom/imap-proto':
+        specifier: workspace:*
+        version: link:../../packages/imap-proto
+      '@postroom/mime':
+        specifier: workspace:*
+        version: link:../../packages/mime
+      '@postroom/proxy-protocol':
+        specifier: workspace:*
+        version: link:../../packages/proxy-protocol
+      '@postroom/search':
+        specifier: workspace:*
+        version: link:../../packages/search
     devDependencies:
       tsx:
         specifier: ^4.23.13
