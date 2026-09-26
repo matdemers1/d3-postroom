@@ -533,3 +533,41 @@ export const importApi = {
   start: (input: StartImportInput) => call<ImportStatus>('POST', '/api/import', input),
   cancel: (id: string) => call<ImportStatus>('POST', `/api/import/${encodeURIComponent(id)}/cancel`),
 };
+
+// --- Mobileconfig (PST-T-8.6) ------------------------------------------------------------------
+
+export interface MobileconfigResult {
+  blob: Blob;
+  filename: string;
+  /** Whether MOBILECONFIG_SIGNING_CERT_FILE was configured on the server: iOS shows Verified vs Unverified. */
+  signed: boolean;
+}
+
+const FILENAME_RE = /filename="?([^";]+)"?/;
+
+/** Needs a fresh step-up: throws ApiError('step_up_required') otherwise. The body is not JSON, so
+ *  this bypasses `call()` to keep it as a Blob rather than trying (and failing) to parse it. */
+export async function generateMobileconfig(): Promise<MobileconfigResult> {
+  const res = await fetch('/api/mobileconfig', {
+    method: 'POST',
+    headers: { 'x-postroom-csrf': '1' },
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let parsed: unknown;
+    try {
+      parsed = text === '' ? null : JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+    const code =
+      typeof parsed === 'object' && parsed !== null && typeof (parsed as { error?: unknown }).error === 'string' ? (parsed as { error: string }).error : `http_${String(res.status)}`;
+    throw new ApiError(res.status, code, parsed);
+  }
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const filename = FILENAME_RE.exec(disposition)?.[1] ?? 'postroom.mobileconfig';
+  const signed = res.headers.get('x-postroom-mobileconfig-signed') === '1';
+  const blob = await res.blob();
+  return { blob, filename, signed };
+}
