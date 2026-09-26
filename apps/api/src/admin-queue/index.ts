@@ -125,35 +125,44 @@ export function adminQueueRoutes(deps: ApiDeps): Router {
       }
       const me = currentSession(req);
       const now = rt.now();
-      const message = await db.outboundMessage.create({
-        data: {
-          accountId: me.accountId,
-          envelopeFrom: `e2e-${randomUUID()}@d3cloud.io`,
-          headerFrom: 'E2E Operator <e2e@d3cloud.io>',
-          messageId: parsed.data.messageId ?? null,
-          subject: 'e2e deferred seed',
-          blobSha256: randomUUID().replace(/-/g, '').padEnd(64, '0'),
-          size: 1,
-          submittedVia: 'e2e-seed',
-          createdAt: now,
+      // Audited like every other mutation (PST-REQ-009), e2e-only or not.
+      const seeded = await audited(
+        db,
+        { kind: 'account', accountId: me.accountId },
+        { action: 'admin.dev.seed-deferred', entityType: 'outbound_recipient', context: getAuditContext(req) },
+        async (tx) => {
+          const message = await tx.outboundMessage.create({
+            data: {
+              accountId: me.accountId,
+              envelopeFrom: `e2e-${randomUUID()}@d3cloud.io`,
+              headerFrom: 'E2E Operator <e2e@d3cloud.io>',
+              messageId: parsed.data.messageId ?? null,
+              subject: 'e2e deferred seed',
+              blobSha256: randomUUID().replace(/-/g, '').padEnd(64, '0'),
+              size: 1,
+              submittedVia: 'e2e-seed',
+              createdAt: now,
+            },
+          });
+          const recipient = await tx.outboundRecipient.create({
+            data: {
+              outboundMessageId: message.id,
+              address: `first@${parsed.data.domain}`,
+              domain: parsed.data.domain,
+              state: 'deferred',
+              transport: 'direct',
+              attempts: 1,
+              lastCode: 451,
+              lastText: 'greylisted (seeded for e2e)',
+              nextAttemptAt: new Date(now.getTime() + 3_600_000),
+              createdAt: now,
+              updatedAt: now,
+            },
+          });
+          return { entityId: recipient.id, before: null, after: { messageId: message.id, domain: parsed.data.domain }, result: { messageId: message.id, recipientId: recipient.id, domain: parsed.data.domain } };
         },
-      });
-      const recipient = await db.outboundRecipient.create({
-        data: {
-          outboundMessageId: message.id,
-          address: `first@${parsed.data.domain}`,
-          domain: parsed.data.domain,
-          state: 'deferred',
-          transport: 'direct',
-          attempts: 1,
-          lastCode: 451,
-          lastText: 'greylisted (seeded for e2e)',
-          nextAttemptAt: new Date(now.getTime() + 3_600_000),
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
-      res.status(201).json({ messageId: message.id, recipientId: recipient.id, domain: parsed.data.domain });
+      );
+      res.status(201).json(seeded);
     }),
   );
 
