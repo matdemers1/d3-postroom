@@ -83,6 +83,8 @@ export const api = {
   },
   message: (id: string) => call<MessageDetail>('GET', `/api/messages/${encodeURIComponent(id)}`),
   messageBody: (id: string) => call<MessageBody>('GET', `/api/messages/${encodeURIComponent(id)}/body`),
+  /** A short-lived URL of the sanitised HTML on the usercontent origin (PST-T-3.12). 503 when that origin is not configured. */
+  renderMessage: (id: string, images: boolean) => call<RenderTicket>('GET', renderPath(id, images)),
   /** Flags and/or a move. `modseq` is the row's current MODSEQ: the server answers 412 if it moved on. A move returns a NEW id. */
   patchMessage: (id: string, modseq: string, patch: MessagePatch) =>
     call<MessageDetail>('PATCH', `/api/messages/${encodeURIComponent(id)}`, patch, { 'if-match': `"${modseq}"` }),
@@ -94,6 +96,10 @@ export const api = {
     return call<MessagePage>('GET', `/api/search?${params.toString()}`);
   },
 };
+
+/** The render-ticket request: remote images only when the reader chose to load them (PST-REQ-082). */
+export const renderPath = (messageId: string, images: boolean): string =>
+  `/api/messages/${encodeURIComponent(messageId)}/render${images ? '?images=1' : ''}`;
 
 /** Where an attachment downloads from: always a download, never rendered on this origin. */
 export const attachmentUrl = (messageId: string, partId: string): string =>
@@ -166,6 +172,15 @@ export interface MessageBody {
   htmlTruncated: boolean;
   attachments: MessageAttachment[];
   warnings: { code: string; message: string; partId: string | null }[];
+}
+
+/** Where a message's HTML is rendered: a capability URL on the usercontent origin, for a sandboxed frame. */
+export interface RenderTicket {
+  url: string;
+  expiresAt: string;
+  images: boolean;
+  /** Remote images in the message; above 0 with images false means they are blocked. */
+  remoteImages: number;
 }
 
 export interface MessagePatch {

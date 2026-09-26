@@ -10,6 +10,7 @@ import { serviceAccountRoutes } from './admin-service/index.js';
 import { appPasswordRoutes } from './app-passwords/index.js';
 import { autoconfigRoutes } from './autoconfig/index.js';
 import { mailRoutes } from './mail/index.js';
+import { usercontentConfig, usercontentDispatch } from './usercontent/index.js';
 import { deliveryRoutes } from './delivery/index.js';
 import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import type { ApiDeps } from './deps.js';
@@ -43,7 +44,18 @@ export function createApp(deps: ApiDeps): Express {
   app.disable('x-powered-by');
   // One hop: the Cloudflare Tunnel's cloudflared, so req.ip is the client it reports.
   app.set('trust proxy', 1);
+  // The usercontent origin (PST-T-3.12): chosen by Host, answered by its own app, never falls through.
+  const usercontent = usercontentDispatch(deps);
+  if (usercontent !== null) app.use(usercontent);
+  const frameSrc = usercontentConfig(deps)?.origin;
   app.use(securityHeaders);
+  // The mail origin may frame exactly one other origin: the one rendered mail comes from.
+  if (frameSrc !== undefined) {
+    app.use((_req, res, next) => {
+      res.setHeader('Content-Security-Policy', `${CSP}; frame-src ${frameSrc}`);
+      next();
+    });
+  }
 
   app.get('/health', async (_req, res) => {
     try {
