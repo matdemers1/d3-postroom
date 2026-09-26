@@ -14,7 +14,7 @@ import { DavStore, DEFAULT_DAV_LIMITS } from '@postroom/dav-store';
 import { randomUidValidity, seed, SpecialUse, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import { fileLocalMessage } from '@postroom/dsn';
-import { getProperties, getProperty, parseICalendar } from '@postroom/ical';
+import { expandCalendar, getProperties, getProperty, parseICalendar } from '@postroom/ical';
 import { collectMessage, parseMessage } from '@postroom/mime';
 import { ensureDkimKeys } from '@postroom/submission/dkim';
 import type { Express } from 'express';
@@ -34,6 +34,15 @@ interface IcsOpts {
   status?: string;
   /** The ORGANIZER's mailto value (after `mailto:`), raw — default the genuine organizer. */
   organizer?: string;
+  /** This VEVENT's own DTSTART/DTEND local time (`TZID=America/New_York`), `HHMMSS` only, on 2026-10-05 by default. */
+  start?: string;
+  end?: string;
+  /** RFC 5545 §3.8.5.3 RRULE value — makes this VEVENT the master of a recurring series. */
+  rrule?: string;
+  /** RFC 5546 §3.2.5 RECURRENCE-ID — this VEVENT is (or names) one occurrence of a series, not its master. */
+  recurrenceId?: string;
+  /** RANGE on that RECURRENCE-ID (`THISANDFUTURE`), when set. */
+  range?: string;
 }
 
 function foldedIcs(uid: string, method: 'REQUEST' | 'CANCEL', attendee: string, opts: IcsOpts = {}): string {
@@ -62,8 +71,8 @@ function foldedIcs(uid: string, method: 'REQUEST' | 'CANCEL', attendee: string, 
     'END:STANDARD',
     'END:VTIMEZONE',
     'BEGIN:VEVENT',
-    'DTSTART;TZID=America/New_York:20261005T140000',
-    'DTEND;TZID=America/New_York:20261005T150000',
+    `DTSTART;TZID=America/New_York:2026${opts.start ?? '1005T140000'}`,
+    `DTEND;TZID=America/New_York:2026${opts.end ?? '1005T150000'}`,
     'DTSTAMP:20260928T120000Z',
     `ORGANIZER;CN=Priya Patel:mailto:${opts.organizer ?? ORGANIZER}`,
     `UID:${uid}`,
@@ -71,6 +80,8 @@ function foldedIcs(uid: string, method: 'REQUEST' | 'CANCEL', attendee: string, 
     `SEQUENCE:${String(opts.sequence ?? 0)}`,
     `STATUS:${opts.status ?? 'CONFIRMED'}`,
     'SUMMARY:Quarterly Planning Sync',
+    ...(opts.rrule === undefined ? [] : [`RRULE:${opts.rrule}`]),
+    ...(opts.recurrenceId === undefined ? [] : [`RECURRENCE-ID;TZID=America/New_York${opts.range === undefined ? '' : `;RANGE=${opts.range}`}:2026${opts.recurrenceId}`]),
     'END:VEVENT',
     'END:VCALENDAR',
     '',
@@ -304,6 +315,76 @@ describe.skipIf(!baseUrl)('iMIP invitations (PST-T-8.4)', () => {
     // Removing again is a no-op, not an error (idempotent).
     const again = await post(me, `/api/messages/${cancelId}/invite/remove`);
     expect(again.status).toBe(200);
+  });
+
+  // --- PST-T-8.9: a CANCEL with RECURRENCE-ID cancels one occurrence, never the whole series -----
+
+  it('doneWhen: a CANCEL for one RECURRENCE-ID leaves every other occurrence CONFIRMED when the calendar is expanded; a series CANCEL still cancels everything; organizer/auth/SEQUENCE checks apply to both', async () => {
+    const me = await person();
+    const uid = `evt-${randomUUID()}@google.com`;
+    // Weekly series, four occurrences: 2026-10-05/12/19/26, 14:00 America/New_York; SEQUENCE 3 so
+    // a CANCEL can genuinely be stale on both the single-occurrence and the series path below.
+    const requestId = await file(me, inviteMessage(me.address, uid, 'REQUEST', { rrule: 'FREQ=WEEKLY;COUNT=4', sequence: 3 }));
+    expect((await post(me, `/api/messages/${requestId}/invite/respond`, { partstat: 'ACCEPTED' })).status).toBe(200);
+
+    const calendar = await defaultCalendar(me.id);
+    // The doneWhen names a CalDAV expand; the api integration suite talks to DavStore directly
+    // (no HTTP round trip to apps/dav from here), so this reads the stored resource and expands it
+    // with the same @postroom/ical expandCalendar a `<C:expand>` REPORT would use.
+    const expandStored = async () => {
+      const [resource] = await store.getResources(calendar.id, [`${uid}.ics`]);
+      if (resource === undefined) throw new Error('event not filed in the default calendar');
+      const stored = parseICalendar(resource.data);
+      const { instances } = expandCalendar(stored, { start: new Date('2026-10-01T00:00:00Z'), end: new Date('2026-11-15T00:00:00Z') });
+      return instances.map((i) => ({ start: new Date(i.start).toISOString(), status: getProperty(i.component, 'STATUS')?.value ?? 'CONFIRMED' }));
+    };
+    const ALL_FOUR = [
+      { start: '2026-10-05T18:00:00.000Z', status: 'CONFIRMED' },
+      { start: '2026-10-12T18:00:00.000Z', status: 'CONFIRMED' },
+      { start: '2026-10-19T18:00:00.000Z', status: 'CONFIRMED' },
+      { start: '2026-10-26T18:00:00.000Z', status: 'CONFIRMED' },
+    ] as const;
+    expect(await expandStored()).toEqual(ALL_FOUR);
+
+    // Refused before they ever touch the store: wrong organizer, unauthenticated, and a stale
+    // SEQUENCE (2 < the stored 3) — all on the single-occurrence path.
+    const wrongOrganizer = await file(me, inviteMessage(me.address, uid, 'CANCEL', { recurrenceId: '1012T140000', organizer: 'mallory@example.com', sequence: 4 }), GENUINE);
+    expect((await post(me, `/api/messages/${wrongOrganizer}/invite/remove`)).status).toBe(403);
+    const unauthenticated = await file(me, inviteMessage(me.address, uid, 'CANCEL', { recurrenceId: '1012T140000', sequence: 4 }), { dmarc: 'fail', fromDomain: 'example.com' });
+    expect((await post(me, `/api/messages/${unauthenticated}/invite/remove`)).status).toBe(403);
+    const stale = await file(me, inviteMessage(me.address, uid, 'CANCEL', { recurrenceId: '1012T140000', sequence: 2 }), GENUINE);
+    const staleResult = await post(me, `/api/messages/${stale}/invite/remove`);
+    expect(staleResult.status).toBe(409);
+    expect(staleResult.body).toMatchObject({ error: 'cancel_stale' });
+    expect(await expandStored()).toEqual(ALL_FOUR);
+
+    // The genuine single-occurrence CANCEL removes only 10-12; every other occurrence is CONFIRMED.
+    const cancelOne = await file(me, inviteMessage(me.address, uid, 'CANCEL', { recurrenceId: '1012T140000', sequence: 4 }), GENUINE);
+    const removedOne = await post(me, `/api/messages/${cancelOne}/invite/remove`);
+    expect(removedOne.status).toBe(200);
+    expect(InviteRemoveResult.parse(removedOne.body)).toEqual({ ok: true, removed: true });
+    const AFTER_ONE = [ALL_FOUR[0], ALL_FOUR[2], ALL_FOUR[3]];
+    expect(await expandStored()).toEqual(AFTER_ONE);
+
+    // The same three checks, on the series path (the stored SEQUENCE is still 3: a single
+    // occurrence's CANCEL never bumps the master's own SEQUENCE).
+    const wrongOrganizerSeries = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 5, organizer: 'mallory@example.com' }), GENUINE);
+    expect((await post(me, `/api/messages/${wrongOrganizerSeries}/invite/remove`)).status).toBe(403);
+    const unauthenticatedSeries = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 5 }), { dmarc: 'fail', fromDomain: 'example.com' });
+    expect((await post(me, `/api/messages/${unauthenticatedSeries}/invite/remove`)).status).toBe(403);
+    const staleSeries = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 2 }), GENUINE);
+    const staleSeriesResult = await post(me, `/api/messages/${staleSeries}/invite/remove`);
+    expect(staleSeriesResult.status).toBe(409);
+    expect(staleSeriesResult.body).toMatchObject({ error: 'cancel_stale' });
+    expect(await expandStored()).toEqual(AFTER_ONE);
+
+    // A genuine CANCEL with no RECURRENCE-ID cancels the whole series: every remaining occurrence
+    // (10-12 stays gone, already excised by the occurrence CANCEL above).
+    const cancelSeries = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 5 }), GENUINE);
+    const removedSeries = await post(me, `/api/messages/${cancelSeries}/invite/remove`);
+    expect(removedSeries.status).toBe(200);
+    expect(InviteRemoveResult.parse(removedSeries.body)).toEqual({ ok: true, removed: true });
+    expect(await expandStored()).toEqual(AFTER_ONE.map((i) => ({ ...i, status: 'CANCELLED' })));
   });
 
   it('a message that is not the caller’s own answers 404, never leaking whether it exists', async () => {
