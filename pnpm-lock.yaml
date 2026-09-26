@@ -464,7 +464,11 @@ importers:
 
   packages/smtp-proto: {}
 
-  packages/threading: {}
+  packages/threading:
+    dependencies:
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../db
 
 packages:
 
