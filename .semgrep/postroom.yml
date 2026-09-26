@@ -146,11 +146,6 @@ rules:
       tie-breaks pass Math.random as an injectable function, which this rule does not flag.)
     paths:
       include: ['/apps/*/src/**', '/packages/*/src/**', '/workers/**/src/**', '/edge/**']
-      exclude:
-        # The decoy input for a constant-time miss: its hash is verified and the result discarded
-        # (verify.ts only accepts a match against a real candidate row), so its value is never a
-        # secret. Retire by switching it to randomBytes as apps/api/src/auth/passwords.ts does.
-        - /packages/credentials/src/hash.ts
     pattern: Math.random()
 
   - id: postroom.tls-verification-disabled
