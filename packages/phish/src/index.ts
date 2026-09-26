@@ -208,7 +208,7 @@ function detectDisplayNameSpoofing(input: DetectPhishInput, fromDomain: string |
 // ---------------------------------------------------------------------------------------------
 // Detection: lookalike / punycode domains
 
-function idnMixedScriptReason(domain: string): string | null {
+function idnMixedScriptReason(domain: string): { reason: string; mixed: boolean } | null {
   const labels = domain.split('.');
   const decodedLabels: string[] = [];
   let anyIdn = false;
@@ -225,17 +225,20 @@ function idnMixedScriptReason(domain: string): string | null {
   const decodedDomain = decodedLabels.join('.');
   const scripts = scriptsOf(decodedDomain);
   if (scripts.size > 1) {
-    return `domain ${domain} is an internationalized (punycode) domain decoding to "${decodedDomain}", which mixes scripts (${[...scripts].sort().join(', ')}) — a classic homoglyph trick`;
+    return { mixed: true, reason: `domain ${domain} is an internationalized (punycode) domain decoding to "${decodedDomain}", which mixes scripts (${[...scripts].sort().join(', ')}) — a classic homoglyph trick` };
   }
-  return `domain ${domain} is an internationalized (punycode) domain decoding to "${decodedDomain}"`;
+  return { mixed: false, reason: `domain ${domain} is an internationalized (punycode) domain decoding to "${decodedDomain}", written in one script` };
 }
 
 function detectLookalikeDomains(input: DetectPhishInput, fromDomain: string | null): PhishWarning[] {
   const out: PhishWarning[] = [];
   if (fromDomain === null) return out;
 
-  const idnReason = idnMixedScriptReason(fromDomain);
-  if (idnReason !== null) out.push(warn('punycode-domain', 'high', idnReason));
+  // A mixed-script IDN is a homoglyph trick (high). A single-script one — bücher.de — is how most of
+  // the world writes domains: still named (PST-REQ-120 lists punycode domains), but low severity;
+  // a single-script IDN that imitates a brand is caught by the lookalike check below.
+  const idn = idnMixedScriptReason(fromDomain);
+  if (idn !== null) out.push(warn('punycode-domain', idn.mixed ? 'high' : 'low', idn.reason));
 
   const knownDomains = new Set<string>();
   for (const d of input.account.knownSenders.domains ?? []) knownDomains.add(normalizeDomain(d));

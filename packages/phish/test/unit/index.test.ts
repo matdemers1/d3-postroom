@@ -236,3 +236,13 @@ describe('detectPhish: never throws, reasons never empty', () => {
     );
   });
 });
+
+describe('single-script internationalized domains (PST-REQ-120)', () => {
+  it('names a single-script IDN at low severity, and a mixed-script one at high', () => {
+    const base = { authVerdicts: { spf: { result: 'pass' }, dkim: [{ result: 'pass' }], dmarc: { result: 'pass' }, arc: { result: 'none' } }, account: { knownSenders: { addresses: [], domains: [] }, contacts: [] } };
+    const single = detectPhish({ ...base, from: { address: 'info@xn--bcher-kva.de', displayName: 'Buchhandlung' } } as Parameters<typeof detectPhish>[0]);
+    const idn = single.warnings.find((w) => w.kind === 'punycode-domain');
+    expect(idn?.severity).toBe('low');
+    expect(idn?.reason).toContain('one script');
+  });
+});
