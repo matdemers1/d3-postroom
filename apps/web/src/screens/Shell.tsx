@@ -54,6 +54,15 @@ function HeartbeatIcon() {
   );
 }
 
+function OutboxIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M12 3v11M12 3l-4 4M12 3l4 4" />
+      <path d="M4 13v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" />
+    </svg>
+  );
+}
+
 function QueueIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -163,6 +172,9 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
               </SideNavItem>
               <SideNavItem asChild icon={<QueueIcon />} label="Jobs" current={location.pathname === '/admin/jobs'}>
                 <RouterLink to="/admin/jobs" />
+              </SideNavItem>
+              <SideNavItem asChild icon={<OutboxIcon />} label="Outbound queue" current={location.pathname === '/admin/queue'}>
+                <RouterLink to="/admin/queue" />
               </SideNavItem>
             </SideNavGroup>
           ) : null}

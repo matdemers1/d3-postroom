@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, INBOUND_STAGES, describeError, redirectFor, type AuthState } from '../../src/api';
+import { ApiError, INBOUND_STAGES, describeError, queuePath, redirectFor, type AuthState } from '../../src/api';
 
 const base: AuthState = { setupRequired: false, oidcConfigured: false, oidcAvailable: false, signedIn: false };
 const signedIn = (isAdmin: boolean): AuthState => ({
@@ -44,6 +44,18 @@ describe('redirectFor', () => {
 describe('INBOUND_STAGES', () => {
   it('matches the pipeline order the replay endpoint accepts (apps/api/src/admin-jobs/index.ts)', () => {
     expect(INBOUND_STAGES).toEqual(['verify', 'parse', 'classify', 'sieve', 'file', 'notify']);
+  });
+});
+
+describe('queuePath (PST-T-6.6)', () => {
+  it('matches apps/api/src/admin-queue/index.ts one route per scope kind', () => {
+    expect(queuePath({ kind: 'recipient', id: 'r1' })).toBe('/api/admin/queue/recipients/r1');
+    expect(queuePath({ kind: 'message', id: 'm1' })).toBe('/api/admin/queue/messages/m1');
+    expect(queuePath({ kind: 'domain', domain: 'example.com' })).toBe('/api/admin/queue/domains/example.com');
+  });
+
+  it('encodes a domain with special characters', () => {
+    expect(queuePath({ kind: 'domain', domain: 'exämple.test' })).toBe('/api/admin/queue/domains/ex%C3%A4mple.test');
   });
 });
 
