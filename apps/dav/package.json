@@ -2,7 +2,7 @@
   "name": "@postroom/dav",
   "private": true,
   "version": "0.0.0",
-  "description": "CalDAV/CardDAV",
+  "description": "CalDAV/CardDAV over HTTP behind the Cloudflare Tunnel",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -14,7 +14,15 @@
     "test:integration": "vitest run --project integration --passWithNoTests"
   },
   "dependencies": {
-    "@postroom/daemon": "workspace:*"
+    "@postroom/daemon": "workspace:*",
+    "@postroom/db": "workspace:*",
+    "@postroom/dav-proto": "workspace:*",
+    "@postroom/credentials": "workspace:*",
+    "@postroom/auth-throttle": "workspace:*",
+    "@postroom/audit": "workspace:*",
+    "@postroom/crypto": "workspace:*",
+    "@postroom/ical": "workspace:*",
+    "@postroom/vcard": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"
