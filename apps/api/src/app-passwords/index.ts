@@ -17,7 +17,7 @@ import { AccountKind, AppPasswordScope } from '@postroom/db';
 import { thawCredential } from '@postroom/delivery';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { currentSession, handle, requireStepUp } from '../auth/middleware.js';
+import { currentSession, handle, requireAdmin, requireStepUp } from '../auth/middleware.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 
@@ -133,19 +133,16 @@ export function appPasswordRoutes(deps: ApiDeps): Router {
   // enough (it resumes held outbound mail) to sit behind the same step-up as other admin mutations.
   router.post(
     '/:id/thaw',
+    requireAdmin(deps),
     requireStepUp(deps),
     handle(async (req, res) => {
       const me = currentSession(req);
-      if (!me.isAdmin) {
-        res.status(403).json({ error: 'forbidden' });
-        return;
-      }
       const id = String(req.params['id']);
       if (!UUID.test(id)) {
         res.status(404).json({ error: 'not_found' });
         return;
       }
-      const result = await thawCredential(db, id, { kind: 'account', accountId: me.accountId }, rt.now());
+      const result = await thawCredential(db, id, { kind: 'account', accountId: me.accountId }, rt.now(), getAuditContext(req));
       if (!result.thawed) {
         res.status(404).json({ error: 'not_found' });
         return;

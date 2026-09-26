@@ -14,7 +14,7 @@ import { createBlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
 import { envInt, envString, runDaemon } from '@postroom/daemon';
 import { createDb } from '@postroom/db';
-import { createCapsChecker } from './caps/index.js';
+import { createCapsChecker, createCapsEnforcer } from './caps/index.js';
 import { DAEMON } from './daemon.js';
 import { createSubmissionListeners, type SubmissionStorage } from './server.js';
 
@@ -59,7 +59,7 @@ await runDaemon({
     }
 
     let storage: SubmissionStorage | undefined;
-    const checkCaps = createCapsChecker({
+    const capsOptions = {
       db,
       hourlyDefault: envInt(ctx.env, 'SUBMISSION_CAP_HOURLY', 100),
       dailyDefault: envInt(ctx.env, 'SUBMISSION_CAP_DAILY', 500),
@@ -72,7 +72,9 @@ await runDaemon({
         { log: ctx.log },
       ),
       log: ctx.log,
-    });
+    };
+    const checkCaps = createCapsChecker(capsOptions);
+    const enforceCaps = createCapsEnforcer(capsOptions);
     const listeners = createSubmissionListeners({
       db,
       hostname: envString(ctx.env, 'SUBMISSION_HOSTNAME', 'mail.d3cloud.io'),
@@ -88,6 +90,7 @@ await runDaemon({
       },
       tls,
       checkCaps,
+      enforceCaps,
       log: ctx.log,
     });
 
