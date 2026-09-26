@@ -83,3 +83,34 @@ export function mailboxIcon(use: SpecialUse | null, name: string): ReactNode {
       return <FolderIcon />;
   }
 }
+
+// PST-T-11.4: the search field's glyph, and alert icons so a warning's tone never rests on colour alone.
+export const SearchIcon = () => (
+  <Svg size={16}>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m16 16 4.5 4.5" />
+  </Svg>
+);
+export const DangerIcon = () => (
+  <Svg size={18}>
+    <path d="M8.5 3h7L21 8.5v7L15.5 21h-7L3 15.5v-7z" />
+    <path d="M12 8v5M12 16.5v.01" />
+  </Svg>
+);
+export const WarningIcon = () => (
+  <Svg size={18}>
+    <path d="M12 3.5 21.5 20h-19z" />
+    <path d="M12 10v4.5M12 17.5v.01" />
+  </Svg>
+);
+export const InfoIcon = () => (
+  <Svg size={18}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 11v5.5M12 7.5v.01" />
+  </Svg>
+);
+export const ChevronIcon = () => (
+  <Svg size={16}>
+    <path d="m9 6 6 6-6 6" />
+  </Svg>
+);

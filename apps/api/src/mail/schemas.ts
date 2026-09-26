@@ -42,6 +42,10 @@ export const AttachmentParams = z.object({ id: Uuid, partId: z.string().regex(/^
 export const MessageListQuery = z.object({
   cursor: z.string().regex(/^\d{1,10}$/).optional().describe('The nextCursor of the previous page.'),
   limit: z.coerce.number().int().min(1).max(200).default(50),
+  keyword: z
+    .enum(['$Priority', '$People'])
+    .optional()
+    .describe("Only messages carrying this sorting keyword: the Inbox's Priority / People split (PST-REQ-101)."),
 });
 
 export const MessagePatch = z
@@ -107,6 +111,11 @@ export const MessageList = z.object({
   messages: z.array(MessageSummary),
   nextCursor: z.string().nullable(),
 });
+
+const SplitCount = z.object({ total: z.number().int(), unseen: z.number().int() });
+
+/** The Inbox's Priority / People split (PST-REQ-101): how many of each, and how many unread. */
+export const MailboxSplit = z.object({ priority: SplitCount, people: SplitCount });
 
 export const PhishWarning = z.object({
   kind: z.enum(['display-name-spoofing', 'lookalike-domain', 'punycode-domain', 'first-time-brand-sender', 'auth-failure', 'link-mismatch']),

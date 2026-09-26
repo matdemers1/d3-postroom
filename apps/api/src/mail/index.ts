@@ -34,7 +34,7 @@ import {
   type SearchResultJson,
   type ThreadDetailJson,
 } from './schemas.js';
-import { detailJson, findOwnMessage, findOwnThread, listMailboxes, listMessages, messagePhish, ownMailbox, PreconditionFailed, summaryJson, trashRetentionDays, updateMessage } from './store.js';
+import { detailJson, findOwnMessage, findOwnThread, listMailboxes, listMessages, mailboxSplit, messagePhish, ownMailbox, PreconditionFailed, summaryJson, trashRetentionDays, updateMessage } from './store.js';
 
 export const DEFAULT_BLOB_ROOT = '/var/lib/postroom/blobs';
 
@@ -122,7 +122,22 @@ export function mailRoutes(deps: ApiDeps): Router {
         return;
       }
       res.setHeader('Cache-Control', 'no-store');
-      res.json(await listMessages(db, params.id, { cursor: query.cursor === undefined ? undefined : Number(query.cursor), limit: query.limit }));
+      res.json(await listMessages(db, params.id, { cursor: query.cursor === undefined ? undefined : Number(query.cursor), limit: query.limit, keyword: query.keyword }));
+    }),
+  );
+
+  // The Inbox's Priority / People split, for the webmail's segmented list header (PST-REQ-101).
+  router.get(
+    '/mailboxes/:id/split',
+    handle(async (req, res) => {
+      const params = parse(IdParams, req.params, res);
+      if (params === null) return;
+      if ((await ownMailbox(db, currentSession(req).accountId, params.id)) === null) {
+        notFound(res);
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await mailboxSplit(db, params.id));
     }),
   );
 

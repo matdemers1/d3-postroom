@@ -3,7 +3,7 @@
 // the manual toggle, and a collapsed row's summary line.
 import { describe, expect, it } from 'vitest';
 import type { MessageSummary } from '../../src/api';
-import { collapsedSummary, isConversation, mightJoinThread, threadRows, toggleRow } from '../../src/mail/thread';
+import { collapsedSummary, isConversation, mightJoinThread, snippetOf, threadRows, toggleRow } from '../../src/mail/thread';
 
 function summary(id: string, over: Partial<MessageSummary> = {}): MessageSummary {
   return {
@@ -111,5 +111,30 @@ describe('mightJoinThread', () => {
 
   it('is true whenever there is a thread to check against', () => {
     expect(mightJoinThread('thread-1')).toBe(true);
+  });
+});
+
+describe('snippetOf (PST-T-11.4)', () => {
+  it('is the first words the sender wrote, not the quote', () => {
+    expect(snippetOf('Friday it is.\n\nOn Sep 26, 2026, 1:58 PM, Alice Example wrote:\n> Are we still on?')).toBe('Friday it is.');
+  });
+
+  it('skips quoted lines and joins wrapped ones', () => {
+    expect(snippetOf('> quoted\nFirst line\nsecond line')).toBe('First line second line');
+  });
+
+  it('stops at a signature', () => {
+    expect(snippetOf('Thanks!\n-- \nAlice')).toBe('Thanks!');
+  });
+
+  it('truncates long text with an ellipsis', () => {
+    const s = snippetOf('word '.repeat(100), 40);
+    expect(s?.length).toBe(40);
+    expect(s?.endsWith('…')).toBe(true);
+  });
+
+  it('is null with no text, or only a quote', () => {
+    expect(snippetOf(null)).toBeNull();
+    expect(snippetOf('> only a quote')).toBeNull();
   });
 });

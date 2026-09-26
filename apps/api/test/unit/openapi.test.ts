@@ -41,6 +41,7 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/export/{id}/download',
         'GET /api/mailboxes',
         'GET /api/mailboxes/{id}/messages',
+        'GET /api/mailboxes/{id}/split',
         'GET /api/messages/{id}',
         'GET /api/messages/{id}/attachments/{partId}',
         'GET /api/messages/{id}/body',
@@ -121,7 +122,7 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'DELETE /api/keys/{id}',
       ].sort(),
     );
-    expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit']);
+    expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit', 'query:keyword']);
     expect(doc.paths['/api/messages/{id}']?.['patch']?.requestBody).toBeDefined();
   });
 

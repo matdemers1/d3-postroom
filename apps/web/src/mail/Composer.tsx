@@ -24,12 +24,14 @@ import {
   hasRecipients,
   initialState,
   isHeld,
+  isSendChord,
   matchingTemplates,
   REMIND_CHOICES,
   resumableDraft,
   sendErrorText,
   sendExtra,
   sendOptions,
+  SEND_CHORD_HINT,
   stateFromSaved,
   templateTrigger,
   toLocalInput,
@@ -343,6 +345,14 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
         if (e.key === 'Escape') {
           e.stopPropagation();
           onDiscard(); // closes; the unmount keeps an unsaved draft
+          return;
+        }
+        // PST-T-11.4: ⌘↵ / Ctrl+Enter sends from any field, through the same path (and the same
+        // undo window) as the Send button.
+        if (isSendChord(e)) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!sending) void send();
         }
       }}
     >
@@ -474,6 +484,9 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
             <Input type="datetime-local" value={timing.local} min={toLocalInput(new Date())} onChange={(e) => { setTiming({ kind: 'later', local: e.target.value }); }} />
           </FormField>
         ) : null}
+        {/* PST-T-11.4: the actions stick to the bottom of the pane, so Send is on screen however many
+            options sit above it. */}
+        <div className="pr-composer__actions">
         <FormActions
           leading={
             <Button type="button" variant="ghost" onClick={discard} disabled={sending}>
@@ -495,10 +508,11 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
           >
             Send later
           </Button>
-          <Button type="submit" variant="primary" loading={sending}>
+          <Button type="submit" variant="primary" loading={sending} title={`${timing.kind === 'later' ? 'Schedule' : 'Send'} (${SEND_CHORD_HINT})`}>
             {timing.kind === 'later' ? 'Schedule' : 'Send'}
           </Button>
         </FormActions>
+        </div>
         <p className="pr-reader__note" role="status" aria-live="polite">
           {status}
         </p>

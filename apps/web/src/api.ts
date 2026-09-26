@@ -119,13 +119,16 @@ export const api = {
 
   // --- Mail (PST-T-3.9's API) ---------------------------------------------------------------
   mailboxes: () => call<{ mailboxes: Mailbox[] }>('GET', '/api/mailboxes'),
-  messages: (mailboxId: string, opts: { cursor?: string | null; limit?: number } = {}) => {
+  messages: (mailboxId: string, opts: { cursor?: string | null; limit?: number; keyword?: '$Priority' | '$People' | null } = {}) => {
     const q = new URLSearchParams();
     if (opts.cursor !== undefined && opts.cursor !== null) q.set('cursor', opts.cursor);
     if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+    if (opts.keyword !== undefined && opts.keyword !== null) q.set('keyword', opts.keyword);
     const qs = q.toString();
     return call<MessagePage>('GET', `/api/mailboxes/${encodeURIComponent(mailboxId)}/messages${qs === '' ? '' : `?${qs}`}`);
   },
+  /** The Inbox's Priority / People split: totals and unread counts (PST-REQ-101). */
+  mailboxSplit: (mailboxId: string) => call<MailboxSplit>('GET', `/api/mailboxes/${encodeURIComponent(mailboxId)}/split`),
   message: (id: string) => call<MessageDetail>('GET', `/api/messages/${encodeURIComponent(id)}`),
   messageBody: (id: string) => call<MessageBody>('GET', `/api/messages/${encodeURIComponent(id)}/body`),
   /** A short-lived URL of the sanitised HTML on the usercontent origin (PST-T-3.12). 503 when that origin is not configured. */
@@ -311,6 +314,11 @@ export interface MessageSummary {
   size: number;
   flags: string[];
   bucket: string | null;
+}
+
+export interface MailboxSplit {
+  priority: { total: number; unseen: number };
+  people: { total: number; unseen: number };
 }
 
 export interface MessagePage {
