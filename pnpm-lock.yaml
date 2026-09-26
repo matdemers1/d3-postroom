@@ -50,6 +50,9 @@ importers:
       '@postroom/blobstore':
         specifier: workspace:*
         version: link:../../packages/blobstore
+      '@postroom/classifier':
+        specifier: workspace:*
+        version: link:../../packages/classifier
       '@postroom/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -189,6 +192,9 @@ importers:
       '@postroom/blobstore':
         specifier: workspace:*
         version: link:../../packages/blobstore
+      '@postroom/classifier':
+        specifier: workspace:*
+        version: link:../../packages/classifier
       '@postroom/credentials':
         specifier: workspace:*
         version: link:../../packages/credentials
@@ -355,6 +361,9 @@ importers:
       '@postroom/blobstore':
         specifier: workspace:*
         version: link:../../packages/blobstore
+      '@postroom/classifier':
+        specifier: workspace:*
+        version: link:../../packages/classifier
       '@postroom/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto

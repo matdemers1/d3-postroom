@@ -19,3 +19,16 @@ export {
 } from './signals.js';
 
 export { decide, type Bucket, type Decision } from './decide.js';
+
+// PST-T-5.3: the sorting buckets, and per-account naive Bayes trained on moves from any client.
+export {
+  bucketOfMailbox,
+  isSortBucket,
+  trainingMove,
+  BUCKET_FOLDERS,
+  SORT_BUCKETS,
+  type MailboxLike,
+  type SortBucket,
+  type TrainingMove,
+} from './buckets.js';
+export * from './bayes/index.js';

@@ -22,9 +22,16 @@
 //
 // Every transaction that changes a mailbox's messages ends with pg_notify('postroom_mailbox', id)
 // (`notifyMailbox`), so IDLE sessions — in this process and any other — and webmail tabs wake.
+//
+// Training (PST-T-5.3, PST-REQ-104): a MOVE between two sorting buckets (see @postroom/classifier's
+// trainingMove), and an EXPUNGE of a message whose copy already sits in a different bucket (the
+// COPY-then-EXPUNGE move older clients make), write a bayes_training_event in the same transaction.
+// The table is insert-only here and takes no lock of its own, so the locking order above is unchanged;
+// the worker applies the events later. Like the move itself, the event is its own record — not audited.
 import { randomInt, randomUUID } from 'node:crypto';
 import { recordAudit, type Actor } from '@postroom/audit';
 import type { BlobStore } from '@postroom/blobstore';
+import { trainingMove, type TrainingMove } from '@postroom/classifier';
 import { Prisma, randomUidValidity, type Db, type SpecialUse } from '@postroom/db';
 import { fileLocalMessage } from '@postroom/dsn';
 import type { StoreOperation } from '@postroom/imap-proto';
@@ -340,6 +347,7 @@ export class MailStore {
         DELETE FROM message WHERE mailbox_id = ${mailboxId}::uuid AND ${DELETED} = ANY(flags) ${only}
         RETURNING uid, blob_sha256`;
       if (rows.length === 0) return [];
+      await recordCopyMoves(tx, meta.accountId, mailboxId, rows.map((r) => r.blob_sha256));
       const modseq = hm.highestModseq + 1n;
       await tx.$executeRaw`UPDATE mailbox SET highest_modseq = ${modseq} WHERE id = ${mailboxId}::uuid`;
       released.push(...(await this.releaseBlobs(tx, rows.map((r) => r.blob_sha256))));
@@ -438,8 +446,8 @@ export class MailStore {
       const target = locked.get(targetId);
       const source = locked.get(sourceId);
       if (target === undefined || source === undefined) throw new MailboxGoneError();
-      const rows = await tx.$queryRaw<{ id: string; uid: number }[]>`
-        SELECT id::text AS id, uid FROM message
+      const rows = await tx.$queryRaw<{ id: string; uid: number; blob_sha256: string }[]>`
+        SELECT id::text AS id, uid, blob_sha256 FROM message
         WHERE mailbox_id = ${sourceId}::uuid AND uid = ANY(${[...uids]}::int[]) ORDER BY uid`;
       if (rows.length === 0) return { uidvalidity: target.uidvalidity, pairs: [] };
       const modseq = (target.highestModseq > source.highestModseq ? target.highestModseq : source.highestModseq) + 1n;
@@ -465,6 +473,10 @@ export class MailStore {
         pairs.map(([s]) => s),
         modseq,
       );
+      const training = trainingMove(source, target);
+      if (training !== null) {
+        await recordTraining(tx, source.accountId, training, 'imap-move', rows.map((r) => ({ messageId: r.id, blobSha256: r.blob_sha256 })));
+      }
       await notifyMailbox(tx, targetId);
       if (sourceId !== targetId) await notifyMailbox(tx, sourceId);
       return { uidvalidity: target.uidvalidity, pairs };
@@ -691,6 +703,7 @@ async function lockMailbox(tx: Tx, mailboxId: string): Promise<{ highestModseq: 
 interface LockedMailbox {
   readonly accountId: string;
   readonly name: string;
+  readonly specialUse: SpecialUse | null;
   readonly uidvalidity: number;
   readonly uidnext: number;
   readonly highestModseq: bigint;
@@ -698,13 +711,13 @@ interface LockedMailbox {
 
 async function lockMailboxes(tx: Tx, ids: readonly string[]): Promise<Map<string, LockedMailbox>> {
   const unique = [...new Set(ids)].sort();
-  const rows = await tx.$queryRaw<{ id: string; account_id: string; name: string; uidvalidity: number; uidnext: number; highest_modseq: bigint }[]>`
-    SELECT id::text AS id, account_id::text AS account_id, name, uidvalidity, uidnext, highest_modseq FROM mailbox
+  const rows = await tx.$queryRaw<{ id: string; account_id: string; name: string; special_use: SpecialUse | null; uidvalidity: number; uidnext: number; highest_modseq: bigint }[]>`
+    SELECT id::text AS id, account_id::text AS account_id, name, special_use, uidvalidity, uidnext, highest_modseq FROM mailbox
     WHERE id = ANY(${unique}::uuid[]) ORDER BY id FOR UPDATE`;
   return new Map(
     rows.map((r) => [
       r.id,
-      { accountId: r.account_id, name: r.name, uidvalidity: r.uidvalidity, uidnext: r.uidnext, highestModseq: r.highest_modseq },
+      { accountId: r.account_id, name: r.name, specialUse: r.special_use, uidvalidity: r.uidvalidity, uidnext: r.uidnext, highestModseq: r.highest_modseq },
     ]),
   );
 }
@@ -734,4 +747,44 @@ async function recordExpunged(tx: Tx, mailboxId: string, uids: readonly number[]
     data: uids.map((uid) => ({ mailboxId, uid, modseq })),
     skipDuplicates: true,
   });
+}
+
+/** One bayes_training_event per moved message (PST-REQ-104), in the move's transaction. */
+async function recordTraining(
+  tx: Tx,
+  accountId: string,
+  move: TrainingMove,
+  via: 'imap-move' | 'imap-copy-expunge',
+  messages: readonly { messageId: string; blobSha256: string }[],
+): Promise<void> {
+  if (messages.length === 0) return;
+  await tx.bayesTrainingEvent.createMany({
+    data: messages.map((m) => ({ accountId, messageId: m.messageId, blobSha256: m.blobSha256, fromBucket: move.fromBucket, toBucket: move.toBucket, via })),
+  });
+}
+
+/**
+ * COPY then EXPUNGE is how a client without MOVE moves a message: when an expunged message's bytes
+ * (the same blob — a COPY shares it) already sit in another mailbox of the account that is a
+ * different bucket, the user moved it there. The newest such copy is the one trained. A message
+ * expunged with no copy elsewhere, or whose copy is not in a bucket (Trash, Archive), teaches nothing.
+ */
+async function recordCopyMoves(tx: Tx, accountId: string, sourceId: string, blobs: readonly string[]): Promise<void> {
+  const src = await tx.$queryRaw<{ name: string; special_use: SpecialUse | null }[]>`
+    SELECT name, special_use FROM mailbox WHERE id = ${sourceId}::uuid`;
+  const source = src[0];
+  if (source === undefined || blobs.length === 0) return;
+  const copies = await tx.$queryRaw<{ id: string; blob_sha256: string; name: string; special_use: SpecialUse | null }[]>`
+    SELECT m.id::text AS id, m.blob_sha256, mb.name, mb.special_use
+    FROM message m JOIN mailbox mb ON mb.id = m.mailbox_id
+    WHERE mb.account_id = ${accountId}::uuid AND m.mailbox_id <> ${sourceId}::uuid AND m.blob_sha256 = ANY(${[...new Set(blobs)]}::text[])
+    ORDER BY m.received_at DESC, m.id`;
+  const done = new Set<string>();
+  for (const c of copies) {
+    if (done.has(c.blob_sha256)) continue;
+    const move = trainingMove({ name: source.name, specialUse: source.special_use }, { name: c.name, specialUse: c.special_use });
+    if (move === null) continue;
+    done.add(c.blob_sha256);
+    await recordTraining(tx, accountId, move, 'imap-copy-expunge', [{ messageId: c.id, blobSha256: c.blob_sha256 }]);
+  }
 }

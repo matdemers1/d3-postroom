@@ -135,6 +135,12 @@ model Account {
   sessions         Session[]
   auditEvents      AuditEvent[]
 
+  // PST-T-5.3: per-account naive Bayes.
+  bayesTrainingEvents  BayesTrainingEvent[]
+  bayesTrainedMessages BayesTrainedMessage[]
+  bayesTokens          BayesToken[]
+  bayesBucketTotals    BayesBucketTotal[]
+
   @@map("account")
 }
 
@@ -637,4 +643,78 @@ model ExpungedMessage {
   @@id([mailboxId, uid])
   @@index([mailboxId, modseq])
   @@map("expunged_message")
+}
+
+// ─── PST-P-5: per-account naive Bayes (PST-T-5.3) ─────────────────────────────────────────────────
+
+/// A user moved a message between two sorting buckets, from any client (PST-REQ-104): written in the
+/// same transaction as the move by the IMAP server (MOVE, UID MOVE, COPY then EXPUNGE) and the
+/// webmail API; the worker's training consumer applies it to the counts, in id order, and stamps
+/// processedAt in the same transaction. The row is the record of the training (moves are not audited
+/// one by one — see apps/imap/src/store.ts).
+model BayesTrainingEvent {
+  /// Ordering: a later move of the same message always has a larger id (it waits on the mailbox lock).
+  id          BigInt    @id @default(autoincrement())
+  accountId   String    @map("account_id") @db.Uuid
+  /// The message after the move. No foreign key: it may be moved again or expunged before the
+  /// consumer runs, and the event must outlive it.
+  messageId   String    @map("message_id") @db.Uuid
+  /// The trained document's identity: the same bytes are the same document wherever they are filed.
+  blobSha256  String    @map("blob_sha256")
+  fromBucket  String    @map("from_bucket")
+  toBucket    String    @map("to_bucket")
+  /// imap-move | imap-copy-expunge | web
+  via         String
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+  /// trained | retrained | unchanged | skipped: <why>
+  outcome     String?
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([processedAt, id])
+  @@index([accountId])
+  @@map("bayes_training_event")
+}
+
+/// Which bucket a document is trained into, and exactly the tokens that training added — so a move
+/// back subtracts precisely what was added, and a replayed event changes nothing.
+model BayesTrainedMessage {
+  accountId  String   @map("account_id") @db.Uuid
+  blobSha256 String   @map("blob_sha256")
+  bucket     String
+  tokens     String[]
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, blobSha256])
+  @@map("bayes_trained_message")
+}
+
+/// How often a token was trained into a bucket, per account. Rows at zero are deleted.
+model BayesToken {
+  accountId String @map("account_id") @db.Uuid
+  bucket    String
+  token     String
+  count     Int
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, bucket, token])
+  @@index([accountId, token])
+  @@map("bayes_token")
+}
+
+/// Documents and tokens trained into a bucket, per account.
+model BayesBucketTotal {
+  accountId String @map("account_id") @db.Uuid
+  bucket    String
+  docs      Int    @default(0)
+  tokens    Int    @default(0)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, bucket])
+  @@map("bayes_bucket_total")
 }

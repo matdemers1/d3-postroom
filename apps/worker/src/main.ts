@@ -14,6 +14,7 @@ import { drillHandler } from './drill/drill.js';
 import { inboundHealth, maintenanceHealth } from './health.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
 import { createThreadSweeper } from './sweep/thread-sweep.js';
+import { startTrainingLoop } from './training/index.js';
 
 await runDaemon({
   name: DAEMON,
@@ -74,6 +75,11 @@ await runDaemon({
     };
     runThreadSweep();
     const threadSweepTimer = setInterval(runThreadSweep, threadSweepMs);
+
+    // PST-T-5.3 (PST-REQ-104): train each account's naive Bayes on the moves users make, from any
+    // client. Its own block and its own shutdown hook, so it merges beside the other registrations.
+    const training = startTrainingLoop({ db, blobs: lazyBlobs, intervalMs: envInt(ctx.env, 'BAYES_TRAINING_MS', 5_000), log: ctx.log });
+    ctx.onShutdown(() => training.stop());
 
     ctx.addHealth(async () => ({ inbound: await inboundHealth(db), ...(await maintenanceHealth(db)) }));
     ctx.log('inbound-worker', { leaseMs, blobRoot, backupsConfigured: maintenance.backup.config.s3 !== null, threadSweepMs });

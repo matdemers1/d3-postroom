@@ -26,7 +26,8 @@
     "@postroom/proxy-protocol": "workspace:*",
     "@postroom/audit": "workspace:*",
     "@postroom/dsn": "workspace:*",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "@postroom/classifier": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13",
