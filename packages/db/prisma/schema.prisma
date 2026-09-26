@@ -152,7 +152,7 @@ model Account {
   // PST-T-7.7: per-mailbox retention.
   retentionPolicies RetentionPolicy[]
   // PST-T-5.4: sender pins and the new-sender screen (Allow/Block).
-  senderPins SenderPin[]
+  senderPins        SenderPin[]
 
   // PST-T-8.2: CalDAV calendars and CardDAV address books.
   davCollections DavCollection[]
@@ -351,7 +351,7 @@ model Mailbox {
   createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  account  Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account         Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   messages        Message[]
   expunged        ExpungedMessage[]
   retentionPolicy RetentionPolicy?
@@ -413,6 +413,11 @@ model Message {
   thread  Thread?         @relation(fields: [threadId], references: [id], onDelete: SetNull)
   search  MessageSearch?
   verdict MessageVerdict?
+
+  // PST-T-7.1: DMARC aggregate / TLS-RPT reports read out of this message.
+  reportIngest  ReportIngest?
+  dmarcReports  DmarcReport[]
+  tlsRptReports TlsRptReport[]
 
   @@unique([mailboxId, inboundMessageId])
   @@unique([mailboxId, uid])
@@ -959,4 +964,123 @@ model SieveVacationReply {
   @@unique([accountId, inboundMessageId])
   @@index([accountId, sender, handle, sentAt])
   @@map("sieve_vacation_reply")
+}
+
+// ─── Deliverability reports (PST-T-7.1, PST-REQ-122) ─────────────────────────────────────────────
+
+/// One message in a report mailbox (REPORTS_MAILBOX / TLSRPT_MAILBOX) the worker has looked at, and
+/// what it found: `ingested`, `duplicate` (a re-delivered report), `no-report`, or `error`. The
+/// sweep picks up only messages with no row here, so a message is read once, however often it runs.
+model ReportIngest {
+  messageId   String   @id @map("message_id") @db.Uuid
+  outcome     String
+  /// Per attachment: kind, org, report id, and the ReportError code/message on failure.
+  detail      Json
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(6)
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("report_ingest")
+}
+
+/// A DMARC aggregate report (RFC 7489 Appendix C). Unique per (reporting org, report id): a
+/// re-delivered report is recognized and never stored twice.
+model DmarcReport {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgName         String   @map("org_name")
+  reportId        String   @map("report_id")
+  email           String?
+  /// policy_published/domain.
+  domain          String
+  rangeBegin      DateTime @map("range_begin") @db.Timestamptz(6)
+  rangeEnd        DateTime @map("range_end") @db.Timestamptz(6)
+  /// policy_published as reported: { domain, adkim, aspf, p, sp, pct, fo }.
+  policyPublished Json     @map("policy_published")
+  /// The message it arrived in; null once that message is gone.
+  messageId       String?  @map("message_id") @db.Uuid
+  receivedAt      DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  message Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  records DmarcRecord[]
+
+  @@unique([orgName, reportId])
+  @@index([rangeBegin])
+  @@map("dmarc_report")
+}
+
+/// One row of an aggregate report: `count` messages from `sourceIp` with the same results.
+model DmarcRecord {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId     String  @map("report_id") @db.Uuid
+  sourceIp     String  @map("source_ip")
+  count        Int
+  /// none | quarantine | reject
+  disposition  String
+  /// policy_evaluated: the aligned DKIM / SPF result, pass | fail, or null when not reported.
+  dkim         String?
+  spf          String?
+  headerFrom   String  @map("header_from")
+  envelopeFrom String? @map("envelope_from")
+  /// { dkim: [...], spf: [...], reasons: [...] } as reported.
+  authResults  Json    @map("auth_results")
+
+  report DmarcReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([sourceIp])
+  @@map("dmarc_record")
+}
+
+/// An SMTP TLS report (RFC 8460). Unique per (organization, report id).
+model TlsRptReport {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgName     String   @map("org_name")
+  reportId    String   @map("report_id")
+  contactInfo String?  @map("contact_info")
+  rangeBegin  DateTime @map("range_begin") @db.Timestamptz(6)
+  rangeEnd    DateTime @map("range_end") @db.Timestamptz(6)
+  messageId   String?  @map("message_id") @db.Uuid
+  receivedAt  DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  message  Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  policies TlsRptPolicy[]
+
+  @@unique([orgName, reportId])
+  @@index([rangeBegin])
+  @@map("tlsrpt_report")
+}
+
+model TlsRptPolicy {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId     String   @map("report_id") @db.Uuid
+  /// sts | tlsa | no-policy-found
+  policyType   String   @map("policy_type")
+  policyDomain String   @map("policy_domain")
+  policyString String[] @default([]) @map("policy_string")
+  mxHost       String[] @default([]) @map("mx_host")
+  successCount Int      @map("success_count")
+  failureCount Int      @map("failure_count")
+
+  report   TlsRptReport    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  failures TlsRptFailure[]
+
+  @@index([reportId])
+  @@map("tlsrpt_policy")
+}
+
+model TlsRptFailure {
+  id                  String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyId            String  @map("policy_id") @db.Uuid
+  resultType          String  @map("result_type")
+  sendingMtaIp        String? @map("sending_mta_ip")
+  receivingMxHostname String? @map("receiving_mx_hostname")
+  receivingIp         String? @map("receiving_ip")
+  failedSessionCount  Int     @map("failed_session_count")
+  additionalInfo      String? @map("additional_info")
+  failureReasonCode   String? @map("failure_reason_code")
+
+  policy TlsRptPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId])
+  @@map("tlsrpt_failure")
 }

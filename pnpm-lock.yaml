@@ -476,6 +476,9 @@ importers:
       '@postroom/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@postroom/reports':
+        specifier: workspace:*
+        version: link:../../packages/reports
       '@postroom/search':
         specifier: workspace:*
         version: link:../../packages/search
@@ -682,6 +685,8 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
+
+  packages/reports: {}
 
   packages/search:
     dependencies:

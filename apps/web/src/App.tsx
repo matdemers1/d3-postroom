@@ -5,6 +5,7 @@ import { api, redirectFor, type AuthState } from './api';
 import { Calendar } from './calendar/Calendar';
 import { Contacts } from './contacts/Contacts';
 import { MailProvider } from './mail/MailContext';
+import { AdminDeliverability } from './screens/AdminDeliverability';
 import { AdminHealth } from './screens/AdminHealth';
 import { AdminJobs } from './screens/AdminJobs';
 import { AdminQueue } from './screens/AdminQueue';
@@ -90,6 +91,7 @@ function Gate() {
         <Route path="/admin/health" element={<AdminHealth />} />
         <Route path="/admin/jobs" element={<AdminJobs />} />
         <Route path="/admin/queue" element={<AdminQueue />} />
+        <Route path="/admin/deliverability" element={<AdminDeliverability />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

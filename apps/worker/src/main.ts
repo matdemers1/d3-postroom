@@ -17,6 +17,7 @@ import { inboundHealth, maintenanceHealth } from './health.js';
 import { importHandler, IMPORT_QUEUE } from './import/index.js';
 import { buildMonitors, createMonitorRunner } from './monitors/index.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
+import { startReportLoop } from './reports/index.js';
 import { createThreadSweeper } from './sweep/thread-sweep.js';
 import { startTrainingLoop } from './training/index.js';
 import { startRetentionLoop } from './retention/index.js';
@@ -98,6 +99,12 @@ await runDaemon({
     // pass removes files a crash left without a row. Its own block and its own shutdown hook.
     const retention = startRetentionLoop({ db, blobs: lazyBlobs, intervalMs: envInt(ctx.env, 'RETENTION_SWEEP_MS', 3_600_000), log: ctx.log });
     ctx.onShutdown(() => retention.stop());
+
+    // PST-T-7.1 (PST-REQ-122): DMARC aggregate and TLS-RPT reports mailed to the report mailboxes
+    // (REPORTS_MAILBOX / TLSRPT_MAILBOX) become rows for the Deliverability screen. Its own block
+    // and its own shutdown hook, so it merges beside the other registrations.
+    const reports = startReportLoop({ db, blobs: lazyBlobs, env: ctx.env, intervalMs: envInt(ctx.env, 'REPORTS_SWEEP_MS', 10_000), log: ctx.log });
+    ctx.onShutdown(() => reports.stop());
 
     // PST-T-10.1 (PST-REQ-151): the full-data export, on its own queue and worker (a 10 GB mailbox
     // must not hold up inbound mail), plus a sweep that deletes an archive 24 h after it finishes.
