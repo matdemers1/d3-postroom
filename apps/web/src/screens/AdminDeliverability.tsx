@@ -13,12 +13,12 @@ import {
   PageHeader,
   Section,
   Select,
-  Skeleton,
   Stack,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
 import { api, evidenceRowText, proposalSummary, type Deliverability, type DeliverabilitySource, type ProposalEvidenceDay, type ProposalResult } from '../api';
+import { Loading, LoadFailed } from './states';
 
 const RANGES = [
   { value: '7', label: 'Last 7 days' },
@@ -224,15 +224,15 @@ function ProposalCard({ result }: { result: ProposalResult }) {
 export function AdminDeliverability() {
   const [days, setDays] = useState('30');
   const [data, setData] = useState<Deliverability | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [proposals, setProposals] = useState<ProposalResult[] | null>(null);
 
   const load = useCallback(async (range: string) => {
     try {
       setData(await api.adminDeliverability(Number(range)));
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -311,12 +311,10 @@ export function AdminDeliverability() {
         <Select options={RANGES} value={days} onValueChange={setDays} />
       </FormField>
 
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load reports" headingLevel={2} action={<Button onClick={() => void load(days)}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="reports" onRetry={() => void load(days)} />
       ) : data === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading reports" />
       ) : empty ? (
         <EmptyState kind="empty" heading="No reports yet" headingLevel={2}>
           {data.mailboxes.dmarc === null

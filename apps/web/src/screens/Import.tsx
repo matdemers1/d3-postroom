@@ -12,13 +12,13 @@ import {
   Page,
   PageHeader,
   Section,
-  Skeleton,
   Stack,
   Table,
   Textarea,
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, importApi, type ImportFolderStatus, type ImportStatus, type StartImportInput } from '../api';
+import { Loading, LoadFailed } from './states';
 
 const ACTIVE = new Set(['pending', 'running']);
 const POLL_MS = 2_000;
@@ -54,7 +54,7 @@ function folderCount(f: Pick<ImportFolderStatus, 'imported' | 'duplicates' | 'to
  */
 export function Import() {
   const [current, setCurrent] = useState<ImportStatus | null | undefined>(undefined);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [host, setHost] = useState('');
   const [port, setPort] = useState('993');
   const [username, setUsername] = useState('');
@@ -71,9 +71,9 @@ export function Import() {
   const load = useCallback(async () => {
     try {
       setCurrent((await importApi.latest()).import);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -232,13 +232,15 @@ export function Import() {
         </Alert>
       )}
 
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load your import" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="your import" onRetry={() => void load()} />
       ) : current === undefined ? (
-        <Skeleton variant="block" />
-      ) : current === null ? null : (
+        <Loading label="Loading your import" />
+      ) : current === null ? (
+        <EmptyState kind="empty" heading="No imports yet" headingLevel={2} size="inline">
+          Start one below: Postroom copies each folder in, and this page follows it as it runs.
+        </EmptyState>
+      ) : (
         renderCurrent(current)
       )}
 

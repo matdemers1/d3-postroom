@@ -12,7 +12,6 @@ import {
   Page,
   PageHeader,
   Section,
-  Skeleton,
   Stack,
   Table,
   Textarea,
@@ -20,6 +19,7 @@ import {
 } from '@d3cloud/ui';
 import { api, describeError, type AppPassword, type AppPasswordScope } from '../api';
 import { relativeTime } from './app-passwords-format';
+import { Loading, LoadFailed } from './states';
 
 const SCOPES: { scope: AppPasswordScope; label: string }[] = [
   { scope: 'imap', label: 'Read mail (IMAP)' },
@@ -38,7 +38,7 @@ const when = (iso: string | null): string =>
  */
 export function AppPasswords() {
   const [rows, setRows] = useState<AppPassword[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [label, setLabel] = useState('');
   const [scopes, setScopes] = useState<AppPasswordScope[]>(['imap', 'smtp']);
@@ -50,9 +50,9 @@ export function AppPasswords() {
   const load = useCallback(async () => {
     try {
       setRows((await api.appPasswords()).appPasswords);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -239,12 +239,10 @@ export function AppPasswords() {
         </form>
       </Section>
 
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load app passwords" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="app passwords" onRetry={() => void load()} />
       ) : rows === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading app passwords" />
       ) : (
         <Table
           caption="Your app passwords"

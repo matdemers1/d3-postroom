@@ -12,7 +12,6 @@ import {
   PageHeader,
   Section,
   Select,
-  Skeleton,
   Stack,
   Table,
   TabPanel,
@@ -21,6 +20,7 @@ import {
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, compileErrorOf, describeError, sieveApi, type SieveCompileError, type SieveScriptSummary } from '../api';
+import { Loading, LoadFailed } from './states';
 
 // ─── The builder's model, and its Sieve (PST-REQ-150) ────────────────────────────────────────────
 //
@@ -269,7 +269,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
  */
 export function Rules() {
   const [scripts, setScripts] = useState<SieveScriptSummary[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [name, setName] = useState(BUILDER_SCRIPT);
   const [mode, setMode] = useState<Mode>('builder');
   const [rules, setRules] = useState<Rule[]>([]);
@@ -301,10 +301,10 @@ export function Rules() {
     try {
       const list = (await sieveApi.list()).scripts;
       setScripts(list);
-      setLoadError(false);
+      setLoadError(null);
       return list;
-    } catch {
-      setLoadError(true);
+    } catch (caught) {
+      setLoadError(caught);
       return null;
     }
   }, []);
@@ -316,8 +316,8 @@ export function Rules() {
       const first = list.find((s) => s.active) ?? list.find((s) => s.name === BUILDER_SCRIPT);
       try {
         await open(first?.name ?? BUILDER_SCRIPT);
-      } catch {
-        setLoadError(true);
+      } catch (caught) {
+        setLoadError(caught);
       }
     })();
   }, [load, open]);
@@ -457,12 +457,10 @@ export function Rules() {
         </Alert>
       )}
 
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load your rules" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="your rules" onRetry={() => void load()} />
       ) : scripts === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading your rules" />
       ) : (
         <Stack gap="24">
           <Section

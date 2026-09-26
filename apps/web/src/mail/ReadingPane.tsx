@@ -53,10 +53,11 @@ import { byteSize, fullDate, header } from './format';
 import { PaperclipIcon, StarIcon } from './icons';
 import { isStarred } from './list';
 import { PHISH_TONE_OF, phishWarningTitle, sortPhishWarnings } from './phish';
+import { SessionEnded } from '../screens/states';
 
 export interface OpenMessage {
   id: string;
-  status: 'loading' | 'ready' | 'missing' | 'error';
+  status: 'loading' | 'ready' | 'missing' | 'error' | 'signed-out';
   detail: MessageDetail | null;
   body: MessageBody | null;
   bodyStatus: 'loading' | 'ready' | 'error';
@@ -104,6 +105,14 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
         <EmptyState kind="no-results" heading="This message is not here anymore" size="inline" headingLevel={2}>
           It was moved or deleted, perhaps from another device.
         </EmptyState>
+      </section>
+    );
+  }
+  if (open.status === 'signed-out') {
+    return (
+      <section className="pr-reader" aria-label="Reading pane">
+        {back}
+        <SessionEnded size="inline" />
       </section>
     );
   }

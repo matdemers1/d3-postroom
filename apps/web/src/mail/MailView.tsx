@@ -23,6 +23,7 @@ import { ScheduledSends, SnoozeControl, UndoSendToast } from './Scheduled';
 import { mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { SPLIT_QUERY, useMediaQuery } from './useMedia';
+import { SessionEnded } from '../screens/states';
 
 const PAGE = 50;
 
@@ -66,6 +67,7 @@ function MailPanes({ route }: { route: MailRoute }) {
   const [searchQuery, setSearchQuery] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [searchUnavailable, setSearchUnavailable] = useState(false);
+  const [listSignedOut, setListSignedOut] = useState(false);
   const [list, dispatch] = useReducer(listReducer, initialList);
   const [open, setOpen] = useState<OpenMessage | null>(null);
   const [openReload, setOpenReload] = useState(0);
@@ -136,6 +138,7 @@ function MailPanes({ route }: { route: MailRoute }) {
       .catch((error: unknown) => {
         if (cancelled) return;
         if (error instanceof ApiError && error.status === 501) setSearchUnavailable(true);
+        setListSignedOut(error instanceof ApiError && error.status === 401);
         dispatch({ type: 'failed', mailboxId: listKey });
       });
     return () => {
@@ -227,8 +230,8 @@ function MailPanes({ route }: { route: MailRoute }) {
         if (!cancelled) setOpen((o) => (o === null || o.id !== messageId ? o : { ...o, status: 'ready', detail }));
       })
       .catch((error: unknown) => {
-        const missing = error instanceof ApiError && error.status === 404;
-        if (!cancelled) setOpen((o) => (o === null || o.id !== messageId ? o : { ...o, status: missing ? 'missing' : 'error' }));
+        const status = error instanceof ApiError && error.status === 404 ? 'missing' : error instanceof ApiError && error.status === 401 ? 'signed-out' : 'error';
+        if (!cancelled) setOpen((o) => (o === null || o.id !== messageId ? o : { ...o, status }));
       });
     api
       .messageBody(messageId)
@@ -565,6 +568,7 @@ function MailPanes({ route }: { route: MailRoute }) {
         openId={route.messageId}
         searching={searchQuery !== null}
         searchUnavailable={searchUnavailable}
+        signedOut={listSignedOut}
         onRetry={reloadList}
         onOpen={(m, index) => {
           dispatch({ type: 'cursor', index });
@@ -699,6 +703,7 @@ function ListBody({
   openId,
   searching,
   searchUnavailable,
+  signedOut,
   onRetry,
   onOpen,
   onNearEnd,
@@ -709,6 +714,7 @@ function ListBody({
   openId: string | null;
   searching: boolean;
   searchUnavailable: boolean;
+  signedOut: boolean;
   onRetry: () => void;
   onOpen: (m: MessageSummary, index: number) => void;
   onNearEnd: () => void;
@@ -725,6 +731,13 @@ function ListBody({
     );
   }
   if (list.status === 'error') {
+    if (signedOut) {
+      return (
+        <div className="pr-list pr-list--state">
+          <SessionEnded headingLevel={3} size="inline" />
+        </div>
+      );
+    }
     if (searching && searchUnavailable) {
       return (
         <div className="pr-list pr-list--state">

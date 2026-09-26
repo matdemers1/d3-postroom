@@ -6,6 +6,8 @@ import {
   Button,
   MenuItem,
   MenuSeparator,
+  Page,
+  PageHeader,
   SideNav,
   SideNavGroup,
   SideNavItem,
@@ -17,6 +19,7 @@ import { ComposeIcon, mailboxIcon } from '../mail/icons';
 import { useOptionalMail } from '../mail/MailContext';
 import { mailPath, parseMailRoute } from '../mail/route';
 import { WIDE_QUERY, useMediaQuery } from '../mail/useMedia';
+import { NoAccess } from './states';
 
 // Decorative marks, drawn in currentColor so they follow the theme.
 function MailIcon() {
@@ -299,7 +302,16 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
         </AccountMenu>
       }
     >
-      <Outlet />
+      {/* PST-T-11.1: the server refuses every /api/admin call to a non-admin (403); the screen says
+          so itself rather than leaving each admin page to fail its own way. */}
+      {location.pathname.startsWith('/admin/') && account?.isAdmin !== true ? (
+        <Page>
+          <PageHeader title="Admin" />
+          <NoAccess />
+        </Page>
+      ) : (
+        <Outlet />
+      )}
     </AppShell>
   );
 }

@@ -3,8 +3,9 @@
 // wrote to. Linked from the reading pane's From line and from a Feed item's sender.
 import { useCallback, useEffect, useState } from 'react';
 import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
-import { Alert, Badge, Button, DescriptionItem, DescriptionList, EmptyState, Page, PageHeader, Section, Skeleton, Table, type TableColumn } from '@d3cloud/ui';
+import { Alert, Badge, Button, DescriptionItem, DescriptionList, EmptyState, Page, PageHeader, Section, Table, type TableColumn } from '@d3cloud/ui';
 import { api, contactsApi, describeError, type SenderProfile as SenderProfileJson, type SenderProfileMessage } from '../api';
+import { Loading, LoadFailed } from './states';
 
 const when = (iso: string | null): string => (iso === null ? '—' : new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
 
@@ -28,7 +29,7 @@ export function SenderProfile() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<SenderProfileJson | null>(null);
   const [contact, setContact] = useState<ContactHit>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [notice, setNotice] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
   const [busyUnsub, setBusyUnsub] = useState<string | null>(null);
 
@@ -38,9 +39,9 @@ export function SenderProfile() {
       const [p, c] = await Promise.all([api.senderProfile(address), contactsApi.lookup(address).catch(() => ({ contact: null }))]);
       setProfile(p);
       setContact(c.contact);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, [address]);
 
@@ -70,13 +71,11 @@ export function SenderProfile() {
 
   if (address === '') return <Navigate />;
 
-  if (loadError) {
+  if (loadError !== null) {
     return (
       <Page>
         <PageHeader title="Sender" />
-        <Alert tone="warning" title="Could not load this sender" actions={<Button size="sm" onClick={() => { void load(); }}>Try again</Button>}>
-          Postroom did not answer.
-        </Alert>
+        <LoadFailed error={loadError} what="this sender" onRetry={() => void load()} />
       </Page>
     );
   }
@@ -85,7 +84,7 @@ export function SenderProfile() {
     return (
       <Page>
         <PageHeader title="Sender" />
-        <Skeleton variant="block" height={240} />
+        <Loading label="Loading this sender" height={240} />
       </Page>
     );
   }

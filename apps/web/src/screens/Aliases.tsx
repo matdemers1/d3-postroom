@@ -1,6 +1,7 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
-import { Alert, Badge, Button, EmptyState, FormActions, FormField, Input, Page, PageHeader, Section, Skeleton, Stack, Table, type TableColumn } from '@d3cloud/ui';
+import { Alert, Badge, Button, EmptyState, FormActions, FormField, Input, Page, PageHeader, Section, Stack, Table, type TableColumn } from '@d3cloud/ui';
 import { api, describeError, type Alias } from '../api';
+import { Loading, LoadFailed } from './states';
 
 const when = (iso: string | null): string =>
   iso === null ? 'Never' : new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -12,7 +13,7 @@ const when = (iso: string | null): string =>
  */
 export function Aliases() {
   const [rows, setRows] = useState<Alias[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [site, setSite] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -22,9 +23,9 @@ export function Aliases() {
   const load = useCallback(async () => {
     try {
       setRows((await api.aliases()).aliases);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -165,12 +166,10 @@ export function Aliases() {
         </form>
       </Section>
 
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load aliases" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="aliases" onRetry={() => void load()} />
       ) : rows === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading aliases" />
       ) : (
         <Table
           caption="Your masked aliases"

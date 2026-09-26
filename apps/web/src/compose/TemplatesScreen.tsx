@@ -1,9 +1,10 @@
 // The template manager (PST-T-9.2, PST-REQ-144): create, edit and delete the saved templates the
 // composer's `;` shortcut offers. CRUD over /api/templates, every mutation audited server-side.
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
-import { Alert, Button, EmptyState, FormActions, FormField, Input, Page, PageHeader, Section, Skeleton, Stack, Table, Textarea, type TableColumn } from '@d3cloud/ui';
+import { Alert, Button, EmptyState, FormActions, FormField, Input, Page, PageHeader, Section, Stack, Table, Textarea, type TableColumn } from '@d3cloud/ui';
 import { describeError } from '../api';
 import { templatesApi, type TemplateJson } from './api';
+import { Loading, LoadFailed } from '../screens/states';
 
 interface FormState {
   id: string | null;
@@ -17,7 +18,7 @@ const BLANK: FormState = { id: null, shortcut: '', name: '', subject: '', body: 
 
 export function TemplatesScreen() {
   const [rows, setRows] = useState<TemplateJson[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [form, setForm] = useState<FormState>(BLANK);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -26,9 +27,9 @@ export function TemplatesScreen() {
   const load = useCallback(async () => {
     try {
       setRows((await templatesApi.list()).templates);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
     }
   }, []);
 
@@ -169,12 +170,10 @@ export function TemplatesScreen() {
         </form>
       </Section>
 
-      {loadError ? (
-        <EmptyState kind="error" heading="Could not load templates" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
-          The server did not answer.
-        </EmptyState>
+      {loadError !== null ? (
+        <LoadFailed error={loadError} what="templates" onRetry={() => void load()} />
       ) : rows === null ? (
-        <Skeleton variant="block" />
+        <Loading label="Loading templates" />
       ) : (
         <Table caption="Your compose templates" columns={columns} rows={rows} rowKey={(t) => t.id} empty={<EmptyState kind="empty" heading="No templates yet" size="row" />} />
       )}
