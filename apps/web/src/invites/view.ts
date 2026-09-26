@@ -51,9 +51,33 @@ function isoDayLabel(yyyymmdd: string, locale?: string): string {
   return date.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-/** The organizer's name, or their address when there is none. */
+/**
+ * The organizer as `Name <address>` — always with the ACTUAL address a reply goes to, never the
+ * CN alone (a CN is whatever the sender typed). Just the address when there is no name; the name
+ * and "(invalid address)" when the ORGANIZER did not decode to one valid mailbox.
+ */
 export function organizerLabel(invite: Pick<InviteView, 'organizer'>): string {
-  return invite.organizer.cn ?? invite.organizer.email ?? 'Unknown organizer';
+  const { cn, email } = invite.organizer;
+  const name = cn === null || cn.trim() === '' ? null : cn.trim();
+  if (email === null) return name === null ? 'Unknown organizer' : `${name} (invalid address)`;
+  return name === null || name.toLowerCase() === email.toLowerCase() ? email : `${name} <${email}>`;
+}
+
+/** Where Accept/Maybe/Decline sends the reply — the organizer's address — or null when it cannot. */
+export function replyTarget(invite: Pick<InviteView, 'organizer'>): string | null {
+  return invite.organizer.email;
+}
+
+/** Why a REQUEST cannot be answered (shown on the card instead of the buttons), or null when it can. */
+export function replyBlockedReason(invite: Pick<InviteView, 'method' | 'cancelled' | 'organizer'>): string | null {
+  if (invite.method !== 'REQUEST' || invite.cancelled) return null;
+  return invite.organizer.email === null ? 'Can’t reply: the organizer address is invalid.' : null;
+}
+
+/** The line beside the buttons naming the reply's destination. */
+export function replyTargetNote(invite: Pick<InviteView, 'organizer'>): string {
+  const target = replyTarget(invite);
+  return target === null ? '' : `Your reply is sent to ${target}.`;
 }
 
 /** "3 people", "1 person" — never listing every address inline (the card stays short). */
@@ -67,9 +91,9 @@ export function isCurrentAnswer(invite: Pick<InviteView, 'you'>, partstat: Parts
   return invite.you?.partstat === partstat;
 }
 
-/** Whether the card offers Accept/Maybe/Decline at all: only a live REQUEST, never a CANCEL or a reply the caller sent. */
-export function offersResponse(invite: Pick<InviteView, 'method' | 'cancelled'>): boolean {
-  return invite.method === 'REQUEST' && !invite.cancelled;
+/** Whether the card offers Accept/Maybe/Decline at all: only a live REQUEST with a valid organizer address, never a CANCEL or a reply the caller sent. */
+export function offersResponse(invite: Pick<InviteView, 'method' | 'cancelled' | 'organizer'>): boolean {
+  return invite.method === 'REQUEST' && !invite.cancelled && invite.organizer.email !== null;
 }
 
 /** Whether the card offers "Remove from calendar": a CANCEL that is (or might be) in the calendar. */
@@ -79,7 +103,8 @@ export function offersRemoval(invite: Pick<InviteView, 'method'>): boolean {
 
 const RESPONSE_ANNOUNCEMENT: Record<Partstat, string> = { ACCEPTED: 'Accepted.', TENTATIVE: 'Marked maybe.', DECLINED: 'Declined.' };
 
-/** What is announced (aria-live) after a successful response, so a screen reader hears the result. */
-export function responseAnnouncement(partstat: Partstat): string {
-  return RESPONSE_ANNOUNCEMENT[partstat];
+/** What is announced (aria-live) after a successful response, so a screen reader hears the result — and where the reply went. */
+export function responseAnnouncement(partstat: Partstat, target?: string | null): string {
+  const base = RESPONSE_ANNOUNCEMENT[partstat];
+  return target === undefined || target === null ? base : `${base} Reply sent to ${target}.`;
 }

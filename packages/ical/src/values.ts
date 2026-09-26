@@ -206,7 +206,39 @@ export function formatTextList(items: string[]): string {
   return items.map(escapeText).join(',');
 }
 
-/** CAL-ADDRESS (§3.3.3): the e-mail address of a `mailto:` URI, lower-cased scheme stripped, or null. */
+const ATEXT_ATOM = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~\-\u0080-\u{10FFFF}]+$/u;
+const LDH_LABEL = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
+// An IDN U-label (RFC 5890): letters, marks and digits from any script, and hyphens, never
+// starting or ending with one. ASCII punctuation other than `-` is never part of a label.
+const IDN_LABEL = /^[\p{L}\p{M}\p{N}](?:[\p{L}\p{M}\p{N}-]*[\p{L}\p{M}\p{N}])?$/u;
+
+/**
+ * True when `addr` is exactly one RFC 5321 mailbox, `local@domain`: a dot-atom local part (UTF-8
+ * allowed, RFC 6531) of at most 64 octets, and a domain of LDH or IDN labels. Anything carrying a
+ * control character (CR/LF above all — header and SMTP command injection), whitespace, `<`, `>`,
+ * `,`, `;`, a quoted local part, an address literal, or a second `@` is not a mailbox.
+ */
+export function isMailbox(addr: string): boolean {
+  if (addr.length === 0 || addr.length > 254) return false;
+  // eslint-disable-next-line no-control-regex -- rejecting control characters is the point
+  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029\s<>,;"()[\]\\:]/u.test(addr)) return false;
+  const at = addr.indexOf('@');
+  if (at <= 0 || at !== addr.lastIndexOf('@')) return false;
+  const local = addr.slice(0, at);
+  const domain = addr.slice(at + 1);
+  if (new TextEncoder().encode(local).length > 64) return false;
+  if (!local.split('.').every((atom) => ATEXT_ATOM.test(atom))) return false;
+  const bare = domain.endsWith('.') ? domain.slice(0, -1) : domain;
+  if (bare.length === 0 || bare.length > 253) return false;
+  return bare.split('.').every((label) => LDH_LABEL.test(label) || (/[\u0080-\u{10FFFF}]/u.test(label) && IDN_LABEL.test(label)));
+}
+
+/**
+ * CAL-ADDRESS (§3.3.3): the e-mail address of a `mailto:` URI, scheme stripped and percent-decoded,
+ * or null when the value is not a `mailto:` URI or does not decode to exactly one valid mailbox
+ * (`isMailbox`). Never throws: an ORGANIZER or ATTENDEE whose address fails is simply not
+ * addressable — a reply is never sent to it and it never reaches a message header.
+ */
 export function calAddressEmail(raw: string): string | null {
   const v = raw.trim();
   if (!/^mailto:/i.test(v)) return null;
@@ -214,8 +246,8 @@ export function calAddressEmail(raw: string): string | null {
   try {
     addr = decodeURIComponent(addr);
   } catch {
-    // Keep the raw form: a stray `%` in a mailto URI is not worth rejecting the address for.
-    addr = v.slice(7);
+    // A malformed percent-escape: not a URI anyone can reply to.
+    return null;
   }
-  return addr.includes('@') ? addr : null;
+  return isMailbox(addr) ? addr : null;
 }

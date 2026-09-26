@@ -1,7 +1,7 @@
 // The reading pane's invite card (PST-T-8.4, PST-REQ-134): title, when, organizer, attendee count,
 // the caller's current response, and Accept/Maybe/Decline (or, for a CANCEL, Remove from calendar).
 // Pure formatting lives in ./view.ts, unit tested there without pulling in @d3cloud/ui.
-import { useCallback, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import { Alert, Button, DescriptionItem, DescriptionList, Stack } from '@d3cloud/ui';
 import { api, ApiError, type InviteView, type Partstat } from '../api';
 import {
@@ -12,6 +12,9 @@ import {
   offersResponse,
   organizerLabel,
   partstatLabel,
+  replyBlockedReason,
+  replyTarget,
+  replyTargetNote,
   responseAnnouncement,
 } from './view';
 
@@ -40,7 +43,7 @@ export function InviteCard({ messageId, invite, onChanged }: InviteCardProps) {
       api.respondToInvite(messageId, partstat).then(
         () => {
           setBusy(null);
-          setAnnouncement(responseAnnouncement(partstat));
+          setAnnouncement(responseAnnouncement(partstat, replyTarget(invite)));
           refresh();
         },
         (err: unknown) => {
@@ -49,7 +52,7 @@ export function InviteCard({ messageId, invite, onChanged }: InviteCardProps) {
         },
       );
     },
-    [messageId, refresh],
+    [messageId, refresh, invite],
   );
 
   const remove = useCallback(() => {
@@ -69,6 +72,8 @@ export function InviteCard({ messageId, invite, onChanged }: InviteCardProps) {
   }, [messageId, refresh]);
 
   const when = inviteWhen(invite);
+  const blocked = replyBlockedReason(invite);
+  const targetId = useId();
 
   return (
     <section aria-label="Invitation" className="pr-invite" data-testid="invite-card">
@@ -90,8 +95,16 @@ export function InviteCard({ messageId, invite, onChanged }: InviteCardProps) {
             {error}
           </Alert>
         ) : null}
+        {blocked !== null ? (
+          <Alert tone="warning" title="Can’t reply">
+            {blocked}
+          </Alert>
+        ) : null}
         {offersResponse(invite) ? (
-          <div role="group" aria-label="Respond to this invitation" className="pr-invite__actions">
+          <div role="group" aria-label="Respond to this invitation" aria-describedby={targetId} className="pr-invite__actions">
+            <p id={targetId} className="pr-invite__target">
+              {replyTargetNote(invite)}
+            </p>
             <Button size="sm" variant="primary" pressed={isCurrentAnswer(invite, 'ACCEPTED')} disabled={busy !== null} onClick={() => { respond('ACCEPTED'); }}>
               Accept
             </Button>{' '}

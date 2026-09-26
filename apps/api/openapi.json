@@ -8692,7 +8692,7 @@
         "tags": [
           "Invites"
         ],
-        "summary": "Mark a CANCEL’s event STATUS:CANCELLED in the default calendar.",
+        "summary": "Mark a CANCEL’s event STATUS:CANCELLED in the default calendar — only for a CANCEL from the event’s organizer of record, authenticated (DMARC, or DKIM) for the organizer’s domain, with a SEQUENCE not older than the stored one.",
         "parameters": [
           {
             "name": "id",
@@ -8736,7 +8736,7 @@
             }
           },
           "403": {
-            "description": "Missing CSRF header.",
+            "description": "Missing CSRF header; the CANCEL’s ORGANIZER is not the stored event’s; or it is not authenticated for the organizer’s domain.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8756,7 +8756,7 @@
             }
           },
           "409": {
-            "description": "Not a CANCEL.",
+            "description": "Not a CANCEL, older than the stored event, or the stored event is unreadable.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8871,7 +8871,7 @@
             }
           },
           "409": {
-            "description": "Not a REQUEST, no ORGANIZER, or the calendar object changed at the same time.",
+            "description": "Not a REQUEST, no ORGANIZER or one that is not a single valid mailbox, or the calendar object changed at the same time.",
             "content": {
               "application/json": {
                 "schema": {

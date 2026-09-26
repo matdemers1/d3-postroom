@@ -57,3 +57,23 @@ export function isCancelled(calendar: Component): boolean {
   }
   return false;
 }
+
+/** The master (non-override) schedulable component, or undefined. */
+function master(calendar: Component): Component | undefined {
+  const schedulable = calendar.components.filter((c) => isSchedulable(c.name));
+  return schedulable.find((c) => getProperty(c, 'RECURRENCE-ID') === undefined) ?? schedulable[0];
+}
+
+/** The ORGANIZER of the stored event, lower-cased, when it is one valid mailbox; null otherwise. */
+export function storedOrganizer(calendar: Component): string | null {
+  const c = master(calendar);
+  const prop = c === undefined ? undefined : getProperty(c, 'ORGANIZER');
+  return prop === undefined ? null : (calAddressEmail(prop.value)?.toLowerCase() ?? null);
+}
+
+/** The stored event's SEQUENCE (RFC 5545 §3.8.7.4; absent means 0). */
+export function storedSequence(calendar: Component): number {
+  const c = master(calendar);
+  const n = Number((c === undefined ? undefined : getProperty(c, 'SEQUENCE'))?.value ?? '0');
+  return Number.isSafeInteger(n) && n >= 0 ? n : 0;
+}

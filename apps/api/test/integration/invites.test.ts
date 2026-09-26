@@ -29,7 +29,14 @@ const CSRF = { 'x-postroom-csrf': '1' };
 const PASSWORD = 'correct horse battery staple';
 const ORGANIZER = 'priya@example.com';
 
-function foldedIcs(uid: string, method: 'REQUEST' | 'CANCEL', attendee: string, opts: { sequence?: number; status?: string } = {}): string {
+interface IcsOpts {
+  sequence?: number;
+  status?: string;
+  /** The ORGANIZER's mailto value (after `mailto:`), raw — default the genuine organizer. */
+  organizer?: string;
+}
+
+function foldedIcs(uid: string, method: 'REQUEST' | 'CANCEL', attendee: string, opts: IcsOpts = {}): string {
   const lines = [
     'BEGIN:VCALENDAR',
     'PRODID:-//Google Inc//Google Calendar 70.9054//EN',
@@ -58,7 +65,7 @@ function foldedIcs(uid: string, method: 'REQUEST' | 'CANCEL', attendee: string, 
     'DTSTART;TZID=America/New_York:20261005T140000',
     'DTEND;TZID=America/New_York:20261005T150000',
     'DTSTAMP:20260928T120000Z',
-    `ORGANIZER;CN=Priya Patel:mailto:${ORGANIZER}`,
+    `ORGANIZER;CN=Priya Patel:mailto:${opts.organizer ?? ORGANIZER}`,
     `UID:${uid}`,
     `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Reader:mailto:${attendee}`,
     `SEQUENCE:${String(opts.sequence ?? 0)}`,
@@ -71,7 +78,7 @@ function foldedIcs(uid: string, method: 'REQUEST' | 'CANCEL', attendee: string, 
   return lines.join('\r\n');
 }
 
-function inviteMessage(to: string, uid: string, method: 'REQUEST' | 'CANCEL', opts: { sequence?: number; status?: string } = {}): Buffer {
+function inviteMessage(to: string, uid: string, method: 'REQUEST' | 'CANCEL', opts: IcsOpts = {}): Buffer {
   const ics = foldedIcs(uid, method, to, opts);
   const head = ['From: Priya Patel <priya@example.com>', `To: ${to}`, `Subject: ${method === 'CANCEL' ? 'Cancelled: ' : ''}Quarterly Planning Sync`, 'Date: Mon, 28 Sep 2026 12:00:00 +0000', `Message-ID: <${randomUUID()}@example.com>`, 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="inv"'];
   const body = ['--inv', 'Content-Type: text/plain; charset=utf-8', '', 'See the attached invitation.', '', '--inv', `Content-Type: text/calendar; method=${method}; charset=UTF-8`, 'Content-Transfer-Encoding: 8bit', '', ics, '--inv--', ''];
@@ -111,11 +118,29 @@ describe.skipIf(!baseUrl)('iMIP invitations (PST-T-8.4)', () => {
     return { id, address: `${login}@d3cloud.io`, cookie: await signIn(login, totpSecret) };
   };
 
-  const file = async (me: Person, raw: Buffer): Promise<string> => {
+  /** DMARC as smtp-in/the worker store it in message_verdict.auth; `null` files no verdict at all. */
+  type Auth = { dmarc: 'pass' | 'fail'; fromDomain: string } | null;
+
+  const file = async (me: Person, raw: Buffer, auth: Auth = null): Promise<string> => {
     const put = await blobs.put(raw);
     const filed = await db.$transaction((tx) => fileLocalMessage(tx, { accountId: me.id, mailbox: 'INBOX', blobSha256: put.sha256, size: put.size, internalDate: new Date() }));
+    if (auth !== null) {
+      await db.messageVerdict.create({
+        data: {
+          messageId: filed.id,
+          bucket: 'people',
+          reasons: ['test'],
+          auth: {
+            spf: { result: auth.dmarc },
+            dkim: [{ result: auth.dmarc, domain: auth.fromDomain }],
+            dmarc: { result: auth.dmarc, fromDomain: auth.fromDomain, fromDomains: [auth.fromDomain] },
+          },
+        },
+      });
+    }
     return filed.id;
   };
+  const GENUINE: Auth = { dmarc: 'pass', fromDomain: 'example.com' };
 
   const get = (who: Person, path: string) => request(app).get(path).set('cookie', who.cookie);
   const post = (who: Person, path: string, body?: unknown) => {
@@ -259,7 +284,7 @@ describe.skipIf(!baseUrl)('iMIP invitations (PST-T-8.4)', () => {
     const requestId = await file(me, inviteMessage(me.address, uid, 'REQUEST'));
     expect((await post(me, `/api/messages/${requestId}/invite/respond`, { partstat: 'ACCEPTED' })).status).toBe(200);
 
-    const cancelId = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 1, status: 'CANCELLED' }));
+    const cancelId = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 1, status: 'CANCELLED' }), GENUINE);
     const view = InviteView.parse((await get(me, `/api/messages/${cancelId}/invite`)).body);
     expect(view).toMatchObject({ method: 'CANCEL', uid, cancelled: true });
 
@@ -304,5 +329,91 @@ describe.skipIf(!baseUrl)('iMIP invitations (PST-T-8.4)', () => {
     const respond = await post(me, `/api/messages/${id}/invite/respond`, { partstat: 'ACCEPTED' });
     expect(respond.status).toBe(403);
     expect(respond.body).toMatchObject({ error: 'not_invited' });
+  });
+
+  // --- The verifier's refutation (PST-T-8.4 retry) ---------------------------------------------
+
+  it('an ORGANIZER smuggling CRLF + RCPT TO is not replyable: nothing is queued, nothing reaches a header', async () => {
+    const me = await person();
+    const uid = `evt-${randomUUID()}@google.com`;
+    const poc = 'evil%40attacker.example%0d%0aRCPT%20TO:%3cvictim%40external.example%3e';
+    const id = await file(me, inviteMessage(me.address, uid, 'REQUEST', { organizer: poc }));
+    const view = InviteView.parse((await get(me, `/api/messages/${id}/invite`)).body);
+    expect(view.organizer).toEqual({ email: null, cn: 'Priya Patel' });
+    const respond = await post(me, `/api/messages/${id}/invite/respond`, { partstat: 'ACCEPTED' });
+    expect(respond.status).toBe(409);
+    expect(respond.body).toMatchObject({ error: 'invalid_organizer', message: 'Can’t reply: the organizer address is invalid.' });
+    expect(await db.outboundMessage.count({ where: { accountId: me.id } })).toBe(0);
+    expect(await db.outboundRecipient.count({ where: { address: { contains: 'victim' } } })).toBe(0);
+    const calendar = await defaultCalendar(me.id);
+    expect((await store.listResources(calendar.id)).filter((r) => r.name === `${uid}.ics`)).toHaveLength(0);
+  });
+
+  it('a CANCEL naming a different organizer is refused, and the event stays', async () => {
+    const me = await person();
+    const uid = `evt-${randomUUID()}@google.com`;
+    const requestId = await file(me, inviteMessage(me.address, uid, 'REQUEST'));
+    expect((await post(me, `/api/messages/${requestId}/invite/respond`, { partstat: 'ACCEPTED' })).status).toBe(200);
+    // Authenticated for example.com, but not from the organizer of record.
+    const cancelId = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 1, organizer: 'mallory@example.com' }), GENUINE);
+    const removed = await post(me, `/api/messages/${cancelId}/invite/remove`);
+    expect(removed.status).toBe(403);
+    expect(removed.body).toMatchObject({ error: 'cancel_organizer_mismatch' });
+    expect((removed.body as { message: string }).message).toMatch(/does not come from the organizer/);
+    const [resource] = await store.getResources((await defaultCalendar(me.id)).id, [`${uid}.ics`]);
+    const vevent = parseICalendar(resource?.data ?? Buffer.alloc(0)).components.find((c) => c.name === 'VEVENT');
+    expect(vevent === undefined ? undefined : getProperty(vevent, 'STATUS')?.value).toBe('CONFIRMED');
+  });
+
+  it('a spoofed CANCEL (DMARC fail, or no verdict at all) is refused, and the event stays', async () => {
+    const me = await person();
+    const uid = `evt-${randomUUID()}@google.com`;
+    const requestId = await file(me, inviteMessage(me.address, uid, 'REQUEST'));
+    expect((await post(me, `/api/messages/${requestId}/invite/respond`, { partstat: 'ACCEPTED' })).status).toBe(200);
+    const spoofed = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 1 }), { dmarc: 'fail', fromDomain: 'example.com' });
+    const r1 = await post(me, `/api/messages/${spoofed}/invite/remove`);
+    expect(r1.status).toBe(403);
+    expect(r1.body).toMatchObject({ error: 'cancel_unauthenticated' });
+    const unverdicted = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 1 }));
+    const r2 = await post(me, `/api/messages/${unverdicted}/invite/remove`);
+    expect(r2.status).toBe(403);
+    expect(r2.body).toMatchObject({ error: 'cancel_unauthenticated' });
+    const [resource] = await store.getResources((await defaultCalendar(me.id)).id, [`${uid}.ics`]);
+    const vevent = parseICalendar(resource?.data ?? Buffer.alloc(0)).components.find((c) => c.name === 'VEVENT');
+    expect(vevent === undefined ? undefined : getProperty(vevent, 'STATUS')?.value).toBe('CONFIRMED');
+
+    // The genuine one still cancels.
+    const genuine = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 1 }), GENUINE);
+    const r3 = await post(me, `/api/messages/${genuine}/invite/remove`);
+    expect(r3.status).toBe(200);
+    expect(r3.body).toEqual({ ok: true, removed: true });
+  });
+
+  it('a CANCEL older than the stored event (lower SEQUENCE) is refused', async () => {
+    const me = await person();
+    const uid = `evt-${randomUUID()}@google.com`;
+    const requestId = await file(me, inviteMessage(me.address, uid, 'REQUEST', { sequence: 3 }));
+    expect((await post(me, `/api/messages/${requestId}/invite/respond`, { partstat: 'ACCEPTED' })).status).toBe(200);
+    const stale = await file(me, inviteMessage(me.address, uid, 'CANCEL', { sequence: 2 }), GENUINE);
+    const removed = await post(me, `/api/messages/${stale}/invite/remove`);
+    expect(removed.status).toBe(409);
+    expect(removed.body).toMatchObject({ error: 'cancel_stale' });
+  });
+
+  it('the reply is held to the composer’s recipient cap (PST-REQ-043): over it, refused 429 like a composed message', async () => {
+    const capped = createApp({ db, env: { DATABASE_URL: testDb.url, BLOB_ROOT: blobRoot, SUBMISSION_CAP_HOURLY: '1', SUBMISSION_CAP_DAILY: '1' }, config: baseConfig(clock) });
+    const me = await person();
+    const first = await file(me, inviteMessage(me.address, `evt-${randomUUID()}@google.com`, 'REQUEST'));
+    const second = await file(me, inviteMessage(me.address, `evt-${randomUUID()}@google.com`, 'REQUEST'));
+    const respond = (id: string) => request(capped).post(`/api/messages/${id}/invite/respond`).set(CSRF).set('cookie', me.cookie).send({ partstat: 'ACCEPTED' });
+    expect((await respond(first)).status).toBe(200);
+    const over = await respond(second);
+    expect(over.status).toBe(429);
+    expect(over.body).toMatchObject({ error: 'recipient_cap' });
+    expect(await db.outboundMessage.count({ where: { accountId: me.id } })).toBe(1);
+    // The composer, on the same app and the same account, is refused the same way.
+    const composed = await request(capped).post('/api/compose/send').set(CSRF).set('cookie', me.cookie).send({ from: me.address, to: ['someone@example.org'], subject: 'hi', text: 'hello' });
+    expect(composed.status).toBe(429);
+    expect(composed.body).toMatchObject({ error: 'recipient_cap' });
   });
 });
