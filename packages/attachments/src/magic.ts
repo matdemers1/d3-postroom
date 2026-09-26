@@ -16,6 +16,8 @@ export type AttachmentKind =
   | 'nested-archive'
   | 'archive-executable'
   | 'uninspectable-archive'
+  | 'malformed-archive'
+  | 'suspicious-compression-ratio'
   | 'pdf-active-content'
   | 'rtf-ole-embed'
   | 'suspicious-filename'
