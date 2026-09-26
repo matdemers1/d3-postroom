@@ -26,7 +26,8 @@
     "@postroom/dsn": "workspace:*",
     "@postroom/audit": "workspace:*",
     "@postroom/search": "workspace:*",
-    "@postroom/threading": "workspace:*"
+    "@postroom/threading": "workspace:*",
+    "@postroom/classifier": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

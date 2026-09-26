@@ -9,6 +9,9 @@
 //     message, so the refcount is unchanged. The search row and the verdict follow the new id.
 // Each write ends with pg_notify('postroom_mailbox', id) for every mailbox it changed, inside the
 // same transaction, so it is delivered exactly when the change commits.
+// A move between two sorting buckets also writes a bayes_training_event in that transaction
+// (PST-T-5.3, PST-REQ-104) — the same event an IMAP MOVE writes; the worker trains on it.
+import { trainingMove } from '@postroom/classifier';
 import type { Db, Message, MessageVerdict, Prisma } from '@postroom/db';
 import type { MailboxJson, MessageDetailJson, MessageSummaryJson } from './schemas.js';
 
@@ -241,6 +244,15 @@ export async function updateMessage(tx: Tx, input: UpdateInput): Promise<{ befor
   await tx.messageSearch.updateMany({ where: { messageId: message.id }, data: { messageId: moved.id } });
   await tx.messageVerdict.updateMany({ where: { messageId: message.id }, data: { messageId: moved.id } });
   await tx.message.delete({ where: { id: message.id } });
+  const buckets = await tx.mailbox.findMany({ where: { id: { in: [source.id, target.id] } }, select: { id: true, name: true, specialUse: true } });
+  const from = buckets.find((b) => b.id === source.id);
+  const to = buckets.find((b) => b.id === target.id);
+  const training = from === undefined || to === undefined ? null : trainingMove(from, to);
+  if (training !== null) {
+    await tx.bayesTrainingEvent.create({
+      data: { accountId: input.accountId, messageId: moved.id, blobSha256: message.blobSha256, fromBucket: training.fromBucket, toBucket: training.toBucket, via: 'web' },
+    });
+  }
   // The expunge is a change in the source too: IMAP clients syncing with CONDSTORE must see it.
   await tx.mailbox.update({ where: { id: source.id }, data: { highestModseq: source.highestModseq + 1n } });
   for (const id of lockOrder) await notifyMailbox(tx, id);
