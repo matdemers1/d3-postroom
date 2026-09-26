@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import { SESSION_COOKIE } from '../auth/sessions.js';
 import * as S from '../mail/schemas.js';
+import * as E from '../export/schemas.js';
 
 type Json = Record<string, unknown>;
 
@@ -51,6 +52,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   SearchResponse: S.SearchResponse,
   MailboxChangedEvent: S.MailboxChangedEvent,
   MessageNewEvent: S.MessageNewEvent,
+  ExportStatus: E.ExportStatus,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -180,6 +182,47 @@ export const ROUTES: RouteSpec[] = [
     summary: 'Full-text search over the caller’s mail (PST-REQ-080).',
     query: S.SearchQuery,
     responses: { '200': { description: 'Matching messages, best rank first.', schema: 'SearchResponse' }, ...COMMON, '404': err('mailboxId is not the caller’s.') },
+  },
+  {
+    method: 'post',
+    path: '/api/export',
+    operationId: 'startExport',
+    tag: 'Export',
+    summary: 'Start a full-data export of the caller\'s account: mbox per folder + manifest.json in a ZIP (PST-REQ-151).',
+    description:
+      'Needs a fresh step-up and x-postroom-csrf: 1. One active export per account: a second call while one is pending or running is 409. The archive is deleted 24 h after it finishes.',
+    headers: [{ name: 'x-postroom-csrf', required: true, description: 'Must be 1.' }],
+    responses: {
+      '202': { description: 'The export, just started.', schema: 'ExportStatus' },
+      ...COMMON,
+      '403': err('Missing CSRF header, or step-up required.'),
+      '409': err('An export is already pending or running for this account.'),
+    },
+  },
+  {
+    method: 'get',
+    path: '/api/export/{id}',
+    operationId: 'getExportStatus',
+    tag: 'Export',
+    summary: 'The status of one export of the caller\'s.',
+    params: E.IdParams,
+    responses: { '200': { description: 'pending | running | done | failed.', schema: 'ExportStatus' }, ...COMMON, '404': err('Not an export of the caller.') },
+  },
+  {
+    method: 'get',
+    path: '/api/export/{id}/download',
+    operationId: 'downloadExport',
+    tag: 'Export',
+    summary: 'The finished archive, streamed as application/zip.',
+    description: 'Needs a fresh step-up. 409 while the export is still pending/running; 404 once done but past its 24 h expiry (the archive was swept).',
+    params: E.IdParams,
+    responses: {
+      '200': { description: 'The ZIP archive.', content: { 'application/zip': { schema: { type: 'string', contentEncoding: 'binary' } } } },
+      ...COMMON,
+      '403': err('Step-up required.'),
+      '404': err('Not an export of the caller, or the archive has expired.'),
+      '409': err('The export is not finished yet.'),
+    },
   },
   {
     method: 'get',
