@@ -92,12 +92,12 @@ const RECEIPT_SUBJECT =
   /\b(receipt|invoice|your order|order (confirmation|confirmed|#|number|no\.?)|order\s+\S*\d|purchase|payment (received|confirmation|successful|processed)|you paid|thanks for your (order|purchase|payment)|refund|billing statement|subscription (renewed|renewal|confirmation))\b/i;
 
 const UPDATE_SUBJECT =
-  /\b(password|security (alert|notice|code)|sign[- ]?in|log[- ]?in|new device|verify|verification|confirm your (email|account)|account (update|activity|change)|2fa|two[- ]factor|one[- ]time (code|password)|shipped|shipping|out for delivery|delivered|tracking|your (package|shipment|delivery)|terms of (service|use)|privacy policy|policy update|statement is ready|reset)\b/i;
+  /\b(password|security (alert|notice|code)|sign[- ]?in|log[- ]?in|new device|verify|verification|confirm your (email|account)|account (update|activity|change)|2fa|two[- ]factor|one[- ]time (code|password)|shipped|shipping|out for delivery|delivered|delivery (scheduled|update|window)|tracking|your (package|shipment|delivery|ride|driver|order status)|arriv(ing|es|ed)|minutes away|terms of (service|use)|privacy policy|policy update|statement is ready|reset)\b/i;
 
 /** Commerce senders whose From domain alone says "receipt" when the subject is not conclusive. */
 const RECEIPT_SENDER_LOCAL = /(^|[._-])(receipts?|orders?|order-update|billing|invoices?|payments?|purchases?)($|[._-])/i;
 
-const UPDATE_SENDER_LOCAL = /(^|[._-])(security|account|accounts|verify|verification|shipping|shipment|tracking|delivery|auto-confirm)($|[._-])/i;
+const UPDATE_SENDER_LOCAL = /(^|[._-])(updates|security|account|accounts|verify|verification|shipping|shipment|tracking|delivery|auto-confirm)($|[._-])/i;
 
 interface Rule {
   readonly bucket: Exclude<FilingBucket, 'priority' | 'people' | 'junk'>;
@@ -172,6 +172,14 @@ export function bucketFor(input: BucketForInput, bayes?: BayesInput): FilingDeci
 
   if (input.signals.membership.blocked.value) {
     reasons.push('junk: sender is blocked');
+    return { bucket: 'junk', folder: 'Junk', keyword: null, reasons, scores: { ...scores, 'bucket:junk': 1 } };
+  }
+
+  // A sender that labels its own mail `Precedence: junk` and cannot authenticate it (no DMARC pass):
+  // legitimate bulk senders authenticate, so this is unsolicited bulk rather than a newsletter.
+  const precedence = header(input.headers, 'precedence');
+  if (precedence !== null && precedence.trim().toLowerCase() === 'junk' && !input.signals.authenticated.value) {
+    reasons.push(`junk: Precedence: junk from an unauthenticated sender (${input.signals.authenticated.reason})`);
     return { bucket: 'junk', folder: 'Junk', keyword: null, reasons, scores: { ...scores, 'bucket:junk': 1 } };
   }
 

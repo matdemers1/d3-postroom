@@ -30,7 +30,7 @@ const mime = await loadPackage('mime');
 const classifier = await loadPackage('classifier');
 
 const { parseHeaderBlock } = mime;
-const { extractSignals, decide } = classifier;
+const { extractSignals, bucketFor } = classifier;
 
 /** Split a raw RFC 5322 message (CRLF-terminated) into its header block and body, and parse the
  * headers into the `HeaderLike[]` shape `extractSignals` reads. Tolerant of a bare-LF body (some
@@ -46,20 +46,15 @@ export function parseEml(raw) {
 }
 
 /**
- * The one place this harness turns a classifier decision into a golden bucket label. Today it maps
- * `decide()`'s three rule-pass buckets ('priority' | 'people' | 'other') onto the golden manifest's
- * `expectedRuleBucket` field. PST-T-5.1 is adding a pure `bucketFor(signals, bayes?)` in
- * `packages/classifier/src` that maps all the way to the six real buckets (inbox-priority,
- * inbox-people, newsletters, updates, receipts, notifications, junk); once that lands, this
- * function is the only place that needs to change — swap the body for
- * `bucketFor(signals).toLowerCase()` or similar, and switch the manifest/thresholds comparison over
- * to `expectedFinalBucket` (already recorded on every entry) instead of `expectedRuleBucket`. See
- * `needsOutside` in PST-T-5.5's handback.
+ * The one place this harness turns a classifier decision into a golden bucket label: the full
+ * filing decision from `bucketFor()` (PST-T-5.1), mapped onto the manifest's `expectedFinalBucket`.
  */
 export function classifyForGolden(headers, account, authVerdicts, envelopeFrom = null) {
   const signals = extractSignals({ headers, envelopeFrom, authVerdicts, account });
-  const decision = decide(signals);
-  return decision.bucket; // <-- SWITCH POINT: replace with bucketFor(...) once PST-T-5.1 lands.
+  // The full filing decision (PST-T-5.1): rules, then heuristics for 'other'. No Bayes model — the
+  // golden set measures the untrained, first-day behaviour every new account gets.
+  const decision = bucketFor({ signals, headers });
+  return decision.bucket === 'priority' || decision.bucket === 'people' ? `inbox-${decision.bucket}` : decision.bucket;
 }
 
 /** Precision/recall per bucket over a set of {expected, actual} pairs, plus micro totals. */
@@ -90,14 +85,14 @@ export function computeMetrics(pairs, buckets) {
  * entry's `.eml` from `fixturesDir`. Returns per-message results and per-bucket metrics. */
 export async function runGolden(fixturesDir, manifest) {
   const { readFile } = await import('node:fs/promises');
-  const buckets = [...new Set(manifest.map((e) => e.expectedRuleBucket))];
+  const buckets = [...new Set(manifest.map((e) => e.expectedFinalBucket))];
   const perMessage = [];
 
   for (const entry of manifest) {
     const raw = await readFile(join(fixturesDir, entry.file));
     const { headers } = parseEml(raw);
     const actual = classifyForGolden(headers, entry.account, entry.authVerdicts, entry.envelopeFrom ?? null);
-    perMessage.push({ file: entry.file, expected: entry.expectedRuleBucket, actual, tags: entry.tags ?? [] });
+    perMessage.push({ file: entry.file, expected: entry.expectedFinalBucket, actual, tags: entry.tags ?? [] });
   }
 
   const metrics = computeMetrics(

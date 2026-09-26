@@ -68,8 +68,9 @@ async function main() {
   for (const bucket of buckets) {
     const m = metrics[bucket];
     const floor = thresholds.buckets?.[bucket] ?? null;
-    const precisionOk = floor === null || m.precision >= floor.precision;
-    const recallOk = floor === null || m.recall >= floor.recall;
+    // A bucket with no recorded threshold fails: an unmeasured bucket must not pass silently.
+    const precisionOk = floor !== null && m.precision >= floor.precision;
+    const recallOk = floor !== null && m.recall >= floor.recall;
     if (!precisionOk || !recallOk) ok = false;
     rows.push({
       bucket,
