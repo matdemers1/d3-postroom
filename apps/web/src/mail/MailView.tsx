@@ -11,6 +11,7 @@ import { api, ApiError, type Mailbox, type MessageDetail, type MessageSummary } 
 import { CommandPalette } from './CommandPalette';
 import { Composer } from './Composer';
 import { draftFor } from './compose';
+import { Feed } from './Feed';
 import { findSpecial, mailboxLabel } from './format';
 import { ComposeIcon, mailboxIcon } from './icons';
 import { describeTarget, resolveKey, type MailAction } from './keys';
@@ -628,8 +629,24 @@ function MailPanes({ route }: { route: MailRoute }) {
       </ReadingPane>
     );
 
+  // PST-T-5.6, PST-REQ-109: the Newsletters folder opens as a continuous-scroll feed of full bodies
+  // instead of the usual list + reader — there is no "one message open" here, so route.messageId
+  // and the reader pane are moot for it.
+  const isNewslettersFeed = mailbox !== null && mailbox.name === 'Newsletters' && route.compose === null && searchQuery === null;
+  const feedPane = mailbox === null ? null : (
+    <section className="pr-mail__feed" aria-labelledby="pr-list-title">
+      {!split ? backToList : null}
+      <h2 id="pr-list-title" className="pr-listhead__title" tabIndex={-1} ref={viewHeading}>
+        {title}
+      </h2>
+      <Feed mailbox={mailbox} />
+    </section>
+  );
+
   let content;
-  if (split) {
+  if (isNewslettersFeed) {
+    content = feedPane;
+  } else if (split) {
     content = (
       <>
         {listPane}

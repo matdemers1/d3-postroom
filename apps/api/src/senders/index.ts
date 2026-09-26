@@ -7,8 +7,8 @@ import { Router, type Response } from 'express';
 import { currentSession, handle } from '../auth/middleware.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
-import { AddressParam, SenderPinBody, SenderScreenBody, type SenderPinViewJson, type SenderScreenResultJson } from './schemas.js';
-import { clearNewSenderBadge, clearSenderPin, getSenderPin, setSenderPin, setSenderScreen } from './store.js';
+import { AddressParam, SenderPinBody, SenderScreenBody, type SenderPinViewJson, type SenderProfileJsonSchema, type SenderScreenResultJson } from './schemas.js';
+import { clearNewSenderBadge, clearSenderPin, getSenderPin, getSenderProfile, setSenderPin, setSenderScreen } from './store.js';
 
 function badAddress(res: Response): void {
   res.status(400).json({ error: 'invalid_request', message: 'address must look like an email address' });
@@ -81,6 +81,23 @@ export function senderRoutes(deps: ApiDeps): Router {
         },
       );
       res.json({ ok: true });
+    }),
+  );
+
+  // The sender profile (PST-T-5.6, PST-REQ-113): message history, bucket distribution, pin/screen
+  // state, unsubscribe status and an authentication summary, for the reading pane's From-line link.
+  router.get(
+    '/:address/profile',
+    handle(async (req, res) => {
+      const params = AddressParam.safeParse(req.params);
+      if (!params.success) {
+        badAddress(res);
+        return;
+      }
+      const me = currentSession(req);
+      const profile: SenderProfileJsonSchema = await getSenderProfile(db, me.accountId, params.data.address);
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(profile);
     }),
   );
 

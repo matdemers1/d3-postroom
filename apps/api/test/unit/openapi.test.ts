@@ -52,12 +52,15 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/messages/{id}/outbound',
         'GET /api/search',
         'GET /api/senders/{address}/pin',
+        'GET /api/senders/{address}/profile',
         'GET /api/threads/{id}',
         'PATCH /api/messages/{id}',
         'POST /api/export',
         'PUT /api/senders/{address}/pin',
         'DELETE /api/senders/{address}/pin',
         'POST /api/senders/{address}/screen',
+        // PST-T-5.6: one-click unsubscribe (RFC 8058).
+        'POST /api/messages/{id}/unsubscribe',
         // PST-T-3.11: the composer.
         'POST /api/compose/send',
         'GET /api/compose/drafts',

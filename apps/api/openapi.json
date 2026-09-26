@@ -2976,6 +2976,233 @@
         ],
         "additionalProperties": false
       },
+      "SenderProfile": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "messageCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "firstSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "bucket": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "bucket",
+                "count"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "recentMessages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "subject": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "date": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "priority",
+                        "people",
+                        "newsletters",
+                        "updates",
+                        "receipts",
+                        "notifications",
+                        "junk"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "subject",
+                "date",
+                "bucket"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "priority",
+                  "people",
+                  "newsletters",
+                  "updates",
+                  "receipts",
+                  "notifications",
+                  "junk"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "screen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "allow",
+                  "block"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unsubscribe": {
+            "type": "object",
+            "properties": {
+              "attempted": {
+                "type": "boolean"
+              },
+              "at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "method": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "result": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "attempted",
+              "at",
+              "method",
+              "result",
+              "detail"
+            ],
+            "additionalProperties": false
+          },
+          "auth": {
+            "type": "object",
+            "properties": {
+              "dkimDomains": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "sampleSize": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "dkimPassRate": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "spfPassRate": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "dmarcPassRate": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "dkimDomains",
+              "sampleSize",
+              "dkimPassRate",
+              "spfPassRate",
+              "dmarcPassRate"
+            ],
+            "additionalProperties": false
+          },
+          "wroteTo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "address",
+          "messageCount",
+          "firstSeenAt",
+          "lastSeenAt",
+          "buckets",
+          "recentMessages",
+          "pin",
+          "screen",
+          "unsubscribe",
+          "auth",
+          "wroteTo"
+        ],
+        "additionalProperties": false
+      },
       "SenderScreenResult": {
         "type": "object",
         "properties": {
@@ -3283,6 +3510,33 @@
           "messageCount",
           "lastMessageAt",
           "messages"
+        ],
+        "additionalProperties": false
+      },
+      "UnsubscribeResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "offered": {
+            "type": "boolean"
+          },
+          "mailto": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "detail",
+          "offered",
+          "mailto"
         ],
         "additionalProperties": false
       }
@@ -7893,6 +8147,89 @@
         }
       }
     },
+    "/api/messages/{id}/unsubscribe": {
+      "post": {
+        "operationId": "unsubscribeMessage",
+        "tags": [
+          "Senders"
+        ],
+        "summary": "One-click unsubscribe (RFC 8058) for a message that offers it (PST-REQ-110).",
+        "description": "Sends the List-Unsubscribe-Post over HTTPS to the message's List-Unsubscribe URL, server-side, only for a message whose DMARC passed. Records the result on the sender. A mailto: unsubscribe link is returned but never sent automatically. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Whether the message offered one-click, and the outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsubscribeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mobileconfig": {
       "post": {
         "operationId": "generateMobileconfig",
@@ -8279,6 +8616,60 @@
           },
           "403": {
             "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/senders/{address}/profile": {
+      "get": {
+        "operationId": "getSenderProfile",
+        "tags": [
+          "Senders"
+        ],
+        "summary": "The sender profile: message history, bucket distribution, pin/screen state, unsubscribe status and an authentication summary (PST-REQ-113).",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The sender profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SenderProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
             "content": {
               "application/json": {
                 "schema": {

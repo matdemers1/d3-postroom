@@ -26,8 +26,63 @@ export const SenderScreenResult = z.object({
   clearedNewSender: z.number().int(),
 });
 
+// --- Sender profile (PST-T-5.6, PST-REQ-113) ----------------------------------------------------
+
+export const SenderProfileMessage = z.object({
+  id: z.string(),
+  subject: z.string().nullable(),
+  date: z.string(),
+  bucket: FilingBucket.nullable(),
+});
+
+export const UnsubscribeStatus = z.object({
+  attempted: z.boolean(),
+  at: z.string().nullable(),
+  method: z.string().nullable(),
+  result: z.string().nullable(),
+  detail: z.string().nullable(),
+});
+
+export const SenderAuth = z.object({
+  dkimDomains: z.array(z.string()),
+  sampleSize: z.number().int(),
+  dkimPassRate: z.number().nullable(),
+  spfPassRate: z.number().nullable(),
+  dmarcPassRate: z.number().nullable(),
+});
+
+export const SenderProfile = z.object({
+  address: z.string(),
+  messageCount: z.number().int(),
+  firstSeenAt: z.string().nullable(),
+  lastSeenAt: z.string().nullable(),
+  buckets: z.array(z.object({ bucket: z.string(), count: z.number().int() })),
+  recentMessages: z.array(SenderProfileMessage),
+  pin: FilingBucket.nullable(),
+  screen: z.enum(['allow', 'block']).nullable(),
+  unsubscribe: UnsubscribeStatus,
+  auth: SenderAuth,
+  wroteTo: z.array(z.string()),
+});
+
+// --- Unsubscribe (PST-T-5.6, PST-REQ-110) -------------------------------------------------------
+
+export const MessageIdParams = z.object({ id: z.uuid() });
+
+export const UnsubscribeResult = z.object({
+  ok: z.boolean(),
+  /** Why it was refused, or the last upstream status text — never empty. */
+  detail: z.string(),
+  /** True when the message offered RFC 8058 One-Click at all (independent of whether it succeeded). */
+  offered: z.boolean(),
+  /** A mailto: unsubscribe link, when the message carried one — shown, never sent automatically. */
+  mailto: z.string().nullable(),
+});
+
 export const ErrorBody = z.object({ error: z.string(), message: z.string().optional() });
 
 export type FilingBucketValue = z.infer<typeof FilingBucket>;
 export type SenderPinViewJson = z.infer<typeof SenderPinView>;
 export type SenderScreenResultJson = z.infer<typeof SenderScreenResult>;
+export type SenderProfileJsonSchema = z.infer<typeof SenderProfile>;
+export type UnsubscribeResultJson = z.infer<typeof UnsubscribeResult>;

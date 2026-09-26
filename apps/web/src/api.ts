@@ -146,6 +146,12 @@ export const api = {
     return call<MessagePage>('GET', `/api/search?${params.toString()}`);
   },
 
+  // --- Senders (PST-T-5.6, PST-REQ-113/110) ---------------------------------------------------
+  /** The sender profile: message history, buckets, pin/screen, unsubscribe status, auth summary. */
+  senderProfile: (address: string) => call<SenderProfile>('GET', `/api/senders/${encodeURIComponent(address)}/profile`),
+  /** RFC 8058 one-click unsubscribe for a message that offers it. `offered: false` when it does not. */
+  unsubscribe: (messageId: string) => call<UnsubscribeResult>('POST', `/api/messages/${encodeURIComponent(messageId)}/unsubscribe`),
+
   // --- Compose (PST-T-3.11) -------------------------------------------------------------------
   /** Through the submission path; filed in Sent and threaded before it answers. */
   send: (input: SendInput) => call<SendResult>('POST', '/api/compose/send', input),
@@ -337,6 +343,55 @@ export interface MessageBody {
   attachments: MessageAttachment[];
   warnings: { code: string; message: string; partId: string | null }[];
 }
+
+// --- Senders (PST-T-5.6) ------------------------------------------------------------------------
+
+export interface SenderProfileMessage {
+  id: string;
+  subject: string | null;
+  date: string;
+  bucket: string | null;
+}
+
+export interface SenderUnsubscribeStatus {
+  attempted: boolean;
+  at: string | null;
+  method: string | null;
+  result: string | null;
+  detail: string | null;
+}
+
+export interface SenderAuthSummary {
+  dkimDomains: string[];
+  sampleSize: number;
+  dkimPassRate: number | null;
+  spfPassRate: number | null;
+  dmarcPassRate: number | null;
+}
+
+export interface SenderProfile {
+  address: string;
+  messageCount: number;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  buckets: { bucket: string; count: number }[];
+  recentMessages: SenderProfileMessage[];
+  pin: string | null;
+  screen: 'allow' | 'block' | null;
+  unsubscribe: SenderUnsubscribeStatus;
+  auth: SenderAuthSummary;
+  wroteTo: string[];
+}
+
+export interface UnsubscribeResult {
+  ok: boolean;
+  detail: string;
+  offered: boolean;
+  mailto: string | null;
+}
+
+/** Where the reading pane's From line links, and where Feed's per-item link goes too. */
+export const senderProfilePath = (address: string): string => `/senders/${encodeURIComponent(address)}`;
 
 /** Where a message's HTML is rendered: a capability URL on the usercontent origin, for a sandboxed frame. */
 export interface RenderTicket {

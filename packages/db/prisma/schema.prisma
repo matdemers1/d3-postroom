@@ -186,6 +186,15 @@ model SenderPin {
   bucket    String?
   /// allow | block
   screen    String?
+  /// One-click unsubscribe (RFC 8058), PST-T-5.6, PST-REQ-110: when this sender was last asked to
+  /// stop, and how it went. Null means never attempted.
+  unsubscribedAt     DateTime? @map("unsubscribed_at") @db.Timestamptz(6)
+  /// 'one-click' — mailto: links are shown but never auto-sent.
+  unsubscribeMethod  String?   @map("unsubscribe_method")
+  /// sent | failed
+  unsubscribeResult  String?   @map("unsubscribe_result")
+  /// Why it failed, or the upstream status on success — short, for the sender profile.
+  unsubscribeDetail  String?   @map("unsubscribe_detail")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
