@@ -1,6 +1,7 @@
 // NTP skew (PST-REQ-100, PST-REQ-097): query NTP_SERVER by SNTP and fire when the offset exceeds
 // `thresholdMs`. Also exposes the latest reading (updated on every check, ok or not) for /health,
-// independent of the runner's alert cadence.
+// independent of the runner's alert cadence. Disabled (returns null) with no server configured —
+// the daemon must not reach the public internet unless told to (PST-T-4.7).
 import { querySntp, type SntpQueryOptions, type SntpResult } from './sntp.js';
 import type { Monitor } from './types.js';
 
@@ -25,7 +26,8 @@ export interface NtpMonitorOptions {
 
 const DEFAULT_THRESHOLD_MS = 2_000;
 
-export function createNtpMonitor(opts: NtpMonitorOptions): NtpMonitor {
+export function createNtpMonitor(opts: NtpMonitorOptions): NtpMonitor | null {
+  if (opts.server === '') return null;
   const thresholdMs = opts.thresholdMs ?? DEFAULT_THRESHOLD_MS;
   const query = opts.query ?? querySntp;
   const now = opts.now ?? ((): Date => new Date());

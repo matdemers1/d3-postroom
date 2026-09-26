@@ -46,6 +46,15 @@ function KeyIcon() {
   );
 }
 
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
+
 /** The signed-in frame: sidebar (a drawer below `lg`), the account menu, and the page. */
 export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: () => Promise<void> }) {
   const location = useLocation();
@@ -113,6 +122,12 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
           <SideNavGroup title="Account">
             <SideNavItem asChild icon={<KeyIcon />} label="App passwords" current={location.pathname === '/app-passwords'}>
               <RouterLink to="/app-passwords" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<LockIcon />} label="Change password" current={location.pathname === '/account/password'}>
+              <RouterLink to="/account/password" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<SessionsIcon />} label="Devices" current={location.pathname === '/account/sessions'}>
+              <RouterLink to="/account/sessions" />
             </SideNavItem>
           </SideNavGroup>
           {account?.isAdmin === true ? (

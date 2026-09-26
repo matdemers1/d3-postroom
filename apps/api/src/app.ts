@@ -10,8 +10,10 @@ import { serviceAccountRoutes } from './admin-service/index.js';
 import { appPasswordRoutes } from './app-passwords/index.js';
 import { autoconfigRoutes } from './autoconfig/index.js';
 import { mailRoutes } from './mail/index.js';
+import { usercontentConfig, usercontentDispatch } from './usercontent/index.js';
 import { deliveryRoutes } from './delivery/index.js';
 import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
+import { isSecureOrigin } from './auth/sessions.js';
 import type { ApiDeps } from './deps.js';
 
 // No third-party script, frame or connection, ever (PST-REQ-159, PST-REQ-175). HTML mail renders on
@@ -38,12 +40,35 @@ export function securityHeaders(_req: Request, res: Response, next: NextFunction
   next();
 }
 
+/**
+ * HSTS for two years, subdomains included (ASVS 5.0 3.4.1). Only on a secure origin: a plain-http
+ * loopback dev or e2e stack would otherwise teach the browser to refuse it.
+ */
+export const HSTS = 'max-age=63072000; includeSubDomains';
+
 export function createApp(deps: ApiDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   // One hop: the Cloudflare Tunnel's cloudflared, so req.ip is the client it reports.
   app.set('trust proxy', 1);
+  // The usercontent origin (PST-T-3.12): chosen by Host, answered by its own app, never falls through.
+  const usercontent = usercontentDispatch(deps);
+  if (usercontent !== null) app.use(usercontent);
+  const frameSrc = usercontentConfig(deps)?.origin;
   app.use(securityHeaders);
+  if (isSecureOrigin(deps.config.webOrigin)) {
+    app.use((_req, res, next) => {
+      res.setHeader('Strict-Transport-Security', HSTS);
+      next();
+    });
+  }
+  // The mail origin may frame exactly one other origin: the one rendered mail comes from.
+  if (frameSrc !== undefined) {
+    app.use((_req, res, next) => {
+      res.setHeader('Content-Security-Policy', `${CSP}; frame-src ${frameSrc}`);
+      next();
+    });
+  }
 
   app.get('/health', async (_req, res) => {
     try {
@@ -56,7 +81,12 @@ export function createApp(deps: ApiDeps): Express {
   // Public client autoconfiguration (PST-T-3.6): no session, no CSRF, GET/POST XML only.
   app.use(autoconfigRoutes(deps));
 
-  app.use('/api', express.json({ limit: '1mb' }), auditContext(), mutationAuditGuard(deps.db), csrfGuard(deps));
+  // Nothing under /api is cacheable unless a route says otherwise (ASVS 5.0 14.3.2, 14.2.2).
+  const noStore = (_req: Request, res: Response, next: NextFunction): void => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  };
+  app.use('/api', noStore, auditContext(), express.json({ limit: '1mb' }), mutationAuditGuard(deps.db), csrfGuard(deps));
   app.use('/api/auth', authRoutes(deps));
   if (adminDevEnabled(deps.env)) app.use('/api/admin/dev', requireAdmin(deps), adminDevRoutes(deps));
   app.use('/api/admin/jobs', requireAdmin(deps), adminJobRoutes(deps));
@@ -81,5 +111,36 @@ export function createApp(deps: ApiDeps): Express {
       res.sendFile('index.html', { root: dist });
     });
   }
+  app.use(errorHandler);
   return app;
+}
+
+interface HttpError {
+  status?: unknown;
+  type?: unknown;
+  message?: unknown;
+  stack?: unknown;
+}
+
+/**
+ * The last word on a failed request (ASVS 5.0 16.3.4, 16.5.1): the client gets a generic JSON
+ * error and the request id to quote; stderr gets what happened. A body-parser refusal keeps its own
+ * 4xx. Never a stack trace, query or secret in a response.
+ */
+export function errorHandler(error: unknown, req: Request, res: Response, next: NextFunction): void {
+  if (res.headersSent) {
+    next(error);
+    return;
+  }
+  const e = (typeof error === 'object' && error !== null ? error : {}) as HttpError;
+  const status = typeof e.status === 'number' && e.status >= 400 && e.status < 500 ? e.status : 500;
+  const code =
+    e.type === 'entity.parse.failed' ? 'invalid_json' : e.type === 'entity.too.large' ? 'body_too_large' : status === 500 ? 'internal' : 'invalid_request';
+  const requestId = res.getHeader('x-request-id') ?? null;
+  if (status === 500) {
+    process.stderr.write(
+      `${JSON.stringify({ event: 'unhandled-error', requestId, method: req.method, path: req.path, message: typeof e.message === 'string' ? e.message : String(error), stack: typeof e.stack === 'string' ? e.stack : null })}\n`,
+    );
+  }
+  res.status(status).json({ error: code, requestId });
 }

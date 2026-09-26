@@ -6,6 +6,17 @@ import type { Db, Prisma } from '@postroom/db';
 import type { Request, Response } from 'express';
 
 export const SESSION_COOKIE = 'postroom_session';
+/**
+ * The name on a secure origin. `__Host-` makes the browser insist on Secure, Path=/ and no Domain,
+ * so no sibling subdomain can set or shadow it (ASVS 5.0 3.3.1, 3.3.3). A plain-http loopback
+ * origin cannot use the prefix at all — the browser would drop the cookie — so dev and e2e keep
+ * the bare name.
+ */
+export const SECURE_SESSION_COOKIE = '__Host-postroom_session';
+
+export function sessionCookieName(secure: boolean): string {
+  return secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE;
+}
 /** Idle: a session unused for this long ends. */
 export const IDLE_MS = 12 * 60 * 60 * 1000;
 /** Absolute: however busy, a session ends this long after sign-in. */
@@ -73,6 +84,8 @@ export interface ResolvedSession {
   sessionId: string;
   accountId: string;
   displayName: string;
+  /** When this session was issued — a sign-in that recent counts as fresh authentication. */
+  createdAt: Date;
   /** Native flag OR the D3 Auth roles claim held 'admin' at sign-in (PST-REQ-007). */
   isAdmin: boolean;
   totpEnabled: boolean;
@@ -115,6 +128,7 @@ export async function resolveSession(db: Db, token: string, now: Date): Promise<
     sessionId: row.id,
     accountId: row.accountId,
     displayName: row.account.displayName,
+    createdAt: row.createdAt,
     isAdmin: row.account.isAdmin || meta.roles.includes('admin'),
     totpEnabled: row.account.totpEnabled,
     stepUpAt: row.stepUpAt,
@@ -152,7 +166,7 @@ export function readCookie(req: Request, name: string): string | null {
 }
 
 export function setSessionCookie(res: Response, token: string, secure: boolean): void {
-  res.cookie(SESSION_COOKIE, token, {
+  res.cookie(sessionCookieName(secure), token, {
     httpOnly: true,
     secure,
     // Lax, not Strict: the D3 Auth callback is a cross-site top-level GET, and Strict would drop
@@ -164,5 +178,5 @@ export function setSessionCookie(res: Response, token: string, secure: boolean):
 }
 
 export function clearSessionCookie(res: Response, secure: boolean): void {
-  res.clearCookie(SESSION_COOKIE, { httpOnly: true, secure, sameSite: 'lax', path: '/' });
+  res.clearCookie(sessionCookieName(secure), { httpOnly: true, secure, sameSite: 'lax', path: '/' });
 }

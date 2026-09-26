@@ -58,6 +58,8 @@ export interface MonitorHealth {
   readonly detail: string;
   /** When this ok/firing state began (ISO 8601). */
   readonly since: string;
+  /** Whether the alert for the current transition was actually delivered through the relay. */
+  readonly alert: string;
 }
 
 /** Whether the host clock is NTP-synchronized (PST-REQ-100), independent of the alert cadence. */
@@ -67,3 +69,8 @@ export interface NtpHealth {
   readonly server: string;
   readonly checkedAt: string;
 }
+
+/** `/health`'s `ntp` field: a reading once NTP_SERVER is set and at least one check has run;
+ * 'not configured' with no server set (the daemon must not reach the public internet unbidden);
+ * 'pending' when configured but no check has completed yet. */
+export type NtpHealthField = NtpHealth | 'not configured' | 'pending';

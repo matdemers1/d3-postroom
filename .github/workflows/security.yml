@@ -1,0 +1,110 @@
+name: security
+
+# The security gate's two scanners (PST-T-4.3).
+#
+# - semgrep, on every push to main and every pull request (PST-REQ-089): the custom rules prove
+#   themselves with their own tests, a planted eval() must be refused, and then the registry packs
+#   plus .semgrep/postroom.yml must find nothing at all. Any finding fails the run.
+# - zap, nightly and by hand (PST-REQ-090): the composed stack built from this commit, on a fresh
+#   database, migrated and seeded the way ci.yml's e2e job does it; an operator is set up through
+#   the real first-run flow and ZAP scans the webmail and its API signed in as them. Any High fails
+#   the run; the report is kept either way and is what the gate cites.
+#
+# Nightly rather than per push because an active scan is slow and noisy, and because what it finds
+# is rarely caused by the commit in front of it. Run it from the Actions tab after anything that
+# changes headers, cookies or the API. GitHub-hosted runners only: this repo is public.
+#
+# Every action is pinned to a commit SHA and every image to a digest, never a tag.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  semgrep:
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep@sha256:34ab619bf1391a24bfda3f05debd0d8a6ce3093c2d5f9d39cfc00f83c1397823 # 1.176.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: The custom rules prove themselves first
+        run: cd .semgrep && semgrep --test --metrics=off .
+      - name: A planted eval() is refused (PST-REQ-089 acceptance)
+        run: |
+          printf 'export const planted: unknown = eval("1 + 1");\n' > apps/api/src/__planted__.ts
+          set +e
+          semgrep scan --metrics=off --error --quiet --config .semgrep/postroom.yml apps/api/src/__planted__.ts
+          status=$?
+          set -e
+          rm -f apps/api/src/__planted__.ts
+          if [ "$status" -ne 1 ]; then
+            echo "expected Semgrep to fail on the planted eval() (exit 1), got exit ${status}" >&2
+            exit 1
+          fi
+      # The registry's bypass-tls-verification rule is replaced by postroom.tls-verification-disabled,
+      # which is the same check with one reviewed exception (opportunistic STARTTLS to remote MXes,
+      # RFC 3207) named in the rule file rather than hidden in the source.
+      - name: Scan (p/typescript, p/nodejs, p/owasp-top-ten, p/jwt, .semgrep/postroom.yml) — zero findings
+        run: >-
+          semgrep scan --metrics=off --error
+          --config p/typescript --config p/nodejs --config p/owasp-top-ten --config p/jwt
+          --config .semgrep/postroom.yml
+          --exclude-rule problem-based-packs.insecure-transport.js-node.bypass-tls-verification.bypass-tls-verification
+          .
+
+  zap:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      POSTGRES_PASSWORD: ci-postgres-password
+      COMPOSE_FILE: docker-compose.yml:docker-compose.e2e.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+      - name: A throwaway KEK for this run
+        run: echo "E2E_KEK=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+      - name: Build the images from this commit
+        run: |
+          docker build -t ghcr.io/matdemers1/d3-postroom/server:local .
+          docker compose build wireguard
+      - name: Boot on an empty database, migrate, seed
+        run: |
+          docker compose up -d --wait postgres
+          docker compose run --rm migrate
+          docker compose run --rm migrate seed
+          docker compose up -d --wait
+          docker compose ps
+      - name: ZAP authenticated scan of the webmail and /api (no High, PST-REQ-090)
+        env:
+          POSTROOM_URL: http://127.0.0.1:3300
+        run: ./zap/run.sh
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: zap-report
+          path: zap/report/
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Show the logs when something failed
+        if: failure()
+        run: docker compose logs --no-color api | tail -300
+      - name: Stop
+        if: always()
+        run: docker compose down -v

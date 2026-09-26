@@ -4,6 +4,7 @@
 //
 // The account password is web-only. IMAP/SMTP/DAV/Sieve accept app passwords and nothing else
 // (PST-REQ-027); nothing in this file is reachable from a protocol daemon.
+import { randomBytes } from 'node:crypto';
 import argon2 from 'argon2';
 
 /** OWASP's second Argon2id profile: 64 MiB, three passes, one lane. */
@@ -35,7 +36,7 @@ const decoys = new Map<string, Promise<string>>();
 export function decoyHash(pepper: string): Promise<string> {
   let decoy = decoys.get(pepper);
   if (decoy === undefined) {
-    decoy = hashPassword(`decoy:${String(Math.random())}`, pepper);
+    decoy = hashPassword(`decoy:${randomBytes(16).toString('hex')}`, pepper);
     decoys.set(pepper, decoy);
   }
   return decoy;
