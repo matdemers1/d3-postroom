@@ -2,6 +2,7 @@
 // the routes validate with (schemas.ts). Spread into ROUTES/COMPONENTS by src/openapi/document.ts.
 import type { z } from 'zod';
 import type { ResponseSpec, RouteSpec } from '../openapi/document.js';
+import { SNOOZE_COMPONENTS, SNOOZE_ROUTES } from '../mail/snooze.js';
 import * as C from './schemas.js';
 
 export const COMPOSE_COMPONENTS: Record<string, z.ZodType> = {
@@ -9,6 +10,10 @@ export const COMPOSE_COMPONENTS: Record<string, z.ZodType> = {
   Draft: C.Draft,
   DraftList: C.DraftList,
   DraftSaved: C.DraftSaved,
+  // PST-T-9.1: held sends, and (from mail/snooze.ts) snoozed conversations.
+  PendingSend: C.PendingSend,
+  PendingSendList: C.PendingSendList,
+  ...SNOOZE_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -28,6 +33,7 @@ export const COMPOSE_ROUTES: RouteSpec[] = [
     headers: CSRF,
     responses: {
       '201': { description: 'Queued and filed in Sent.', schema: 'SendResponse' },
+      '202': { description: 'Held (undoSeconds > 0 or sendAt): a copy is in Drafts and the worker queues it at releaseAt, unless it is undone first.', schema: 'PendingSend' },
       ...COMMON,
       '403': err('Missing CSRF header, or From is not one of the caller’s addresses.'),
       '404': err('forwardOf is not a message of the caller.'),
@@ -36,6 +42,48 @@ export const COMPOSE_ROUTES: RouteSpec[] = [
       '503': err('No DKIM keys for the sender domain (never sent unsigned), or POSTROOM_KEK is not set.'),
     },
   },
+  {
+    method: 'get',
+    path: '/api/compose/pending',
+    operationId: 'listPendingSends',
+    tag: 'Compose',
+    summary: 'The caller’s held sends (undo window and scheduled), soonest first.',
+    responses: { '200': { description: 'Held sends.', schema: 'PendingSendList' }, '401': COMMON['401'] },
+  },
+  {
+    method: 'post',
+    path: '/api/compose/pending/{id}/undo',
+    operationId: 'undoPendingSend',
+    tag: 'Compose',
+    summary: 'Undo send / cancel a scheduled send: it is never queued, and stays in Drafts.',
+    params: C.PendingParams,
+    headers: CSRF,
+    responses: {
+      '200': { description: 'Cancelled; draftId is the copy in Drafts.', schema: 'PendingSend' },
+      ...COMMON,
+      '404': err('Not a held send of the caller.'),
+      '409': err('It has already been sent (or cancelled).'),
+    },
+  },
+  {
+    method: 'patch',
+    path: '/api/compose/pending/{id}',
+    operationId: 'reschedulePendingSend',
+    tag: 'Compose',
+    summary: 'Move a held send to another time.',
+    params: C.PendingParams,
+    body: C.PendingPatch,
+    headers: CSRF,
+    responses: {
+      '200': { description: 'Rescheduled.', schema: 'PendingSend' },
+      '400': COMMON['400'],
+      '401': COMMON['401'],
+      '403': COMMON['403'],
+      '404': err('Not a held send of the caller.'),
+      '409': err('It has already been sent (or cancelled).'),
+    },
+  },
+  ...SNOOZE_ROUTES,
   {
     method: 'get',
     path: '/api/compose/drafts',

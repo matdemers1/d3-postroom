@@ -14,6 +14,13 @@ const MsgId = z
   .describe('A Message-ID, with or without angle brackets.');
 const AddressField = z.array(Line).max(100).default([]).describe('Address-field entries ("Name <a@b>" or a comma-separated list of them).');
 
+/** Undo send may hold a message at most this long (PST-REQ-140). */
+export const MAX_UNDO_SECONDS = 30;
+/** Scheduled sends at most a year out, snoozes too. */
+export const MAX_AHEAD_MS = 366 * 86_400_000;
+/** Remind-if-no-reply at most 90 days out. */
+export const MAX_REMIND_SECONDS = 90 * 86_400;
+
 export const ComposeMode = z.enum(['new', 'reply', 'replyall', 'forward']);
 
 const Fields = {
@@ -31,6 +38,22 @@ export const SendRequest = z.object({
   from: Line.min(3).max(320).describe('One of the caller’s own addresses.'),
   ...Fields,
   draftId: Uuid.nullable().optional().describe('The draft this send replaces; it is removed from Drafts in the same transaction.'),
+  // PST-T-9.1: undo send (PST-REQ-140), scheduled send (PST-REQ-141), remind-if-no-reply (PST-REQ-143).
+  undoSeconds: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_UNDO_SECONDS)
+    .optional()
+    .describe('Undo send: hold the message this many seconds before it is queued (0–30; the webmail sends its setting, default 10). Absent or 0 sends at once.'),
+  sendAt: Iso.optional().describe('Scheduled send: hold the message until this time, then queue it (within a minute). Not with undoSeconds.'),
+  remindAfterSeconds: z
+    .number()
+    .int()
+    .min(60)
+    .max(MAX_REMIND_SECONDS)
+    .optional()
+    .describe('Remind if no reply: when nobody else has written in the thread this long after it was sent, it comes back to INBOX.'),
 });
 
 export const DraftRequest = z.object({
@@ -54,6 +77,7 @@ export const SendResponse = z.object({
   sentMessageId: Uuid.describe('The copy filed in Sent.'),
   sentMailboxId: Uuid,
   threadId: Uuid.nullable().describe('The thread the Sent copy joined (null only if threading failed; the sweep retries).'),
+  reminderId: Uuid.nullable().optional().describe('The remind-if-no-reply armed for it, when one was asked for.'),
 });
 
 export const DraftSaved = z.object({
@@ -82,6 +106,29 @@ export const Draft = z.object({
 
 export const DraftList = z.object({ drafts: z.array(Draft) });
 
+// PST-T-9.1: held (undo / scheduled) sends.
+
+export const PendingSendState = z.enum(['held', 'released', 'cancelled', 'failed']);
+
+export const PendingSend = z.object({
+  id: Uuid,
+  kind: z.enum(['undo', 'scheduled']).describe('undo: held for the undo window; scheduled: a chosen send time.'),
+  state: PendingSendState,
+  releaseAt: Iso.describe('When the worker queues it (within a minute of this).'),
+  draftId: Uuid.nullable().describe('The copy in Drafts; it stays there while held, and after an undo.'),
+  subject: z.string(),
+  to: z.string().describe('The To and Cc addresses, space-separated.'),
+  messageId: z.string().describe('The Message-ID header it will be sent with.'),
+  remindAfterSeconds: z.number().int().nullable(),
+  reason: z.string().nullable().describe('Why it was cancelled or failed.'),
+  createdAt: Iso,
+});
+
+export const PendingSendList = z.object({ pending: z.array(PendingSend) });
+export const PendingParams = z.object({ id: Uuid });
+export const PendingPatch = z.object({ sendAt: Iso.describe('The new send time (in the future).') });
+
+export type PendingSendJson = z.infer<typeof PendingSend>;
 export type SendResponseJson = z.infer<typeof SendResponse>;
 export type DraftSavedJson = z.infer<typeof DraftSaved>;
 export type DraftJson = z.infer<typeof Draft>;

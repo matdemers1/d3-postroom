@@ -19,6 +19,7 @@ import { sanitizeHtml } from '../usercontent/sanitize.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 import { hubFor, streamEvents } from './events.js';
+import { snoozeRoutes } from './snooze.js';
 import {
   AttachmentParams,
   IdParams,
@@ -420,6 +421,9 @@ export function mailRoutes(deps: ApiDeps): Router {
       await streamEvents(hub, me.accountId, req, res, { stillValid });
     }),
   );
+
+  // PST-T-9.1 (PST-REQ-142): snooze and unsnooze a conversation.
+  router.use(snoozeRoutes(deps));
 
   return router;
 }

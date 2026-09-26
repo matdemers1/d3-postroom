@@ -1,7 +1,7 @@
 // What a new reply, reply-all, forward or blank message starts with, and what the composer sends
 // and saves (PST-T-3.11) — the rules live here, pure and unit-tested, so the composer and the
 // keyboard shortcuts agree on them.
-import { ApiError, type ComposeFields, type MessageBody, type MessageDetail, type SavedDraft } from '../api';
+import { ApiError, type ComposeFields, type MessageBody, type MessageDetail, type PendingSend, type SavedDraft, type SendResult } from '../api';
 import type { ComposeMode } from './route';
 import { addressOf, displayName, fullDate, header, splitAddresses } from './format';
 
@@ -191,7 +191,100 @@ export function sendErrorText(error: unknown): string {
       return 'You have reached your sending limit for now. Nothing was sent; try again later.';
     case 'blobstore_not_configured':
       return 'Postroom is not set up to store mail yet, so nothing was sent.';
+    case 'send_at_past':
+      return 'Pick a time in the future to send it.';
+    case 'send_at_too_far':
+      return 'A message can be scheduled at most a year ahead.';
     default:
       return `Nothing was sent (${error.code}). Try again.`;
   }
+}
+
+// --- Undo send, send later, remind if no reply (PST-T-9.1) --------------------------------------------
+
+/** The undo window when the person has not chosen one (PST-REQ-140). 0 turns undo off. */
+export const UNDO_DEFAULT_SECONDS = 10;
+export const UNDO_MAX_SECONDS = 30;
+const UNDO_KEY = 'postroom.undoSeconds';
+
+/** The undo window this browser uses: a whole number of seconds, 0–30, default 10. */
+export function undoSeconds(storage: Pick<Storage, 'getItem'> | null): number {
+  const raw = storage?.getItem(UNDO_KEY) ?? null;
+  if (raw === null || !/^\d{1,3}$/.test(raw)) return UNDO_DEFAULT_SECONDS;
+  return Math.min(UNDO_MAX_SECONDS, Number(raw));
+}
+
+export function setUndoSeconds(storage: Pick<Storage, 'setItem'> | null, seconds: number): void {
+  storage?.setItem(UNDO_KEY, String(Math.max(0, Math.min(UNDO_MAX_SECONDS, Math.round(seconds)))));
+}
+
+/** Remind-if-no-reply choices, in seconds (null: no reminder). */
+export const REMIND_CHOICES: readonly { label: string; seconds: number | null }[] = [
+  { label: 'No reminder', seconds: null },
+  { label: 'If no reply in 1 day', seconds: 86_400 },
+  { label: 'If no reply in 3 days', seconds: 3 * 86_400 },
+  { label: 'If no reply in a week', seconds: 7 * 86_400 },
+];
+
+/** When to send: now (with the undo window), or at a chosen local time (a datetime-local value). */
+export type SendTiming = { kind: 'now' } | { kind: 'later'; local: string };
+
+export type SendOptions = { undoSeconds?: number; sendAt?: string; remindAfterSeconds?: number };
+
+/**
+ * The timing fields of the send request, or why they cannot be sent. A later time must be in the
+ * future; "now" sends the undo window (0 sends straight away).
+ */
+export function sendOptions(timing: SendTiming, undo: number, remindAfterSeconds: number | null, now: Date): { ok: true; options: SendOptions } | { ok: false; error: string } {
+  const remind = remindAfterSeconds === null ? {} : { remindAfterSeconds };
+  if (timing.kind === 'now') return { ok: true, options: { ...(undo > 0 ? { undoSeconds: undo } : {}), ...remind } };
+  const at = new Date(timing.local);
+  if (timing.local === '' || Number.isNaN(at.getTime())) return { ok: false, error: 'Choose when to send it.' };
+  if (at.getTime() <= now.getTime()) return { ok: false, error: 'Pick a time in the future to send it.' };
+  return { ok: true, options: { sendAt: at.toISOString(), ...remind } };
+}
+
+/** A Date as an <input type="datetime-local"> value, in local time, to the minute. */
+export function toLocalInput(d: Date): string {
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${String(d.getFullYear())}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** The answer to a send is held (202) rather than sent (201). */
+export function isHeld(result: SendResult | PendingSend): result is PendingSend {
+  return 'state' in result && 'releaseAt' in result;
+}
+
+/** Whole seconds left before a held send goes (never negative). */
+export function secondsLeft(releaseAt: string, now: Date): number {
+  return Math.max(0, Math.ceil((new Date(releaseAt).getTime() - now.getTime()) / 1000));
+}
+
+/** Snooze choices relative to `now`, in local time: later today, tomorrow morning, next week. */
+export function snoozeChoices(now: Date): { label: string; until: Date }[] {
+  const at = (days: number, hour: number): Date => {
+    const d = new Date(now);
+    d.setDate(d.getDate() + days);
+    d.setHours(hour, 0, 0, 0);
+    return d;
+  };
+  const choices: { label: string; until: Date }[] = [];
+  const later = new Date(now.getTime() + 3 * 3_600_000);
+  if (later.getDate() === now.getDate()) choices.push({ label: 'Later today', until: later });
+  choices.push({ label: 'Tomorrow morning', until: at(1, 8) });
+  // The next Monday, a week out at most.
+  const toMonday = ((8 - now.getDay()) % 7) || 7;
+  choices.push({ label: 'Next week', until: at(toMonday, 8) });
+  return choices;
+}
+
+/** The toast's state for a given moment: what it says and whether Undo is still offered. */
+export function toastState(pending: PendingSend, now: Date, locale?: string): { text: string; canUndo: boolean; done: boolean } {
+  const left = secondsLeft(pending.releaseAt, now);
+  if (pending.kind === 'scheduled') {
+    const when = new Date(pending.releaseAt).toLocaleString(locale, { weekday: 'short', hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+    return { text: `Scheduled for ${when}.`, canUndo: left > 0, done: false };
+  }
+  if (left > 0) return { text: `Sending… ${String(left)} s`, canUndo: true, done: false };
+  return { text: 'Sent.', canUndo: false, done: true };
 }

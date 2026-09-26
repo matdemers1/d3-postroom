@@ -13,11 +13,36 @@
 // it without a reload — no separate "sent" screen needed to say so. The mailbox list updates over SSE.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Alert, Button, FormActions, FormField, Input, Stack, Textarea } from '@d3cloud/ui';
+import { Alert, Button, FormActions, FormField, Input, Select, Stack, Textarea } from '@d3cloud/ui';
 import { api, ApiError, type DraftInput } from '../api';
-import { fieldsOf, hasRecipients, initialState, resumableDraft, sendErrorText, stateFromSaved, type ComposeDraft, type ComposeState } from './compose';
+import {
+  fieldsOf,
+  hasRecipients,
+  initialState,
+  isHeld,
+  REMIND_CHOICES,
+  resumableDraft,
+  sendErrorText,
+  sendOptions,
+  stateFromSaved,
+  toLocalInput,
+  undoSeconds,
+  type ComposeDraft,
+  type ComposeState,
+  type SendTiming,
+} from './compose';
 import { useMail } from './MailContext';
 import { parseMailRoute } from './route';
+import { announceHeld } from './Scheduled';
+
+/** The browser's storage, or null where there is none (a locked-down profile). */
+function storage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
 
 const TITLES: Readonly<Record<ComposeDraft['mode'], string>> = {
   new: 'New message',
@@ -39,6 +64,9 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
   const [resumed, setResumed] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // PST-T-9.1: send later (PST-REQ-141) and remind if no reply (PST-REQ-143).
+  const [timing, setTiming] = useState<SendTiming>({ kind: 'now' });
+  const [remind, setRemind] = useState<number | null>(null);
   const toRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -173,12 +201,19 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
       setError('Your account has no address to send from.');
       return;
     }
+    const timed = sendOptions(timing, undoSeconds(storage()), remind, new Date());
+    if (!timed.ok) {
+      setError(timed.error);
+      return;
+    }
     setSending(true);
     cancelTimer();
     // Let a save in flight land first, so the draft it made is the one the send removes.
     await chain.current;
     try {
-      await api.send({ ...fieldsOf(latest.current), from: me, draftId: draftId.current });
+      const result = await api.sendOrHold({ ...fieldsOf(latest.current), from: me, draftId: draftId.current, ...timed.options });
+      // Held (undo window or scheduled): the toast outside the composer offers Undo (PST-REQ-140).
+      if (isHeld(result)) announceHeld(result);
       finished.current = true;
       void refreshMailboxes();
       // The server has already filed and threaded the reply: closing back to the message it
@@ -266,6 +301,18 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
         <FormField label="Message" {...(state.forwardOf !== null ? { help: 'The original message is attached in full.' } : {})}>
           <Textarea ref={bodyRef} rows={12} value={state.text} onChange={(e) => { edit({ text: e.target.value }); }} />
         </FormField>
+        <FormField label="Remind me" optional help="If nobody replies in time, the message comes back to your Inbox.">
+          <Select
+            options={REMIND_CHOICES.map((c) => ({ value: c.seconds === null ? 'none' : String(c.seconds), label: c.label }))}
+            value={remind === null ? 'none' : String(remind)}
+            onValueChange={(v) => { setRemind(v === 'none' ? null : Number(v)); }}
+          />
+        </FormField>
+        {timing.kind === 'later' ? (
+          <FormField label="Send at" help="It waits in Drafts until then; you can cancel it there.">
+            <Input type="datetime-local" value={timing.local} min={toLocalInput(new Date())} onChange={(e) => { setTiming({ kind: 'later', local: e.target.value }); }} />
+          </FormField>
+        ) : null}
         <FormActions
           leading={
             <Button type="button" variant="ghost" onClick={discard} disabled={sending}>
@@ -276,8 +323,19 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
           <Button type="button" variant="secondary" disabled={sending} onClick={() => void save(true)}>
             Save draft
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={sending}
+            pressed={timing.kind === 'later'}
+            onClick={() => {
+              setTiming(timing.kind === 'later' ? { kind: 'now' } : { kind: 'later', local: toLocalInput(new Date(Date.now() + 3_600_000)) });
+            }}
+          >
+            Send later
+          </Button>
           <Button type="submit" variant="primary" loading={sending}>
-            Send
+            {timing.kind === 'later' ? 'Schedule' : 'Send'}
           </Button>
         </FormActions>
         <p className="pr-reader__note" role="status" aria-live="polite">

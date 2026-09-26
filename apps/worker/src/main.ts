@@ -21,6 +21,8 @@ import { startReportLoop } from './reports/index.js';
 import { createThreadSweeper } from './sweep/thread-sweep.js';
 import { startTrainingLoop } from './training/index.js';
 import { startRetentionLoop } from './retention/index.js';
+import { startScheduledLoop } from './scheduled/index.js';
+import { createWebmailCapsEnforcer } from '@postroom/submission/caps';
 
 await runDaemon({
   name: DAEMON,
@@ -145,6 +147,28 @@ await runDaemon({
       log: ctx.log,
     });
     ctx.onShutdown(() => importWorker.stop());
+
+    // PST-T-9.1 (PST-REQ-140..143): held sends (undo, scheduled) released through the submission
+    // path exactly once, snoozed conversations returned to INBOX, remind-if-no-reply checked — every
+    // 15 s, so a due send goes out within a minute. Its own block and its own shutdown hook.
+    const scheduled = startScheduledLoop({
+      db,
+      blobs: lazyBlobs,
+      kek: () => loadKek({ env: ctx.env }),
+      caps: createWebmailCapsEnforcer({
+        db,
+        hourlyDefault: envInt(ctx.env, 'SUBMISSION_CAP_HOURLY', 100),
+        dailyDefault: envInt(ctx.env, 'SUBMISSION_CAP_DAILY', 500),
+        sendAlert: createAlertSender(
+          { url: envString(ctx.env, 'MAIL_RELAY_URL', ''), token: envString(ctx.env, 'MAIL_RELAY_TOKEN', ''), to: envString(ctx.env, 'ALERT_TO', '') },
+          { log: ctx.log },
+        ),
+        log: ctx.log,
+      }),
+      intervalMs: envInt(ctx.env, 'SCHEDULED_TICK_MS', 15_000),
+      log: ctx.log,
+    });
+    ctx.onShutdown(() => scheduled.stop());
 
     // Health alerts through the D3 Auth relay (PST-T-4.7, PST-REQ-096, PST-REQ-097): tunnel,
     // backlog, cert expiry, disk, blocklist, backup/drill and NTP skew, each alerting once on

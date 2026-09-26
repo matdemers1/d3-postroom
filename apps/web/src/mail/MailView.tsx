@@ -18,6 +18,7 @@ import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEE
 import { useMail } from './MailContext';
 import { MessageList, type MessageListHandle } from './MessageList';
 import { ReadingPane, type OpenMessage } from './ReadingPane';
+import { ScheduledSends, SnoozeControl, UndoSendToast } from './Scheduled';
 import { mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { SPLIT_QUERY, useMediaQuery } from './useMedia';
@@ -547,6 +548,9 @@ function MailPanes({ route }: { route: MailRoute }) {
         <div className="pr-notice" role="status" aria-live="polite">
           {notice?.tone === 'info' ? <span key={notice.key}>{notice.text}</span> : null}
         </div>
+        {/* PST-T-9.1: the undo-send toast, and scheduled sends above Drafts. */}
+        {split || view === 'list' ? <UndoSendToast /> : null}
+        {mailbox?.specialUse === 'drafts' && searchQuery === null ? <ScheduledSends drafts={mailbox} /> : null}
         {notice?.tone === 'danger' ? (
           <Alert key={notice.key} tone="danger" dynamic flush actions={<Button size="sm" variant="ghost" onClick={() => { setNotice(null); }}>Dismiss</Button>}>
             {notice.text}
@@ -609,7 +613,19 @@ function MailPanes({ route }: { route: MailRoute }) {
         onAction={(a) => {
           perform(a);
         }}
-      />
+      >
+        {/* PST-T-9.1 (PST-REQ-142): snooze the open conversation, or bring it back. */}
+        {!split && view !== 'list' ? <UndoSendToast /> : null}
+        <SnoozeControl
+          threadId={open?.detail?.threadId ?? null}
+          inInbox={open?.detail?.mailboxId !== undefined && open.detail.mailboxId === inbox?.id}
+          snoozed={open?.detail?.mailboxId !== undefined && mailboxes?.find((m) => m.id === open.detail?.mailboxId)?.name === 'Snoozed'}
+          onDone={(text) => {
+            say('info', text);
+            void navigate(mailPath(route.mailboxId));
+          }}
+        />
+      </ReadingPane>
     );
 
   let content;
