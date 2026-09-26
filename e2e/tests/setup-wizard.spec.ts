@@ -325,7 +325,9 @@ test('a fresh install walks the wizard to a delivered test message with its time
   } else {
     const stub = await api.post('/api/admin/dev/fake-delivery', { headers: CSRF, data: { outboundId } });
     if (stub.status() === 404) throw new Error('no fake MX configured and no stub route: set E2E_FAKE_DNS_PORT/E2E_FAKE_MX_PORT or POSTROOM_E2E_SEED=1');
-    await expect(timeline.getByText(/^Attempt via /).first()).toBeVisible({ timeout: 60_000 });
+    // Each entry reads "<time> <title>", so match the title anywhere in the list, not at the start.
+    await expect(timeline).toContainText(/Attempt via e2e-stub .*: delivered/, { timeout: 60_000 });
+    await expect(timeline).toContainText(`Delivered to ${TO}`);
   }
   await axe(page, 'test-step');
 
