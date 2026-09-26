@@ -40,8 +40,12 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/messages/{id}/raw',
         'GET /api/messages/{id}/render',
         'GET /api/search',
+        'GET /api/senders/{address}/pin',
         'GET /api/threads/{id}',
         'PATCH /api/messages/{id}',
+        'PUT /api/senders/{address}/pin',
+        'DELETE /api/senders/{address}/pin',
+        'POST /api/senders/{address}/screen',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit']);

@@ -375,6 +375,9 @@
               "null"
             ]
           },
+          "newSender": {
+            "type": "boolean"
+          },
           "messageIdHeader": {
             "type": [
               "string",
@@ -438,6 +441,7 @@
           "size",
           "flags",
           "bucket",
+          "newSender",
           "messageIdHeader",
           "inReplyTo",
           "references",
@@ -586,6 +590,9 @@
               "string",
               "null"
             ]
+          },
+          "newSender": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -600,7 +607,8 @@
           "internalDate",
           "size",
           "flags",
-          "bucket"
+          "bucket",
+          "newSender"
         ],
         "additionalProperties": false
       },
@@ -709,6 +717,69 @@
           "results",
           "nextCursor",
           "warnings"
+        ],
+        "additionalProperties": false
+      },
+      "SenderPin": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "bucket": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "priority",
+                  "people",
+                  "newsletters",
+                  "updates",
+                  "receipts",
+                  "notifications",
+                  "junk"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "address",
+          "bucket"
+        ],
+        "additionalProperties": false
+      },
+      "SenderScreenResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "address": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "block"
+            ]
+          },
+          "clearedNewSender": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "ok",
+          "address",
+          "decision",
+          "clearedNewSender"
         ],
         "additionalProperties": false
       },
@@ -1535,6 +1606,332 @@
           },
           "404": {
             "description": "mailboxId is not the caller’s.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/senders/{address}/pin": {
+      "delete": {
+        "operationId": "clearSenderPin",
+        "tags": [
+          "Senders"
+        ],
+        "summary": "Remove the bucket pin for this sender (a screen decision, if any, is unaffected).",
+        "description": "Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok: true.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getSenderPin",
+        "tags": [
+          "Senders"
+        ],
+        "summary": "The caller's pin for this sender address, if any (PST-REQ-105).",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pin (bucket is null when there is none).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SenderPin"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setSenderPin",
+        "tags": [
+          "Senders"
+        ],
+        "summary": "Pin this sender to a bucket — overrides the classifier for their mail (PST-REQ-105).",
+        "description": "A pin into Priority or People still requires the message to authenticate, exactly like the VIP rule. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "bucket": {
+                    "type": "string",
+                    "enum": [
+                      "priority",
+                      "people",
+                      "newsletters",
+                      "updates",
+                      "receipts",
+                      "notifications",
+                      "junk"
+                    ]
+                  }
+                },
+                "required": [
+                  "bucket"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The pin after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SenderPin"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/senders/{address}/screen": {
+      "post": {
+        "operationId": "screenSender",
+        "tags": [
+          "Senders"
+        ],
+        "summary": "Answer this sender's new-sender badge: Allow or Block (PST-REQ-106).",
+        "description": "Allow treats the sender as a known contact, so a directly-addressed message from them can reach Priority. Block routes their future mail to Junk. Either clears the $NewSender badge on their already-filed mail. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "block"
+                    ]
+                  }
+                },
+                "required": [
+                  "decision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The screen decision after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SenderScreenResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
             "content": {
               "application/json": {
                 "schema": {

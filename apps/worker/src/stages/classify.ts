@@ -26,8 +26,8 @@
 // receivedAt, so a replay reaches the same answer it reached the first time.
 import { attachmentPolicy } from '@postroom/attachments';
 import type { BlobStore } from '@postroom/blobstore';
-import { bucketFor, extractSignals, normalizeAddress, tokenize, type AuthVerdicts, type HeaderLike } from '@postroom/classifier';
-import { SpecialUse, type Db } from '@postroom/db';
+import { bucketFor, extractSignals, FILING_BUCKETS, normalizeAddress, tokenize, type AuthVerdicts, type FilingBucket, type HeaderLike, type PinInput } from '@postroom/classifier';
+import { SpecialUse, type Db, type SenderPin } from '@postroom/db';
 import { blobHeaderReader } from '../training/headers.js';
 import { loadBayesModel } from '../training/model.js';
 import { parseRecipients } from './file.js';
@@ -103,6 +103,16 @@ function authVerdicts(verdicts: unknown): AuthVerdicts {
   return verdicts;
 }
 
+function isFilingBucket(value: string | null): value is FilingBucket {
+  return value !== null && (FILING_BUCKETS as readonly string[]).includes(value);
+}
+
+/** This account's sender pin/screen row for `address` (PST-T-5.4, PST-REQ-105, PST-REQ-106), or null. */
+export async function loadSenderPin(db: Db, accountId: string, address: string | null): Promise<SenderPin | null> {
+  if (address === null) return null;
+  return db.senderPin.findUnique({ where: { accountId_address: { accountId, address: normalizeAddress(address) } } });
+}
+
 export async function classifyStage(
   input: StageInput,
   deps: { db: Db; blobs: BlobStore },
@@ -162,6 +172,20 @@ export async function classifyStage(
   const authVerdictsOf = authVerdicts(input.inbound.verdicts);
   for (const accountId of accountIds) {
     const addresses = await accountAddresses(deps.db, accountId, recipients);
+    // A first pass with no reply graph, contacts or pin, just to read this account's From address.
+    const bareSignals = extractSignals({
+      headers,
+      envelopeFrom,
+      authVerdicts: authVerdictsOf,
+      account: { addresses, replyGraph: [], contacts: [], pins: { vip: [], blocked: [] } },
+    });
+    const sender = bareSignals.fromAddress;
+    const pinRow = await loadSenderPin(deps.db, accountId, sender);
+    // A screen decision (PST-T-5.4, PST-REQ-106): Allow treats the sender as a known contact (so a
+    // direct first-time human can reach Priority); Block routes their mail to Junk (the account's
+    // blocked-pins signal, no authentication required — the same as PST-REQ-105's existing rule).
+    const contacts = sender !== null && pinRow?.screen === 'allow' ? [sender] : [];
+    const blocked = sender !== null && pinRow?.screen === 'block' ? [sender] : [];
     const signalsWith = (replyGraph: readonly string[]) =>
       extractSignals({
         headers,
@@ -170,18 +194,31 @@ export async function classifyStage(
         account: {
           addresses,
           replyGraph,
-          contacts: [], // CardDAV contacts arrive in PST-P-9.
-          pins: { vip: [], blocked: [] }, // Pins arrive in PST-T-5.4.
+          contacts, // CardDAV contacts arrive in PST-P-9; an Allow screen acts as one meanwhile.
+          pins: { vip: [], blocked },
         },
       });
     let signals = signalsWith([]);
-    const sender = signals.fromAddress;
     if (sender !== null && (await inReplyGraph(deps.db, { accountId, address: sender, before: input.inbound.receivedAt }))) {
       signals = signalsWith([sender]);
     }
     const model = await loadBayesModel(deps.db, accountId, tokens);
-    const d = bucketFor({ signals, headers, subject: prior.parse.subject }, { model, tokens });
-    accounts[accountId] = { bucket: d.bucket, mailbox: d.folder, keyword: d.keyword, reasons: [...reasons, ...d.reasons], scores: d.scores };
+    const pin: PinInput | null = isFilingBucket(pinRow?.bucket ?? null) ? { bucket: pinRow?.bucket as FilingBucket } : null;
+    const d = bucketFor({ signals, headers, subject: prior.parse.subject, pin }, { model, tokens });
+
+    // A new-sender badge (PST-REQ-106): a first-time human this account has never heard from —
+    // not in its reply graph, contacts or any pin/screen — offering Allow and Block. Recorded in the
+    // scores (surfaced by the API as `newSender: true`) rather than a rule outcome, so it never
+    // changes the filed bucket.
+    const known = signals.membership.replyGraph.value || signals.membership.contact.value || signals.membership.vip.value || signals.membership.blocked.value || pinRow !== null;
+    const newSender =
+      signals.human.value &&
+      !known &&
+      !(await senderHasHistory(deps.db, { inboundMessageId: input.inbound.id, fromAddress: sender, accountIds: [accountId], before: input.inbound.receivedAt }));
+    const dReasons = newSender ? [...d.reasons, `new-sender: first message from ${sender ?? 'unknown sender'}; offering Allow and Block`] : d.reasons;
+    const dScores = newSender ? { ...d.scores, newSender: 1 } : d.scores;
+
+    accounts[accountId] = { bucket: d.bucket, mailbox: d.folder, keyword: d.keyword, reasons: [...reasons, ...dReasons], scores: dScores };
   }
   return { bucket: 'sorted', accounts, senderHasHistory: history, attachmentQuarantine, attachments: findings, reasons };
 }

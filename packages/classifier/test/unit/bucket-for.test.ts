@@ -124,3 +124,51 @@ describe('bucketFor (PST-T-5.1)', () => {
     );
   });
 });
+
+describe('bucketFor: sender pins (PST-T-5.4, PST-REQ-105, PST-REQ-106)', () => {
+  it('a pin to receipts wins over a Bayes model that strongly says newsletters', () => {
+    const input = bulkFrom('The Weekly <weekly@news.example.com>', 'digest', [header('List-Id', '<weekly.news.example.com>')]);
+    const signals = extractSignals(input);
+    const tokens = tokenize({ headers: input.headers, from: signals.fromAddress });
+    const counts = new Map<string, Map<SortBucket, number>>(tokens.map((t) => [t, new Map<SortBucket, number>([['newsletters', 50]])]));
+    const model: BayesModel = {
+      buckets: new Map([
+        ['newsletters', { docs: 25, tokens: 500 }],
+        ['receipts', { docs: 10, tokens: 500 }],
+      ]),
+      counts,
+      vocabulary: 100,
+    };
+    const d = bucketFor({ signals, headers: input.headers, pin: { bucket: 'receipts' } }, { model, tokens });
+    expect(d).toMatchObject({ bucket: 'receipts', folder: 'Receipts', keyword: null });
+    expect(d.reasons).toContain('pinned: weekly@news.example.com → receipts');
+    expect(d.reasons.some((r) => r.startsWith('bayes:'))).toBe(false);
+  });
+
+  it('a pin to junk (Block) wins even for an authenticated, known sender', () => {
+    const input = directMessage({ account: account({ replyGraph: ['jane@example.com'] }) });
+    const signals = extractSignals(input);
+    const tokens = tokenize({ headers: input.headers, from: signals.fromAddress });
+    const filed = bucketFor({ signals, headers: input.headers, pin: { bucket: 'junk' } }, { model: null, tokens });
+    expect(filed).toMatchObject({ bucket: 'junk', folder: 'Junk', keyword: null });
+    expect(filed.reasons).toContain('pinned: jane@example.com → junk');
+  });
+
+  it('a pin to priority requires authentication: a DMARC-failing message does not ride the pin into INBOX', () => {
+    const input = directMessage({ authVerdicts: { dmarc: { result: 'fail' } } });
+    const signals = extractSignals(input);
+    const tokens = tokenize({ headers: input.headers, from: signals.fromAddress });
+    const filed = bucketFor({ signals, headers: input.headers, pin: { bucket: 'priority' } }, { model: null, tokens });
+    expect(filed.bucket).not.toBe('priority');
+    expect(filed.reasons.some((r) => r.includes('pinned: jane@example.com → priority') && r.includes('unauthenticated'))).toBe(true);
+  });
+
+  it('a pin to priority on an authenticated message files to INBOX with $Priority', () => {
+    const input = directMessage();
+    const signals = extractSignals(input);
+    const tokens = tokenize({ headers: input.headers, from: signals.fromAddress });
+    const filed = bucketFor({ signals, headers: input.headers, pin: { bucket: 'priority' } }, { model: null, tokens });
+    expect(filed).toMatchObject({ bucket: 'priority', folder: 'INBOX', keyword: '$Priority' });
+    expect(filed.reasons).toContain('pinned: jane@example.com → priority');
+  });
+});

@@ -21,12 +21,19 @@ export type FilingBucket = (typeof FILING_BUCKETS)[number];
 export const PRIORITY_KEYWORD = '$Priority';
 export const PEOPLE_KEYWORD = '$People';
 
+/** A sender pin (PST-T-5.4, PST-REQ-105): the account pinned this message's From address to `bucket`. */
+export interface PinInput {
+  readonly bucket: FilingBucket;
+}
+
 export interface BucketForInput {
   readonly signals: Signals;
   /** The message's header fields (List-Id, X-GitHub-Reason, Auto-Submitted, ...). */
   readonly headers: readonly HeaderLike[];
   /** The decoded Subject, when known; otherwise it is read from `headers`. */
   readonly subject?: string | null;
+  /** The sender pin for this message's From address, when the account has one; null/omitted otherwise. */
+  readonly pin?: PinInput | null;
 }
 
 export interface FilingDecision {
@@ -159,13 +166,42 @@ function folderFor(bucket: Exclude<SortBucket, 'inbox'>): string {
 }
 
 /**
+ * A pin overrides the rule pass and Bayes entirely (PST-T-5.4, PST-REQ-105) — except that a pin
+ * which would file into INBOX (Priority or People) requires the message to have authenticated,
+ * exactly like the VIP rule: a spoofed From must not ride a pin into INBOX. A pin to any other
+ * bucket (including Junk, the Block screen's outcome) needs no authentication — junking a spoofed
+ * sender's mail is harmless. Returns null when there is no pin, or the pin failed that check (the
+ * caller falls back to the normal rule/Bayes pass, and the reason the pin did not apply is recorded).
+ */
+function applyPin(input: BucketForInput): { decision: FilingDecision; skippedReason: null } | { decision: null; skippedReason: string | null } {
+  const pin = input.pin;
+  if (pin === null || pin === undefined) return { decision: null, skippedReason: null };
+  const address = input.signals.fromAddress ?? 'unknown sender';
+  const ridesToInbox = pin.bucket === 'priority' || pin.bucket === 'people';
+  if (ridesToInbox && !input.signals.authenticated.value) {
+    const skippedReason = `pinned: ${address} → ${pin.bucket}, but unauthenticated (${input.signals.authenticated.reason}) — a pin does not ride an unauthenticated message into INBOX`;
+    return { decision: null, skippedReason };
+  }
+  const reason = `pinned: ${address} → ${pin.bucket}`;
+  if (ridesToInbox) return { decision: inbox(pin.bucket, [reason], {}), skippedReason: null };
+  const folder = folderFor(pin.bucket);
+  return {
+    decision: { bucket: pin.bucket, folder, keyword: null, reasons: [reason], scores: { [`bucket:${pin.bucket}`]: 1, pinned: 1 } },
+    skippedReason: null,
+  };
+}
+
+/**
  * The filing decision for one message in one account. `bayes` is the account's model for this
  * message's tokens; omit it (or pass `model: null`) when the account has none.
  */
 export function bucketFor(input: BucketForInput, bayes?: BayesInput): FilingDecision {
+  const pinned = applyPin(input);
+  if (pinned.decision !== null) return pinned.decision;
+
   const rule = decide(input.signals);
   const refined = refineWithBayes(rule, bayes ?? { model: null, tokens: [] });
-  const reasons = [...refined.reasons];
+  const reasons = [...(pinned.skippedReason === null ? [] : [pinned.skippedReason]), ...refined.reasons];
   const scores = { ...refined.scores };
 
   if (rule.bucket === 'priority' || rule.bucket === 'people') return inbox(rule.bucket, reasons, scores);
