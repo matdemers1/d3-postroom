@@ -415,6 +415,9 @@ importers:
       '@postroom/dsn':
         specifier: workspace:*
         version: link:../../packages/dsn
+      '@postroom/imap-proto':
+        specifier: workspace:*
+        version: link:../../packages/imap-proto
       '@postroom/mime':
         specifier: workspace:*
         version: link:../../packages/mime

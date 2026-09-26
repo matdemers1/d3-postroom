@@ -14,6 +14,7 @@ import { DAEMON } from './daemon.js';
 import { drillHandler } from './drill/drill.js';
 import { createExportSweeper, exportHandler, EXPORT_QUEUE } from './export/index.js';
 import { inboundHealth, maintenanceHealth } from './health.js';
+import { importHandler, IMPORT_QUEUE } from './import/index.js';
 import { buildMonitors, createMonitorRunner } from './monitors/index.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
 import { createThreadSweeper } from './sweep/thread-sweep.js';
@@ -115,6 +116,21 @@ await runDaemon({
       clearInterval(exportSweepTimer);
       await exportWorker.stop();
     });
+
+    // PST-T-10.2 (PST-REQ-152): IMAP import from another server, on its own queue and worker (an
+    // import can run for hours; inbound mail never waits behind it). The handler heartbeats its
+    // lease and fences every commit on it, so a long import is never claimed twice. Its own block
+    // and its own shutdown hook, so it merges beside the other registrations.
+    const importLeaseMs = envInt(ctx.env, 'IMPORT_LEASE_MS', 600_000);
+    const importWorker = await startWorker({
+      db,
+      databaseUrl,
+      queues: { [IMPORT_QUEUE]: importHandler({ db, blobs: lazyBlobs, kek: () => loadKek({ env: ctx.env }), leaseMs: importLeaseMs, log: ctx.log }) },
+      pollMs: 5_000,
+      leaseMs: importLeaseMs,
+      log: ctx.log,
+    });
+    ctx.onShutdown(() => importWorker.stop());
 
     // Health alerts through the D3 Auth relay (PST-T-4.7, PST-REQ-096, PST-REQ-097): tunnel,
     // backlog, cert expiry, disk, blocklist, backup/drill and NTP skew, each alerting once on

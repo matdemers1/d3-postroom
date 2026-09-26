@@ -82,6 +82,15 @@ function LockIcon() {
   );
 }
 
+function ImportIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M12 3v11M8 10l4 4 4-4" />
+      <path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
+    </svg>
+  );
+}
+
 /** The signed-in frame: sidebar (a drawer below `lg`), the account menu, and the page. */
 export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: () => Promise<void> }) {
   const location = useLocation();
@@ -155,6 +164,9 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
             </SideNavItem>
             <SideNavItem asChild icon={<SessionsIcon />} label="Devices" current={location.pathname === '/account/sessions'}>
               <RouterLink to="/account/sessions" />
+            </SideNavItem>
+            <SideNavItem asChild icon={<ImportIcon />} label="Import mail" current={location.pathname === '/account/import'}>
+              <RouterLink to="/account/import" />
             </SideNavItem>
           </SideNavGroup>
           {account?.isAdmin === true ? (
