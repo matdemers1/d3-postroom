@@ -265,6 +265,24 @@ describe.skipIf(!baseUrl)('blob store', () => {
     expect(await blobFiles(root)).toEqual([]);
   });
 
+  it('crypto-shred (PST-REQ-130): the last release destroys the wrapped DEK in the caller transaction; a file left by a crash is unreadable and gc removes it', async () => {
+    const { sha256 } = await store.put(message);
+    const released = await tdb.db.$transaction(async (tx) => {
+      const r = await store.release(sha256, tx);
+      // Inside the transaction the row, and with it the only copy of the wrapped DEK, is gone.
+      expect(await tx.blob.findUnique({ where: { sha256 } })).toBeNull();
+      return r;
+    });
+    expect(released).toEqual({ refcount: 0, removed: false });
+    // "Crash" here: the commit happened, reap() never ran. The ciphertext is still on disk...
+    expect(await blobFiles(root)).toEqual([blobPath(root, sha256)]);
+    // ...and nothing can read it: there is no DEK to unwrap, even with the right KEK.
+    await expect(store.getBuffer(sha256)).rejects.toThrow(/not found/);
+    expect(await store.verify(sha256)).toBe(false);
+    expect(await store.gc({ olderThanMs: 0 })).toEqual({ orphans: 1, temps: 0 });
+    expect(await blobFiles(root)).toEqual([]);
+  });
+
   it('gc keeps old files that have rows, and removes stale temp files', async () => {
     const { sha256 } = await store.put(message);
     const old = new Date(Date.now() - 2 * 60 * 60 * 1000);

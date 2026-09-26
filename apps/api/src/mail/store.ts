@@ -68,7 +68,42 @@ export async function listMailboxes(db: Db, accountId: string): Promise<MailboxJ
 
 type MessageWithVerdict = Message & { verdict: Pick<MessageVerdict, 'bucket'> | null };
 
-export function summaryJson(m: MessageWithVerdict): MessageSummaryJson {
+// --- The Trash clock (PST-T-7.7, PST-REQ-129) ----------------------------------------------------
+//
+// A message in Trash carries trashedAt (stamped by a database trigger whenever a row enters a Trash
+// mailbox, from any surface) and expiresAt = trashedAt + the Trash mailbox's retention days, after
+// which the worker's retention sweep expunges it. The days are the mailbox's retention_policy row
+// when it has one (null there = kept forever, so no expiresAt), else the built-in Trash default —
+// a copy of DEFAULT_RETENTION_DAYS.trash in apps/worker/src/retention/policy.ts; keep them in step.
+
+/** Built-in Trash retention, in days (apps/worker/src/retention/policy.ts). */
+export const DEFAULT_TRASH_DAYS = 30;
+const DAY_MS = 86_400_000;
+
+/** Retention days per Trash mailbox among `mailboxIds` (null = kept forever). Non-Trash ids are absent. */
+export async function trashRetentionDays(db: Db | Tx, mailboxIds: readonly string[]): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  const ids = [...new Set(mailboxIds)];
+  if (ids.length === 0) return out;
+  const rows = await db.mailbox.findMany({
+    where: { id: { in: ids }, specialUse: 'trash' },
+    select: { id: true, retentionPolicy: { select: { days: true } } },
+  });
+  for (const r of rows) out.set(r.id, r.retentionPolicy === null ? DEFAULT_TRASH_DAYS : r.retentionPolicy.days);
+  return out;
+}
+
+/** trashedAt and expiresAt for the JSON; both null outside Trash. */
+function trashClock(m: Pick<Message, 'trashedAt'>, trashDays: number | null): { trashedAt: string | null; expiresAt: string | null } {
+  if (m.trashedAt === null) return { trashedAt: null, expiresAt: null };
+  return {
+    trashedAt: m.trashedAt.toISOString(),
+    expiresAt: trashDays === null ? null : new Date(m.trashedAt.getTime() + trashDays * DAY_MS).toISOString(),
+  };
+}
+
+/** `trashDays`: the retention of the message's mailbox when it is a Trash (see trashRetentionDays). */
+export function summaryJson(m: MessageWithVerdict, trashDays: number | null = DEFAULT_TRASH_DAYS): MessageSummaryJson {
   return {
     id: m.id,
     mailboxId: m.mailboxId,
@@ -82,12 +117,13 @@ export function summaryJson(m: MessageWithVerdict): MessageSummaryJson {
     size: m.size,
     flags: m.flags,
     bucket: m.verdict?.bucket ?? null,
+    ...trashClock(m, trashDays),
   };
 }
 
-export function detailJson(m: Message & { verdict: MessageVerdict | null }, phish: PhishJson | null = null): MessageDetailJson {
+export function detailJson(m: Message & { verdict: MessageVerdict | null }, phish: PhishJson | null = null, trashDays: number | null = DEFAULT_TRASH_DAYS): MessageDetailJson {
   return {
-    ...summaryJson(m),
+    ...summaryJson(m, trashDays),
     messageIdHeader: m.messageIdHeader,
     inReplyTo: m.inReplyTo,
     references: m.references,
@@ -186,7 +222,8 @@ export async function listMessages(
   });
   const page = rows.slice(0, opts.limit);
   const last = page[page.length - 1];
-  return { messages: page.map(summaryJson), nextCursor: rows.length > opts.limit && last !== undefined ? String(last.uid) : null };
+  const days = await trashRetentionDays(db, [mailboxId]);
+  return { messages: page.map((m) => summaryJson(m, days.get(m.mailboxId) ?? null)), nextCursor: rows.length > opts.limit && last !== undefined ? String(last.uid) : null };
 }
 
 export async function findOwnMessage(db: Db | Tx, accountId: string, id: string): Promise<(Message & { verdict: MessageVerdict | null }) | null> {
