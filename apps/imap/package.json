@@ -26,6 +26,8 @@
     "@postroom/proxy-protocol": "workspace:*",
     "@postroom/audit": "workspace:*",
     "@postroom/dsn": "workspace:*",
+    "@postroom/dav-store": "workspace:*",
+    "@postroom/auth-checks": "workspace:*",
     "pg": "^8.23.0",
     "@postroom/classifier": "workspace:*"
   },

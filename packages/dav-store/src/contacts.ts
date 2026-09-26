@@ -138,6 +138,35 @@ export function isNoReplyAddress(address: string): boolean {
   return at > 0 && NOREPLY.test(address.slice(0, at));
 }
 
+/**
+ * A mailing-list or role local part (PST-T-8.8): list, lists, announce, discuss, digest, owner-*,
+ * *-request, *-bounces, *-owner, *-l, majordomo, listserv, mailman. These are the list's own
+ * addresses, never a human's, so they are never harvested as contacts.
+ */
+const ROLE_LOCAL =
+  /^(list|lists|announce|discuss|digest|majordomo|listserv|mailman|owner-.+|.+-request|.+-bounces|.+-owner|.+-l)$/i;
+
+/** True when `localPart` names a mailing-list or role address rather than a person. */
+export function isRoleLocalPart(localPart: string): boolean {
+  return ROLE_LOCAL.test(localPart);
+}
+
+/** True when `address`'s local part names a mailing-list or role address (PST-T-8.8). */
+export function isRoleAddress(address: string): boolean {
+  const at = address.lastIndexOf('@');
+  return at > 0 && isRoleLocalPart(address.slice(0, at));
+}
+
+/**
+ * The `mailto:` address named by a `List-Post` header value (`<mailto:list@example.org>`), or
+ * null — including for `List-Post: NO` (posting disabled) and any value with no `mailto:` URI.
+ */
+export function parseListPost(value: string): string | null {
+  const m = /<mailto:\s*([^>\s]+)\s*>/i.exec(value);
+  const address = m?.[1];
+  return address === undefined || address === '' ? null : address.trim().toLowerCase();
+}
+
 /** The deterministic UID of the Collected card for `address`: one card per address, ever. */
 export function collectedUid(address: string): string {
   return `postroom-collected-${createHash('sha256').update(address.trim().toLowerCase()).digest('hex').slice(0, 32)}`;
@@ -155,6 +184,12 @@ export interface HarvestInput {
   readonly recipients: readonly { readonly name: string; readonly address: string }[];
   readonly context: RequestContext;
   readonly now: Date;
+  /**
+   * Addresses never harvested from this message even though they are a To/Cc recipient (PST-T-8.8):
+   * a mailing list's own posting address, resolved by the caller from List-Post headers — its own,
+   * or the message it is replying to's. Case-insensitive.
+   */
+  readonly excludedAddresses?: Iterable<string>;
 }
 
 export interface HarvestResult {
@@ -189,18 +224,20 @@ async function collectedBook(store: DavStore, caller: { accountId: string; conte
 
 /**
  * Adds every recipient that is in none of the account's address books to "Collected" (created on
- * first use), skipping the account's own addresses and no-reply addresses, at most
- * {@link MAX_HARVEST_PER_MESSAGE} per message. Idempotent.
+ * first use), skipping the account's own addresses, no-reply addresses, mailing-list/role local
+ * parts (list, owner-*, *-request, …; PST-T-8.8) and the caller's `excludedAddresses` (a list's
+ * resolved posting address), at most {@link MAX_HARVEST_PER_MESSAGE} per message. Idempotent.
  */
 export async function harvestRecipients(db: Db, store: DavStore, index: ContactIndex, input: HarvestInput): Promise<HarvestResult> {
   const own = await ownAddresses(db, input.accountId);
+  const excluded = new Set([...(input.excludedAddresses ?? [])].map((a) => a.trim().toLowerCase()));
   const seen = new Set<string>();
   const candidates: { name: string; address: string }[] = [];
   for (const r of input.recipients) {
     const address = r.address.trim();
     const key = address.toLowerCase();
     const at = key.lastIndexOf('@');
-    if (at <= 0 || at === key.length - 1 || seen.has(key) || own.has(key) || isNoReplyAddress(key)) continue;
+    if (at <= 0 || at === key.length - 1 || seen.has(key) || own.has(key) || isNoReplyAddress(key) || isRoleAddress(key) || excluded.has(key)) continue;
     seen.add(key);
     candidates.push({ name: r.name.trim(), address });
     if (candidates.length >= MAX_HARVEST_PER_MESSAGE) break;

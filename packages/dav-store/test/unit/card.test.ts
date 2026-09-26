@@ -1,7 +1,17 @@
 // PST-T-8.5: the contact form's fields ↔ vCard, and the harvest's pure rules.
 import { describe, expect, it } from 'vitest';
 import { getProperties, getProperty, parseVCard, serializeVCard } from '@postroom/vcard';
-import { applyContactFields, buildContactCard, collectedUid, contactOf, isNoReplyAddress, revStamp } from '../../src/index.js';
+import {
+  applyContactFields,
+  buildContactCard,
+  collectedUid,
+  contactOf,
+  isNoReplyAddress,
+  isRoleAddress,
+  isRoleLocalPart,
+  parseListPost,
+  revStamp,
+} from '../../src/index.js';
 
 const NOW = new Date('2026-09-26T10:15:00.123Z');
 const FIELDS = {
@@ -100,5 +110,30 @@ describe('harvest rules (PST-REQ-138)', () => {
     expect(collectedUid('Alice@Example.org')).toBe(collectedUid(' alice@example.org '));
     expect(collectedUid('alice@example.org')).not.toBe(collectedUid('bob@example.org'));
     expect(collectedUid('alice@example.org')).toMatch(/^postroom-collected-[0-9a-f]{32}$/);
+  });
+});
+
+describe('list and role addresses (PST-T-8.8)', () => {
+  it('recognizes list and role local parts', () => {
+    for (const l of ['list', 'lists', 'announce', 'discuss', 'digest', 'majordomo', 'listserv', 'mailman', 'owner-foo', 'foo-request', 'foo-bounces', 'foo-owner', 'foo-l']) {
+      expect(isRoleLocalPart(l), l).toBe(true);
+    }
+    for (const l of ['alice', 'bob', 'discussion', 'listener', 'owner', 'requests']) {
+      expect(isRoleLocalPart(l), l).toBe(false);
+    }
+  });
+
+  it('checks the local part of a full address, case-insensitively', () => {
+    expect(isRoleAddress('List@example.org')).toBe(true);
+    expect(isRoleAddress('Announce-Request@example.org')).toBe(true);
+    expect(isRoleAddress('alice@example.org')).toBe(false);
+    expect(isRoleAddress('not-an-address')).toBe(false);
+  });
+
+  it('parses the mailto address out of a List-Post header value', () => {
+    expect(parseListPost('<mailto:list@example.org>')).toBe('list@example.org');
+    expect(parseListPost(' <mailto:List@Example.org> (Postings allowed)')).toBe('list@example.org');
+    expect(parseListPost('NO')).toBeNull();
+    expect(parseListPost('')).toBeNull();
   });
 });

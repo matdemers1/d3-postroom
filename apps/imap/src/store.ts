@@ -29,13 +29,16 @@
 // The table is insert-only here and takes no lock of its own, so the locking order above is unchanged;
 // the worker applies the events later. Like the move itself, the event is its own record — not audited.
 import { randomInt, randomUUID } from 'node:crypto';
+import { DEFAULT_MAX_HEADER_BYTES, splitMessage } from '@postroom/auth-checks';
 import { recordAudit, type Actor } from '@postroom/audit';
 import type { BlobStore } from '@postroom/blobstore';
 import { trainingMove, type TrainingMove } from '@postroom/classifier';
+import type { Kek } from '@postroom/crypto';
+import { contactIndexFor, DavStore, DEFAULT_DAV_LIMITS, harvestRecipients, parseListPost } from '@postroom/dav-store';
 import { Prisma, randomUidValidity, type Db, type SpecialUse } from '@postroom/db';
 import { fileLocalMessage } from '@postroom/dsn';
 import type { StoreOperation } from '@postroom/imap-proto';
-import { parseDate, parseMailboxes, parseMessageId, parseMessageIdList, type HeaderList } from '@postroom/mime';
+import { parseDate, parseHeaderBlock, parseMailboxes, parseMessageId, parseMessageIdList, type HeaderList } from '@postroom/mime';
 import { applyFlags, DELETED, isKeyword, normalizeFlags, sameFlags, SEEN } from './flags.js';
 import { MAILBOX_CHANNEL } from './extensions/notify.js';
 import { isSelfOrChild, parentsOf } from './names.js';
@@ -93,6 +96,10 @@ export interface Denormalised {
   readonly references: string[];
   /** To/Cc addresses (lowercased local@domain), for the reply-graph harvest on a \Sent APPEND (PST-T-5.8). */
   readonly recipientAddresses: string[];
+  /** To/Cc, name and address as the headers name them, for the contact harvest on a \Sent APPEND (PST-T-8.8). */
+  readonly recipientEntries: readonly { readonly name: string; readonly address: string }[];
+  /** The message's own List-Post header value, raw (e.g. `<mailto:list@example.org>`), or null. */
+  readonly listPost: string | null;
 }
 
 /** The same columns smtp-in and the worker fill at filing time, from a message's top-level headers. */
@@ -107,9 +114,14 @@ export function denormalise(headers: HeaderList): Denormalised {
   const cc = headers.get('cc');
   const sent = date === null ? null : parseDate(date);
   const recipients = new Set<string>();
+  const recipientEntries: { name: string; address: string }[] = [];
   for (const field of [to, cc]) {
     if (field === null) continue;
-    for (const m of parseMailboxes(field)) if (m.address !== '') recipients.add(m.address.toLowerCase());
+    for (const m of parseMailboxes(field)) {
+      if (m.address === '') continue;
+      recipients.add(m.address.toLowerCase());
+      recipientEntries.push({ name: m.name, address: m.address });
+    }
   }
   return {
     messageIdHeader: mid === null ? null : parseMessageId(mid),
@@ -119,6 +131,8 @@ export function denormalise(headers: HeaderList): Denormalised {
     inReplyTo: irt === null ? null : (parseMessageIdList(irt)[0] ?? null),
     references: refs === null ? [] : parseMessageIdList(refs).slice(0, 100),
     recipientAddresses: [...recipients],
+    recipientEntries,
+    listPost: headers.get('list-post'),
   };
 }
 
@@ -189,7 +203,9 @@ export interface CopyResult {
 export class MailStore {
   constructor(
     readonly db: Db,
-    private readonly blobs: Pick<BlobStore, 'release' | 'reap'>,
+    private readonly blobs: Pick<BlobStore, 'release' | 'reap' | 'get'>,
+    /** When present, a client's own \Sent APPEND also harvests contacts (PST-T-8.8, PST-REQ-138). */
+    private readonly kek?: Kek,
   ) {}
 
   // --- reads -----------------------------------------------------------------------------------
@@ -499,7 +515,7 @@ export class MailStore {
     mailboxId: string,
     input: { sha256: string; size: number; flags: readonly string[]; internalDate: Date; denorm: Denormalised | null },
   ): Promise<{ uid: number; uidvalidity: number }> {
-    return this.db.$transaction(async (tx) => {
+    const { sentDenorm, ...result } = await this.db.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ name: string; uidvalidity: number; special_use: SpecialUse | null }[]>`
         SELECT name, uidvalidity, special_use FROM mailbox WHERE id = ${mailboxId}::uuid AND account_id = ${accountId}::uuid FOR UPDATE`;
       const mb = rows[0];
@@ -512,18 +528,90 @@ export class MailStore {
         internalDate: input.internalDate,
         flags: normalizeFlags(input.flags),
       });
+      let sentDenorm: Denormalised | null = null;
       if (input.denorm !== null) {
-        const { recipientAddresses, ...denormColumns } = input.denorm;
-        await tx.message.update({ where: { id: filed.id }, data: { ...denormColumns } });
+        const denorm = input.denorm;
+        await tx.message.update({
+          where: { id: filed.id },
+          data: {
+            messageIdHeader: denorm.messageIdHeader,
+            subject: denorm.subject,
+            fromAddress: denorm.fromAddress,
+            sentAt: denorm.sentAt,
+            inReplyTo: denorm.inReplyTo,
+            references: denorm.references,
+          },
+        });
         // A client filing its own Sent copy (PST-T-5.8): harvest To/Cc into the reply graph too, the
         // same table acceptSubmission maintains for messages sent through Postroom itself.
-        if (mb.special_use === 'sent' && recipientAddresses.length > 0) {
-          await harvestSentRecipients(tx, accountId, recipientAddresses, input.internalDate);
+        if (mb.special_use === 'sent' && denorm.recipientAddresses.length > 0) {
+          await harvestSentRecipients(tx, accountId, denorm.recipientAddresses, input.internalDate);
+          sentDenorm = denorm;
         }
       }
       await notifyMailbox(tx, mailboxId);
-      return { uid: filed.uid, uidvalidity: mb.uidvalidity };
+      return { uid: filed.uid, uidvalidity: mb.uidvalidity, sentDenorm };
     }, TX_OPTIONS);
+    // After the commit, like acceptSubmission: a failure here never undoes the APPEND (PST-T-8.8,
+    // PST-REQ-138). Only when a KEK was given (contact cards are encrypted) and the message really
+    // filed into \Sent.
+    if (sentDenorm !== null && this.kek !== undefined) {
+      await this.harvestSentContacts(accountId, sentDenorm, input.internalDate).catch(() => undefined);
+    }
+    return result;
+  }
+
+  /**
+   * The `List-Post` address of the account's own message that `In-Reply-To`/`References` name, or
+   * null (PST-T-8.8): its own posting address is never harvested as a new contact from a Reply-All.
+   * Reads only the bounded header block of the original's blob, never the whole message.
+   */
+  private async findRepliedListPost(accountId: string, inReplyTo: string | null, references: readonly string[]): Promise<string | null> {
+    const ids = new Set<string>([...(inReplyTo === null ? [] : [inReplyTo]), ...references]);
+    if (ids.size === 0) return null;
+    const original = await this.db.message.findFirst({
+      where: { messageIdHeader: { in: [...ids] }, mailbox: { accountId } },
+      select: { blobSha256: true },
+      orderBy: { receivedAt: 'desc' },
+    });
+    if (original === null) return null;
+    try {
+      const stream = await this.blobs.get(original.blobSha256);
+      const split = await splitMessage(stream, { maxHeaderBytes: DEFAULT_MAX_HEADER_BYTES });
+      const value = parseHeaderBlock(split.headerBlock).get('list-post');
+      return value === null ? null : parseListPost(value);
+    } catch {
+      // The original's blob is gone or unreadable: no address to exclude, never a reason to fail.
+      return null;
+    }
+  }
+
+  /**
+   * A client filing its own copy into \Sent still counts as writing to its To/Cc addresses as
+   * contacts (PST-T-8.8, PST-REQ-138): the same audited "Collected" write path acceptSubmission and
+   * the webmail composer use, with the same exclusions — the account's own addresses, no-reply
+   * addresses, mailing-list/role local parts, and the list's own posting address (its own
+   * List-Post header, or the message it replies to's).
+   */
+  private async harvestSentContacts(accountId: string, denorm: Denormalised, now: Date): Promise<void> {
+    if (denorm.recipientEntries.length === 0 || this.kek === undefined) return;
+    const kek = this.kek;
+    const excludedAddresses = new Set<string>();
+    if (denorm.listPost !== null) {
+      const address = parseListPost(denorm.listPost);
+      if (address !== null) excludedAddresses.add(address);
+    }
+    const repliedAddress = await this.findRepliedListPost(accountId, denorm.inReplyTo, denorm.references);
+    if (repliedAddress !== null) excludedAddresses.add(repliedAddress);
+
+    const store = new DavStore(this.db, kek, DEFAULT_DAV_LIMITS);
+    await harvestRecipients(this.db, store, contactIndexFor(this.db, kek), {
+      accountId,
+      recipients: denorm.recipientEntries,
+      context: { requestId: randomUUID(), ip: null },
+      now,
+      excludedAddresses,
+    });
   }
 
   // --- mailboxes --------------------------------------------------------------------------------

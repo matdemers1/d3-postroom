@@ -17,7 +17,10 @@ export {
   contactIndexFor,
   harvestRecipients,
   isNoReplyAddress,
+  isRoleAddress,
+  isRoleLocalPart,
   MAX_HARVEST_PER_MESSAGE,
+  parseListPost,
 } from './contacts.js';
 export type { ContactEntry, ContactIndexOptions, HarvestInput, HarvestResult } from './contacts.js';
 export { DEFAULT_DAV_LIMITS, davLimitsFromEnv } from './limits.js';

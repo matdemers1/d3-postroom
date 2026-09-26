@@ -88,6 +88,23 @@ describe.skipIf(baseUrl === undefined)('contacts index and harvest (PST-REQ-138)
     expect(await store.listResources(book.id)).toHaveLength(2);
   });
 
+  it('never harvests the list itself: role local parts, and the caller-resolved posting address (PST-T-8.8)', async () => {
+    const me = await account();
+    const recipients = [
+      { name: 'Alice Example', address: 'alice@example.org' },
+      { name: 'Announce List', address: 'announce@list.example.org' },
+      { name: 'Ad-Hoc List', address: 'the-list-posting-address@example.org' },
+    ];
+    const result = await harvestRecipients(db, store, index, {
+      accountId: me.id,
+      recipients,
+      context: CONTEXT,
+      now: new Date(),
+      excludedAddresses: ['The-List-Posting-Address@example.org'],
+    });
+    expect(result.added).toEqual(['alice@example.org']);
+  });
+
   it('never harvests someone already in another address book', async () => {
     const me = await account();
     const [contacts] = await store.listCollections(me.id, 'addressbook');
