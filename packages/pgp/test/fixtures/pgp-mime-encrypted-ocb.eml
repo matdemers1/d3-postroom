@@ -1,0 +1,33 @@
+From: Bob Test <bob@example.test>
+To: Alice Test <alice@example.test>
+Subject: Encrypted with OCB
+Date: Sat, 26 Sep 2026 12:00:00 +0000
+Message-ID: <607116186@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; boundary="enc-b"
+
+This is an OpenPGP/MIME encrypted message (RFC 4880 and 3156)
+--enc-b
+Content-Type: application/pgp-encrypted
+Content-Description: PGP/MIME version identification
+
+Version: 1
+
+--enc-b
+Content-Type: application/octet-stream; name="encrypted.asc"
+Content-Description: OpenPGP encrypted message
+Content-Disposition: inline; filename="encrypted.asc"
+
+-----BEGIN PGP MESSAGE-----
+
+hF4DOZoYFaNPo1USAQdA2uKZwzjZhoiAAqrO3x36DVGjRI4KnJb8m4b1IG6AI1Uw
+TgkAVC2EHcZ6S2rlMbQYN/WHYKQ6zPMz8xrmIcDnF+2q+DBWj5jQKtYrIzGw+E+k
+1MADAQkCEKIG89hQjqIA9GI8TKOQaiEbEAo0SUqe8s0UX1aVRJzqmjVj3zGTFG2A
+wbo95PLXtJuYOX+I71ewJuKwcMInGKdZL0VJLvA1I+mKLV3kNpwrb58gdfzdaPsH
+VGk5xr67Y9uHhpmD1K3/33rW1tl+gKMZ0mJtZ4KPRmrstBmxEsniAYMngQIjVzt7
+7hUfDfQIp04KEuaNTjMYzHwo2aBMVa5Gbu5MJjnmGcEvPow3buXlH/f3GEvi+Isu
+QAJULLeq
+=5CVM
+-----END PGP MESSAGE-----
+
+--enc-b--

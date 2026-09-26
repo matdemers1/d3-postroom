@@ -109,6 +109,15 @@
       "corpus": "fuzz/dmarc-report/corpus",
       "fixtures": "fuzz/dmarc-report/fixtures",
       "note": "DMARC aggregate (RFC 7489 App. C) and TLS-RPT (RFC 8460) parsers with serializer round-trip, the strict XXE-proof XML reader, and bounded gzip/zip unwrapping"
+    },
+    {
+      "name": "pgp",
+      "status": "active",
+      "package": "packages/pgp",
+      "target": "fuzz/pgp/target.mjs",
+      "corpus": "fuzz/pgp/corpus",
+      "fixtures": "fuzz/pgp/fixtures",
+      "note": "OpenPGP packet framing, keys, v4 signatures, PKESK/SEIPD decrypt path, ASCII armor and cleartext framework; the DER/BER reader and CMS SignedData/EnvelopedData/certificate readers (PST-T-12.1)"
     }
   ]
 }

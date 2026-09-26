@@ -1,8 +1,9 @@
 // The Inspect drawer (PST-T-6.1, PST-REQ-114/115): everything Postroom knows about one message,
 // with its reasons — "shows everything". The reading pane stays calm; the evidence lives here.
 //
-// Sections, in order: Authentication, Received path (a timeline with a TLS badge per hop), Why this
-// bucket, Spam score breakdown, Trackers removed, MDN request, Headers, Raw source. The data is one
+// Sections, in order: Authentication, Signature and encryption (PGP/S/MIME, PST-T-12.1 /
+// PST-REQ-160), Received path (a timeline with a TLS badge per hop), Why this bucket, Spam score
+// breakdown, Trackers removed, MDN request, Headers, Raw source. The data is one
 // GET /api/messages/:id/inspect, fetched when the drawer opens; the raw source is fetched only when
 // asked for, and only the first RAW_VIEW_CAP bytes are shown (the rest is a download).
 //
@@ -17,6 +18,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Alert, Badge, Button, Checkbox, Cluster, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
 import { api, type InspectAlignment, type InspectScore, type MessageInspect, type ReceivedHop } from '../api';
 import { byteSize, fullDate } from './format';
+import { cryptoView, type CryptoPartView } from './inspect-crypto';
 import { describeTarget, onInspectRequest, resolveKey } from './keys';
 import {
   headerRef,
@@ -34,7 +36,7 @@ import {
 export const RAW_VIEW_CAP = 256 * 1024;
 
 /** The section headings, in order — the e2e suite and the unit test hold the drawer to this list. */
-export const INSPECT_SECTIONS = ['Authentication', 'Received path', 'Why this bucket', 'Spam score breakdown', 'Trackers removed', 'MDN request', 'Headers', 'Raw source'] as const;
+export const INSPECT_SECTIONS = ['Authentication', 'Signature and encryption', 'Received path', 'Why this bucket', 'Spam score breakdown', 'Trackers removed', 'MDN request', 'Headers', 'Raw source'] as const;
 
 type Tone = 'neutral' | 'attention' | 'danger';
 
@@ -201,6 +203,53 @@ function AuthSection({ auth, learn }: { auth: MessageInspect['auth']; learn: boo
           </ul>
         </div>
       ) : null}
+    </Section>
+  );
+}
+
+function CryptoPart({ label, part }: { label: string; part: CryptoPartView }) {
+  return (
+    <div className="pr-inspect__verdict" data-testid="crypto-part" data-crypto={label} data-status={part.status}>
+      <div className="pr-inspect__verdict-head">
+        <span className="pr-inspect__term">{label}</span>
+        <Badge tone={part.tone}>{part.status}</Badge>
+      </div>
+      <p className="pr-inspect__evidence">{part.headline}</p>
+      {part.facts.length === 0 ? null : (
+        <ul className="pr-inspect__reasons">
+          {part.facts.map((f, i) => (
+            <li key={`${String(i)}-${f.label}`}>
+              {f.label}: <code>{f.value}</code>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Reasons reasons={part.reasons} />
+    </div>
+  );
+}
+
+function CryptoSection({ crypto }: { crypto: MessageInspect['crypto'] }) {
+  const view = cryptoView(crypto);
+  return (
+    <Section title="Signature and encryption">
+      <Stack gap="12">
+        <CryptoPart label="Signature" part={view.signature} />
+        {view.certificates.length === 0 ? null : (
+          <div data-testid="crypto-chain">
+            <p className="pr-inspect__evidence">Certificate chain, as the message presented it:</p>
+            <ol className="pr-inspect__reasons">
+              {view.certificates.map((c, i) => (
+                <li key={`${String(i)}-${c.subject}`}>
+                  <code>{c.subject}</code> — issued by <code>{c.issuer}</code> · {c.detail}
+                </li>
+              ))}
+            </ol>
+            {view.chainNote === null ? null : <p className="pr-inspect__evidence">{view.chainNote}</p>}
+          </div>
+        )}
+        <CryptoPart label="Encryption" part={view.encryption} />
+      </Stack>
     </Section>
   );
 }
@@ -548,6 +597,7 @@ export function InspectSections({ data, learn }: { data: MessageInspect; learn: 
   return (
     <div className="pr-inspect__body" data-testid="inspect-body">
       <AuthSection auth={data.auth} learn={learn} />
+      <CryptoSection crypto={data.crypto} />
       <ReceivedSection data={data} learn={learn} />
       <BucketSection bucket={data.bucket} />
       <SpamSection spam={data.spam} />

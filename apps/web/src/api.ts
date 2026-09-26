@@ -1168,3 +1168,59 @@ export interface InviteRemoveResult {
   ok: true;
   removed: boolean;
 }
+
+/** Matches apps/api/src/mail/inspect.ts's InspectCrypto (PST-T-12.1, PST-REQ-160). */
+export interface InspectCryptoSigner {
+  keyId: string | null;
+  fingerprint: string | null;
+  algorithm: string | null;
+  hash: string | null;
+  userIds: string[];
+  addresses: string[];
+  fromMatches: boolean | null;
+  createdAt: string | null;
+  keySource: 'account' | 'message' | 'none';
+  knownKeyId: string | null;
+  owner: 'own' | 'contact' | null;
+}
+
+export interface InspectCertificate {
+  subject: string;
+  issuer: string;
+  fingerprint: string;
+  serial: string;
+  notBefore: string;
+  notAfter: string;
+  rfc822Names: string[];
+  selfSigned: boolean;
+  signatureVerified: boolean;
+}
+
+export interface InspectCrypto {
+  signature: {
+    /** 'verified-known-key' | 'valid-signature-unknown-key' | 'bad-signature' | 'not-signed' | 'unsupported:<reason>' */
+    status: string;
+    format: 'pgp-mime' | 'pgp-inline' | 'pgp-encrypted' | 'smime' | 'smime-opaque' | null;
+    reasons: string[];
+    signer: InspectCryptoSigner | null;
+    certificates: InspectCertificate[];
+    chain: { verified: boolean; endsAtSelfSigned: boolean; reason: string } | null;
+  };
+  encryption: {
+    /** 'decrypted' | 'no-key' | 'not-encrypted' | 'failed:<reason>' */
+    status: string;
+    format: 'pgp-mime' | 'pgp-inline' | 'smime' | null;
+    reasons: string[];
+    recipients: { id: string; algorithm: string | null; matchedKeyId: string | null }[];
+    cipher: string | null;
+    integrity: string | null;
+    openedWithKeyId: string | null;
+    plaintextBytes: number | null;
+  };
+}
+
+// Declaration merge (PST-T-12.1): the Inspect payload's signature and encryption section. Optional
+// so a drawer talking to an older server still renders.
+export interface MessageInspect {
+  crypto?: InspectCrypto;
+}
