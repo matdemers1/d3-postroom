@@ -121,6 +121,14 @@ function spanOf(comp: Component, dtstart: ICalDateValue, ctx: Ctx): Span {
       const days = Math.round((localOfValue(end) - localOfValue(dtstart)) / SECONDS_PER_DAY);
       return { days: Math.max(0, days), seconds: 0 };
     }
+    // §3.8.5.3: a DTEND gives every instance the same *exact* duration. When DTSTART or DTEND is a
+    // local time that does not exist (a spring-forward gap), §3.3.5 moves it by the gap's width, and
+    // the exact difference no longer describes the event — 02:30–03:30 on the change day would
+    // become 07:30Z–07:30Z. In that case, and only when both ends share a zone, use the
+    // wall-clock difference as the exact duration instead.
+    if (end.type === 'date-time' && sameZone(dtstart, end, ctx) && (inGap(dtstart, ctx) || inGap(end, ctx))) {
+      return { days: 0, seconds: Math.max(0, localSeconds(end) - localSeconds(dtstart)) };
+    }
     return { days: 0, seconds: Math.max(0, toUtcSeconds(end, ctx) - toUtcSeconds(dtstart, ctx)) };
   }
   const durProp = getProperty(comp, 'DURATION');
@@ -129,6 +137,23 @@ function spanOf(comp: Component, dtstart: ICalDateValue, ctx: Ctx): Span {
     return { days: d.days, seconds: d.seconds };
   }
   return dtstart.type === 'date' && comp.name === 'VEVENT' ? { days: 1, seconds: 0 } : { days: 0, seconds: 0 };
+}
+
+function effectiveTzid(v: ICalDateTime, ctx: Ctx): string | null {
+  return v.utc ? null : (v.tzid ?? ctx.floatingTzid);
+}
+
+function sameZone(a: ICalDateTime, b: ICalDateTime, ctx: Ctx): boolean {
+  return a.utc === b.utc && effectiveTzid(a, ctx) === effectiveTzid(b, ctx);
+}
+
+/** True when a zoned local time does not exist (it falls in a spring-forward gap). */
+function inGap(v: ICalDateTime, ctx: Ctx): boolean {
+  const tzid = effectiveTzid(v, ctx);
+  if (tzid === null) return false;
+  const utc = dateTimeToUtc(v, ctx.resolver, ctx.floatingTzid);
+  const offset = ctx.resolver.offsetAt(tzid, utc);
+  return offset !== null && utc + offset !== localSeconds(v);
 }
 
 function endOf(startLocal: number, startUtc: number, span: Span, zone: (l: number) => number): number {
