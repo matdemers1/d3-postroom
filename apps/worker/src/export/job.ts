@@ -76,8 +76,15 @@ export async function runExport(deps: ExportDeps, exportId: string, accountId: s
   const folders: ExportFolderManifest[] = [];
   let totalMessages = 0;
 
+  // Two mailboxes can reduce to the same safe path ('..' and '.', or names differing only in
+  // trimmed whitespace); a zip with duplicate entry names loses one on extraction, so later ones get
+  // a numbered suffix. The manifest keeps the real name beside each path.
+  const usedPaths = new Set<string>();
   for (const mailbox of mailboxes) {
-    const path = `mail/${safeFolderPath(mailbox.name)}.mbox`;
+    const base = safeFolderPath(mailbox.name);
+    let path = `mail/${base}.mbox`;
+    for (let n = 2; usedPaths.has(path.toLowerCase()); n++) path = `mail/${base} (${String(n)}).mbox`;
+    usedPaths.add(path.toLowerCase());
     const hash = createHash('sha256');
     const counter = { count: 0 };
     async function* hashed(): AsyncGenerator<Buffer> {

@@ -132,6 +132,20 @@ describe.skipIf(baseUrl === undefined)('export job (PST-T-10.1, PST-REQ-151)', (
     }
   }, 30_000);
 
+  it('gives mailboxes whose names reduce to the same path distinct zip entries', async () => {
+    const other = (await db.account.create({ data: { displayName: 'Colliding names' } })).id;
+    for (const name of ['.', '..', 'folder']) {
+      const b = await blobs.put(message({ from: 'eve@example.org', subject: `in ${name}`, extraLine: 'x' }));
+      await db.$transaction((tx) => fileLocalMessage(tx, { accountId: other, mailbox: name, blobSha256: b.sha256, size: b.size, internalDate: new Date('2026-01-05T00:00:00Z') }));
+    }
+    await runExport({ db, blobs, revision: 'test-rev', now: () => new Date('2026-09-26T00:00:00Z') }, 'test-export-collide', other);
+    const result = await readExportResult(db, 'test-export-collide');
+    const paths = (result?.manifest.folders ?? []).map((f) => f.path);
+    expect(paths).toHaveLength(3);
+    expect(new Set(paths.map((p) => p.toLowerCase())).size).toBe(3);
+    for (const p of paths) expect(p.startsWith('mail/') && !p.includes('..')).toBe(true);
+  }, 30_000);
+
   it('sweeps the archive once past its expiresAt, releasing the blob', async () => {
     const exportId = 'test-export-2';
     const start = new Date('2026-09-01T00:00:00Z');
