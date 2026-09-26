@@ -15,6 +15,13 @@
 // whole subtree with them. Text and attribute values are escaped, and additionally `=`, `javascript:`
 // and `url(` are written as character references, so the output never contains those literals in any
 // context (a property test holds us to that). Idempotent: sanitize(sanitize(x)) === sanitize(x).
+//
+// Two more things happen here (PST-T-6.2, PST-REQ-116): a known tracking pixel (`classifyImage`,
+// @postroom/trackers) is dropped entirely — no placeholder, no data-src, never fetched even once
+// the reader asks for images, unlike an ordinary blocked remote image — and every `<a href>` is run
+// through `cleanLink`, which strips tracking query parameters and unwraps a known click-redirect
+// wrapper. The counts of each are returned so the caller can show "N trackers blocked".
+import { classifyImage, cleanLink } from '@postroom/trackers';
 import { sanitizeInlineStyle, sanitizeStylesheet } from './css.js';
 import { RAW_TEXT, tokenize } from './tokenizer.js';
 
@@ -30,10 +37,14 @@ export interface SanitizeOptions {
 
 export interface SanitizeResult {
   html: string;
-  /** Remote images found (whether loaded through the proxy or blocked). */
+  /** Remote images found (whether loaded through the proxy or blocked). Trackers are not counted here. */
   remoteImages: number;
-  /** Remote images left blocked. */
+  /** Remote images left blocked (not counting trackers, which are dropped, not blocked). */
   blockedImages: number;
+  /** Known tracking pixels dropped entirely — never loaded, even once the reader asks for images (PST-REQ-116). */
+  trackersBlocked: number;
+  /** Links that had a tracking parameter stripped or a known redirect wrapper unwrapped (PST-REQ-116). */
+  linksCleaned: number;
 }
 
 /** A transparent 1×1 GIF: a blocked remote image keeps its box, and asks nothing of anyone. */
@@ -136,6 +147,26 @@ type Attr = [string, string];
 interface Counters {
   remote: number;
   blocked: number;
+  trackers: number;
+  links: number;
+}
+
+/** Attribute name → value, for `classifyImage`'s dimension/style checks. Tokenizer names are already lowercase. */
+function attrsRecord(attrs: readonly Attr[]): Record<string, string> {
+  const rec: Record<string, string> = {};
+  for (const [name, value] of attrs) rec[name] = value;
+  return rec;
+}
+
+/** True when this `<img>` (a raw src, not yet resolved) is a known tracking pixel: only a remote or
+ * protocol-relative src can be one — a `cid:`/`data:` image never leaves the browser to phone home. */
+function imgIsTracker(attrs: readonly Attr[]): boolean {
+  const raw = attrs.find(([name]) => name === 'src')?.[1];
+  if (raw === undefined) return false;
+  const url = cleanUrl(raw);
+  const scheme = schemeOf(url);
+  if (scheme !== 'http' && scheme !== 'https' && !url.startsWith('//')) return false;
+  return classifyImage(url, attrsRecord(attrs)).kind === 'tracker';
 }
 
 function imageAttributes(attrs: readonly Attr[], opts: SanitizeOptions, counts: Counters): Attr[] {
@@ -186,7 +217,16 @@ function sanitizeAttributes(element: string, attrs: readonly Attr[], opts: Sanit
     }
     if (element === 'a' && name === 'href') {
       const href = safeHref(value);
-      if (href !== null) kept.push(['href', href]);
+      if (href !== null) {
+        const scheme = schemeOf(href);
+        if (scheme === 'http' || scheme === 'https') {
+          const cleaned = cleanLink(href);
+          if (cleaned.removedParams.length > 0 || cleaned.unwrapped !== undefined) counts.links++;
+          kept.push(['href', cleaned.href]);
+        } else {
+          kept.push(['href', href]);
+        }
+      }
       continue;
     }
     if (!ATTRIBUTES.has(name)) continue;
@@ -211,7 +251,7 @@ function sanitizeAttributes(element: string, attrs: readonly Attr[], opts: Sanit
 export function sanitizeHtml(input: string, opts: SanitizeOptions = {}): SanitizeResult {
   const out: string[] = [];
   const stack: string[] = [];
-  const counts: Counters = { remote: 0, blocked: 0 };
+  const counts: Counters = { remote: 0, blocked: 0, trackers: 0, links: 0 };
   let skip: { name: string; depth: number } | null = null;
   /** The raw token that follows is the body of a <style> we opened. */
   let styleOpen = false;
@@ -254,6 +294,10 @@ export function sanitizeHtml(input: string, opts: SanitizeOptions = {}): Sanitiz
           break;
         }
         if (!ALLOWED.has(name) || stack.length >= MAX_DEPTH) break;
+        if (name === 'img' && imgIsTracker(token.attrs)) {
+          counts.trackers++;
+          break;
+        }
         emit(`<${name}${sanitizeAttributes(name, token.attrs, opts, counts)}>`);
         if (!VOID.has(name)) stack.push(name);
         if (name === 'style') styleOpen = true;
@@ -269,5 +313,5 @@ export function sanitizeHtml(input: string, opts: SanitizeOptions = {}): Sanitiz
   }
   while (stack.length > 0) emit(`</${stack.pop() ?? ''}>`);
   emit('');
-  return { html: out.join(''), remoteImages: counts.remote, blockedImages: counts.blocked };
+  return { html: out.join(''), remoteImages: counts.remote, blockedImages: counts.blocked, trackersBlocked: counts.trackers, linksCleaned: counts.links };
 }

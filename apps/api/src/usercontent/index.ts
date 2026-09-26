@@ -16,6 +16,7 @@
 // (always target=_blank rel=noopener noreferrer) opens in a normal tab.
 //
 // Nothing here writes to the database, so nothing here is audited: a render is a read.
+import { createHash } from 'node:crypto';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { collectMessage, parseMessage } from '@postroom/mime';
 import express, { Router, type Express, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
@@ -45,6 +46,29 @@ const configs = new WeakMap<ApiDeps, UsercontentConfig | null>();
 
 function warn(event: string, detail: Record<string, unknown>): void {
   process.stderr.write(`${JSON.stringify({ event, ...detail })}\n`);
+}
+
+/** A stable, non-reversible stand-in for a value that must never appear in a log line unmasked. */
+function hashOf(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 16);
+}
+
+/**
+ * One structured line per image-proxy fetch (PST-REQ-116: "the proxy logs the fetch"). Never the
+ * full URL with its query — a signed-out token, a tracking id or a per-recipient token can live
+ * there — only the host (routing information, not identifying) and a hash of the path+query.
+ */
+function logImageFetch(messageId: string, url: URL, outcome: { status: number; bytes: number | null }): void {
+  process.stdout.write(
+    `${JSON.stringify({
+      event: 'image-proxy-fetch',
+      messageId: hashOf(messageId),
+      host: url.host,
+      pathHash: hashOf(`${url.pathname}${url.search}`),
+      status: outcome.status,
+      bytes: outcome.bytes,
+    })}\n`,
+  );
 }
 
 /**
@@ -246,6 +270,8 @@ export function usercontentApp(deps: ApiDeps, config: UsercontentConfig): Expres
         return;
       }
       const result = await fetchImage(u, config.proxy);
+      // u is the address the sanitizer itself signed into this render, so it is already a URL.
+      logImageFetch(cap.messageId, new URL(u), { status: result.ok ? 200 : result.status, bytes: result.ok ? result.body.length : null });
       if (!result.ok) {
         res.status(result.status).type('text/plain').send(`Image not loaded: ${result.reason}`);
         return;

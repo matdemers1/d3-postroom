@@ -735,13 +735,27 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991,
             "description": "Remote images in the message. Above 0 with images false means some are blocked."
+          },
+          "trackersBlocked": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Known tracking pixels dropped entirely from this message, never loaded even with images on (PST-REQ-116)."
+          },
+          "linksCleaned": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Links with a tracking parameter stripped or a known redirect wrapper unwrapped (PST-REQ-116)."
           }
         },
         "required": [
           "url",
           "expiresAt",
           "images",
-          "remoteImages"
+          "remoteImages",
+          "trackersBlocked",
+          "linksCleaned"
         ],
         "additionalProperties": false
       },
