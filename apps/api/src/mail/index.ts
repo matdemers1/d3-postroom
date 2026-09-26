@@ -14,6 +14,8 @@ import { parseQuery, searchMessages, parseCursor } from '@postroom/search';
 import { Router, type Request, type Response } from 'express';
 import type { z } from 'zod';
 import { currentSession, handle } from '../auth/middleware.js';
+import { mintRenderUrl, usercontentConfig } from '../usercontent/index.js';
+import { sanitizeHtml } from '../usercontent/sanitize.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 import { hubFor, streamEvents } from './events.js';
@@ -22,8 +24,10 @@ import {
   IdParams,
   MessageListQuery,
   MessagePatch,
+  RenderQuery,
   SearchQuery,
   type MessageBodyJson,
+  type RenderTicketJson,
   type SearchResponseJson,
   type SearchResultJson,
   type ThreadDetailJson,
@@ -230,6 +234,36 @@ export function mailRoutes(deps: ApiDeps): Router {
       };
       res.setHeader('Cache-Control', 'private, no-store');
       res.json(body);
+    }),
+  );
+
+  // A render ticket for the usercontent origin (PST-T-3.12): a short-lived capability URL for this
+  // one message of the caller's, because that origin has no session cookie. A read — nothing stored.
+  router.get(
+    '/messages/:id/render',
+    handle(async (req, res) => {
+      const query = parse(RenderQuery, req.query, res);
+      if (query === null) return;
+      const config = usercontentConfig(deps);
+      if (config === null) {
+        res.status(503).json({ error: 'usercontent_not_configured', message: 'USERCONTENT_ORIGIN is not set' });
+        return;
+      }
+      const message = await ownMessage(req, res);
+      if (message === null) return;
+      const store = blobStore(res);
+      if (store === null) return;
+      const summary = await collectMessage(await store.get(message.blobSha256));
+      const remoteImages = summary.html === null ? 0 : sanitizeHtml(summary.html.text).remoteImages;
+      const me = currentSession(req);
+      const images = query.images === '1';
+      const ticket: RenderTicketJson = {
+        ...mintRenderUrl(config, { messageId: message.id, accountId: me.accountId, sessionId: me.sessionId, images }, rt.now()),
+        images,
+        remoteImages,
+      };
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json(ticket);
     }),
   );
 

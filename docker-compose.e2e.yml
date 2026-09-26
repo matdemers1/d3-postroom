@@ -10,10 +10,19 @@ x-e2e-secrets: &e2e-secrets
 services:
   api:
     ports: ["127.0.0.1:3300:3300"]
+    # So the image proxy in the container can reach the spec's listener on the runner.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     environment:
       <<: *e2e-secrets
       HEALTH_PORT: "3300"
       WEB_ORIGIN: http://127.0.0.1:3300
+      # HTML mail renders on a separate origin (PST-T-3.12). Same published port, different host:
+      # the api picks the usercontent app by Host, and localhost vs 127.0.0.1 is a different origin
+      # AND a different site, so the session cookie for 127.0.0.1 is never sent to it.
+      USERCONTENT_ORIGIN: http://localhost:3300
+      # e2e/tests/html-render.spec.ts's listener stands in for a sender's server on the runner; the
+      # image proxy may reach a private address only with POSTROOM_E2E_SEED=1 as well.
+      IMAGE_PROXY_ALLOW_PRIVATE: "1"
       D3AUTH_ISSUER: http://127.0.0.1:1
       D3AUTH_CLIENT_ID: postroom
       D3AUTH_CLIENT_SECRET: e2e-client-secret

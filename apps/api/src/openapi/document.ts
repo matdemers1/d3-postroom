@@ -46,6 +46,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   MessageDetail: S.MessageDetail,
   Attachment: S.Attachment,
   MessageBody: S.MessageBody,
+  RenderTicket: S.RenderTicket,
   ThreadDetail: S.ThreadDetail,
   SearchResponse: S.SearchResponse,
   MailboxChangedEvent: S.MailboxChangedEvent,
@@ -128,6 +129,23 @@ export const ROUTES: RouteSpec[] = [
     summary: 'The parsed message: headers, text, raw html and the attachment list.',
     params: S.IdParams,
     responses: { '200': { description: 'The parsed body.', schema: 'MessageBody' }, ...COMMON, '404': err('Not a message of the caller.') },
+  },
+  {
+    method: 'get',
+    path: '/api/messages/{id}/render',
+    operationId: 'renderMessage',
+    tag: 'Messages',
+    summary: 'A short-lived URL of the sanitised HTML on the usercontent origin (PST-REQ-081).',
+    description:
+      'The usercontent origin has no session cookie, so this mints a capability for one message of the caller, under the caller\'s session, valid for 15 minutes. Remote images stay blocked unless images=1, and then load only through the image proxy (PST-REQ-082). Frame the URL with sandbox and no allow-scripts/allow-same-origin.',
+    params: S.IdParams,
+    query: S.RenderQuery,
+    responses: {
+      '200': { description: 'The render ticket.', schema: 'RenderTicket' },
+      ...COMMON,
+      '404': err('Not a message of the caller.'),
+      '503': err('USERCONTENT_ORIGIN (or POSTROOM_KEK) is not set.'),
+    },
   },
   {
     method: 'get',

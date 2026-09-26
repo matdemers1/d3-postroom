@@ -80,6 +80,9 @@ services:
     env_file: [/DATA/postroom/postroom.env]
     environment:
       HEALTH_PORT: "3300"
+      # Mail HTML renders only on this origin (PST-T-3.12): the tunnel routes usercontent.d3cloud.io
+      # to this same api:3300, which answers it by Host. See docs/runbooks/usercontent.md.
+      USERCONTENT_ORIGIN: https://usercontent.d3cloud.io
     restart: unless-stopped
     volumes: [blobs:/var/lib/postroom/blobs]
     depends_on:

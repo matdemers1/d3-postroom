@@ -56,6 +56,10 @@ export const MessagePatch = z
   })
   .refine((p) => p.flags !== undefined || p.mailboxId !== undefined, { message: 'nothing to change' });
 
+export const RenderQuery = z.object({
+  images: z.enum(['0', '1']).default('0').describe('1 = the reader chose to load remote images, through the image proxy (PST-REQ-082).'),
+});
+
 export const SearchQuery = z.object({
   q: z.string().trim().min(1).max(1000),
   mailboxId: Uuid.optional(),
@@ -134,6 +138,13 @@ export const MessageBody = z.object({
   warnings: z.array(z.object({ code: z.string(), message: z.string(), partId: z.string().nullable() })),
 });
 
+export const RenderTicket = z.object({
+  url: z.url().describe('The sanitised message on the usercontent origin: frame it with sandbox (no allow-scripts, no allow-same-origin). A capability; expires at expiresAt.'),
+  expiresAt: Iso,
+  images: z.boolean().describe('Whether remote images load (through the proxy) in this render.'),
+  remoteImages: z.number().int().describe('Remote images in the message. Above 0 with images false means some are blocked.'),
+});
+
 export const SearchResult = z.object({
   messageId: Uuid,
   mailboxId: Uuid,
@@ -180,6 +191,7 @@ export type MailboxJson = z.infer<typeof Mailbox>;
 export type MessageSummaryJson = z.infer<typeof MessageSummary>;
 export type MessageDetailJson = z.infer<typeof MessageDetail>;
 export type MessageBodyJson = z.infer<typeof MessageBody>;
+export type RenderTicketJson = z.infer<typeof RenderTicket>;
 export type SearchResultJson = z.infer<typeof SearchResult>;
 export type SearchResponseJson = z.infer<typeof SearchResponse>;
 export type ThreadDetailJson = z.infer<typeof ThreadDetail>;
