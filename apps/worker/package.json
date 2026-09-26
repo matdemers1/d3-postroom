@@ -24,6 +24,7 @@
     "@postroom/crypto": "workspace:*",
     "@postroom/attachments": "workspace:*",
     "@postroom/dsn": "workspace:*",
+    "@postroom/imap-proto": "workspace:*",
     "@postroom/audit": "workspace:*",
     "@postroom/search": "workspace:*",
     "@postroom/threading": "workspace:*",
