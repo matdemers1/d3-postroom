@@ -3,8 +3,13 @@ import type { Db, Prisma } from './db.js';
 import { ActorKind, SpecialUse } from './generated/prisma/enums.js';
 import { normalizeDomain, randomUidValidity } from './normalize.js';
 
-/** The mailboxes every account starts with, in the order a client lists them. */
-export const DEFAULT_MAILBOXES: readonly { readonly name: string; readonly specialUse: SpecialUse }[] = [
+/**
+ * The mailboxes every account starts with, in the order a client lists them. The last four are the
+ * sorting buckets (PST-REQ-101, PST-T-5.1): real, subscribed IMAP folders with no special use, so
+ * every client (iPhone Mail included) lists them, and a move between them from any client trains the
+ * account's model. The migration 20260926120000_bucket_folders backfills them for older accounts.
+ */
+export const DEFAULT_MAILBOXES: readonly { readonly name: string; readonly specialUse: SpecialUse | null }[] = [
   { name: 'INBOX', specialUse: SpecialUse.inbox },
   { name: 'Sent', specialUse: SpecialUse.sent },
   { name: 'Drafts', specialUse: SpecialUse.drafts },
@@ -12,6 +17,10 @@ export const DEFAULT_MAILBOXES: readonly { readonly name: string; readonly speci
   { name: 'Junk', specialUse: SpecialUse.junk },
   { name: 'Archive', specialUse: SpecialUse.archive },
   { name: 'Rejects', specialUse: SpecialUse.rejects },
+  { name: 'Newsletters', specialUse: null },
+  { name: 'Updates', specialUse: null },
+  { name: 'Receipts', specialUse: null },
+  { name: 'Notifications', specialUse: null },
 ];
 
 export interface SeedOptions {

@@ -73,9 +73,13 @@ describe.skipIf(!canRun)('imap daemon (PST-T-3.2)', () => {
         '* LIST (\\HasNoChildren \\Archive) "/" "Archive"',
         '* LIST (\\HasNoChildren \\Drafts) "/" "Drafts"',
         '* LIST (\\HasNoChildren \\Junk) "/" "Junk"',
+        '* LIST (\\HasNoChildren) "/" "Newsletters"',
+        '* LIST (\\HasNoChildren) "/" "Notifications"',
+        '* LIST (\\HasNoChildren) "/" "Receipts"',
         '* LIST (\\HasNoChildren) "/" "Rejects"',
         '* LIST (\\HasNoChildren \\Sent) "/" "Sent"',
         '* LIST (\\HasNoChildren \\Trash) "/" "Trash"',
+        '* LIST (\\HasNoChildren) "/" "Updates"',
       ],
       tagged: 'S1 OK LIST completed',
     });

@@ -565,6 +565,8 @@ model MessageVerdict {
   attachments Json     @default("[]")
   bucket      String?
   reasons     String[] @default([])
+  /// The scores behind the bucket decision (rule signals, Bayes probabilities), PST-REQ-103.
+  scores      Json     @default("{}")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)

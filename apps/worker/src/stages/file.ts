@@ -1,4 +1,7 @@
-// Stage 5, file: one copy per recipient ACCOUNT into its Inbox or Junk (PST-T-2.7, PST-T-2.11).
+// Stage 5, file: one copy per recipient ACCOUNT into the mailbox its sorting decision names
+// (PST-T-2.7, PST-T-2.11, PST-T-5.1): INBOX with the keyword $Priority or $People, one of the bucket
+// folders (Newsletters, Updates, Receipts, Notifications), or Junk. The copy's MessageVerdict stores
+// the account's bucket, every reason, and the scores (PST-REQ-103).
 //
 // Addressing (PST-REQ-066, PST-REQ-067). smtp-in resolved every RCPT to account ids already:
 //   · an alias names several accounts → one copy for each (team@ reaches two mailboxes);
@@ -21,12 +24,14 @@
 //
 // Lock order matches smtp-in's Rejects path (blob, then mailbox): inbound id → blob → mailboxes in
 // account-id order.
+import { PEOPLE_KEYWORD } from '@postroom/classifier';
 import { SpecialUse, type Prisma } from '@postroom/db';
 import { fileLocalMessage } from '@postroom/dsn';
 import { indexMessage } from '@postroom/search';
 import { assignThread } from '@postroom/threading';
 import { markStage } from './state.js';
 import type {
+  AccountDecision,
   Bucket,
   ClassifyResult,
   FileResult,
@@ -130,12 +135,36 @@ export function planCopies(recipients: readonly SpooledRecipient[]): CopyPlan[] 
     .map(([accountId, e]) => ({ accountId, keywords: [...e.keywords].sort(), tags: [...e.tags].sort(), reasons: [...new Set(e.reasons)] }));
 }
 
-/** The account's mailbox for a bucket: by special use (a renamed Junk still counts), else by name. */
-async function targetMailboxName(tx: Tx, accountId: string, bucket: Bucket): Promise<string> {
-  const specialUse = bucket === 'junk' ? SpecialUse.junk : SpecialUse.inbox;
+const BUCKETS: readonly Bucket[] = ['priority', 'people', 'newsletters', 'updates', 'receipts', 'notifications', 'junk'];
+
+function asBucket(value: string | null | undefined): Bucket | null {
+  return value !== null && value !== undefined && (BUCKETS as readonly string[]).includes(value) ? (value as Bucket) : null;
+}
+
+/**
+ * The account's decision from the classify result. A classify marker written before per-account
+ * sorting (PST-T-5.1) has no `accounts`: its junk still goes to Junk, anything else to INBOX as People.
+ */
+export function decisionFor(classify: ClassifyResult, accountId: string): AccountDecision {
+  const d = (classify.accounts as ClassifyResult['accounts'] | undefined)?.[accountId];
+  if (d !== undefined) return d;
+  const junk = (classify.bucket as string) === 'junk';
+  return {
+    bucket: junk ? 'junk' : 'people',
+    mailbox: junk ? 'Junk' : 'INBOX',
+    keyword: junk ? null : PEOPLE_KEYWORD,
+    reasons: [...classify.reasons, junk ? 'junk: classify decided junk' : 'people: classify result has no per-account decision; filed to INBOX as People'],
+    scores: {},
+  };
+}
+
+/** The account's mailbox for a bucket: INBOX and Junk by special use (a renamed Junk still counts), the bucket folders by name. */
+async function targetMailboxName(tx: Tx, accountId: string, decision: AccountDecision): Promise<string> {
+  if (decision.bucket !== 'junk' && decision.bucket !== 'priority' && decision.bucket !== 'people') return decision.mailbox;
+  const specialUse = decision.bucket === 'junk' ? SpecialUse.junk : SpecialUse.inbox;
   const mb = await tx.mailbox.findFirst({ where: { accountId, specialUse }, select: { name: true }, orderBy: { createdAt: 'asc' } });
-  // fileLocalMessage creates INBOX / Junk (with its special use) race-safely when the account has none.
-  return mb?.name ?? (bucket === 'junk' ? 'Junk' : 'INBOX');
+  // fileLocalMessage creates INBOX / Junk (with its special use) and the bucket folders race-safely when the account has none.
+  return mb?.name ?? (decision.bucket === 'junk' ? 'Junk' : 'INBOX');
 }
 
 function json(value: unknown): Prisma.InputJsonValue {
@@ -160,7 +189,7 @@ export async function fileStage(
   const { inbound } = input;
   const plans = planCopies(prior.recipients);
   if (plans.length === 0) throw new Error(`inbound message ${inbound.id} has no recipient accounts to file for`);
-  const bucket = prior.classify.bucket;
+  const bucket = prior.classify.bucket === 'junk' ? 'junk' : 'sorted';
   const auth = authOf(inbound.verdicts);
   const denorm = {
     messageIdHeader: prior.parse.messageId,
@@ -181,7 +210,7 @@ export async function fileStage(
     for (const plan of plans) {
       const existing = await tx.message.findFirst({
         where: { inboundMessageId: inbound.id, mailbox: { accountId: plan.accountId } },
-        select: { id: true, uid: true, flags: true, mailbox: { select: { id: true, name: true } } },
+        select: { id: true, uid: true, flags: true, mailbox: { select: { id: true, name: true } }, verdict: { select: { bucket: true } } },
         orderBy: { receivedAt: 'asc' },
       });
       if (existing !== null) {
@@ -193,17 +222,20 @@ export async function fileStage(
           uid: existing.uid,
           created: false,
           keywords: plan.keywords,
+          bucket: asBucket(existing.verdict?.bucket),
         });
         continue;
       }
-      const mailbox = await targetMailboxName(tx, plan.accountId, bucket);
+      const decision = decisionFor(prior.classify, plan.accountId);
+      const keywords = [...new Set(decision.keyword === null ? plan.keywords : [...plan.keywords, decision.keyword])].sort();
+      const mailbox = await targetMailboxName(tx, plan.accountId, decision);
       const filed = await fileLocalMessage(tx, {
         accountId: plan.accountId,
         mailbox,
         blobSha256: inbound.blobSha256,
         size: inbound.size,
         internalDate: inbound.receivedAt,
-        flags: plan.keywords,
+        flags: keywords,
       });
       await tx.message.update({ where: { id: filed.id }, data: { inboundMessageId: inbound.id, ...denorm } });
       await indexMessage(tx, {
@@ -221,12 +253,13 @@ export async function fileStage(
           messageId: filed.id,
           auth: json(auth),
           attachments: json(prior.classify.attachments),
-          bucket,
-          reasons: [...prior.classify.reasons, ...prior.sieve.reasons, ...plan.reasons, `filed to ${mailbox}`],
+          bucket: decision.bucket,
+          reasons: [...decision.reasons, ...prior.sieve.reasons, ...plan.reasons, `filed to ${mailbox}`],
+          scores: json(decision.scores),
         },
       });
       created++;
-      copies.push({ accountId: plan.accountId, mailboxId: filed.mailboxId, mailbox, messageId: filed.id, uid: filed.uid, created: true, keywords: plan.keywords });
+      copies.push({ accountId: plan.accountId, mailboxId: filed.mailboxId, mailbox, messageId: filed.id, uid: filed.uid, created: true, keywords, bucket: decision.bucket });
     }
     if (created > 0) {
       await tx.blob.update({ where: { sha256: inbound.blobSha256 }, data: { refcount: { increment: created } } });

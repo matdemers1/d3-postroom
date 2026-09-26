@@ -50,7 +50,7 @@ describe.skipIf(!canRun)('Bayes training on moves from any client (PST-T-5.3, PS
     open.push(c);
     expect(await c.next()).toMatch(/^\* OK /);
     expect((await c.command(`LOGIN ${account.address} ${account.appPassword}`)).tagged).toMatch(/^A\d+ OK /);
-    expect((await c.command('CREATE Newsletters')).tagged).toMatch(/ OK /);
+    // Newsletters is a default mailbox since PST-T-5.1.
     return c;
   }
 

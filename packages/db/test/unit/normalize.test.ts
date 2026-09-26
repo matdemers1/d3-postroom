@@ -64,7 +64,7 @@ describe('mailbox defaults', () => {
     expect(calls).toEqual([[1, 2 ** 31]]);
   });
 
-  it('seeds seven mailboxes with distinct names and one of each special use', () => {
+  it('seeds the seven special mailboxes and the four bucket folders (PST-T-5.1)', () => {
     expect(DEFAULT_MAILBOXES.map((m) => m.name)).toEqual([
       'INBOX',
       'Sent',
@@ -73,7 +73,13 @@ describe('mailbox defaults', () => {
       'Junk',
       'Archive',
       'Rejects',
+      'Newsletters',
+      'Updates',
+      'Receipts',
+      'Notifications',
     ]);
-    expect(new Set(DEFAULT_MAILBOXES.map((m) => m.specialUse)).size).toBe(Object.keys(SpecialUse).length);
+    const special = DEFAULT_MAILBOXES.map((m) => m.specialUse).filter((u) => u !== null);
+    expect(new Set(special).size).toBe(Object.keys(SpecialUse).length);
+    expect(special).toHaveLength(Object.keys(SpecialUse).length);
   });
 });

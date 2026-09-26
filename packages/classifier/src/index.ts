@@ -32,3 +32,15 @@ export {
   type TrainingMove,
 } from './buckets.js';
 export * from './bayes/index.js';
+
+// PST-T-5.1: where a message is filed — INBOX ($Priority / $People) or one bucket folder.
+export {
+  bucketFor,
+  heuristicBucket,
+  FILING_BUCKETS,
+  PEOPLE_KEYWORD,
+  PRIORITY_KEYWORD,
+  type BucketForInput,
+  type FilingBucket,
+  type FilingDecision,
+} from './bucket-for.js';
