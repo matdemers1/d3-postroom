@@ -8,6 +8,7 @@ import { AdminJobs } from './screens/AdminJobs';
 import { AdminSessions } from './screens/AdminSessions';
 import { AppPasswords } from './screens/AppPasswords';
 import { ChangePassword } from './screens/ChangePassword';
+import { Import } from './screens/Import';
 import { Mail } from './screens/Mail';
 import { Sessions } from './screens/Sessions';
 import { Setup } from './screens/Setup';
@@ -73,6 +74,7 @@ function Gate() {
         <Route path="/app-passwords" element={<AppPasswords />} />
         <Route path="/account/password" element={<ChangePassword />} />
         <Route path="/account/sessions" element={<Sessions />} />
+        <Route path="/account/import" element={<Import />} />
         <Route path="/admin/sessions" element={<AdminSessions />} />
         <Route path="/admin/health" element={<AdminHealth />} />
         <Route path="/admin/jobs" element={<AdminJobs />} />

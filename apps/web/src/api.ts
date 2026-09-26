@@ -360,3 +360,50 @@ export function describeError(error: unknown): string {
       return 'Something went wrong. Try again.';
   }
 }
+
+// --- IMAP import (PST-T-10.2, PST-REQ-152) ---------------------------------------------------
+
+export type ImportStatusName = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface ImportFolderStatus {
+  name: string;
+  target: string;
+  total: number;
+  imported: number;
+  duplicates: number;
+  done: boolean;
+}
+
+export interface ImportStatus {
+  id: string;
+  status: ImportStatusName;
+  host: string;
+  port: number;
+  username: string;
+  pinned: boolean;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string | null;
+  cancelRequested: boolean;
+  folders: ImportFolderStatus[];
+  totals: { folders: number; foldersDone: number; total: number; imported: number; duplicates: number };
+}
+
+export interface StartImportInput {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  trustFingerprint?: string;
+  folders?: string[];
+}
+
+export const importApi = {
+  /** The latest import of the caller's, or null. */
+  latest: () => call<{ import: ImportStatus | null }>('GET', '/api/import'),
+  get: (id: string) => call<ImportStatus>('GET', `/api/import/${encodeURIComponent(id)}`),
+  /** Needs a fresh step-up: 403 step_up_required otherwise. 409 import_active while another runs. */
+  start: (input: StartImportInput) => call<ImportStatus>('POST', '/api/import', input),
+  cancel: (id: string) => call<ImportStatus>('POST', `/api/import/${encodeURIComponent(id)}/cancel`),
+};
