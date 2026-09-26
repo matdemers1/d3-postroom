@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [smtp-proto, mime, imap-proto, dns, proxy-protocol, auth-checks, attachments, sieve]
+        target: [smtp-proto, mime, imap-proto, dns, proxy-protocol, auth-checks, attachments, sieve, ical, vcard]
     permissions:
       contents: read
       issues: write
