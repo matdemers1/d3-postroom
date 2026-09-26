@@ -119,6 +119,15 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'POST /api/keys/{id}/export-secret',
         'POST /api/keys/{id}/revoke',
         'DELETE /api/keys/{id}',
+        // PST-T-4.8: the DNS checker and the setup wizard.
+        'GET /api/admin/dns',
+        'GET /api/admin/setup-wizard',
+        'POST /api/admin/setup-wizard/domain',
+        'POST /api/admin/setup-wizard/dkim',
+        'POST /api/admin/setup-wizard/dns',
+        'POST /api/admin/setup-wizard/mailbox',
+        'POST /api/admin/setup-wizard/test',
+        'POST /api/admin/setup-wizard/complete',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit']);

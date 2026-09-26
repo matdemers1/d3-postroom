@@ -150,3 +150,9 @@ describe('redact', () => {
     );
   });
 });
+
+describe('redact: invalid dates', () => {
+  it('records an invalid Date as a string instead of throwing', () => {
+    expect(redact({ at: new Date(Number.NaN) })).toEqual({ at: 'Invalid Date' });
+  });
+});

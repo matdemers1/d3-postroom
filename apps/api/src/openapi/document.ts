@@ -21,6 +21,8 @@ import { CONTACTS_COMPONENTS, CONTACTS_ROUTES } from '../contacts/openapi.js';
 import { TEMPLATES_COMPONENTS, TEMPLATES_ROUTES } from '../templates/openapi.js';
 import { INVITES_COMPONENTS, INVITES_ROUTES } from '../invites/openapi.js';
 import { KEYS_COMPONENTS, KEYS_ROUTES } from '../keys/openapi.js';
+import { ADMIN_DNS_COMPONENTS, ADMIN_DNS_ROUTES } from '../admin-dns/openapi.js';
+import { SETUP_WIZARD_COMPONENTS, SETUP_WIZARD_ROUTES } from '../setup-wizard/openapi.js';
 
 type Json = Record<string, unknown>;
 
@@ -78,6 +80,8 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   ...TEMPLATES_COMPONENTS,
   ...INVITES_COMPONENTS,
   ...KEYS_COMPONENTS,
+  ...ADMIN_DNS_COMPONENTS,
+  ...SETUP_WIZARD_COMPONENTS,
 };
 
 const err = (description: string): ResponseSpec => ({ description, schema: 'Error' });
@@ -350,6 +354,8 @@ export const ROUTES: RouteSpec[] = [
   ...TEMPLATES_ROUTES,
   ...INVITES_ROUTES,
   ...KEYS_ROUTES,
+  ...ADMIN_DNS_ROUTES,
+  ...SETUP_WIZARD_ROUTES,
 ];
 
 function strip(schema: Json): Json {

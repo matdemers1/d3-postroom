@@ -11,6 +11,7 @@ import { AdminDeliverability } from './screens/AdminDeliverability';
 import { AdminHealth } from './screens/AdminHealth';
 import { AdminJobs } from './screens/AdminJobs';
 import { AdminQueue } from './screens/AdminQueue';
+import { AdminDns } from './screens/AdminDns';
 import { AdminSessions } from './screens/AdminSessions';
 import { AdminSmtpViewer } from './admin/smtp-viewer/AdminSmtpViewer';
 import { AppPasswords } from './screens/AppPasswords';
@@ -23,6 +24,7 @@ import { Rules } from './screens/Rules';
 import { SenderProfile } from './screens/SenderProfile';
 import { Sessions } from './screens/Sessions';
 import { Setup } from './screens/Setup';
+import { SetupWizard } from './screens/SetupWizard';
 import { Shell } from './screens/Shell';
 import { SignIn } from './screens/SignIn';
 
@@ -104,6 +106,8 @@ function Gate() {
         <Route path="/admin/queue" element={<AdminQueue />} />
         <Route path="/admin/deliverability" element={<AdminDeliverability />} />
         <Route path="/admin/smtp" element={<AdminSmtpViewer />} />
+        <Route path="/admin/setup" element={<SetupWizard />} />
+        <Route path="/admin/dns" element={<AdminDns />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
