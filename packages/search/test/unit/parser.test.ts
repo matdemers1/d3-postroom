@@ -148,3 +148,18 @@ describe('parseQuery', () => {
     expect(() => parseQuery('foo)')).not.toThrow();
   });
 });
+
+describe('search cursor', () => {
+  it('accepts only real ISO timestamps', async () => {
+    const { parseCursor } = await import('../../src/sql.js');
+    expect(parseCursor('2026-09-25T12:00:00.000Z')?.toISOString()).toBe('2026-09-25T12:00:00.000Z');
+    for (const bad of ['', 'not-a-date', "1'; DROP TABLE message;--", '99999999999999999999', '2026-13-45T99:99:99Z', '2026-09-25']) {
+      expect(parseCursor(bad), bad).toBeNull();
+    }
+  });
+  it('buildSearchSql refuses a garbage cursor with a typed error', async () => {
+    const { buildSearchSql, InvalidSearchCursorError } = await import('../../src/sql.js');
+    const { parseQuery } = await import('../../src/parser.js');
+    expect(() => buildSearchSql(parseQuery('x').ast, { accountId: '00000000-0000-0000-0000-000000000000', cursor: 'nope' })).toThrow(InvalidSearchCursorError);
+  });
+});

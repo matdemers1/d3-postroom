@@ -10,7 +10,7 @@ import { pipeline } from 'node:stream/promises';
 import { audited, getAuditContext } from '@postroom/audit';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { collectMessage, decodeEncodedWords, parseMessage } from '@postroom/mime';
-import { parseQuery, searchMessages } from '@postroom/search';
+import { parseQuery, searchMessages, parseCursor } from '@postroom/search';
 import { Router, type Request, type Response } from 'express';
 import type { z } from 'zod';
 import { currentSession, handle } from '../auth/middleware.js';
@@ -316,6 +316,10 @@ export function mailRoutes(deps: ApiDeps): Router {
         return;
       }
       const { ast, warnings } = parseQuery(query.q);
+      if (query.cursor !== undefined && parseCursor(query.cursor) === null) {
+        res.status(400).json({ error: 'invalid_cursor' });
+        return;
+      }
       const rows = await searchMessages(db, ast, {
         accountId: me.accountId,
         limit: query.limit + 1,

@@ -179,7 +179,13 @@ export function buildSearchSql(ast: QueryAst, opts: SearchOptions): Prisma.Sql {
   const conditions: Prisma.Sql[] = [Prisma.sql`ms.account_id = ${opts.accountId}`];
   if (opts.mailboxId !== undefined) conditions.push(Prisma.sql`m.mailbox_id = ${opts.mailboxId}`);
   if (ast.root !== null) conditions.push(nodePredicate(ast.root));
-  if (opts.cursor !== undefined) conditions.push(Prisma.sql`m.internal_date < ${new Date(opts.cursor)}`);
+  if (opts.cursor !== undefined) {
+    // The cursor comes from a client. A value that isn't a real timestamp is a bad request, never
+    // an exception out of Prisma (and never silently "all rows", which would repeat page one).
+    const at = parseCursor(opts.cursor);
+    if (at === null) throw new InvalidSearchCursorError(opts.cursor);
+    conditions.push(Prisma.sql`m.internal_date < ${at}`);
+  }
 
   const rankExpr = rankQuery.length > 0 ? Prisma.sql`ts_rank_cd(ms.tsv, plainto_tsquery('simple', ${rankQuery}))` : Prisma.sql`0`;
 
@@ -205,4 +211,19 @@ export function buildSearchSql(ast: QueryAst, opts: SearchOptions): Prisma.Sql {
 export async function searchMessages(db: Db, ast: QueryAst, opts: SearchOptions): Promise<SearchRow[]> {
   const sql = buildSearchSql(ast, opts);
   return db.$queryRaw<SearchRow[]>(sql);
+}
+
+export class InvalidSearchCursorError extends Error {
+  constructor(cursor: string) {
+    super(`invalid search cursor ${JSON.stringify(cursor.slice(0, 40))}`);
+    this.name = 'InvalidSearchCursorError';
+  }
+}
+
+/** An ISO-8601 timestamp within a sane range, or null. */
+export function parseCursor(cursor: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(cursor)) return null;
+  const at = new Date(cursor);
+  const t = at.getTime();
+  return Number.isNaN(t) || t < 0 || t > 8.64e15 ? null : at;
 }
