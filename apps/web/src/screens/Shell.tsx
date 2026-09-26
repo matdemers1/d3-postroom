@@ -63,6 +63,14 @@ function OutboxIcon() {
   );
 }
 
+function ChartIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M4 20h16M7 16v-5M12 16V6M17 16v-8" />
+    </svg>
+  );
+}
+
 function QueueIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -236,6 +244,9 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
               </SideNavItem>
               <SideNavItem asChild icon={<OutboxIcon />} label="Outbound queue" current={location.pathname === '/admin/queue'}>
                 <RouterLink to="/admin/queue" />
+              </SideNavItem>
+              <SideNavItem asChild icon={<ChartIcon />} label="Deliverability" current={location.pathname === '/admin/deliverability'}>
+                <RouterLink to="/admin/deliverability" />
               </SideNavItem>
             </SideNavGroup>
           ) : null}

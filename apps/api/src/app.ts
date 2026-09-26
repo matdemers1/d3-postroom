@@ -17,6 +17,7 @@ import { contactsRoutes } from './contacts/index.js';
 import { mailRoutes } from './mail/index.js';
 import { usercontentConfig, usercontentDispatch } from './usercontent/index.js';
 import { deliveryRoutes } from './delivery/index.js';
+import { deliverabilityRoutes } from './deliverability/index.js';
 import { exportRoutes } from './export/index.js';
 import { senderRoutes } from './senders/index.js';
 import { sieveRoutes } from './sieve/index.js';
@@ -103,6 +104,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/admin/jobs', requireAdmin(deps), adminJobRoutes(deps));
   app.use('/api/admin/queue', requireAdmin(deps), adminQueueRoutes(deps));
   app.use('/api/admin/service-accounts', requireAdmin(deps), serviceAccountRoutes(deps));
+  app.use('/api/admin/deliverability', requireAdmin(deps), deliverabilityRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
   app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));
   app.use('/api/senders', requireSession(deps), senderRoutes(deps));

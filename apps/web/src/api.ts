@@ -72,6 +72,8 @@ export const api = {
   adminSessions: () => call<{ sessions: AdminSession[] }>('GET', '/api/admin/sessions'),
   revokeSession: (id: string) => call<{ ok: true }>('DELETE', `/api/admin/sessions/${encodeURIComponent(id)}`),
   adminHealth: () => call<{ tiles: HealthTile[] }>('GET', '/api/admin/health'),
+  // PST-T-7.1 (PST-REQ-122): DMARC aggregate and TLS-RPT reports, charted on Deliverability.
+  adminDeliverability: (days: number) => call<Deliverability>('GET', `/api/admin/deliverability?days=${String(days)}`),
   adminJobs: (opts: { status?: string; queue?: string } = {}) => {
     const q = new URLSearchParams();
     if (opts.status !== undefined) q.set('status', opts.status);
@@ -854,3 +856,36 @@ export const contactsApi = {
 /** The contacts screen's URL for one card (the reading pane's sender link). */
 export const contactPath = (addressBookId: string, name: string): string =>
   `/contacts/${encodeURIComponent(addressBookId)}/${encodeURIComponent(name)}`;
+
+// ─── Deliverability (PST-T-7.1, PST-REQ-122) ─────────────────────────────────────────────────────
+
+export interface DeliverabilitySource {
+  sourceIp: string;
+  reverseDns: string | null;
+  messages: number;
+  pass: number;
+  fail: number;
+  passRate: number;
+  dkimPass: number;
+  spfPass: number;
+  orgs: string[];
+  headerFrom: string[];
+}
+
+export interface Deliverability {
+  range: { from: string; to: string; days: number };
+  mailboxes: { dmarc: string | null };
+  dmarc: {
+    totals: { reports: number; messages: number; pass: number; fail: number; dkimPass: number; spfPass: number; dispositions: { none: number; quarantine: number; reject: number } };
+    byDay: { day: string; pass: number; fail: number }[];
+    bySource: DeliverabilitySource[];
+    byOrg: { org: string; reports: number; messages: number; pass: number; fail: number }[];
+    reports: { id: string; org: string; reportId: string; domain: string; begin: string; end: string; messages: number }[];
+  };
+  tlsrpt: {
+    totals: { reports: number; successful: number; failed: number };
+    byPolicy: { policyDomain: string; policyType: string; successful: number; failed: number }[];
+    byFailureType: { resultType: string; sessions: number }[];
+    reports: { id: string; org: string; reportId: string; begin: string; end: string; successful: number; failed: number }[];
+  };
+}

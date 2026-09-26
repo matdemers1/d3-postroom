@@ -31,7 +31,8 @@
     "@postroom/classifier": "workspace:*",
     "@postroom/sieve": "workspace:*",
     "@postroom/submission": "workspace:*",
-    "@postroom/dav-store": "workspace:*"
+    "@postroom/dav-store": "workspace:*",
+    "@postroom/reports": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"
