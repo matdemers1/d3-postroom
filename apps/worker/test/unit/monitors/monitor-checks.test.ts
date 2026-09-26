@@ -108,15 +108,20 @@ describe('blocklist monitor (PST-REQ-097)', () => {
 });
 
 describe('ntp monitor (PST-REQ-100)', () => {
+  it('is disabled with no server configured', () => {
+    expect(createNtpMonitor({ server: '' })).toBeNull();
+  });
+
   it('fires when the offset exceeds the threshold and clears within it, reporting getStatus()', async () => {
     const query = vi.fn().mockResolvedValueOnce({ offsetMs: 5_000, server: 'time.cloudflare.com' }).mockResolvedValueOnce({ offsetMs: 10, server: 'time.cloudflare.com' });
     const monitor = createNtpMonitor({ server: 'time.cloudflare.com', thresholdMs: 2_000, query });
-    expect(monitor.getStatus()).toBeNull();
-    const firing = await monitor.check();
-    expect(firing.ok).toBe(false);
-    expect(monitor.getStatus()).toMatchObject({ synchronized: false, offsetMs: 5_000, server: 'time.cloudflare.com' });
-    const clear = await monitor.check();
-    expect(clear.ok).toBe(true);
-    expect(monitor.getStatus()).toMatchObject({ synchronized: true, offsetMs: 10 });
+    expect(monitor).not.toBeNull();
+    expect(monitor?.getStatus()).toBeNull();
+    const firing = await monitor?.check();
+    expect(firing?.ok).toBe(false);
+    expect(monitor?.getStatus()).toMatchObject({ synchronized: false, offsetMs: 5_000, server: 'time.cloudflare.com' });
+    const clear = await monitor?.check();
+    expect(clear?.ok).toBe(true);
+    expect(monitor?.getStatus()).toMatchObject({ synchronized: true, offsetMs: 10 });
   });
 });

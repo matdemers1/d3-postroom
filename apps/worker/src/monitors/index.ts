@@ -26,7 +26,8 @@ export interface BuildMonitorsOptions {
 
 export interface WorkerMonitors {
   readonly monitors: readonly Monitor[];
-  readonly ntp: NtpMonitor;
+  /** Null when NTP_SERVER is unset — the daemon must not reach the public internet unconfigured. */
+  readonly ntp: NtpMonitor | null;
 }
 
 function splitList(value: string): string[] {
@@ -43,12 +44,12 @@ export function buildMonitors(opts: BuildMonitorsOptions): WorkerMonitors {
   const diskPaths = [envString(env, 'BLOB_ROOT', '/var/lib/postroom/blobs'), ...(pgData === '' ? [] : [pgData])];
 
   const ntp = createNtpMonitor({
-    server: envString(env, 'NTP_SERVER', 'time.cloudflare.com'),
+    server: envString(env, 'NTP_SERVER', ''),
     thresholdMs: envInt(env, 'NTP_SKEW_THRESHOLD_MS', 2_000),
   });
 
   const candidates: (Monitor | null)[] = [
-    createTunnelMonitor({ url: envString(env, 'TUNNEL_HEALTH_URL', 'https://mail.d3cloud.io/health') }),
+    createTunnelMonitor({ url: envString(env, 'TUNNEL_HEALTH_URL', '') }),
     createBacklogMonitor({
       db: opts.db,
       threshold: envInt(env, 'BACKLOG_THRESHOLD', 500),
