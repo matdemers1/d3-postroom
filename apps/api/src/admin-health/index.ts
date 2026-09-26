@@ -110,6 +110,21 @@ async function lastRunTile(db: Db, id: string, label: string, key: string): Prom
   return { id, label, state: value.ok ? 'ok' : 'down', detail: value.ok ? 'ok' : (value.reason ?? 'failed'), since: value.at };
 }
 
+/** PST-T-6.3, PST-REQ-118: total bytes of every SMTP session transcript kept, compressed, forever. */
+async function transcriptsTile(db: Db): Promise<HealthTile> {
+  const agg = await db.smtpTranscript.aggregate({ _count: { _all: true }, _sum: { rawBytes: true, compressedBytes: true } });
+  const count = agg._count._all;
+  const compressedBytes = agg._sum.compressedBytes ?? 0;
+  const rawBytes = agg._sum.rawBytes ?? 0;
+  return {
+    id: 'smtp-transcripts',
+    label: 'SMTP transcripts',
+    state: 'ok',
+    detail: `${String(count)} session(s), ${String(compressedBytes)} bytes compressed (${String(rawBytes)} raw)`,
+    since: null,
+  };
+}
+
 async function queueTile(db: Db): Promise<HealthTile> {
   const [deadJobs, failedMessages] = await Promise.all([
     db.job.count({ where: { queue: 'inbound', status: 'dead' } }),
@@ -126,7 +141,7 @@ export async function buildHealthTiles(deps: ApiDeps): Promise<HealthTile[]> {
   const daemonUrls = parseDaemonHealthUrls(env['DAEMON_HEALTH_URLS']);
   const timeoutMs = Number(env['DAEMON_HEALTH_TIMEOUT_MS'] ?? '') || DEFAULT_TIMEOUT_MS;
 
-  const [tunnel, cert, disk, blocklist, backup, drill, ntp, queue, ...daemons] = await Promise.all([
+  const [tunnel, cert, disk, blocklist, backup, drill, ntp, queue, transcripts, ...daemons] = await Promise.all([
     monitorTile(db, 'tunnel', MONITOR_LABELS['tunnel'] ?? 'Tunnel'),
     monitorTile(db, 'cert-expiry', MONITOR_LABELS['cert-expiry'] ?? 'Certificates'),
     monitorTile(db, 'disk', MONITOR_LABELS['disk'] ?? 'Disk'),
@@ -135,10 +150,11 @@ export async function buildHealthTiles(deps: ApiDeps): Promise<HealthTile[]> {
     lastRunTile(db, 'drill', 'Restore drill', 'drill.last'),
     monitorTile(db, 'ntp', MONITOR_LABELS['ntp'] ?? 'NTP'),
     queueTile(db),
+    transcriptsTile(db),
     ...Array.from(daemonUrls, ([name, url]) => fetchDaemonHealth(name, url, timeoutMs)),
   ]);
 
-  return [tunnel, ...daemons, cert, disk, queue, blocklist, backup, drill, ntp];
+  return [tunnel, ...daemons, cert, disk, queue, transcripts, blocklist, backup, drill, ntp];
 }
 
 export function adminHealthRoutes(deps: ApiDeps): Router {
