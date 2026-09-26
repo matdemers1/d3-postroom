@@ -46,6 +46,7 @@ import { checkGreylist, isPrivateClient, isSoftListed, type GreylistInput, type 
 import { buildReceived, receivedProtocol } from './headers.js';
 import { canonicalIp, type ReverseLookup } from './rdns.js';
 import { prismaRecipientStore, resolveRecipient, RecipientReplies, type RecipientStore } from './recipients.js';
+import { attachTranscriptTap, TranscriptRecorder } from './transcript.js';
 
 export type Log = (event: string, fields?: Record<string, unknown>) => void;
 
@@ -146,6 +147,8 @@ function errorMessage(err: unknown): string {
 /** Per-connection state and the hooks the session engine calls. */
 class InboundConnection {
   session: ServerSession | null = null;
+  /** Set right after the session is created (PST-T-6.3); referenced lazily by `hooks()`'s closures. */
+  recorder: TranscriptRecorder | null = null;
   private rdns: Promise<string | null> = Promise.resolve(null);
   private dnsbl: Promise<DnsblVerdict | undefined> = Promise.resolve(undefined);
   private tx: TransactionState | null = null;
@@ -184,7 +187,19 @@ class InboundConnection {
         this.errors.push(errorMessage(err));
       },
     };
-    if (this.opts.tls) return { ...hooks, upgradeTls: tlsUpgrader({ key: this.opts.tls.key, cert: this.opts.tls.cert }) };
+    if (this.opts.tls) {
+      const upgrade = tlsUpgrader({ key: this.opts.tls.key, cert: this.opts.tls.cert });
+      return {
+        ...hooks,
+        upgradeTls: async (socket) => {
+          const secured = await upgrade(socket);
+          // The tap was on the plaintext socket; STARTTLS hands the engine a new Duplex, which needs
+          // its own tap (PST-T-6.3) — the plaintext one is discarded along with `socket`.
+          if (this.recorder) attachTranscriptTap(secured, this.recorder);
+          return secured;
+        },
+      };
+    }
     return hooks;
   }
 
@@ -246,6 +261,21 @@ class InboundConnection {
   private async onData(body: Readable, ctx: Readonly<SessionContext>): Promise<SmtpReply> {
     const tx = this.tx;
     if (tx === null) return Replies.mailFirst;
+    // PST-T-6.3: the body's octets are never buffered or published; a single summary line stands
+    // in for them once the stream ends (however it ends — 'close' always fires, so this is exactly once).
+    this.recorder?.beginBody();
+    let bodyBytes = 0;
+    let bodyEnded = false;
+    body.on('data', (chunk: Buffer) => {
+      bodyBytes += chunk.length;
+    });
+    const endBody = (): void => {
+      if (bodyEnded) return;
+      bodyEnded = true;
+      this.recorder?.endBody(bodyBytes);
+    };
+    body.once('end', endBody);
+    body.once('close', endBody);
     const verifier = createDkimVerifierStream({ dns: this.opts.dkimDns });
     // Errors reach the acceptor through `verifier` (pipeline destroys it with the same error).
     pipeline(body, verifier).catch((err: unknown) => {
@@ -368,9 +398,24 @@ export function createSmtpInServer(opts: SmtpInOptions): SmtpInServer {
       idleTimeoutMs: opts.idleTimeoutMs,
     });
     conn.session = session;
+    // PST-T-6.3: set right after the session id is known, and before the greeting can be written
+    // (createServerSession's own first write happens no sooner than its next microtask).
+    const recorder = new TranscriptRecorder({
+      daemon: 'smtp-in',
+      sessionId: session.context.id,
+      clientIp,
+      db: opts.db,
+      log: opts.log,
+      ...(opts.now === undefined ? {} : { now: opts.now }),
+    });
+    conn.recorder = recorder;
+    attachTranscriptTap(socket, recorder);
     sessions.add(session);
     await session.done;
     sessions.delete(session);
+    // The client already has its last reply and the socket is closing: awaiting here delays nothing
+    // the protocol promised, and `finish()` itself never throws.
+    await recorder.finish();
     // One structured line per session: envelopes and outcomes, never bodies.
     opts.log('session', {
       id: session.context.id,

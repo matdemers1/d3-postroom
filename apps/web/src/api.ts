@@ -72,6 +72,16 @@ export const api = {
   adminSessions: () => call<{ sessions: AdminSession[] }>('GET', '/api/admin/sessions'),
   revokeSession: (id: string) => call<{ ok: true }>('DELETE', `/api/admin/sessions/${encodeURIComponent(id)}`),
   adminHealth: () => call<{ tiles: HealthTile[] }>('GET', '/api/admin/health'),
+  // PST-T-6.3 (PST-REQ-117, PST-REQ-118): the SMTP transcript browser.
+  adminSmtpTranscripts: (opts: { daemon?: 'smtp-in' | 'submission'; clientIp?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.daemon !== undefined) q.set('daemon', opts.daemon);
+    if (opts.clientIp !== undefined) q.set('clientIp', opts.clientIp);
+    if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+    const qs = q.toString();
+    return call<{ transcripts: SmtpTranscriptSummary[] }>('GET', `/api/admin/smtp/transcripts${qs === '' ? '' : `?${qs}`}`);
+  },
+  adminSmtpTranscript: (id: string) => call<SmtpTranscriptDetail>('GET', `/api/admin/smtp/transcripts/${encodeURIComponent(id)}`),
   // PST-T-7.1 (PST-REQ-122): DMARC aggregate and TLS-RPT reports, charted on Deliverability.
   adminDeliverability: (days: number) => call<Deliverability>('GET', `/api/admin/deliverability?days=${String(days)}`),
   // PST-T-7.2 (PST-REQ-123): a 14-day-clean-streak DMARC progression proposal, per our domain.
@@ -1223,4 +1233,60 @@ export interface InspectCrypto {
 // so a drawer talking to an older server still renders.
 export interface MessageInspect {
   crypto?: InspectCrypto;
+}
+
+// ─── SMTP session transcripts and live view (PST-T-6.3, PST-REQ-117, PST-REQ-118) ─────────────────
+
+export interface SmtpTranscriptSummary {
+  id: string;
+  daemon: string;
+  sessionId: string;
+  clientIp: string;
+  startedAt: string;
+  endedAt: string | null;
+  lineCount: number;
+  rawBytes: number;
+  compressedBytes: number;
+  createdAt: string;
+}
+
+export interface SmtpTranscriptLine {
+  at: string;
+  dir: 'C' | 'S';
+  line: string;
+}
+
+export interface SmtpTranscriptDetail extends SmtpTranscriptSummary {
+  lines: SmtpTranscriptLine[];
+}
+
+export interface SmtpLiveLine {
+  daemon: string;
+  sessionId: string;
+  dir: 'C' | 'S';
+  line: string;
+  at: string;
+}
+
+/** Parses one `EventSource`/SSE block (`event:`/`data:` lines up to the blank line) into a typed
+ * live line, or null for anything else (comments, unknown events) — kept in plain .ts so it is
+ * testable without pulling in `@d3cloud/ui` (apps/web unit tests run in plain Node). */
+export function parseSmtpLiveBlock(block: string): SmtpLiveLine | null {
+  let event = 'message';
+  const data: string[] = [];
+  for (const line of block.split('\n')) {
+    if (line.startsWith('event: ')) event = line.slice(7);
+    else if (line.startsWith('data: ')) data.push(line.slice(6));
+  }
+  if (event !== 'line' || data.length === 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(data.join('\n'));
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const v = parsed as Record<string, unknown>;
+    if (typeof v['daemon'] !== 'string' || typeof v['sessionId'] !== 'string' || typeof v['line'] !== 'string' || typeof v['at'] !== 'string') return null;
+    if (v['dir'] !== 'C' && v['dir'] !== 'S') return null;
+    return { daemon: v['daemon'], sessionId: v['sessionId'], dir: v['dir'], line: v['line'], at: v['at'] };
+  } catch {
+    return null;
+  }
 }

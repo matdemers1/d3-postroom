@@ -9,6 +9,7 @@ import { adminHealthRoutes } from './admin-health/index.js';
 import { aliasRoutes } from './aliases/index.js';
 import { adminJobRoutes } from './admin-jobs/index.js';
 import { adminQueueRoutes } from './admin-queue/index.js';
+import { adminSmtpRoutes } from './admin-smtp/index.js';
 import { serviceAccountRoutes } from './admin-service/index.js';
 import { appPasswordRoutes } from './app-passwords/index.js';
 import { autoconfigRoutes } from './autoconfig/index.js';
@@ -110,6 +111,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/admin/queue', requireAdmin(deps), adminQueueRoutes(deps));
   app.use('/api/admin/service-accounts', requireAdmin(deps), serviceAccountRoutes(deps));
   app.use('/api/admin/deliverability', requireAdmin(deps), deliverabilityRoutes(deps));
+  app.use('/api/admin/smtp', requireAdmin(deps), adminSmtpRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
   app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));
   app.use('/api/aliases', requireSession(deps), aliasRoutes(deps));

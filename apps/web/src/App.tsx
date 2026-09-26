@@ -11,6 +11,7 @@ import { AdminHealth } from './screens/AdminHealth';
 import { AdminJobs } from './screens/AdminJobs';
 import { AdminQueue } from './screens/AdminQueue';
 import { AdminSessions } from './screens/AdminSessions';
+import { AdminSmtpViewer } from './admin/smtp-viewer/AdminSmtpViewer';
 import { AppPasswords } from './screens/AppPasswords';
 import { Aliases } from './screens/Aliases';
 import { ChangePassword } from './screens/ChangePassword';
@@ -99,6 +100,7 @@ function Gate() {
         <Route path="/admin/jobs" element={<AdminJobs />} />
         <Route path="/admin/queue" element={<AdminQueue />} />
         <Route path="/admin/deliverability" element={<AdminDeliverability />} />
+        <Route path="/admin/smtp" element={<AdminSmtpViewer />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
