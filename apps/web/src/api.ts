@@ -20,8 +20,13 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { accept: 'application/json' };
+async function call<T>(
+  method: 'GET' | 'POST' | 'DELETE' | 'PATCH',
+  path: string,
+  body?: unknown,
+  extraHeaders: Record<string, string> = {},
+): Promise<T> {
+  const headers: Record<string, string> = { accept: 'application/json', ...extraHeaders };
   if (method !== 'GET') headers['x-postroom-csrf'] = '1';
   if (body !== undefined) headers['content-type'] = 'application/json';
   const res = await fetch(path, {
@@ -66,7 +71,132 @@ export const api = {
   createAppPassword: (input: { label: string; scopes: AppPasswordScope[] }) =>
     call<AppPassword & { password: string }>('POST', '/api/app-passwords', input),
   revokeAppPassword: (id: string) => call<{ ok: true }>('DELETE', `/api/app-passwords/${encodeURIComponent(id)}`),
+
+  // --- Mail (PST-T-3.9's API) ---------------------------------------------------------------
+  mailboxes: () => call<{ mailboxes: Mailbox[] }>('GET', '/api/mailboxes'),
+  messages: (mailboxId: string, opts: { cursor?: string | null; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.cursor !== undefined && opts.cursor !== null) q.set('cursor', opts.cursor);
+    if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+    const qs = q.toString();
+    return call<MessagePage>('GET', `/api/mailboxes/${encodeURIComponent(mailboxId)}/messages${qs === '' ? '' : `?${qs}`}`);
+  },
+  message: (id: string) => call<MessageDetail>('GET', `/api/messages/${encodeURIComponent(id)}`),
+  messageBody: (id: string) => call<MessageBody>('GET', `/api/messages/${encodeURIComponent(id)}/body`),
+  /** Flags and/or a move. `modseq` is the row's current MODSEQ: the server answers 412 if it moved on. A move returns a NEW id. */
+  patchMessage: (id: string, modseq: string, patch: MessagePatch) =>
+    call<MessageDetail>('PATCH', `/api/messages/${encodeURIComponent(id)}`, patch, { 'if-match': `"${modseq}"` }),
+  thread: (id: string) => call<ThreadDetail>('GET', `/api/threads/${encodeURIComponent(id)}`),
+  search: (q: string, opts: { mailboxId?: string; cursor?: string | null } = {}) => {
+    const params = new URLSearchParams({ q });
+    if (opts.mailboxId !== undefined) params.set('mailboxId', opts.mailboxId);
+    if (opts.cursor !== undefined && opts.cursor !== null) params.set('cursor', opts.cursor);
+    return call<MessagePage>('GET', `/api/search?${params.toString()}`);
+  },
 };
+
+/** Where an attachment downloads from: always a download, never rendered on this origin. */
+export const attachmentUrl = (messageId: string, partId: string): string =>
+  `/api/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(partId)}`;
+export const rawMessageUrl = (messageId: string): string => `/api/messages/${encodeURIComponent(messageId)}/raw`;
+/** The SSE stream (PST-REQ-083). */
+export const EVENTS_URL = '/api/events';
+
+export type SpecialUse = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'rejects';
+
+export interface Mailbox {
+  id: string;
+  name: string;
+  specialUse: SpecialUse | null;
+  uidvalidity: number;
+  uidnext: number;
+  /** A decimal string: MODSEQs outgrow a JSON number. */
+  highestModseq: string;
+  subscribed: boolean;
+  total: number;
+  unseen: number;
+}
+
+export interface MessageSummary {
+  id: string;
+  mailboxId: string;
+  uid: number;
+  modseq: string;
+  threadId: string | null;
+  subject: string | null;
+  /** The sender's address (denormalised at filing); the display name is in the body's headers. */
+  from: string | null;
+  date: string;
+  internalDate: string;
+  size: number;
+  flags: string[];
+  bucket: string | null;
+}
+
+export interface MessagePage {
+  messages: MessageSummary[];
+  nextCursor: string | null;
+}
+
+export interface MessageDetail extends MessageSummary {
+  messageIdHeader: string | null;
+  inReplyTo: string | null;
+  references: string[];
+  verdict: { bucket: string | null; reasons: string[]; auth: unknown } | null;
+}
+
+export interface MessageAttachment {
+  partId: string;
+  contentType: string;
+  filename: string | null;
+  disposition: string | null;
+  contentId: string | null;
+  size: number;
+  sha256: string;
+  inMessage: string | null;
+}
+
+export interface MessageBody {
+  id: string;
+  headers: { name: string; value: string }[];
+  text: string | null;
+  textTruncated: boolean;
+  /** Raw and UNSANITISED. Never put it in this document: PST-T-3.12 renders it on the usercontent origin. */
+  html: string | null;
+  htmlTruncated: boolean;
+  attachments: MessageAttachment[];
+  warnings: { code: string; message: string; partId: string | null }[];
+}
+
+export interface MessagePatch {
+  flags?: { add?: string[]; remove?: string[] };
+  mailboxId?: string;
+}
+
+export interface ThreadDetail {
+  id: string;
+  subject: string | null;
+  messageCount: number;
+  lastMessageAt: string;
+  messages: MessageSummary[];
+}
+
+export interface MailboxChangedEvent {
+  mailboxId: string;
+  uidnext: number;
+  highestModseq: string;
+  unseen: number;
+  total: number;
+}
+
+export interface MessageNewEvent {
+  mailboxId: string;
+  messageId: string;
+  uid: number;
+  subject: string | null;
+  from: string | null;
+  date: string;
+}
 
 export type AppPasswordScope = 'imap' | 'smtp' | 'dav' | 'sieve';
 

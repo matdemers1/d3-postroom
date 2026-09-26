@@ -3,6 +3,7 @@ import {
   AccountMenu,
   AppShell,
   AppShellBrand,
+  Button,
   MenuItem,
   MenuSeparator,
   SideNav,
@@ -11,6 +12,11 @@ import {
   ThemeSwitch,
 } from '@d3cloud/ui';
 import { api, type AuthState } from '../api';
+import { findSpecial, mailboxLabel } from '../mail/format';
+import { ComposeIcon, mailboxIcon } from '../mail/icons';
+import { useOptionalMail } from '../mail/MailContext';
+import { mailPath, parseMailRoute } from '../mail/route';
+import { WIDE_QUERY, useMediaQuery } from '../mail/useMedia';
 
 // Decorative marks, drawn in currentColor so they follow the theme.
 function MailIcon() {
@@ -45,6 +51,12 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
   const location = useLocation();
   const navigate = useNavigate();
   const account = state.account;
+  const mail = useOptionalMail();
+  const wide = useMediaQuery(WIDE_QUERY);
+  const mailRoute = parseMailRoute(location.pathname, location.search);
+  const inbox = mail?.mailboxes === null || mail === null ? undefined : findSpecial(mail.mailboxes, 'inbox');
+  // '/' is the inbox; '/mail' (the push-nav mailbox list) is no mailbox in particular.
+  const currentMailbox = mailRoute === null ? null : (mailRoute.mailboxId ?? (mailRoute.mailboxIndex ? null : (inbox?.id ?? null)));
 
   const signOut = () => {
     api
@@ -65,10 +77,40 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
       }
       nav={
         <SideNav aria-label="Main">
-          <SideNavGroup title="Mail" hideTitle>
-            <SideNavItem asChild icon={<MailIcon />} label="Mail" current={location.pathname === '/'}>
-              <RouterLink to="/" />
-            </SideNavItem>
+          {wide && mail !== null ? (
+            <li className="pr-nav-compose">
+              <Button
+                variant="primary"
+                icon={<ComposeIcon />}
+                onClick={() => {
+                  void navigate(mailPath(mailRoute?.mailboxId ?? null, mailRoute?.messageId ?? null, 'new'));
+                }}
+              >
+                Compose
+              </Button>
+            </li>
+          ) : null}
+          <SideNavGroup title="Mailboxes">
+            {mail?.mailboxes === null || mail === null ? (
+              <SideNavItem asChild icon={<MailIcon />} label="Mail" current={mailRoute !== null}>
+                <RouterLink to="/" />
+              </SideNavItem>
+            ) : (
+              mail.mailboxes.map((m) => (
+                <SideNavItem
+                  key={m.id}
+                  asChild
+                  icon={mailboxIcon(m.specialUse, m.name)}
+                  label={mailboxLabel(m)}
+                  current={currentMailbox === m.id}
+                  {...(m.unseen > 0 ? { count: m.unseen, countLabel: `${mailboxLabel(m)}, ${String(m.unseen)} unread` } : {})}
+                >
+                  <RouterLink to={mailPath(m.id)} />
+                </SideNavItem>
+              ))
+            )}
+          </SideNavGroup>
+          <SideNavGroup title="Account">
             <SideNavItem asChild icon={<KeyIcon />} label="App passwords" current={location.pathname === '/app-passwords'}>
               <RouterLink to="/app-passwords" />
             </SideNavItem>

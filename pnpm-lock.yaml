@@ -346,6 +346,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@postroom/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
       '@postroom/attachments':
         specifier: workspace:*
         version: link:../../packages/attachments
@@ -364,6 +367,9 @@ importers:
       '@postroom/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@postroom/dnsbl':
+        specifier: workspace:*
+        version: link:../../packages/dnsbl
       '@postroom/dsn':
         specifier: workspace:*
         version: link:../../packages/dsn
@@ -556,6 +562,36 @@ importers:
       '@postroom/db':
         specifier: workspace:*
         version: link:../db
+
+  security/adversarial:
+    dependencies:
+      '@postroom/auth-checks':
+        specifier: workspace:*
+        version: link:../../packages/auth-checks
+      '@postroom/auth-throttle':
+        specifier: workspace:*
+        version: link:../../packages/auth-throttle
+      '@postroom/blobstore':
+        specifier: workspace:*
+        version: link:../../packages/blobstore
+      '@postroom/credentials':
+        specifier: workspace:*
+        version: link:../../packages/credentials
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@postroom/imap-proto':
+        specifier: workspace:*
+        version: link:../../packages/imap-proto
+      '@postroom/proxy-protocol':
+        specifier: workspace:*
+        version: link:../../packages/proxy-protocol
+      '@postroom/smtp-proto':
+        specifier: workspace:*
+        version: link:../../packages/smtp-proto
 
 packages:
 
