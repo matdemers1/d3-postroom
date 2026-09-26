@@ -110,7 +110,174 @@ export const api = {
   drafts: (opts: { inReplyTo?: string } = {}) =>
     call<{ drafts: SavedDraft[] }>('GET', `/api/compose/drafts${opts.inReplyTo === undefined ? '' : `?${new URLSearchParams({ inReplyTo: opts.inReplyTo }).toString()}`}`),
   deleteDraft: (id: string) => call<null>('DELETE', `/api/compose/drafts/${encodeURIComponent(id)}`),
+
+  // --- Delivery timeline (PST-T-1.13's API) --------------------------------------------------
+  delivery: (outboundId: string) => call<DeliveryView>('GET', `/api/messages/${encodeURIComponent(outboundId)}/delivery`),
+
+  // --- Setup wizard and DNS checker (PST-T-4.8) ----------------------------------------------
+  dnsCheck: (domain?: string) =>
+    call<DnsReport>('GET', `/api/admin/dns${domain === undefined ? '' : `?${new URLSearchParams({ domain }).toString()}`}`),
+  wizard: () => call<WizardView>('GET', '/api/admin/setup-wizard'),
+  wizardDomain: (domain: string) => call<WizardView>('POST', '/api/admin/setup-wizard/domain', { domain }),
+  wizardDkim: () => call<WizardView>('POST', '/api/admin/setup-wizard/dkim'),
+  wizardDns: () => call<WizardView>('POST', '/api/admin/setup-wizard/dns'),
+  wizardMailbox: (localPart: string) => call<WizardView>('POST', '/api/admin/setup-wizard/mailbox', { localPart }),
+  wizardTest: (outboundId: string) => call<WizardView>('POST', '/api/admin/setup-wizard/test', { outboundId }),
+  wizardComplete: () => call<WizardView>('POST', '/api/admin/setup-wizard/complete'),
 };
+
+// --- Delivery timeline -------------------------------------------------------------------------
+
+export interface DeliveryAttempt {
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  transport: string;
+  mxHost: string | null;
+  mxIp: string | null;
+  localIp: string | null;
+  tls: { version: string | null; cipher: string | null; peer: string | null };
+  remote: { code: number | null; enhanced: string | null; text: string | null };
+  outcome: string;
+  error: string | null;
+}
+
+export type RecipientState = 'queued' | 'attempting' | 'deferred' | 'delivered' | 'bounced' | 'cancelled';
+
+export interface DeliveryRecipient {
+  id: string;
+  address: string;
+  state: RecipientState;
+  attempts: number;
+  nextAttemptAt: string;
+  lastCode: number | null;
+  lastText: string | null;
+  deliveredAt: string | null;
+  transport: string;
+  attemptsLog: DeliveryAttempt[];
+}
+
+export interface DeliveryView {
+  message: { id: string; subject: string | null; headerFrom: string; messageId: string | null; createdAt: string; size: number };
+  recipients: DeliveryRecipient[];
+}
+
+/** A recipient is settled once nothing more will happen to it without someone acting. */
+export const settled = (state: RecipientState): boolean => state === 'delivered' || state === 'bounced' || state === 'cancelled';
+
+export interface TimelineEvent {
+  at: string;
+  title: string;
+  detail: string | null;
+  tone: 'neutral' | 'attention' | 'danger';
+}
+
+/** One recipient's delivery as a list of events, oldest first: queued, each attempt, the outcome. Pure. */
+export function timelineOf(view: DeliveryView, recipient: DeliveryRecipient): TimelineEvent[] {
+  const events: TimelineEvent[] = [{ at: view.message.createdAt, title: 'Accepted and queued', detail: `DKIM-signed, ${String(view.message.size)} bytes`, tone: 'neutral' }];
+  for (const a of recipient.attemptsLog) {
+    const where = [a.mxHost, a.mxIp === null ? null : `(${a.mxIp})`].filter((x) => x !== null).join(' ');
+    const tls = a.tls.version === null ? 'no TLS' : `${a.tls.version}${a.tls.cipher === null ? '' : ` ${a.tls.cipher}`}`;
+    const reply = a.remote.code === null ? (a.error ?? null) : `${String(a.remote.code)}${a.remote.enhanced === null ? '' : ` ${a.remote.enhanced}`} ${a.remote.text ?? ''}`.trim();
+    const outcome = a.finishedAt === null ? 'in progress' : a.outcome;
+    events.push({
+      at: a.startedAt,
+      title: `Attempt via ${a.transport}${where === '' ? '' : ` to ${where}`}: ${outcome}`,
+      detail: [tls, reply].filter((x) => x !== null && x !== '').join(' · ') || null,
+      tone: a.outcome === 'delivered' ? 'neutral' : a.outcome === 'bounced' ? 'danger' : 'attention',
+    });
+  }
+  if (recipient.state === 'delivered') {
+    events.push({ at: recipient.deliveredAt ?? recipient.nextAttemptAt, title: `Delivered to ${recipient.address}`, detail: recipient.lastText, tone: 'neutral' });
+  } else if (recipient.state === 'bounced') {
+    events.push({ at: recipient.nextAttemptAt, title: `Bounced: ${recipient.address}`, detail: recipient.lastText, tone: 'danger' });
+  } else if (recipient.state === 'deferred') {
+    events.push({ at: recipient.nextAttemptAt, title: 'Deferred: next attempt scheduled', detail: recipient.lastText, tone: 'attention' });
+  } else if (recipient.state === 'queued' || recipient.state === 'attempting') {
+    events.push({ at: recipient.nextAttemptAt, title: recipient.state === 'queued' ? 'Waiting for the delivery daemon' : 'Delivering now', detail: null, tone: 'neutral' });
+  }
+  return events;
+}
+
+// --- DNS checker ------------------------------------------------------------------------------
+
+export type DnsStatus = 'pass' | 'fail' | 'missing' | 'pending' | 'unknown';
+
+export interface DnsCheckRow {
+  record: string;
+  name: string;
+  type: 'MX' | 'TXT' | 'PTR' | 'SRV' | 'CNAME';
+  expected: string | null;
+  afterGoLive: boolean;
+  note: string | null;
+  live: string[];
+  status: DnsStatus;
+  reason: string;
+}
+
+export interface DnsReport {
+  domain: string;
+  resolver: string;
+  checkedAt: string;
+  summary: Record<DnsStatus, number>;
+  rows: DnsCheckRow[];
+}
+
+export const DNS_STATUS: Record<DnsStatus, { label: string; tone: 'neutral' | 'attention' | 'danger' }> = {
+  pass: { label: 'Pass', tone: 'neutral' },
+  fail: { label: 'Fail', tone: 'danger' },
+  missing: { label: 'Missing', tone: 'danger' },
+  pending: { label: 'Pending', tone: 'neutral' },
+  unknown: { label: 'Unknown', tone: 'attention' },
+};
+
+/** "9 pass · 1 fail · 4 pending", leaving out zero counts. Pure. */
+export function dnsSummary(summary: Record<DnsStatus, number>): string {
+  const order: DnsStatus[] = ['pass', 'fail', 'missing', 'unknown', 'pending'];
+  const parts = order.filter((s) => summary[s] > 0).map((s) => `${String(summary[s])} ${DNS_STATUS[s].label.toLowerCase()}`);
+  return parts.length === 0 ? 'No records' : parts.join(' · ');
+}
+
+// --- Setup wizard -----------------------------------------------------------------------------
+
+export type WizardStep = 'domain' | 'dkim' | 'dns' | 'mailbox' | 'test' | 'done';
+
+export const WIZARD_STEPS: readonly { step: Exclude<WizardStep, 'done'>; label: string }[] = [
+  { step: 'domain', label: 'Domain' },
+  { step: 'dkim', label: 'DKIM keys' },
+  { step: 'dns', label: 'DNS records' },
+  { step: 'mailbox', label: 'Mailbox' },
+  { step: 'test', label: 'Test message' },
+];
+
+export interface WizardView {
+  step: WizardStep;
+  completed: boolean;
+  completedAt: string | null;
+  domain: string | null;
+  suggestedDomain: string;
+  dkim: { selector: string; algorithm: 'ed25519-sha256' | 'rsa-sha256'; dnsName: string; dnsRecord: string }[];
+  dnsAcknowledgedAt: string | null;
+  mailbox: string | null;
+  addresses: string[];
+  test: { outboundId: string; to: string[]; sentAt: string } | null;
+}
+
+/** Fired on window after any wizard step lands, so the nav's count follows without a reload. */
+export const WIZARD_CHANGED_EVENT = 'postroom:setup-wizard-changed';
+
+/** Steps of the wizard not yet done, for the nav's count. Pure. */
+export function wizardStepsLeft(view: WizardView): number {
+  if (view.completed) return 0;
+  const reached = view.step === 'done' ? WIZARD_STEPS.length : WIZARD_STEPS.findIndex((s) => s.step === view.step);
+  return WIZARD_STEPS.length - reached;
+}
+
+/** Whether a step can be opened: it is the furthest one reached, or before it. Pure. */
+export function wizardReachable(view: WizardView, step: WizardStep): boolean {
+  const order: WizardStep[] = ['domain', 'dkim', 'dns', 'mailbox', 'test', 'done'];
+  return order.indexOf(step) <= order.indexOf(view.step);
+}
 
 /** The render-ticket request: remote images only when the reader chose to load them (PST-REQ-082). */
 export const renderPath = (messageId: string, images: boolean): string =>
