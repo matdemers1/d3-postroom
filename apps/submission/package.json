@@ -23,6 +23,7 @@
     "@postroom/crypto": "workspace:*",
     "@postroom/auth-checks": "workspace:*",
     "@postroom/audit": "workspace:*",
+    "@postroom/auth-throttle": "workspace:*",
     "@postroom/alerts": "workspace:*"
   },
   "devDependencies": {
