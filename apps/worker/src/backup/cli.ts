@@ -3,12 +3,13 @@
 // non-zero unless the run was green — an unconfigured backup included.
 import { createDb } from '@postroom/db';
 import { envString, makeLogger } from '@postroom/daemon';
+import { runDrill } from '../drill/drill.js';
 import { runBackup } from './job.js';
 import { maintenanceDeps } from './wire.js';
 
 export async function main(command: string, env: NodeJS.ProcessEnv = process.env): Promise<number> {
-  if (command !== 'backup') {
-    process.stderr.write('usage: postroom backup\n');
+  if (command !== 'backup' && command !== 'drill') {
+    process.stderr.write('usage: postroom <backup|drill>\n');
     return 2;
   }
   const databaseUrl = envString(env, 'DATABASE_URL', '');
@@ -19,7 +20,7 @@ export async function main(command: string, env: NodeJS.ProcessEnv = process.env
   const db = createDb(databaseUrl);
   try {
     const deps = maintenanceDeps(env, db, databaseUrl, makeLogger(`worker-${command}`));
-    const result = await runBackup(deps.backup);
+    const result = command === 'backup' ? await runBackup(deps.backup) : await runDrill(deps.drill);
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return result.ok ? 0 : 1;
   } catch (error) {

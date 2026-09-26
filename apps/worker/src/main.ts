@@ -7,9 +7,10 @@ import { createDb } from '@postroom/db';
 import { envInt, envString, runDaemon } from '@postroom/daemon';
 import { startWorker } from '@postroom/queue';
 import { backupHandler, BACKUP_QUEUE } from './backup/job.js';
-import { startNightly } from './backup/schedule.js';
+import { DRILL_QUEUE, startNightly } from './backup/schedule.js';
 import { maintenanceDeps } from './backup/wire.js';
 import { DAEMON } from './daemon.js';
+import { drillHandler } from './drill/drill.js';
 import { inboundHealth, maintenanceHealth } from './health.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
 
@@ -45,13 +46,13 @@ await runDaemon({
       leaseMs,
       log: ctx.log,
     });
-    // Backups get their own worker, so a long dump never holds up inbound mail, and a
+    // Backups and drills get their own worker, so a long dump never holds up inbound mail, and a
     // lease longer than any backup, so a running one is not claimed a second time.
     const maintenance = maintenanceDeps(ctx.env, db, databaseUrl, ctx.log);
     const maintenanceWorker = await startWorker({
       db,
       databaseUrl,
-      queues: { [BACKUP_QUEUE]: backupHandler(maintenance.backup) },
+      queues: { [BACKUP_QUEUE]: backupHandler(maintenance.backup), [DRILL_QUEUE]: drillHandler(maintenance.drill) },
       pollMs: 60_000,
       leaseMs: envInt(ctx.env, 'BACKUP_LEASE_MS', 3 * 3_600_000),
       log: ctx.log,

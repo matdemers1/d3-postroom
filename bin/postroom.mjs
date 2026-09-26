@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // One image, one entrypoint per daemon (PST-ADR-001, PST-REQ-004): `postroom <daemon>` runs that
 // daemon's built main; `postroom migrate` applies Prisma migrations; `postroom seed` seeds;
-// `postroom backup` runs one backup now (PST-T-0.16).
+// `postroom backup` / `postroom drill` run one backup or restore drill now (PST-T-0.16, PST-T-0.17).
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -29,7 +29,7 @@ if (command !== undefined && DAEMONS.includes(command)) {
 } else if (command === 'seed') {
   const seed = join(root, 'packages', 'db', 'dist', 'seed.js');
   run(process.execPath, [seed, ...rest], root);
-} else if (command === 'backup') {
+} else if (command === 'backup' || command === 'drill') {
   const cli = join(root, 'apps', 'worker', 'dist', 'backup', 'cli.js');
   if (!existsSync(cli)) {
     console.error(`postroom: ${command} is not built into this image (${cli} is missing)`);
@@ -38,6 +38,6 @@ if (command !== undefined && DAEMONS.includes(command)) {
   const { main } = await import(cli);
   process.exit(await main(command));
 } else {
-  console.error(`usage: postroom <${DAEMONS.join('|')}|migrate|seed|backup>`);
+  console.error(`usage: postroom <${DAEMONS.join('|')}|migrate|seed|backup|drill>`);
   process.exit(command === undefined ? 1 : 2);
 }
