@@ -17,7 +17,8 @@ export type MailAction =
   | 'markUnread'
   | 'search'
   | 'goInbox'
-  | 'help';
+  | 'help'
+  | 'commandPalette';
 
 export interface Shortcut {
   keys: string;
@@ -42,6 +43,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { keys: '/', action: 'search', description: 'Search mail' },
   { keys: 'g then i', action: 'goInbox', description: 'Go to Inbox' },
   { keys: '?', action: 'help', description: 'Show or hide these shortcuts' },
+  { keys: '⌘K or Ctrl+K', action: 'commandPalette', description: 'Open the command palette' },
 ];
 
 const SINGLE: Readonly<Record<string, MailAction>> = {
@@ -80,6 +82,11 @@ export interface KeyResult {
 
 /** What a keydown means, given the half-typed sequence before it. */
 export function resolveKey(input: KeyInput, pending: 'g' | null): KeyResult {
+  // The one chord: it opens the palette even while typing, so it is checked before the "typing
+  // means nothing" rule every bare shortcut below follows.
+  if ((input.metaKey || input.ctrlKey) && !input.altKey && input.key.toLowerCase() === 'k') {
+    return { action: 'commandPalette', pending: null };
+  }
   if (input.editable || input.ctrlKey || input.metaKey || input.altKey) return { action: null, pending: null };
   if (pending === 'g') {
     return { action: input.key === 'i' ? 'goInbox' : null, pending: null };
