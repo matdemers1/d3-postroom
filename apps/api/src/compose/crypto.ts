@@ -13,6 +13,16 @@
 //   both     sign, then encrypt the signed entity (RFC 3156 §6.1)
 // A recipient without a key is a refusal (409, naming them), never a plaintext send.
 //
+// Bcc (PST-T-12.6, PST-T-12.7): an encrypted message names its recipients' keys, so one copy for
+// everyone would tell the To/Cc recipients who was Bcc'd. Instead, in both schemes, the main copy is
+// encrypted to To/Cc + the sender and goes to the To/Cc envelope; each Bcc recipient gets a copy of
+// its own, encrypted to that recipient + the sender, queued to that one address. The Sent folder
+// keeps the main copy. A signature is made once and every copy carries it. A send that goes now
+// queues the copies at once; a held one (undo window or scheduled) holds every copy — one
+// pending_send_copy row each — and the worker releases them together, in one transaction.
+// Signing (RFC 3156 §3, RFC 8551 §3.1.1): @postroom/pgp makes the entity 7bit-safe before it signs,
+// so a relay that strips trailing whitespace or re-wraps lines cannot break the signature.
+//
 // Not protected: the header fields. Subject, To and the rest travel in the clear (header protection,
 // RFC 9788, is out of scope). DKIM still signs the outer message, as for any other send.
 import { createPrivateKey, type KeyObject } from 'node:crypto';
@@ -115,10 +125,25 @@ export interface ProtectInput {
   accountId: string;
   /** The From address, lowercased. */
   from: string;
-  /** Every envelope recipient (To, Cc and Bcc), lowercased. */
+  /** The To and Cc envelope recipients, lowercased. */
   recipients: readonly string[];
+  /** The Bcc envelope recipients (those not also To/Cc), lowercased. */
+  bcc?: readonly string[];
   crypto: CryptoRequest;
   now: Date;
+}
+
+/** One queued copy for one Bcc recipient: its own encryption, its own envelope. */
+export interface BccCopy {
+  address: string;
+  raw: Buffer;
+}
+
+export interface ProtectedMessage {
+  /** For the To/Cc envelope (and, when bccCopies is empty, for Bcc too); the Sent copy. */
+  main: Buffer;
+  /** Non-empty only for an encrypted send with Bcc. */
+  bccCopies: BccCopy[];
 }
 
 /** The account's usable (not revoked, not expired) keys of `kind`. */
@@ -134,17 +159,18 @@ function ownRow(rows: readonly Row[], from: string, needPrivate: boolean): Row |
 }
 
 /**
- * `raw` (the composed message) signed and/or encrypted as `input.crypto` asks. Throws CryptoRefusal
+ * `raw` (the composed message) signed and/or encrypted as `input.crypto` asks — the main copy, and
+ * for an encrypted send with Bcc one copy per Bcc recipient. Throws CryptoRefusal
  * when it cannot be done as asked — a missing key is never a reason to send it unprotected.
  */
-export async function protectMessage(db: Db, kek: Kek | null, raw: Buffer, input: ProtectInput): Promise<Buffer> {
+export async function protectMessage(db: Db, kek: Kek | null, raw: Buffer, input: ProtectInput): Promise<ProtectedMessage> {
   const { sign, encrypt } = input.crypto;
-  if (sign === undefined && encrypt === undefined) return raw;
+  if (sign === undefined && encrypt === undefined) return { main: raw, bccCopies: [] };
   if (sign !== undefined && encrypt !== undefined && sign !== encrypt) throw new CryptoRefusal(400, 'crypto_mixed', 'Sign and encrypt with the same kind: both OpenPGP or both S/MIME.');
   const kind = sign ?? encrypt ?? 'pgp';
   const rows = await usableRows(db, input.accountId, kind, input.now);
   const { outer, entity } = splitMessage(raw);
-  let current: MimeEntity | null = null;
+  let signed: MimeEntity | null = null;
   let content = entity;
 
   if (sign !== undefined) {
@@ -155,36 +181,42 @@ export async function protectMessage(db: Db, kek: Kek | null, raw: Buffer, input
     try {
       if (kind === 'pgp') {
         const key = typeof secret === 'string' ? pgpKeyOf(row, secret) : pgpKeyFromBinary(row, secret);
-        current = pgpMimeSign(content, key, { created: input.now });
+        signed = pgpMimeSign(content, key, { created: input.now });
       } else {
         const { leaf, chain } = leafAndChain(row);
-        current = smimeSign(content, { certificate: leaf, privateKey: privateObject(secret), chain }, { signingTime: input.now });
+        signed = smimeSign(content, { certificate: leaf, privateKey: privateObject(secret), chain }, { signingTime: input.now });
       }
     } catch (err) {
       if (err instanceof CryptoRefusal) throw err;
       if (err instanceof PgpError || err instanceof CmsError) throw new CryptoRefusal(409, 'signing_key_unusable', `Your ${LABEL[kind]} key cannot sign (${err.reason}).`);
       throw err;
     }
-    content = entityBytes(current);
+    content = entityBytes(signed);
   }
 
-  if (encrypt !== undefined) {
-    const recipients = [...new Set(input.recipients.map((r) => r.toLowerCase()))];
-    const missing = recipients.filter((r) => !rows.some((row) => row.address === r));
-    if (missing.length > 0) {
-      throw new CryptoRefusal(409, 'recipient_keys_missing', `Not sent: no ${LABEL[kind]} key for ${missing.join(', ')}. Import their key on the Keys screen, or send without encryption.`, missing);
-    }
-    const own = ownRow(rows, input.from, false);
-    if (own === null) throw new CryptoRefusal(409, 'own_key_missing', `You have no ${LABEL[kind]} key of your own: encrypted mail is always encrypted to you too, so your Sent copy opens.`);
-    const chosen = [...rows.filter((row) => recipients.includes(row.address)), own].filter((row, i, all) => all.findIndex((o) => o.id === row.id) === i);
+  if (encrypt === undefined) return { main: signed === null ? raw : joinMessage(outer, signed), bccCopies: [] };
+
+  const named = [...new Set(input.recipients.map((r) => r.toLowerCase()))];
+  const bcc = [...new Set((input.bcc ?? []).map((r) => r.toLowerCase()))].filter((r) => !named.includes(r));
+  const missing = [...named, ...bcc].filter((r) => !rows.some((row) => row.address === r));
+  if (missing.length > 0) {
+    throw new CryptoRefusal(409, 'recipient_keys_missing', `Not sent: no ${LABEL[kind]} key for ${missing.join(', ')}. Import their key on the Keys screen, or send without encryption.`, missing);
+  }
+  const own = ownRow(rows, input.from, false);
+  if (own === null) throw new CryptoRefusal(409, 'own_key_missing', `You have no ${LABEL[kind]} key of your own: encrypted mail is always encrypted to you too, so your Sent copy opens.`);
+  const rowsFor = (addresses: readonly string[]): Row[] => [...rows.filter((row) => addresses.includes(row.address)), own].filter((row, i, all) => all.findIndex((o) => o.id === row.id) === i);
+  const encryptTo = (to: readonly Row[]): MimeEntity => {
     try {
-      current = kind === 'pgp' ? pgpMimeEncrypt(content, chosen.map((row) => pgpKeyOf(row, row.publicKey)), { now: input.now }) : smimeEncrypt(content, chosen.map((row) => leafAndChain(row).leaf));
+      if (kind === 'pgp') return pgpMimeEncrypt(content, to.map((row) => pgpKeyOf(row, row.publicKey)), { now: input.now });
+      return smimeEncrypt(content, to.map((row) => leafAndChain(row).leaf));
     } catch (err) {
       if (err instanceof CryptoRefusal) throw err;
       if (err instanceof PgpError || err instanceof CmsError) throw new CryptoRefusal(409, 'recipient_key_unusable', `Not sent: a recipient's ${LABEL[kind]} key cannot be encrypted to (${err.message}).`);
       throw err;
     }
-  }
-  if (current === null) return raw;
-  return joinMessage(outer, current);
+  };
+
+  const main = joinMessage(outer, encryptTo(rowsFor(named)));
+  const bccCopies = bcc.map((address) => ({ address, raw: joinMessage(outer, encryptTo(rowsFor([address]))) }));
+  return { main, bccCopies };
 }

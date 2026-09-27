@@ -30,7 +30,7 @@ import type { ApiDeps } from '../deps.js';
 import { DEFAULT_BLOB_ROOT } from '../mail/index.js';
 import { updateMessage } from '../mail/store.js';
 import { renderMarkdownDocument } from './markdown.js';
-import { CryptoRefusal, protectMessage } from './crypto.js';
+import { CryptoRefusal, protectMessage, type BccCopy } from './crypto.js';
 import { buildMdn } from './mdn.js';
 import { bracketMsgId, buildOutgoingStream, buildTextMessage, parseRecipients, type OutgoingMessage } from './message.js';
 import {
@@ -50,6 +50,13 @@ import {
   type SendResponseJson,
 } from './schemas.js';
 import { armReminder, cancelHeld, cancelHeldForDraft, DRAFT_FLAGS, fileCopy, findOwnDraft, pendingJson, removeMessage, SENT_FLAGS, threadSentCopy, type Denorm } from './store.js';
+
+/** One copy of a held encrypted send with Bcc (PST-T-12.7): its role, its envelope, its bytes. */
+interface HeldCopy {
+  role: 'main' | 'bcc' | 'sent';
+  recipients: readonly string[];
+  raw: Buffer;
+}
 
 const X_MODE = 'X-Postroom-Draft-Mode';
 const X_SOURCE = 'X-Postroom-Draft-Source';
@@ -256,18 +263,41 @@ export function composeRoutes(deps: ApiDeps): Router {
         };
 
         // PST-T-12.2 (PST-REQ-161): the composed message, signed and/or encrypted; null = as composed.
+        // PST-T-12.6/12.7: an encrypted send with Bcc gives each Bcc recipient a copy of its own —
+        // queued now, or held with the main copy and released together (see crypto.ts).
         let protectedRaw: Buffer | null = null;
+        let bccCopies: BccCopy[] = [];
         if (body.crypto !== undefined && (body.crypto.sign !== undefined || body.crypto.encrypt !== undefined)) {
           const composed = buildOutgoingStream(message, original);
           const chunks: Buffer[] = [];
           for await (const c of composed) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c as Uint8Array));
-          protectedRaw = await protectMessage(db, rt.kek, Buffer.concat(chunks), { accountId: me.accountId, from: from.address, recipients: envelope, crypto: body.crypto, now: date });
+          const done = await protectMessage(db, rt.kek, Buffer.concat(chunks), {
+            accountId: me.accountId,
+            from: from.address,
+            recipients: [...to, ...cc].map((m) => m.address),
+            bcc: bcc.map((m) => m.address),
+            crypto: body.crypto,
+            now: date,
+          });
+          protectedRaw = done.main;
+          bccCopies = done.bccCopies;
         }
         const outgoing = (): Readable => (protectedRaw === null ? buildOutgoingStream(message, original) : Readable.from([protectedRaw]));
+        // With Bcc copies, the main copy goes to To/Cc only and each copy to its one address.
+        const copyTo = new Set(bccCopies.map((c) => c.address));
+        const mainEnvelope = envelope.filter((address) => !copyTo.has(address.toLowerCase()));
 
         if (hold !== null) {
+          // PST-T-12.7: a held send with Bcc copies holds every copy; the worker releases them as one.
+          const heldCopies: HeldCopy[] =
+            protectedRaw === null || bccCopies.length === 0
+              ? []
+              : [
+                  mainEnvelope.length > 0 ? { role: 'main' as const, recipients: mainEnvelope, raw: protectedRaw } : { role: 'sent' as const, recipients: [], raw: protectedRaw },
+                  ...bccCopies.map((c) => ({ role: 'bcc' as const, recipients: [c.address], raw: c.raw })),
+                ];
           try {
-            await holdSend(req, res, { store, message, original, denorm, hold, envelope, forwardOf: body.forwardOf ?? null, draftId: body.draftId ?? null, remindAfterSeconds: body.remindAfterSeconds ?? null, now, outgoing: outgoing() });
+            await holdSend(req, res, { store, message, original, denorm, hold, envelope, forwardOf: body.forwardOf ?? null, draftId: body.draftId ?? null, remindAfterSeconds: body.remindAfterSeconds ?? null, now, outgoing: outgoing(), copies: heldCopies });
           } finally {
             original?.destroy();
           }
@@ -278,26 +308,35 @@ export function composeRoutes(deps: ApiDeps): Router {
         let reaped: string | null = null;
         let reaped2: string[] = [];
         let reminderId: string | null = null;
+        // PST-T-12.6: the first accept (the main copy, or the first Bcc copy when there is no To/Cc)
+        // is the primary: it checks the recipient cap for the whole send, so the copies after it fit
+        // too, and files the Sent copy — always the main copy's bytes.
+        const firstCopy = mainEnvelope.length === 0 ? bccCopies[0] : undefined;
+        const primaryBody = firstCopy === undefined ? outgoing() : Readable.from([firstCopy.raw]);
+        const primaryRecipients = firstCopy === undefined ? mainEnvelope : [firstCopy.address];
+        const laterCopies = firstCopy === undefined ? bccCopies : bccCopies.slice(1);
         const outcome = await acceptSubmission(
-          outgoing(),
+          primaryBody,
           {
             submitter: { accountId: me.accountId, addresses },
             envelopeFrom: from.address,
-            recipients: envelope.map((address) => ({ address })),
+            recipients: primaryRecipients.map((address) => ({ address })),
             sessionId: ctx.requestId,
             submittedVia: 'webmail',
-            enforceCaps: (tx, recipients, at) => webmailCaps(tx, me.accountId, recipients, at),
+            enforceCaps: (tx, recipients, at) => webmailCaps(tx, me.accountId, bccCopies.length > 0 ? envelope : recipients, at),
             auditContext: ctx,
             withinTransaction: async (tx, accepted) => {
+              // A Bcc-only encrypted send: the queued copy is that recipient's; Sent keeps the main copy.
+              const sentBlob = firstCopy === undefined || protectedRaw === null ? null : await store.blobs.put(protectedRaw, { tx });
               const copy = await fileCopy(tx, {
                 accountId: me.accountId,
                 use: 'sent',
-                blobSha256: accepted.blobSha256,
-                size: accepted.size,
+                blobSha256: sentBlob?.sha256 ?? accepted.blobSha256,
+                size: sentBlob?.size ?? accepted.size,
                 flags: SENT_FLAGS,
                 denorm,
                 now: date,
-                takeReference: true,
+                takeReference: sentBlob === null,
               });
               sent = copy;
               let draftRemoved: string | null = null;
@@ -337,6 +376,41 @@ export function composeRoutes(deps: ApiDeps): Router {
         await reap(store.blobs, [reaped, ...reaped2]);
         const filed = sent as { id: string; mailboxId: string } | null;
         if (filed === null) throw new Error('the Sent copy was not filed');
+
+        // Each Bcc recipient's own copy: queued (and audited by the submission path) like any send.
+        for (const bccCopy of laterCopies) {
+          const copyOutcome = await acceptSubmission(
+            Readable.from([bccCopy.raw]),
+            {
+              submitter: { accountId: me.accountId, addresses },
+              envelopeFrom: from.address,
+              recipients: [{ address: bccCopy.address }],
+              sessionId: ctx.requestId,
+              submittedVia: 'webmail',
+              enforceCaps: (tx, recipients, at) => webmailCaps(tx, me.accountId, recipients, at),
+              auditContext: ctx,
+              withinTransaction: async (tx, accepted) => {
+                await recordAudit(tx, {
+                  actor: { kind: 'account', accountId: me.accountId },
+                  action: 'compose.send-bcc-copy',
+                  entityType: 'outbound_message',
+                  entityId: accepted.outboundId,
+                  before: null,
+                  after: { outboundId: accepted.outboundId, messageId: accepted.messageId, sentMessageId: filed.id, primaryOutboundId: outcome.outboundId },
+                  context: ctx,
+                });
+              },
+            },
+            { db, storage: () => store, now: rt.now, log },
+          );
+          if (!copyOutcome.ok) {
+            // The primary copy is already queued: say exactly who did not get theirs.
+            const { status, error } = refusalStatus(copyOutcome);
+            log('bcc-copy-refused', { outboundId: outcome.outboundId, reason: copyOutcome.reason });
+            res.status(status).json({ error, message: `Sent, but the Bcc copy for ${bccCopy.address} was refused: ${copyOutcome.reply.lines.join(' ')}` });
+            return;
+          }
+        }
 
         let threadId: string | null = null;
         try {
@@ -387,6 +461,8 @@ export function composeRoutes(deps: ApiDeps): Router {
       now: Date;
       /** The message exactly as it will be submitted (signed/encrypted when asked, PST-T-12.2). */
       outgoing?: Readable;
+      /** PST-T-12.7: the separate copies of an encrypted send with Bcc (empty otherwise). */
+      copies?: readonly HeldCopy[];
     },
   ): Promise<void> => {
     const me = currentSession(req);
@@ -433,10 +509,25 @@ export function composeRoutes(deps: ApiDeps): Router {
             remindAfterSeconds: input.remindAfterSeconds,
           },
         });
+        // Each copy holds its own reference on its own blob until the release or the undo.
+        const copies = input.copies ?? [];
+        for (const [position, c] of copies.entries()) {
+          const put = await store.blobs.put(c.raw, { tx });
+          await tx.pendingSendCopy.create({ data: { pendingSendId: created.id, role: c.role, position, recipients: [...c.recipients], blobSha256: put.sha256, size: put.size } });
+        }
         return {
           entityId: created.id,
           before: replaced === null ? null : { draftId: replaced },
-          after: { kind: hold.kind, releaseAt: hold.releaseAt.toISOString(), draftId: copy.id, heldBlobSha256: held.sha256, recipients: input.envelope.length, messageId: message.messageId, remindAfterSeconds: input.remindAfterSeconds },
+          after: {
+            kind: hold.kind,
+            releaseAt: hold.releaseAt.toISOString(),
+            draftId: copy.id,
+            heldBlobSha256: held.sha256,
+            recipients: input.envelope.length,
+            messageId: message.messageId,
+            remindAfterSeconds: input.remindAfterSeconds,
+            copies: copies.map((c) => ({ role: c.role, recipients: c.recipients.length })),
+          },
           result: created,
         };
       },
@@ -465,18 +556,18 @@ export function composeRoutes(deps: ApiDeps): Router {
       const store = storageFor(res);
       if (store === null) return;
       const me = currentSession(req);
-      let reaped: string | null = null;
+      let reaped: string[] = [];
       try {
         const row = await audited(db, { kind: 'account', accountId: me.accountId }, { action: 'compose.undo', entityType: 'pending_send', context: getAuditContext(req) }, async (tx) => {
           const found = await tx.pendingSend.findFirst({ where: { id: params.id, accountId: me.accountId } });
           if (found === null) throw new HttpRefusal(404, 'not_found', 'no such pending send');
-          const c = await cancelHeld(tx, store.blobs, { id: found.id, heldBlobSha256: found.heldBlobSha256, reason: found.kind === 'undo' ? 'undone' : 'cancelled', now: rt.now() });
+          const c = await cancelHeld(tx, store.blobs, { id: found.id, reason: found.kind === 'undo' ? 'undone' : 'cancelled', now: rt.now() });
           if (!c.cancelled) throw new HttpRefusal(409, 'not_held', found.state === 'released' ? 'It has already been sent.' : 'It is no longer waiting to be sent.');
           reaped = c.reaped;
           const after = await tx.pendingSend.findUniqueOrThrow({ where: { id: found.id } });
           return { entityId: found.id, before: { state: found.state, releaseAt: found.releaseAt.toISOString() }, after: { state: after.state, draftId: after.draftMessageId }, result: after };
         });
-        await reap(store.blobs, [reaped]);
+        await reap(store.blobs, reaped);
         res.json(pendingJson(row));
       } catch (error) {
         if (!answer(res, error)) throw error;

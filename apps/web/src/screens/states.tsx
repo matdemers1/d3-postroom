@@ -11,7 +11,7 @@
 //     not answering, with Try again.
 import type { ReactNode } from 'react';
 import { Button, EmptyState, Link, Skeleton, Stack } from '@d3cloud/ui';
-import { ApiError } from '../api';
+import { ApiError, serverUnreachable } from '../api';
 
 export function Loading({ label, height = 160, lines }: { label: string; height?: number; lines?: number }) {
   return (
@@ -87,7 +87,7 @@ export function LoadFailed({
       {...(size === undefined ? {} : { size })}
       {...(onRetry === undefined ? {} : { action: <Button onClick={onRetry}>Try again</Button> })}
     >
-      The server did not answer. Your data is safe; try again in a moment.
+      {serverUnreachable('Your data is safe; try again in a moment.')}
     </EmptyState>
   );
 }

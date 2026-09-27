@@ -46,8 +46,8 @@ describe('contact form', () => {
   });
 
   it('names what is wrong before the server does', () => {
-    expect(contactProblem(blankContact())).toMatch(/name, an organisation or an e-mail/);
-    expect(contactProblem({ ...blankContact(), emails: [{ key: 'a', address: 'not an address', type: 'none' }] })).toMatch(/not an e-mail address/);
+    expect(contactProblem(blankContact())).toMatch(/name, an organization or an email/);
+    expect(contactProblem({ ...blankContact(), emails: [{ key: 'a', address: 'not an address', type: 'none' }] })).toMatch(/not an email address/);
     expect(contactProblem({ ...blankContact(), org: 'Acme' })).toBeNull();
   });
 

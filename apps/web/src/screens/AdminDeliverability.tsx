@@ -297,7 +297,7 @@ export function AdminDeliverability() {
       {proposals !== null && proposals.length > 0 ? (
         <Section
           title="DMARC progression"
-          description="PST-REQ-123: 14 consecutive UTC days of only aligned passes from authorized sources earn a proposal to tighten the policy, with the evidence attached. Postroom never publishes DNS itself."
+          description="14 consecutive UTC days of only aligned passes from authorized sources earn a proposal to tighten the policy, with the evidence attached. Postroom never publishes DNS itself."
         >
           <Grid as="ul" minItemWidth="md" aria-label="DMARC progression proposals">
             {proposals.map((p) => (

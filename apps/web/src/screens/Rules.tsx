@@ -8,6 +8,8 @@ import {
   FormActions,
   FormField,
   Input,
+  Modal,
+  ModalClose,
   Page,
   PageHeader,
   Section,
@@ -195,7 +197,7 @@ type Mode = 'builder' | 'sieve';
 function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: number; onChange: (next: Rule) => void; onRemove: () => void }) {
   const n = String(index + 1);
   return (
-    <Section title={`Rule ${n}`} headingLevel={3} actions={<Button variant="danger-ghost" size="sm" onClick={onRemove}>Remove rule {n}</Button>}>
+    <Section title={`Rule ${n}`} headingLevel={3} actions={<Button variant="danger-ghost" size="sm" aria-label={`Remove rule ${n}`} onClick={onRemove}>Remove</Button>}>
       <Cluster gap="12" align="end">
         <FormField label="When">
           <Select
@@ -279,6 +281,7 @@ export function Rules() {
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const open = useCallback(async (scriptName: string) => {
     setCompileError(null);
@@ -387,7 +390,7 @@ export function Rules() {
       if (activate) await sieveApi.activate(name);
       if (mode === 'builder') setSource(content);
       await load();
-      setNotice(activate ? `Saved. "${name}" now runs on new mail.` : `Saved "${name}".`);
+      setNotice(activate ? `Saved. “${name}” now runs on new mail.` : `Saved “${name}”.`);
     });
   };
 
@@ -402,9 +405,10 @@ export function Rules() {
   const remove = (target: string) => {
     run(async () => {
       await sieveApi.remove(target);
+      setConfirming(null);
       const list = await load();
       if (target === name) await open(list?.find((s) => s.active)?.name ?? BUILDER_SCRIPT);
-      setNotice(`Deleted "${target}".`);
+      setNotice(`Deleted “${target}”.`);
     });
   };
 
@@ -434,7 +438,7 @@ export function Rules() {
               size="sm"
               variant="danger-ghost"
               onClick={() => {
-                remove(s.name);
+                setConfirming(s.name);
               }}
             >
               Delete {s.name}
@@ -464,7 +468,7 @@ export function Rules() {
       ) : (
         <Stack gap="24">
           <Section
-            title={`Editing "${name}"`}
+            title={`Editing “${name}”`}
             description={current?.active === true ? 'This script runs on every new message.' : 'This script is not running. Save and turn it on to use it.'}
           >
             <form onSubmit={save(false)} noValidate>
@@ -549,10 +553,10 @@ export function Rules() {
 
                 <FormActions>
                   <Button onClick={check} disabled={busy}>
-                    Check
+                    Check syntax
                   </Button>
                   <Button type="submit" disabled={busy}>
-                    Save
+                    Save without turning on
                   </Button>
                   <Button variant="primary" loading={busy} onClick={() => {
                       save(true)();
@@ -585,6 +589,35 @@ export function Rules() {
           </Section>
         </Stack>
       )}
+
+      <Modal
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirming(null);
+        }}
+        destructive
+        title="Delete this script?"
+        description={confirming === null ? '' : `“${confirming}” is deleted for good. This cannot be undone.`}
+        footer={
+          <>
+            <ModalClose>
+              <Button type="button">Cancel</Button>
+            </ModalClose>
+            <Button
+              type="button"
+              variant="danger"
+              loading={busy}
+              onClick={() => {
+                if (confirming !== null) remove(confirming);
+              }}
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        {null}
+      </Modal>
     </Page>
   );
 }

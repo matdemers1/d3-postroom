@@ -86,7 +86,7 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
 
           {challenge === null ? (
             <Stack as="form" gap="16" onSubmit={submitPassword} aria-label="Sign in with your password">
-              <FormField label="Login" help="Your address, or just the part before @d3cloud.io.">
+              <FormField label="Address or username" help="Your address, or just the part before @d3cloud.io.">
                 <Input
                   name="login"
                   autoComplete="username"

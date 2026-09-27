@@ -68,7 +68,7 @@ export async function openNav(page: Page): Promise<void> {
 
 export async function signInWithPassword(page: Page, operator: Operator): Promise<void> {
   await page.goto('/signin');
-  await page.getByRole('textbox', { name: 'Login' }).fill(operator.login);
+  await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
   await page.getByLabel('Password', { exact: true }).fill(operator.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));

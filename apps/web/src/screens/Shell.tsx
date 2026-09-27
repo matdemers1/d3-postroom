@@ -280,7 +280,7 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
               ))
             )}
           </SideNavGroup>
-          <SideNavGroup title="Organise">
+          <SideNavGroup title="Organize">
             <SideNavItem asChild icon={<CalendarIcon />} label="Calendar" current={location.pathname === '/calendar'}>
               <RouterLink to="/calendar" />
             </SideNavItem>

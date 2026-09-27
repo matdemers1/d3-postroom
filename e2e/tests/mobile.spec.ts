@@ -29,8 +29,11 @@ const CSRF = { 'x-postroom-csrf': '1' };
  *  - `.pr-msg-html a`, `.pr-msg-text a`, `[data-testid="message-text"] a`: inline links inside a
  *    message body's running text — WCAG 2.5.8's own inline exception (a link inside a sentence of
  *    text is exempt because enlarging it would require reflowing the paragraph).
- *  - `.pr-thread a`, `.d3-descitem a`: a citation/description-list link that is a single inline
- *    word inside a line of text, same inline exception.
+ *  - `.pr-thread a`, `.d3-descitem a`, `.d3-desc__value a`: a citation/description-list link that
+ *    is a single inline word inside a line of text, same inline exception. `.d3-desc__value a` is
+ *    @d3cloud/ui 1.2.2's actual DescriptionItem value class (the reading pane's "Sender profile"
+ *    and "In contacts as …" links, PST-DA-028) — `.d3-descitem`/`.d3-desc-item` above predate it
+ *    and are kept in case an older build still renders them.
  *  - `.pr-feed__item-meta a`: the Newsletters feed's "From address · date" line — the address is a
  *    link inline with the date in one line of running text, same inline exception.
  *  - `figure [role="img"] title`, `svg *`: decorative or data-visualisation SVG children (chart
@@ -48,6 +51,7 @@ const INLINE_TEXT_LINK_ALLOWLIST = [
   '.pr-thread a',
   '.d3-desc-item a',
   '.d3-descitem a',
+  '.d3-desc__value a',
   '.pr-feed__item-meta a',
   'figcaption a',
   '.d3-shell__skip',

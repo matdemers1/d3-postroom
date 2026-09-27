@@ -34,6 +34,7 @@ export function Sessions() {
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<AccountSession | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -53,10 +54,12 @@ export function Sessions() {
     try {
       await api.endSession(session.id);
       setPending(null);
+      setConfirming(null);
       setNotice('Signed that session out.');
       await load();
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === 'step_up_required') {
+        setConfirming(null);
         setCode('');
         setCodeError(null);
         setPending(session);
@@ -108,7 +111,7 @@ export function Sessions() {
             data-session-id={s.id}
             aria-label={`Sign out the session from ${s.ip ?? 'an unknown address'}`}
             onClick={() => {
-              void end(s);
+              setConfirming(s);
             }}
           >
             Sign out
@@ -143,6 +146,34 @@ export function Sessions() {
           empty={<EmptyState kind="empty" heading="No live sessions" size="row" />}
         />
       )}
+
+      <Modal
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirming(null);
+        }}
+        destructive
+        title="Sign out this session?"
+        description={confirming === null ? '' : `${confirming.userAgent ?? 'This device'} is signed out immediately.`}
+        footer={
+          <>
+            <ModalClose>
+              <Button type="button">Cancel</Button>
+            </ModalClose>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() => {
+                if (confirming !== null) void end(confirming);
+              }}
+            >
+              Sign out
+            </Button>
+          </>
+        }
+      >
+        {null}
+      </Modal>
 
       <Modal
         open={pending !== null}

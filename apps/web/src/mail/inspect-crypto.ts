@@ -66,7 +66,7 @@ const SIGNATURE_REASONS: Record<string, string> = {
   'signature-no-creation-time': 'The signature does not say when it was made, so it is not trusted.',
   'weak-hash-sha1': 'The signature uses SHA-1, which can be forged, so it is not trusted.',
   'certificate-expired': "The signer's certificate was not valid when the message was signed (expired, or not yet valid), so the signature is not trusted.",
-  'certificate-not-for-email': "The signer's certificate is not issued for signing e-mail, so the signature is not trusted.",
+  'certificate-not-for-email': "The signer's certificate is not issued for signing email, so the signature is not trusted.",
   'ber-encoding': "A certificate in the signature is not in strict DER encoding, the one form its own signature can be checked in, so the signature was not checked.",
   'signed-attributes-not-der': "The signature's signed attributes are not in the one encoding (DER) that can be checked without ambiguity, so it was not checked.",
   'malformed-certificate': "The signer's certificate is malformed, so the signature could not be checked.",

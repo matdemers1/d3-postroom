@@ -325,7 +325,7 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
     saveStatus.kind === 'saving'
       ? 'Saving draft…'
       : saveStatus.kind === 'saved'
-        ? `Draft saved ${new Date(saveStatus.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}.`
+        ? `Draft saved ${new Date(saveStatus.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.`
         : saveStatus.kind === 'failed'
           ? 'The draft could not be saved. It will be tried again as you type.'
           : resumed
@@ -381,7 +381,7 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
         <FormField label="Cc" optional>
           <Input value={state.cc} autoComplete="off" onChange={(e) => { edit({ cc: e.target.value }); }} />
         </FormField>
-        <FormField label="Blind copy" optional help="Recipients here get the message but are not shown to anyone.">
+        <FormField label="Bcc" optional help="Recipients here get the message but are not shown to anyone.">
           <Input value={state.bcc} autoComplete="off" onChange={(e) => { edit({ bcc: e.target.value }); }} />
         </FormField>
         <FormField label="Subject">
@@ -409,7 +409,7 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
             ))}
           </ul>
         ) : null}
-        <FormField label="Format" help="Markdown is sent as sanitized HTML alongside the plain text (PST-REQ-145).">
+        <FormField label="Format" help="Markdown is sent as sanitized HTML alongside the plain text.">
           <Select
             options={[
               { value: 'plain', label: 'Plain text' },

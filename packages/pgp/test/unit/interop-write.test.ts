@@ -32,6 +32,7 @@ import {
   withKeySignature,
   type KnownKey,
 } from '../../src/index.js';
+import { canonicalizeForSigning } from '../../src/mime-write.js';
 import { FIXTURES, text } from './fixtures.js';
 import { forgeCert } from './forge.js';
 
@@ -83,7 +84,9 @@ function parts(entity: { headers: string[]; body: Buffer }): Buffer[] {
 
 const bodyOf = (part: Buffer): Buffer => part.subarray(part.indexOf('\r\n\r\n') + 4);
 
-describe.skipIf(GPG === null)('gpg reads what Postroom writes', () => {
+// External gpg/openssl processes (key generation, passphrase stretching) run slowly on shared CI
+// runners, so these suites get a 60 s budget per test instead of the 5 s default.
+describe.skipIf(GPG === null)('gpg reads what Postroom writes', { timeout: 60_000 }, () => {
   const gpg = (home: string, args: string[], input?: Buffer | string) =>
     spawnSync(GPG ?? 'gpg', ['--homedir', home, '--batch', '--no-tty', '--pinentry-mode', 'loopback', ...args], { input, maxBuffer: 16 * 1024 * 1024 });
 
@@ -128,7 +131,8 @@ describe.skipIf(GPG === null)('gpg reads what Postroom writes', () => {
     const signed = pgpMimeSign(ENTITY, g.key);
     const [signedPart, sigPart] = parts(signed);
     if (signedPart === undefined || sigPart === undefined) throw new Error('parts');
-    expect(signedPart.equals(ENTITY)).toBe(true);
+    // PST-T-12.6: what is signed is the entity made 7bit-safe (the text part now quoted-printable).
+    expect(signedPart.equals(canonicalizeForSigning(ENTITY))).toBe(true);
     const dir = scratch();
     writeFileSync(join(dir, 'part'), signedPart);
     writeFileSync(join(dir, 'part.asc'), bodyOf(sigPart));
@@ -198,7 +202,7 @@ describe.skipIf(GPG === null)('gpg reads what Postroom writes', () => {
   });
 });
 
-describe.skipIf(OPENSSL === null)('openssl cms reads what Postroom writes', () => {
+describe.skipIf(OPENSSL === null)('openssl cms reads what Postroom writes', { timeout: 60_000 }, () => {
   const openssl = (args: string[], input?: Buffer) => spawnSync(OPENSSL ?? 'openssl', args, { input, maxBuffer: 16 * 1024 * 1024 });
   const [carolCert] = certificatesFromPem(text('carol-smime.pem'));
   const [intermediate] = certificatesFromPem(text('smime-intermediate.pem'));
@@ -213,7 +217,7 @@ describe.skipIf(OPENSSL === null)('openssl cms reads what Postroom writes', () =
     const v = openssl(['cms', '-verify', '-in', file, '-CAfile', join(FIXTURES, 'smime-root.pem'), '-purpose', 'smimesign', '-out', join(dir, 'out')]);
     expect(v.status, v.stderr.toString()).toBe(0);
     expect(v.stderr.toString()).toContain('Verification successful');
-    expect(readFileSync(join(dir, 'out')).toString('latin1').replace(/\r\n/g, '\n')).toBe(ENTITY.toString('latin1').replace(/\r\n/g, '\n'));
+    expect(readFileSync(join(dir, 'out')).toString('latin1').replace(/\r\n/g, '\n')).toBe(canonicalizeForSigning(ENTITY).toString('latin1').replace(/\r\n/g, '\n'));
     writeFileSync(file, Buffer.from(Buffer.concat([Buffer.from(HEAD), entityBytes(e)]).toString('latin1').replace('Hello from', 'Hullo from'), 'latin1'));
     expect(openssl(['cms', '-verify', '-in', file, '-noverify', '-out', join(dir, 'out')]).status).not.toBe(0);
   });
