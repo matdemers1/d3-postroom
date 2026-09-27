@@ -29,6 +29,18 @@ describe('loadConfig', () => {
     expect(c.port).toBe(2525);
   });
 
+  it('rate limits default to 30 connections a minute and 20 unknown recipients in ten minutes (PST-REQ-185)', () => {
+    expect(loadConfig({})).toMatchObject({
+      connectionsPerWindow: 30,
+      connectionWindowMs: 60_000,
+      unknownRecipientsPerWindow: 20,
+      unknownRecipientWindowMs: 600_000,
+      dnsblWaitMs: 3_000,
+    });
+    const c = loadConfig({ SMTP_IN_CONN_PER_MIN: '5', SMTP_IN_UNKNOWN_RCPT_PER_10MIN: '7', SMTP_IN_DNSBL_WAIT_MS: '250' });
+    expect(c).toMatchObject({ connectionsPerWindow: 5, unknownRecipientsPerWindow: 7, dnsblWaitMs: 250 });
+  });
+
   it('reads the Spamhaus DQS key (PST-REQ-063)', () => {
     expect(loadConfig({ SPAMHAUS_DQS_KEY: 'abc123' }).spamhausDqsKey).toBe('abc123');
     expect(loadConfig({}).spamhausDqsKey).toBeUndefined();

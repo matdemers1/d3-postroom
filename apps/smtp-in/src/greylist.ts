@@ -91,8 +91,9 @@ function ipBytes(ip: string): Buffer | null {
   return null;
 }
 
-/** The client IP's network for the triplet key: IPv4 /24, IPv6 /64. */
-function networkOf(ip: string): string {
+/** The client IP's network: IPv4 /24, IPv6 /64. The greylist triplet key and the per-network rate
+ * limits (ratelimit.ts, PST-REQ-185) both group clients by it. */
+export function networkOf(ip: string): string {
   const addr = canonicalIp(ip);
   if (isIPv4(addr)) {
     const bytes = ipv4Bytes(addr);

@@ -111,6 +111,9 @@ export interface InboundStorage {
   readonly dns: InboundDns;
   /** ARC sealer domains trusted to override a DMARC failure (TRUSTED_ARC_SEALERS). */
   readonly trustedArcSealers: readonly string[];
+  /** The domains we serve, for PST-REQ-184's own-domain check. Default: the domain table, read per
+   * message (one indexed query; a domain added in the console applies to the very next message). */
+  readonly ownDomains?: () => Promise<readonly string[]>;
   readonly log?: (event: string, fields?: Record<string, unknown>) => void;
   /** Test seam: runs inside the accepting transaction, just before it commits. */
   readonly faults?: { readonly beforeCommit?: (tx: Prisma.TransactionClient) => Promise<void> };
@@ -194,6 +197,8 @@ async function rejectsMailboxName(tx: Prisma.TransactionClient, accountId: strin
 export function createAcceptMessage(storage: InboundStorage): AcceptMessage {
   const { db, blobs } = storage;
   const log = storage.log ?? ((): void => undefined);
+  const ownDomains =
+    storage.ownDomains ?? (async () => (await db.domain.findMany({ select: { name: true } })).map((d) => d.name));
 
   return async (ctx, body, verdicts) => {
     const spool = await InboundSpool.create(tmpDir(blobs.root));
@@ -221,6 +226,10 @@ export function createAcceptMessage(storage: InboundStorage): AcceptMessage {
         trustedArcSealers: storage.trustedArcSealers,
         dnsbl: verdicts.dnsbl,
         headerTooLarge: header.block === null,
+        ownDomains: await ownDomains(),
+        spf: { result: verdicts.spf.result, domain: verdicts.spf.domain },
+        dkim,
+        fromFieldCount: headers?.getAll('from').length ?? 0,
       });
 
       if (decision.action === 'defer') {

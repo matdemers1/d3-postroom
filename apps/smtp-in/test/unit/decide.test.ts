@@ -124,3 +124,82 @@ describe('decide', () => {
     expect(replyText('x'.repeat(500)).length).toBe(400);
   });
 });
+
+// PST-REQ-184: a stranger claiming one of our domains in header From needs an aligned pass,
+// whatever our own DMARC record's p= says.
+describe('decide: own-domain From (PST-REQ-184)', () => {
+  const OWN = ['d3cloud.io'];
+  const pNone = (over: Partial<DmarcResult> = {}): DmarcResult =>
+    dmarcOf({
+      result: 'fail',
+      fromDomain: 'd3cloud.io',
+      fromDomains: ['d3cloud.io'],
+      disposition: 'none',
+      policy: 'none',
+      record: { v: 'DMARC1', p: 'none', adkim: 'r', aspf: 'r', pct: 100, fo: ['0'], rf: ['afrf'], ri: 86400, rua: [], ruf: [] } as unknown as NonNullable<DmarcResult['record']>,
+      reasons: ['neither SPF nor DKIM produced an aligned pass'],
+      ...over,
+    });
+  const base = { arc: noArc, trustedArcSealers: [], ownDomains: OWN, fromFieldCount: 1 };
+
+  it('rejects our domain with no aligned pass under p=none: 550 5.7.1, with reasons', () => {
+    const d = decide({ ...base, dmarc: pNone(), spf: { result: 'none', domain: 'evil.example' }, dkim: [] });
+    expect(d).toMatchObject({ action: 'reject', disposition: 'reject', rule: 'own-domain-unauthenticated' });
+    expect(d.reply).toMatchObject({ code: 550, enhanced: '5.7.1' });
+    expect(d.reply?.lines[0]).toContain('d3cloud.io');
+    expect(d.reasons[0]).toMatch(/header From d3cloud\.io is one of our domains but has neither an aligned SPF pass nor an aligned DKIM pass/);
+  });
+
+  it('a subdomain of ours counts as ours', () => {
+    const d = decide({ ...base, dmarc: pNone({ fromDomain: 'news.d3cloud.io', fromDomains: ['news.d3cloud.io'] }), spf: { result: 'fail', domain: 'evil.example' }, dkim: [] });
+    expect(d.rule).toBe('own-domain-unauthenticated');
+  });
+
+  it('a DKIM pass for a foreign domain, or one in testing mode, is not enough', () => {
+    for (const dkim of [
+      [{ result: 'pass' as const, domain: 'evil.example', testing: false }],
+      [{ result: 'pass' as const, domain: 'd3cloud.io', testing: true }],
+      [{ result: 'fail' as const, domain: 'd3cloud.io', testing: false }],
+    ]) {
+      expect(decide({ ...base, dmarc: pNone(), spf: { result: 'none', domain: 'evil.example' }, dkim }).rule).toBe('own-domain-unauthenticated');
+    }
+  });
+
+  it('accepts an aligned DKIM pass (our own mail coming back through an external relay), relaxed alignment', () => {
+    const d = decide({ ...base, dmarc: pNone({ result: 'pass' }), spf: { result: 'pass', domain: 'relay.example' }, dkim: [{ result: 'pass', domain: 'mail.d3cloud.io', testing: false }] });
+    expect(d).toMatchObject({ action: 'accept', rule: 'accept' });
+    expect(d.reasons.some((r) => r.includes('DKIM pass for d=mail.d3cloud.io, relaxedly aligned'))).toBe(true);
+  });
+
+  it('accepts an aligned SPF pass', () => {
+    const d = decide({ ...base, dmarc: pNone({ result: 'pass' }), spf: { result: 'pass', domain: 'bounce.d3cloud.io' }, dkim: [] });
+    expect(d.action).toBe('accept');
+  });
+
+  it('honours strict alignment when our DMARC record asks for it', () => {
+    const strict = { v: 'DMARC1', p: 'none', adkim: 's', aspf: 's', pct: 100 } as unknown as NonNullable<DmarcResult['record']>;
+    const d = decide({ ...base, dmarc: pNone({ record: strict }), spf: { result: 'pass', domain: 'bounce.d3cloud.io' }, dkim: [{ result: 'pass', domain: 'mail.d3cloud.io', testing: false }] });
+    expect(d.rule).toBe('own-domain-unauthenticated');
+  });
+
+  it('defers instead when an aligned check had a DNS temperror', () => {
+    const d = decide({ ...base, dmarc: pNone(), spf: { result: 'none', domain: 'evil.example' }, dkim: [{ result: 'temperror', domain: 'd3cloud.io', testing: false }] });
+    expect(d).toMatchObject({ action: 'defer', rule: 'own-domain-temperror' });
+    expect(d.reply).toMatchObject({ code: 451, enhanced: '4.4.3' });
+  });
+
+  it('refuses several From fields when one names our domain, even with an aligned pass', () => {
+    const d = decide({ ...base, fromFieldCount: 2, dmarc: pNone({ result: 'permerror', fromDomains: ['d3cloud.io', 'evil.example'] }), spf: { result: 'none', domain: 'x' }, dkim: [{ result: 'pass', domain: 'd3cloud.io', testing: false }] });
+    expect(d.rule).toBe('own-domain-unauthenticated');
+  });
+
+  it('leaves foreign From domains to DMARC, and does nothing without the domain list', () => {
+    expect(decide({ ...base, dmarc: dmarcOf({ result: 'fail', disposition: 'none' }), spf: { result: 'none', domain: 'x' }, dkim: [] }).action).toBe('accept');
+    expect(decide({ dmarc: pNone(), arc: noArc, trustedArcSealers: [] }).action).toBe('accept');
+  });
+
+  it('DNSBL still comes first', () => {
+    const d = decide({ ...base, dmarc: pNone(), spf: { result: 'none', domain: 'x' }, dkim: [], dnsbl: { listed: true, zone: 'zen.spamhaus.org' } });
+    expect(d.rule).toBe('dnsbl');
+  });
+});
