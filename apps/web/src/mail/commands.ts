@@ -49,6 +49,7 @@ export const APP_SCREENS: readonly AppScreen[] = [
   { path: '/admin/health', label: 'Go to Admin health', admin: true },
   { path: '/admin/jobs', label: 'Go to Admin jobs', admin: true },
   { path: '/admin/queue', label: 'Go to Outbound queue', admin: true },
+  { path: '/admin/suppressions', label: 'Go to Suppression list', admin: true },
 ];
 
 /** Builds the full, ungrouped command list for the current context. */

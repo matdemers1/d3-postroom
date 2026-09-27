@@ -11,7 +11,7 @@ report zero violations.
 
 | State | How the spec makes it | What counts as designed |
 |-------|-----------------------|-------------------------|
-| **Seeded** | Realistic data filed before the run: mail with an attachment, a Newsletters feed, a calendar event, a contact, an app password, a masked alias, a template, a failed job, a deferred outbound recipient, and DMARC and TLS-RPT reports (swept in by the worker, which the stack must run) | The screen settles with no skeleton left in view, and `main` is not blank |
+| **Seeded** | Realistic data filed before the run: mail with an attachment, a Newsletters feed, a calendar event, a contact, an app password, a masked alias, a template, a failed job, a deferred outbound recipient, a hard-bounce suppression, and DMARC and TLS-RPT reports (swept in by the worker, which the stack must run) | The screen settles with no skeleton left in view, and `main` is not blank |
 | **Empty** | The screen's own data call gets the real response with its collections emptied (route interception over `route.fetch()`) | An `EmptyState` inside `main` that says what is missing and, where there is one, what to do about it |
 | **Loading** | The data call is held until the spec releases it | A visible skeleton or spinner inside an element with an accessible name (`role="status"` or `aria-busy` with `aria-label`), never a blank area. Once released, the screen settles and is checked by axe (*loading-complete*) |
 | **Error** | The data call answers `500 {"error":"internal_error"}` | `EmptyState kind="error"` (or an alert) with *Try again*, and no raw code, status or `undefined` anywhere on the page |
@@ -51,6 +51,7 @@ report zero violations.
 | Admin: Health | `/admin/health` | ✅ | ✅ *No health checks reported* | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: Jobs | `/admin/jobs` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: Outbound queue | `/admin/queue` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
+| Admin: Suppression list | `/admin/suppressions` | ✅ | ✅ *No suppressed addresses* | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: Deliverability | `/admin/deliverability` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: SMTP sessions | `/admin/smtp` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 

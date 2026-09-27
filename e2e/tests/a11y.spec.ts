@@ -182,6 +182,7 @@ const SCREENS: Screen[] = [
   { name: 'Admin — Health', path: () => '/admin/health', ready: h1('Health'), data: /\/api\/admin\/health(\?|$)/, admin: true },
   { name: 'Admin — Jobs', path: () => '/admin/jobs', ready: h1('Jobs'), data: /\/api\/admin\/jobs(\?|$)/, admin: true },
   { name: 'Admin — Outbound queue', path: () => '/admin/queue', ready: h1('Outbound queue'), data: /\/api\/admin\/queue(\?|$)/, admin: true },
+  { name: 'Admin — Suppression list', path: () => '/admin/suppressions', ready: h1('Suppression list'), data: /\/api\/admin\/suppressions(\?|$)/, empty: (body) => ({ ...body, suppressions: [], total: 0 }), admin: true },
   {
     name: 'Admin — Deliverability',
     path: () => '/admin/deliverability',
@@ -360,6 +361,7 @@ async function seed(): Promise<void> {
   await api.post('/api/templates', { headers: CSRF, data: { shortcut: `ty${t}`, name: `Thank you ${t}`, body: 'Thanks for reaching out.' } });
   await api.post('/api/admin/jobs/dev-seed-failure', { headers: CSRF });
   await api.post('/api/admin/queue/dev-seed-deferred', { headers: CSRF, data: { domain: `a11y-${t}.test` } });
+  await api.post('/api/admin/suppressions/dev-seed-bounce', { headers: CSRF, data: { address: `gone-${t}@a11y.test` } });
 
   // DMARC and TLS-RPT reports, filed as delivered mail exactly as deliverability.spec.ts does; the
   // worker's report sweep turns them into the rows Deliverability charts. Re-filing the same

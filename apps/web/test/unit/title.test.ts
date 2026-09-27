@@ -31,6 +31,7 @@ describe('titleForPath (PST-DA-043)', () => {
     expect(titleForPath('/admin/health')).toBe('Health — Postroom');
     expect(titleForPath('/admin/jobs')).toBe('Jobs — Postroom');
     expect(titleForPath('/admin/queue')).toBe('Outbound queue — Postroom');
+    expect(titleForPath('/admin/suppressions')).toBe('Suppression list — Postroom');
     expect(titleForPath('/admin/deliverability')).toBe('Deliverability — Postroom');
     expect(titleForPath('/admin/smtp')).toBe('SMTP sessions — Postroom');
     expect(titleForPath('/admin/setup')).toBe('Setup wizard — Postroom');

@@ -12,6 +12,7 @@ import { AdminDeliverability } from './screens/AdminDeliverability';
 import { AdminHealth } from './screens/AdminHealth';
 import { AdminJobs } from './screens/AdminJobs';
 import { AdminQueue } from './screens/AdminQueue';
+import { AdminSuppressions } from './screens/AdminSuppressions';
 import { AdminDns } from './screens/AdminDns';
 import { AdminSessions } from './screens/AdminSessions';
 import { AdminSmtpViewer } from './admin/smtp-viewer/AdminSmtpViewer';
@@ -116,6 +117,7 @@ function Gate() {
         <Route path="/admin/health" element={<AdminHealth />} />
         <Route path="/admin/jobs" element={<AdminJobs />} />
         <Route path="/admin/queue" element={<AdminQueue />} />
+        <Route path="/admin/suppressions" element={<AdminSuppressions />} />
         <Route path="/admin/deliverability" element={<AdminDeliverability />} />
         <Route path="/admin/smtp" element={<AdminSmtpViewer />} />
         <Route path="/admin/setup" element={<SetupWizard />} />
