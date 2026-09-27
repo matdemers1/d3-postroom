@@ -3,7 +3,7 @@
 # It holds no mail, no TLS keys and no credentials except its own WireGuard key, which is generated
 # here on first boot and never leaves the instance. Rebuilt from this file, never patched.
 #
-# Rendered by edge/provision.sh, which replaces the @@PLACEHOLDERS@@.
+# Rendered by edge/provision.sh, which fills in every placeholder (the at-sign-delimited names below).
 package_update: true
 package_upgrade: true
 packages: [wireguard-tools, nftables, nodejs, unattended-upgrades]
