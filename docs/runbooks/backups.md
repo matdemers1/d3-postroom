@@ -146,6 +146,15 @@ retried: run `postroom drill` after fixing the cause.
    `@postroom/crypto`) and put it in `POSTROOM_KEK`.
 6. Start the stack; run `postroom drill` against it.
 
+## Execution record
+
+| Field | Value |
+|---|---|
+| Provisioned | 2026-09-27: `backups-provision.sh provision` against account 150056528345 (us-east-1): KMS `alias/postroom-backups` (rotation on), bucket `postroom-backups-d3cloud` (versioned, SSE-KMS, 90-day lifecycle, TLS-only and this-key-only policy), IAM user `postroom-backup` (put/get/list; delete, lifecycle, policy and key changes denied) |
+| First backup | 2026-09-27 14:28 UTC, `postroom backup` in the worker after the Shipyard deploy of 6780b96: `ok: true`, 4 objects, dump 138,994 bytes at `db/2026-09-27/postroom.dump`, `aws:kms` with the backup key. `kekBundle: "no passphrase"` |
+| KEK escrow | `BACKUP_KEK_PASSPHRASE` is set by the operator from the password manager, in `/DATA/postroom/postroom.env` only. The worker reads it at start, so it takes effect with the next Shipyard deploy; Shipyard never redeploys the live SHA (G7). The next backup then writes `kek/bundle.json` |
+| Still to run | `backups-provision.sh verify` with the backup user's keys, and the clean-machine drill (PST-T-13.3) |
+
 ## Relates to
 
 PST-REQ-011 · PST-REQ-022 · PST-REQ-023 · PST-REQ-024 · PST-ADR-009 · PST-T-0.16 · PST-T-0.17
