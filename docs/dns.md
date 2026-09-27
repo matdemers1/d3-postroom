@@ -71,3 +71,44 @@ dig +short @1.1.1.1 dav.d3cloud.io
 ```bash
 curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" -X PROPFIND https://mail.d3cloud.io/.well-known/caldav
 ```
+
+## MTA-STS
+
+PST-T-4.12, PST-REQ-094: an MTA-STS policy (RFC 8461) for every domain Postroom serves.
+
+| Type | Name | Value | Notes |
+| --- | --- | --- | --- |
+| CNAME (proxied) | `mta-sts.d3cloud.io` | `mail.d3cloud.io` | Serves the policy at `https://mta-sts.<domain>/.well-known/mta-sts.txt`. Needs a public hostname on the tunnel, same as autoconfig above. Expected after go-live (PST-REQ-086). |
+| TXT | `_mta-sts.d3cloud.io` | `v=STSv1; id=<32 alphanumerics>` | The id is a content hash of the served policy (`apps/api/src/mta-sts/policy.ts`): it changes exactly when the policy body does, so a sender's cached policy is invalidated only when there is something new to fetch. Expected after go-live. |
+
+`apps/api` mounts the policy route at the site root ahead of the session gate and the SPA fallback,
+the same way autoconfig is (`apps/api/src/mta-sts`). The route answers only a Host starting with
+`mta-sts.` for a domain in the `domain` table; any other Host gets a plain 404 at that path, never a
+redirect.
+
+The policy body:
+
+```
+version: STSv1
+mode: testing
+mx: mx.d3cloud.io
+max_age: 86400
+```
+
+- `mode` — `MTA_STS_MODE`, default `testing`. `enforce` and `none` are also accepted; anything else
+  fails closed (503) rather than serving a policy nobody asked for.
+- `mx` — `MX_HOSTNAME` if set, else `mx.<primary domain>`. Every domain Postroom hosts is delivered
+  by the one physical MTA, so a secondary domain's policy still names the primary domain's mx host.
+- `max_age` — `MTA_STS_MAX_AGE` in seconds, default 86400 (one day), capped at the RFC 8461 §3.2
+  ceiling of 31557600.
+
+The admin DNS checker (`GET /api/admin/dns`) shows the `_mta-sts` TXT id it expects, derived from
+the same policy-building code the route serves from, so a mode or max_age change is visible there
+before it is published.
+
+Check:
+
+```bash
+curl -s https://mta-sts.d3cloud.io/.well-known/mta-sts.txt
+dig +short @1.1.1.1 TXT _mta-sts.d3cloud.io
+```

@@ -17,6 +17,7 @@ import { autoconfigRoutes } from './autoconfig/index.js';
 import { calendarRoutes } from './calendar/index.js';
 import { composeRoutes } from './compose/index.js';
 import { mdnRoutes } from './compose/index.js';
+import { mtaStsRoutes } from './mta-sts/index.js';
 import { contactsRoutes } from './contacts/index.js';
 import { templateRoutes } from './templates/index.js';
 import { invitesRoutes } from './invites/index.js';
@@ -100,6 +101,8 @@ export function createApp(deps: ApiDeps): Express {
 
   // Public client autoconfiguration (PST-T-3.6): no session, no CSRF, GET/POST XML only.
   app.use(autoconfigRoutes(deps));
+  // The MTA-STS policy (PST-T-4.12, PST-REQ-094): no session, no CSRF, GET only, text/plain.
+  app.use(mtaStsRoutes(deps));
 
   // Nothing under /api is cacheable unless a route says otherwise (ASVS 5.0 14.3.2, 14.2.2).
   const noStore = (_req: Request, res: Response, next: NextFunction): void => {
