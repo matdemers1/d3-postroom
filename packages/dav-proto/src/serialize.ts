@@ -37,7 +37,10 @@ function collectNamespaces(root: XmlElement): string[] {
   while (stack.length > 0) {
     const n = stack.pop();
     if (n === undefined || typeof n === 'string') continue;
-    if (n.ns !== '') seen.add(n.ns);
+    // NS.XML is always implicitly bound to the `xml` prefix (never declared, never any other
+    // prefix — the parser rejects binding it to anything else, PST-T-4.14): an element or
+    // attribute in that namespace must never make it into the set of namespaces the root declares.
+    if (n.ns !== '' && n.ns !== NS.XML) seen.add(n.ns);
     for (const a of n.attrs) if (a.ns !== '' && a.ns !== NS.XML) seen.add(a.ns);
     for (const c of n.children) stack.push(c);
   }
