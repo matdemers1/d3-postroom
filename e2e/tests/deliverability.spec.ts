@@ -12,7 +12,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext } from '@playwright/test';
 import { ensureOperator, signInCookies } from './support.js';
 
-test.describe.configure({ mode: 'serial', timeout: 180_000 });
+test.describe.configure({ mode: 'serial', timeout: 360_000 });
 
 const CSRF = { 'x-postroom-csrf': '1' };
 const fixtures = join(import.meta.dirname, '..', '..', 'packages', 'reports', 'test', 'fixtures');
@@ -45,8 +45,10 @@ test.beforeAll(async ({ playwright }, testInfo) => {
   if (seeded.status() === 404) throw new Error('the stack has no deliverability dev seed route: start the api with POSTROOM_E2E_SEED=1');
   expect(seeded.status()).toBe(201);
 
-  // The worker's sweep turns the filed messages into rows. A second project run re-seeds the same
-  // reports: they are recognized as duplicates and the totals stay the same.
+  // The worker's sweep turns the filed messages into rows. The report address is an alias on the
+  // operator's account, so the sweep reads every message earlier specs filed there first, oldest
+  // first: on a full suite the seed waits behind that backlog, minutes on CI. A second project run
+  // re-seeds the same reports: they are recognized as duplicates and the totals stay the same.
   await expect
     .poll(
       async () => {
@@ -54,7 +56,7 @@ test.beforeAll(async ({ playwright }, testInfo) => {
         const body = (await res.json()) as { dmarc: { totals: { reports: number } }; tlsrpt: { totals: { reports: number } } };
         return body.dmarc.totals.reports >= 2 && body.tlsrpt.totals.reports >= 1;
       },
-      { timeout: 60_000, message: 'the reports never appeared — is the worker running against this stack?' },
+      { timeout: 300_000, message: 'the reports never appeared — is the worker running against this stack?' },
     )
     .toBe(true);
 });
