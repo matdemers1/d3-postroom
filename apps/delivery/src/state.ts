@@ -122,6 +122,9 @@ export interface Transition {
   lastEnhanced: string | null;
   lastText: string | null;
   deliveredAt: Date | null;
+  /** Why a `bounced` transition bounced (null otherwise): the remote said 5xx, or the queue gave up.
+   * The suppression policy (suppression.ts, PST-REQ-176) only ever acts on 'permanent'. */
+  bounceReason: 'permanent' | 'expired' | null;
   dsn: DsnIntent[];
 }
 
@@ -159,7 +162,7 @@ export function nextState(r: RecipientSnapshot, outcome: AttemptOutcome, now: Da
   if (outcome.kind === 'delivered') {
     // SUCCESS is not ours to report: the real transport passes NOTIFY on to a DSN-capable MX
     // (PST-T-1.6), and a "relayed" DSN for one that is not belongs to the DSN generator (PST-T-1.7).
-    return { state: 'delivered', attemptOutcome: 'delivered', nextAttemptAt: now, deliveredAt: now, ...base, dsn: [] };
+    return { state: 'delivered', attemptOutcome: 'delivered', nextAttemptAt: now, deliveredAt: now, bounceReason: null, ...base, dsn: [] };
   }
 
   const bounce = (reason: 'permanent' | 'expired'): Transition => ({
@@ -167,6 +170,7 @@ export function nextState(r: RecipientSnapshot, outcome: AttemptOutcome, now: Da
     attemptOutcome: 'bounced',
     nextAttemptAt: now,
     deliveredAt: null,
+    bounceReason: reason,
     ...base,
     dsn: notify.failure && r.failureDsnSentAt === null ? [intent('failure', { reason })] : [],
   });
@@ -184,6 +188,7 @@ export function nextState(r: RecipientSnapshot, outcome: AttemptOutcome, now: Da
     attemptOutcome: outcome.kind === 'error' ? 'error' : 'deferred',
     nextAttemptAt: next,
     deliveredAt: null,
+    bounceReason: null,
     ...base,
     dsn,
   };

@@ -298,6 +298,23 @@ describe.skipIf(baseUrl === undefined)('scheduled loop (PST-T-9.1)', () => {
     expect(await db.message.count({ where: { id: pending.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
   });
 
+  it('PST-T-11.10: a recipient suppressed while the send was held fails it with recipient-suppressed, naming the suppression', async () => {
+    const me = await person();
+    const pending = await hold(me, { releaseAt: clock.now() });
+    // PST-REQ-179: listed after the hold (a hard bounce from another message, or an admin).
+    const listed = await db.suppressedRecipient.create({ data: { address: 'secret@example.org', reason: 'hard-bounce', code: 550, enhanced: '5.1.1', text: 'No such user' } });
+    try {
+      expect(await releaseOne(deps, pending.id)).toBe('failed');
+      expect(await outboundFor(me, pending.messageIdHeader)).toHaveLength(0);
+      const row = await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id } });
+      expect(row.state).toBe('failed');
+      expect(row.reason).toMatch(/^recipient-suppressed: secret@example\.org is on this server's suppression list \(after a hard bounce\)/);
+      expect(await db.message.count({ where: { id: pending.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
+    } finally {
+      await db.suppressedRecipient.delete({ where: { id: listed.id } });
+    }
+  });
+
   // --- PST-T-12.7: a held send with several copies (an encrypted send with Bcc) -----------------------
 
   /**

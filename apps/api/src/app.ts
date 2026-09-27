@@ -11,6 +11,7 @@ import { adminDnsRoutes } from './admin-dns/index.js';
 import { adminJobRoutes } from './admin-jobs/index.js';
 import { adminQueueRoutes } from './admin-queue/index.js';
 import { adminSmtpRoutes } from './admin-smtp/index.js';
+import { adminSuppressionRoutes } from './admin-suppressions/index.js';
 import { serviceAccountRoutes } from './admin-service/index.js';
 import { appPasswordRoutes } from './app-passwords/index.js';
 import { autoconfigRoutes } from './autoconfig/index.js';
@@ -112,6 +113,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/admin/health', requireAdmin(deps), adminHealthRoutes(deps));
   app.use('/api/admin/jobs', requireAdmin(deps), adminJobRoutes(deps));
   app.use('/api/admin/queue', requireAdmin(deps), adminQueueRoutes(deps));
+  app.use('/api/admin/suppressions', requireAdmin(deps), adminSuppressionRoutes(deps));
   app.use('/api/admin/service-accounts', requireAdmin(deps), serviceAccountRoutes(deps));
   app.use('/api/admin/deliverability', requireAdmin(deps), deliverabilityRoutes(deps));
   app.use('/api/admin/smtp', requireAdmin(deps), adminSmtpRoutes(deps));

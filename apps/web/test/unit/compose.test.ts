@@ -89,6 +89,14 @@ describe('a refused send, in words', () => {
     expect(sendErrorText(new ApiError(400, 'invalid_recipient', { error: 'invalid_recipient', message: 'to: "x" is not an address' }))).toBe('to: "x" is not an address');
     expect(sendErrorText(new TypeError('fetch failed'))).toMatch(/nothing was sent/);
   });
+
+  it('PST-T-11.10: names the suppressed recipients and that an admin can take them off the list', () => {
+    const one = sendErrorText(new ApiError(422, 'recipient_suppressed', { error: 'recipient_suppressed', message: '...', addresses: ['gone@example.org'] }));
+    expect(one).toBe('Nothing was sent: gone@example.org is on this server’s suppression list, because mail to it bounced as undeliverable or an admin added it. Remove it from the message, or ask an admin to take it off the list.');
+    const two = sendErrorText(new ApiError(422, 'recipient_suppressed', { addresses: ['a@example.org', 'b@example.org', 'c@example.org'] }));
+    expect(two).toMatch(/^Nothing was sent: a@example\.org, b@example\.org and c@example\.org are on this server’s suppression list/);
+    expect(sendErrorText(new ApiError(422, 'recipient_suppressed', {}))).toMatch(/suppression list/);
+  });
 });
 
 describe('isSendChord (PST-T-11.4)', () => {

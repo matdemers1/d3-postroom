@@ -6,6 +6,8 @@
 //   PST-REQ-053  no relay: MAIL before AUTH is 530, and nothing is queued without an account.
 //   PST-REQ-038  every accepted message is DKIM-signed (Ed25519 + RSA) for the From domain.
 //   PST-REQ-060  250 only after the signed blob is fsynced and its rows and jobs are committed.
+//   PST-REQ-179  a suppressed recipient is refused at RCPT (550 5.1.1, just that one), and again,
+//                authoritatively, inside the accepting transaction.
 import { randomUUID } from 'node:crypto';
 import { createServer as createTcpServer, type Server as TcpServer, type Socket } from 'node:net';
 import type { Duplex, Readable } from 'node:stream';
@@ -13,6 +15,7 @@ import { createServer as createTlsServer, type Server as TlsServer, type TLSSock
 import { createAuthThrottle, type AuthThrottle } from '@postroom/auth-throttle';
 import { verifyProtocolLogin } from '@postroom/credentials';
 import type { Db, Prisma } from '@postroom/db';
+import { findSuppressed } from '@postroom/delivery';
 import {
   SmtpDataRejectedError,
   createServerSession,
@@ -23,7 +26,7 @@ import {
   type ServerSession,
   type SmtpReply,
 } from '@postroom/smtp-proto';
-import { acceptSubmission, AcceptReplies, type SubmissionStorage } from './accept.js';
+import { acceptSubmission, AcceptReplies, suppressedReply, type SubmissionStorage } from './accept.js';
 import { allowAllCaps, allowAllEnforcement, type CheckCaps, type EnforceCaps } from './caps-seam.js';
 import { isCredentialFrozen } from './caps/index.js';
 import { SASL_MECHANISMS, readCredentials } from './sasl.js';
@@ -35,6 +38,8 @@ export {
   acceptSubmission,
   AcceptReplies,
   sendableAddresses,
+  suppressedReply,
+  suppressionLine,
   type AcceptDeps,
   type AcceptedMessage,
   type AcceptInput,
@@ -221,6 +226,12 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
         if (ctx.auth === null || login === null) return SubmissionReplies.authRequired;
         if (to.kind === 'postmaster') return SubmissionReplies.recipientNotQualified;
         if (to.mailbox.domain.startsWith('[')) return SubmissionReplies.recipientLiteral;
+        // PST-REQ-179: a suppressed address is refused here, alone; the other RCPTs carry on.
+        const suppressed = await findSuppressed(o.db, [formatMailbox(to.mailbox)]);
+        if (suppressed.length > 0) {
+          log('suppressed-refused', { session: ctx.id, accountId: login.accountId, stage: 'rcpt', suppressed: suppressed.map((m) => m.address) });
+          return suppressedReply(suppressed);
+        }
         // PST-REQ-043: the cap+1th recipient (counting this transaction's accepted recipients plus
         // this candidate, against the credential's rolling window) is refused with 452.
         const tx = ctx.transaction;

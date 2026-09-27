@@ -108,6 +108,16 @@ export const api = {
   queueForceSes: (scope: QueueScope) => call<{ ok: true; count: number; transport: 'ses' }>('POST', `${queuePath(scope)}/force-ses`),
   queueBounce: (scope: QueueScope) => call<{ ok: true; count: number }>('POST', `${queuePath(scope)}/bounce`),
   queueDelete: (scope: QueueScope, reason: string) => call<{ ok: true; count: number }>('DELETE', queuePath(scope), { reason }),
+  // PST-T-11.10: the suppression list (PST-REQ-178). Mutations need a fresh step-up first.
+  suppressions: (opts: { q?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.q !== undefined && opts.q !== '') q.set('q', opts.q);
+    if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+    const qs = q.toString();
+    return call<{ suppressions: Suppression[]; total: number }>('GET', `/api/admin/suppressions${qs === '' ? '' : `?${qs}`}`);
+  },
+  addSuppression: (address: string, reason: string) => call<Suppression>('POST', '/api/admin/suppressions', { address, reason }),
+  removeSuppression: (id: string, reason: string) => call<null>('DELETE', `/api/admin/suppressions/${encodeURIComponent(id)}`, { reason }),
   appPasswords: () => call<{ appPasswords: AppPassword[] }>('GET', '/api/app-passwords'),
   createAppPassword: (input: { label: string; scopes: AppPasswordScope[] }) =>
     call<AppPassword & { password: string }>('POST', '/api/app-passwords', input),
@@ -846,6 +856,21 @@ export interface AdminQueueRecipient {
   lastText: string | null;
   updatedAt: string;
   lastAttempt: { startedAt: string; outcome: string; error: string | null } | null;
+}
+
+/** Matches apps/api/src/admin-suppressions/schemas.ts's Suppression. */
+export interface Suppression {
+  id: string;
+  address: string;
+  reason: 'hard-bounce' | 'manual';
+  code: number | null;
+  enhanced: string | null;
+  text: string | null;
+  bounceCount: number;
+  firstAt: string;
+  lastAt: string;
+  note: string | null;
+  source: { recipientId: string; outboundMessageId: string; subject: string | null } | null;
 }
 
 export interface AdminQueueMessage {

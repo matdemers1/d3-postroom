@@ -84,6 +84,8 @@ function refusalStatus(outcome: Exclude<AcceptOutcome, { ok: true }>): { status:
       return { status: 503, error: 'dkim_unconfigured' };
     case 'cap-exceeded':
       return { status: 429, error: 'recipient_cap' };
+    case 'recipient-suppressed':
+      return { status: 422, error: 'recipient_suppressed' };
   }
 }
 
@@ -274,7 +276,9 @@ export function invitesRoutes(deps: ApiDeps): Router {
       );
       if (!outcome.ok) {
         const { status, error } = refusalStatus(outcome);
-        res.status(status).json({ error, message: outcome.reply.lines.join(' ') });
+        const message = outcome.reply.lines.join(' ');
+        // PST-REQ-179: a suppressed organizer is named, as the composer's refusal names its recipients.
+        res.status(status).json(outcome.reason === 'recipient-suppressed' ? { error, message, addresses: outcome.suppressed } : { error, message });
         return;
       }
 
