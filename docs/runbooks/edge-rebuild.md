@@ -63,6 +63,9 @@ patched**.
    edge/ports.sh show
    ```
 
+   A pre-gate test can open to one CIDR instead of the world: `edge/ports.sh open 993 <cidr>`
+   (defaults to `0.0.0.0/0` when no CIDR is given, as above).
+
 5. Delete the previous Lightsail instance once the new one is carrying live traffic (the script
    prints its name; it is not deleted automatically).
 
