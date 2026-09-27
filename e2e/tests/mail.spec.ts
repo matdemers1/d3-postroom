@@ -181,7 +181,7 @@ test.describe('at 1280 px', () => {
     const all = page.getByRole('region', { name: 'Reply all' });
     await expect(all).toBeVisible();
     await expect(all.getByRole('textbox', { name: 'To' })).toHaveValue('Alice Example <alice@example.org>');
-    await expect(all.getByRole('textbox', { name: 'Cc' })).toHaveValue('Bob Example <bob@example.org>');
+    await expect(all.getByRole('textbox', { name: 'Cc', exact: true })).toHaveValue('Bob Example <bob@example.org>');
     await all.getByRole('button', { name: 'Discard' }).click();
 
     await page.keyboard.press('c');

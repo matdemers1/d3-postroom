@@ -148,7 +148,7 @@ test('a contact added in the UI is listed', async ({ page, isMobile }) => {
   await expect(page).toHaveURL(/\/contacts\/new$/);
   await page.getByRole('textbox', { name: 'First name' }).fill('Ada');
   await page.getByRole('textbox', { name: 'Last name' }).fill(`Lovelace ${t}`);
-  await page.getByRole('textbox', { name: 'E-mail 1' }).fill(`ada.${t}@example.org`);
+  await page.getByRole('textbox', { name: 'Email 1' }).fill(`ada.${t}@example.org`);
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText('Contact added.')).toBeVisible();
   await expect(page.getByRole('heading', { name: `Ada Lovelace ${t}` })).toBeVisible();

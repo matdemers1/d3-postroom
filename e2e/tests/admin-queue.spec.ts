@@ -68,8 +68,12 @@ test('Force SES, through the confirm-and-step-up modal, re-routes a deferred mes
 
   await expect(page.getByText('done.')).toBeVisible();
 
-  const after = await api.get('/api/admin/queue', { headers: { cookie: cookieHeader() } });
-  const body = (await after.json()) as { messages: { recipients: { id: string; transport: string; domain: string }[] }[] };
-  const found = body.messages.flatMap((m) => m.recipients).find((r) => r.id === recipientId);
-  expect(found?.transport).toBe('ses');
+  // Polled: the list the toast refreshed and this read can race the worker's own pass over the row.
+  await expect
+    .poll(async () => {
+      const after = await api.get('/api/admin/queue', { headers: { cookie: cookieHeader() } });
+      const body = (await after.json()) as { messages: { recipients: { id: string; transport: string; domain: string }[] }[] };
+      return body.messages.flatMap((m) => m.recipients).find((r) => r.id === recipientId)?.transport;
+    })
+    .toBe('ses');
 });
