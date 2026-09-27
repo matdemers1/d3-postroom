@@ -97,6 +97,9 @@ if [[ ! -f $key ]]; then
   "${ls[@]}" download-default-key-pair --query privateKeyBase64 --output text > "$key"
   chmod 600 "$key"
 fi
+# The static IP now belongs to a new instance with new host keys: forget the old ones for this IP
+# (strict checking stays on; the new keys are accepted on first contact below).
+ssh-keygen -R "$ip" -f "$SECRETS/known_hosts" >/dev/null 2>&1 || true
 ssh_edge() { ssh -i "$key" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$SECRETS/known_hosts" -o ConnectTimeout=10 "admin@$ip" "$@"; }
 
 echo "» waiting for cloud-init on $ip"
