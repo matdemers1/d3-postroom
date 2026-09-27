@@ -129,6 +129,10 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'POST /api/admin/setup-wizard/mailbox',
         'POST /api/admin/setup-wizard/test',
         'POST /api/admin/setup-wizard/complete',
+        // PST-T-11.10: the suppression list.
+        'GET /api/admin/suppressions',
+        'POST /api/admin/suppressions',
+        'DELETE /api/admin/suppressions/{id}',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit', 'query:keyword']);

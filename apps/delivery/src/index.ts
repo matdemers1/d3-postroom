@@ -26,3 +26,5 @@ export { notBuiltTransport, transportFromEnv, transportsFromEnv, NOT_BUILT } fro
 export type { AttemptDetails, DeliveryRecipient, DeliveryRequest, DeliveryResult, Transport } from './transports/types.js';
 export { HELD_TEXT, holdGroup, isCredentialFrozen, reenqueueHeld, thawCredential } from './hold.js';
 export type { ThawResult } from './hold.js';
+export { findSuppressed, recordHardBounce, shouldSuppress, suppressionKey } from './suppression.js';
+export type { HardBounce, SuppressedMatch, SuppressionReason } from './suppression.js';
