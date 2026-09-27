@@ -38,6 +38,7 @@ describe.skipIf(baseUrl === undefined)('suppression list over SMTP submission (P
   let listeners: SubmissionListeners;
   let port465 = 0;
   let account: { address: string; appPassword: string };
+  let sessions = 0;
 
   beforeAll(async () => {
     t = await createTestDatabase(baseUrl ?? '', 'pst_t1110_submission');
@@ -78,12 +79,16 @@ describe.skipIf(baseUrl === undefined)('suppression list over SMTP submission (P
 
   afterAll(async () => {
     await listeners.close();
+    // Each session stores its transcript once it has ended; let the last ones land before the
+    // database is dropped, or a late write races the drop.
+    for (let i = 0; i < 100 && (await db.smtpTranscript.count()) < sessions; i++) await new Promise((r) => setTimeout(r, 50));
     await t.drop();
     await rm(dir, { recursive: true, force: true });
   });
 
   async function session(): Promise<SmtpTestClient> {
     const c = await SmtpTestClient.implicitTls(port465);
+    sessions++;
     await c.next();
     await c.send('EHLO client.test');
     expect((await c.send(`AUTH PLAIN ${b64(`\0${account.address}\0${account.appPassword}`)}`)).code).toBe(235);
