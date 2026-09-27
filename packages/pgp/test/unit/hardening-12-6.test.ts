@@ -177,7 +177,7 @@ describe('canonicalizeForSigning (RFC 3156 §3, RFC 8551 §3.1.1)', () => {
   });
 });
 
-describe('hidden OpenPGP recipients: the wildcard key ID (RFC 9580 §5.1)', () => {
+describe('hidden OpenPGP recipients: the wildcard key ID (RFC 9580 §5.1)', { timeout: 60_000 }, () => {
   const alice = pub('alice-ed25519.pub.asc');
   const bob = pub('bob-rsa3072.pub.asc');
 
@@ -220,7 +220,7 @@ describe('hidden OpenPGP recipients: the wildcard key ID (RFC 9580 §5.1)', () =
   });
 });
 
-describe('a signature survives a relay that strips trailing whitespace', () => {
+describe('a signature survives a relay that strips trailing whitespace', { timeout: 60_000 }, () => {
   it.skipIf(GPG === null)('PGP/MIME: gpg --verify is still GOOD after every line loses its trailing whitespace', () => {
     const home = scratch();
     const gpg = (args: string[], input?: Buffer | string) => spawnSync(GPG ?? 'gpg', ['--homedir', home, '--batch', '--no-tty', '--pinentry-mode', 'loopback', ...args], { input, maxBuffer: 16 * 1024 * 1024 });

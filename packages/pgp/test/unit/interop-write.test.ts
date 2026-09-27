@@ -84,7 +84,9 @@ function parts(entity: { headers: string[]; body: Buffer }): Buffer[] {
 
 const bodyOf = (part: Buffer): Buffer => part.subarray(part.indexOf('\r\n\r\n') + 4);
 
-describe.skipIf(GPG === null)('gpg reads what Postroom writes', () => {
+// External gpg/openssl processes (key generation, passphrase stretching) run slowly on shared CI
+// runners, so these suites get a 60 s budget per test instead of the 5 s default.
+describe.skipIf(GPG === null)('gpg reads what Postroom writes', { timeout: 60_000 }, () => {
   const gpg = (home: string, args: string[], input?: Buffer | string) =>
     spawnSync(GPG ?? 'gpg', ['--homedir', home, '--batch', '--no-tty', '--pinentry-mode', 'loopback', ...args], { input, maxBuffer: 16 * 1024 * 1024 });
 
@@ -200,7 +202,7 @@ describe.skipIf(GPG === null)('gpg reads what Postroom writes', () => {
   });
 });
 
-describe.skipIf(OPENSSL === null)('openssl cms reads what Postroom writes', () => {
+describe.skipIf(OPENSSL === null)('openssl cms reads what Postroom writes', { timeout: 60_000 }, () => {
   const openssl = (args: string[], input?: Buffer) => spawnSync(OPENSSL ?? 'openssl', args, { input, maxBuffer: 16 * 1024 * 1024 });
   const [carolCert] = certificatesFromPem(text('carol-smime.pem'));
   const [intermediate] = certificatesFromPem(text('smime-intermediate.pem'));
