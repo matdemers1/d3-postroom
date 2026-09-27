@@ -1,6 +1,9 @@
 #!/bin/sh
 # Bring up wg0 to the Lightsail edge when configured; otherwise hold a bare namespace.
 set -eu
+# The handshake-age endpoint for the worker's wireguard monitor (PST-T-4.13, PST-REQ-182) — started
+# either way, since the worker must be able to tell "unconfigured" apart from "unreachable".
+httpd -p 9108 -h /www
 if [ -z "${WG_PRIVATE_KEY:-}" ]; then
   echo '{"event":"wireguard-unconfigured","note":"WG_PRIVATE_KEY unset; holding a bare namespace"}'
   exec sleep infinity
