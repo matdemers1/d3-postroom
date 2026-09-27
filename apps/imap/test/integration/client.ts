@@ -207,15 +207,41 @@ export class ImapClient {
     }
   }
 
-  /** After EXISTS the client learns the new UIDs the way real clients do: FETCH n:m (UID). */
+  /**
+   * After EXISTS the client learns the new UIDs the way real clients do: FETCH n:m (UID). Each slot
+   * is asked about once. A slot the server leaves without a UID after being fetched means the model
+   * and the mailbox disagree, and is recorded as a violation — asking again would repeat the same
+   * question forever (every reply is prompt, so no timeout fires) and the property would hang
+   * instead of failing. Slots announced by EXISTS during the FETCH are new, and fetched in turn.
+   */
+  private filling = false;
   private async fillModel(): Promise<void> {
-    if (this.model === null) return;
-    const first = this.model.indexOf(0);
+    if (this.model === null || this.filling) return;
     this.pendingExists = 0;
-    if (first < 0) return;
-    const tag = this.tag();
-    this.write(`${tag} FETCH ${first + 1}:${this.model.length} (UID)\r\n`);
-    await this.collect(tag);
+    let fetchedTo = 0; // slots 1..fetchedTo have been asked about
+    this.filling = true;
+    try {
+      for (;;) {
+        const first = this.model.indexOf(0);
+        if (first < 0) return;
+        if (first < fetchedTo) {
+          const still = this.model.flatMap((u, i) => (u === 0 && i < fetchedTo ? [i + 1] : []));
+          this.violations.push(`FETCH (UID) left ${still.join(',')} without a UID (model ${String(this.model.length)} long)`);
+          return;
+        }
+        const range = `${String(first + 1)}:${String(this.model.length)}`;
+        fetchedTo = this.model.length;
+        const tag = this.tag();
+        this.write(`${tag} FETCH ${range} (UID)\r\n`);
+        const r = await this.collect(tag);
+        if (!r.tagged.startsWith(`${tag} OK`)) {
+          this.violations.push(`FETCH ${range} (UID) answered ${r.tagged}`);
+          return;
+        }
+      }
+    } finally {
+      this.filling = false;
+    }
   }
 }
 
