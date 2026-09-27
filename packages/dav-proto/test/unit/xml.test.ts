@@ -1,5 +1,7 @@
 // The XML parser: what it keeps, and — the point of it — what it refuses (XXE, billion laughs, any
 // DTD at all, undeclared prefixes, malformed input, oversized input).
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { NS, XmlError, childElement, childElements, parseXml, serializeXml, textContent, type XmlElement } from '../../src/index.js';
 
@@ -47,6 +49,23 @@ describe('parseXml — what it keeps', () => {
     const src = '<d:multistatus xmlns:d="DAV:"><d:response><d:href>/a%20b/</d:href><d:status>HTTP/1.1 200 OK</d:status></d:response></d:multistatus>';
     const tree = parseXml(src);
     expect(parseXml(serializeXml(tree))).toEqual(tree);
+  });
+
+  // Nightly fuzz run 36320930132 (GitHub issue #9, PST-T-4.14 / PST-REQ-088): serializeXml treated
+  // NS.XML like any other namespace needing a root declaration, so a tree with an element in the
+  // xml: namespace (like this calendar-multiget's <xml:setag/>, using the implicit `xml` prefix that
+  // needs no xmlns:xml declaration at all) came back out with `xmlns:x0="…XML/1998/namespace"` — a
+  // second prefix bound to the one namespace only `xml` may ever be bound to. Re-parsing that output
+  // then threw XmlError (`the xml prefix is bound to its own namespace only`) past the fuzz target's
+  // own allowed() guard, because the throw came from the round-trip parseXml call, not the first one.
+  it('round-trips an element in the xml: namespace without redeclaring the xml prefix (fuzz crasher, issue #9)', () => {
+    const src = readFileSync(join(import.meta.dirname, '../../../../fuzz/dav-proto/fixtures/xml-prefix-namespace-serializer-roundtrip.xml'));
+    const tree = parseXml(src);
+    const setag = childElement(childElement(tree, NS.DAV, 'prop') as XmlElement, NS.XML, 'setag');
+    expect(setag).toBeDefined();
+    const serialized = serializeXml(tree);
+    expect(serialized).not.toMatch(/xmlns:\w+="http:\/\/www\.w3\.org\/XML\/1998\/namespace"/);
+    expect(parseXml(serialized)).toEqual(tree);
   });
 });
 
