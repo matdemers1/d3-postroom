@@ -13,7 +13,9 @@ export { MtaStsConfigError, mtaStsEnvConfig, mtaStsPolicyId, renderMtaStsPolicy,
 const HOST_PREFIX = 'mta-sts.';
 
 /** The domain a request at `mta-sts.<domain>` names, or undefined when the Host has no such label. */
-export function domainFromMtaStsHost(hostname: string): string | undefined {
+/** The raw Host header, without a :port suffix (IPv6 literals never name an mta-sts host). */
+export function domainFromMtaStsHost(hostHeader: string): string | undefined {
+  const hostname = hostHeader.replace(/:\d+$/, '');
   if (!hostname.toLowerCase().startsWith(HOST_PREFIX)) return undefined;
   try {
     return normalizeDomain(hostname.slice(HOST_PREFIX.length));
@@ -44,7 +46,9 @@ export function mtaStsRoutes(deps: ApiDeps): Router {
   router.get(
     '/.well-known/mta-sts.txt',
     handle(async (req: Request, res: Response): Promise<void> => {
-      const domain = domainFromMtaStsHost(req.hostname);
+      // The raw Host header, never req.hostname: with 'trust proxy' set, req.hostname would honour a
+      // client-supplied X-Forwarded-Host. cloudflared forwards the original Host (as usercontent does).
+      const domain = domainFromMtaStsHost(req.headers.host ?? '');
       if (domain === undefined) {
         res.status(404).end();
         return;

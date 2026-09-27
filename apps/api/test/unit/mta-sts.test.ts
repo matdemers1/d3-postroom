@@ -74,6 +74,19 @@ describe('MTA-STS policy (RFC 8461, PST-REQ-094)', () => {
     expect(res.status).toBe(404);
   });
 
+  it('ignores X-Forwarded-Host: a forged one cannot make another Host serve the policy', async () => {
+    const res = await request(makeApp([PRIMARY]))
+      .get('/.well-known/mta-sts.txt')
+      .set('Host', 'totally-unrelated-vhost.example.com')
+      .set('X-Forwarded-Host', 'mta-sts.d3cloud.io');
+    expect(res.status).toBe(404);
+  });
+
+  it('accepts a Host with a port suffix', async () => {
+    const res = await request(makeApp([PRIMARY])).get('/.well-known/mta-sts.txt').set('Host', 'mta-sts.d3cloud.io:443');
+    expect(res.status).toBe(200);
+  });
+
   it('answers 404 for any other Host at the same path', async () => {
     const res = await request(makeApp([PRIMARY])).get('/.well-known/mta-sts.txt').set('Host', 'd3cloud.io');
     expect(res.status).toBe(404);
