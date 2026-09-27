@@ -107,14 +107,10 @@
   }
 
   /* The sidebar (a drawer below tablet width, Shell.tsx) lists every mailbox and every account/admin
-   * screen as a 36px-tall row. */
+   * screen as a 36px-tall row, 2px apart. An invisible extension cannot reach 44px there without
+   * landing on the neighbouring row, so on a phone each row is simply 44px tall. */
   .d3-snav__item {
-    position: relative;
-  }
-  .d3-snav__item::after {
-    content: '';
-    position: absolute;
-    inset: -4px 0;
+    min-height: 44px;
   }
 
   /* The Checkbox's visible 17×17 box (the actual toggle button — the native <input> beside it is
