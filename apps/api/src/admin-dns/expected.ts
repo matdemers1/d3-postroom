@@ -6,6 +6,7 @@
 // Two records are deliberately never suggested here: anything at no-reply.<domain> (Cloudflare Email
 // Service's own subdomain, with its own DMARC p=reject) and any record for another domain.
 import { reverseDnsName } from '@postroom/dns';
+import { mtaStsEnvConfig, mtaStsPolicyId as mtaStsPolicyIdOf, renderMtaStsPolicy } from '../mta-sts/policy.js';
 
 export type RecordKind =
   | 'MX'
@@ -73,6 +74,11 @@ export interface ExpectedInput {
   readonly dmarcRua: string;
   /** Where TLS-RPT reports go (TLSRPT_RUA), default mailto:tls-reports@<domain>. */
   readonly tlsRptRua: string;
+  /**
+   * The `id=` the policy Postroom would serve at mta-sts.<domain> would carry right now (PST-T-4.12),
+   * or null when MTA_STS_MODE / MTA_STS_MAX_AGE is invalid and there is nothing to derive one from.
+   */
+  readonly mtaStsPolicyId: string | null;
 }
 
 /** The subdomain this checker must never query or suggest anything for. */
@@ -171,9 +177,12 @@ export function expectedRecords(input: ExpectedInput): ExpectedRecord[] {
     record: 'MTA-STS',
     name: `_mta-sts.${domain}`,
     type: 'TXT',
-    expected: 'v=STSv1; id=<change on every policy edit>',
+    expected: input.mtaStsPolicyId === null ? null : `v=STSv1; id=${input.mtaStsPolicyId}`,
     afterGoLive: true,
-    note: `With the policy served at https://mta-sts.${domain}/.well-known/mta-sts.txt. Expected after go-live.`,
+    note:
+      input.mtaStsPolicyId === null
+        ? 'MTA_STS_MODE or MTA_STS_MAX_AGE in the environment is invalid, so no policy id can be derived yet.'
+        : `With the policy served at https://mta-sts.${domain}/.well-known/mta-sts.txt. Expected after go-live; the id changes whenever the policy does.`,
     detail: { kind: 'mta-sts' },
   });
   rows.push({
@@ -238,6 +247,8 @@ export interface HostEnv {
   readonly EDGE_PUBLIC_IP?: string | undefined;
   readonly DMARC_RUA?: string | undefined;
   readonly TLSRPT_RUA?: string | undefined;
+  readonly MTA_STS_MODE?: string | undefined;
+  readonly MTA_STS_MAX_AGE?: string | undefined;
 }
 
 const set = (v: string | undefined): string | null => (v === undefined || v.trim() === '' ? null : v.trim());
@@ -246,6 +257,16 @@ const set = (v: string | undefined): string | null => (v === undefined || v.trim
 export function hostsFromEnv(env: HostEnv, domain: string, webOrigin: string): Omit<ExpectedInput, 'dkim'> {
   const d = bare(domain);
   const mxHostname = set(env.MX_HOSTNAME) ?? `mail.${d}`;
+  // The checker is not given the domain table, so it cannot know which domain is primary; it
+  // derives the id as the mta-sts route would if `d` were its own mx default's fallback. In the
+  // common single-domain deployment `d` is the primary domain, so the two agree exactly.
+  let mtaStsPolicyId: string | null;
+  try {
+    const config = mtaStsEnvConfig(env as NodeJS.ProcessEnv, `mx.${d}`);
+    mtaStsPolicyId = mtaStsPolicyIdOf(renderMtaStsPolicy(config));
+  } catch {
+    mtaStsPolicyId = null;
+  }
   return {
     domain: d,
     mxHostname,
@@ -255,5 +276,6 @@ export function hostsFromEnv(env: HostEnv, domain: string, webOrigin: string): O
     edgeIp: set(env.EDGE_PUBLIC_IP),
     dmarcRua: set(env.DMARC_RUA) ?? `mailto:dmarc-reports@${d}`,
     tlsRptRua: set(env.TLSRPT_RUA) ?? `mailto:tls-reports@${d}`,
+    mtaStsPolicyId,
   };
 }
