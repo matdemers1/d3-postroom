@@ -9,13 +9,16 @@ set -euo pipefail
 
 is_cidr() {
   local cidr=$1 ip prefix octet
-  [[ $cidr =~ ^([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/([0-9]{1,2})$ ]] || return 1
+  # Canonical decimal only: no leading zeros (bash arithmetic would read 010 as octal 8), and the
+  # comparisons force base 10 besides.
+  local n='(0|[1-9][0-9]{0,2})'
+  [[ $cidr =~ ^($n\.$n\.$n\.$n)/(0|[1-9][0-9]?)$ ]] || return 1
   ip=${BASH_REMATCH[1]}
-  prefix=${BASH_REMATCH[2]}
-  (( prefix >= 0 && prefix <= 32 )) || return 1
+  prefix=${cidr##*/}
+  (( 10#$prefix <= 32 )) || return 1
   IFS='.' read -ra octets <<<"$ip"
   for octet in "${octets[@]}"; do
-    (( octet >= 0 && octet <= 255 )) || return 1
+    (( 10#$octet <= 255 )) || return 1
   done
   return 0
 }
