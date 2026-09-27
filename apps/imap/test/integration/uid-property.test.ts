@@ -191,7 +191,7 @@ describe.skipIf(!canRun)('UIDs and modseq under two concurrent sessions (PST-REQ
           expect(seen).toEqual((c.model ?? []).map((u, i) => [i + 1, u]));
         }
       }),
-      { numRuns: 25, endOnFailure: true },
+      { numRuns: 25, endOnFailure: true, ...(process.env['FC_SEED'] === undefined ? {} : { seed: Number(process.env['FC_SEED']) }) },
     );
   }, 600_000);
 });
