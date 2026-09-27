@@ -46,6 +46,25 @@ sed -e "s|@@EDGE_BUNDLE_B64@@|${bundle_b64}|" \
     -e "s|@@ADMIN_CIDR@@|${admin_cidr}|" \
     edge/cloud-init.yaml > "$userdata"
 grep -q '@@' "$userdata" && { echo "unrendered placeholder in cloud-init" >&2; exit 1; }
+
+# Lightsail prepends its own launch script (#!/bin/sh …) to the user data, so `#cloud-config` is
+# never the first line and cloud-init would run the YAML as shell. The user data is therefore a
+# shell launcher that carries the rendered config and applies its three modules itself.
+rendered=$userdata
+launcher=$(mktemp)
+trap 'rm -f "$rendered" "$launcher"' EXIT
+{
+  echo 'set -eu'
+  echo 'mkdir -p /var/lib/postroom-edge'
+  echo "cat > /var/lib/postroom-edge/cloud-config.yaml <<'POSTROOM_CLOUD_CONFIG'"
+  cat "$rendered"
+  echo 'POSTROOM_CLOUD_CONFIG'
+  echo 'for m in package_update_upgrade_install write_files runcmd; do'
+  echo '  cloud-init single --name "$m" --frequency always --file /var/lib/postroom-edge/cloud-config.yaml'
+  echo 'done'
+  echo 'sh -e /var/lib/cloud/instance/scripts/runcmd'
+} > "$launcher"
+userdata=$launcher
 echo "» user data: $(wc -c < "$userdata") bytes, forwarder sha256 ${bundle_sha:0:12}"
 
 echo "» creating $NAME ($BUNDLE, $BLUEPRINT, $AZ)"
@@ -78,6 +97,9 @@ if [[ ! -f $key ]]; then
   "${ls[@]}" download-default-key-pair --query privateKeyBase64 --output text > "$key"
   chmod 600 "$key"
 fi
+# The static IP now belongs to a new instance with new host keys: forget the old ones for this IP
+# (strict checking stays on; the new keys are accepted on first contact below).
+ssh-keygen -R "$ip" -f "$SECRETS/known_hosts" >/dev/null 2>&1 || true
 ssh_edge() { ssh -i "$key" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$SECRETS/known_hosts" -o ConnectTimeout=10 "admin@$ip" "$@"; }
 
 echo "» waiting for cloud-init on $ip"

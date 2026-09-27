@@ -97,10 +97,10 @@ patched**.
 
 | Field | Value |
 |---|---|
-| Last executed | not yet executed |
-| By | — |
-| Result | — |
-| Precondition needed | operator AWS Lightsail access (`us-east-1`) and the current home WireGuard keypair or willingness to rotate it |
+| Last executed | 2026-09-27 (first build) |
+| By | Claude Code session, operator-authorised AWS CLI (us-east-1) |
+| Result | `postroom-edge-202609271201` at static IP `postroom-edge-ip` 18.208.39.127: cloud-init done; `postroom-edge`, `wg-quick@wg0`, `nftables` active; `edge/inventory.sh` clean; mail ports closed. Fresh home keypair in `edge/.secrets/`. Two bugs found and fixed on the way: the cloud-init header comment tripped the placeholder check, and Lightsail prepends its own launch script to user data (so `#cloud-config` is never first) — `provision.sh` now sends a shell launcher that applies the config with `cloud-init single`. A rebuild also clears the static IP's old host key from `edge/.secrets/known_hosts`. The first, broken instance `postroom-edge-202609271159` is left for the operator to delete. |
+| Precondition needed | the home `.env` lines (step 3), then a Shipyard redeploy |
 
 ## Relates to
 

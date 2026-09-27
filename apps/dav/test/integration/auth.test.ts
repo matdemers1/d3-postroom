@@ -46,7 +46,7 @@ describe('credentials', () => {
     const imapOnly = await makeAccount(h, ['imap']);
     const c = client(h.base, null, { 'CF-Connecting-IP': '198.51.100.22' });
     expect((await c.request('PROPFIND', '/dav/', { ...propfind, auth: { user: imapOnly.address, pass: imapOnly.appPassword } })).status).toBe(401);
-    expect((await c.request('PROPFIND', '/dav/', { ...propfind, auth: { user: account.address, pass: `${account.appPassword.slice(0, -1)}x` } })).status).toBe(401);
+    expect((await c.request('PROPFIND', '/dav/', { ...propfind, auth: { user: account.address, pass: `${account.appPassword.slice(0, -1)}${account.appPassword.endsWith('x') ? 'y' : 'x'}` } })).status).toBe(401);
     expect((await c.request('PROPFIND', '/dav/', { ...propfind, auth: { user: 'nobody@d3cloud.io', pass: account.appPassword } })).status).toBe(401);
     expect((await c.request('PROPFIND', '/dav/', { ...propfind, headers: { ...propfind.headers, Authorization: 'Basic !!!' }, auth: false })).status).toBe(401);
     expect((await failures('198.51.100.22')).map((f) => f.reason)).toEqual(['wrong_scope', 'bad_password', 'unknown_user', 'malformed']);
