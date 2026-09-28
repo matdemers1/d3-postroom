@@ -96,6 +96,7 @@ test('the Newsletters feed scrolls three newsletters, marks them all read, and t
   await page.getByRole('link', { name: from }).first().click();
   await expect(page).toHaveURL(new RegExp(`/senders/${encodeURIComponent(from)}`));
   await expect(page.getByRole('heading', { name: from })).toBeVisible();
-  await expect(page.getByText('3', { exact: true })).toBeVisible();
+  // Scoped to the page body: the sidebar's unread badges can show the same number.
+  await expect(page.locator('#content').getByText('3', { exact: true })).toBeVisible();
   await expect(page.getByText('Never attempted')).toBeVisible();
 });
