@@ -2,9 +2,9 @@
 //
 // Expected safe behaviour:
 //   - A PROXY header is honoured only from the edge's WireGuard peer. From anyone else it closes the
-//     connection (smtp-in, IMAP 143), fails the handshake (IMAP 993), or is at best an unknown
-//     command (submission, which the edge never forwards) — and in no case does the claimed source
-//     address become the session's client address.
+//     connection (smtp-in, IMAP 143, submission 587) or fails the handshake (IMAP 993, submission
+//     465) — and in no case does the claimed source address become the session's client address.
+//     Submission is forwarded by the edge after go-live, so it follows the same rule (PST-T-4.17).
 //   - From the edge peer a PROXY v2 header is required: none (timeout), a v1 text header, data
 //     before the header, a LOCAL or address-less header, a truncated header, a TLV that overruns
 //     the header, or a header larger than the 4096-octet ceiling all close the connection without a
@@ -46,6 +46,9 @@ describe.skipIf(DATABASE_URL === undefined)('adversarial: PROXY spoofing (PST-RE
   let imapsDirect = 0;
   let imapEdge = 0;
   let sub587 = 0;
+  let sub465 = 0;
+  let subEdge = 0;
+  let subsEdge = 0;
 
   beforeAll(async () => {
     w = await World.create('pst_adv_proxy');
@@ -58,7 +61,12 @@ describe.skipIf(DATABASE_URL === undefined)('adversarial: PROXY spoofing (PST-RE
     // ...and here it is, so the tests can speak as the edge.
     mxEdge = (await w.smtpIn({ edgePeers: ['127.0.0.1'], proxyTimeoutMs: 400 })).port;
     imapEdge = (await w.imap({ edgePeers: ['127.0.0.1'], proxyTimeoutMs: 400 })).port;
-    sub587 = (await w.submission()).port587;
+    const sub = await w.submission();
+    sub587 = sub.port587;
+    sub465 = sub.port465;
+    const subViaEdge = await w.submission({ edgePeers: ['127.0.0.1'], proxyTimeoutMs: 400 });
+    subEdge = subViaEdge.port587;
+    subsEdge = subViaEdge.port465;
   }, 120_000);
 
   afterAll(async () => {
@@ -112,18 +120,23 @@ describe.skipIf(DATABASE_URL === undefined)('adversarial: PROXY spoofing (PST-RE
     expect(sessionsFrom(SPOOFED)).toBe(0);
   });
 
-  it('submission (never forwarded by the edge): a PROXY header is never honoured', async () => {
-    const c = await SmtpClient.plain(sub587, V1);
-    expect((await c.next()).code).toBe(220);
-    expect((await c.next()).code).toBe(500);
-    await c.cmd('EHLO client.example');
-    c.close();
-    const d = await SmtpClient.plain(sub587, v2());
-    expect(await d.closed()).toBe(true);
-    expect(d.transcript.every((r) => r.code === 220 || r.code >= 500)).toBe(true);
-    // Whatever the header claimed, the throttle and the logs still see loopback.
+  it('submission 587: a v2 or v1 header from a peer that is not the edge closes the connection', async () => {
+    for (const header of [v2(), V1]) {
+      const c = await SmtpClient.plain(sub587, Buffer.concat([header, Buffer.from('EHLO spoof.example\r\n')]));
+      expect(await c.closed()).toBe(true);
+      expect(c.transcript.every((r) => r.code === 220)).toBe(true);
+    }
+    // Whatever the header claimed, the throttle and the logs never see it.
     const rows = await w.db.auditEvent.findMany({ where: { action: 'auth.failure' } });
     expect(JSON.stringify(rows)).not.toContain(SPOOFED);
+    expect(sessionsFrom(SPOOFED)).toBe(0);
+  });
+
+  it('submission 465: a PROXY header in place of a ClientHello fails the handshake', async () => {
+    const c = await SmtpClient.plain(sub465, Buffer.concat([v2(), Buffer.from('EHLO spoof.example\r\n')]));
+    expect(await c.closed()).toBe(true);
+    expect(c.transcript).toEqual([]);
+    expect(sessionsFrom(SPOOFED)).toBe(0);
   });
 
   // --- from the edge --------------------------------------------------------------------------
@@ -163,6 +176,12 @@ describe.skipIf(DATABASE_URL === undefined)('adversarial: PROXY spoofing (PST-RE
     it(`IMAP from the edge: ${what} → closed without a greeting`, async () => {
       await refusedByEdgeListener(imapEdge, bytes, 'imap');
     });
+    it(`submission 587 from the edge: ${what} → closed without a greeting`, async () => {
+      await refusedByEdgeListener(subEdge, bytes, 'smtp');
+    });
+    it(`submission 465 from the edge: ${what} → closed before any handshake`, async () => {
+      await refusedByEdgeListener(subsEdge, bytes, 'smtp');
+    });
   }
 
   it('smtp-in from the edge: only the first header counts; a second one never re-assigns the client', async () => {
@@ -186,6 +205,19 @@ describe.skipIf(DATABASE_URL === undefined)('adversarial: PROXY spoofing (PST-RE
     expect(r.tagged).toMatch(/^a1 NO \[PRIVACYREQUIRED\]/);
     c.close();
     expect(await eventually(() => w.logs.some((l) => l.event === 'session' && l.fields['ip'] === '198.51.100.21'))).toBe(true);
+  });
+
+  it('submission from the edge: a legitimate header on 587 and on 465 (then TLS), and the throttle sees the forwarded address', async () => {
+    const c = await SmtpClient.plain(subEdge, v2('198.51.100.23'));
+    expect((await c.next()).code).toBe(220);
+    expect((await c.cmd('EHLO legit.example')).code).toBe(250);
+    expect(codeOf(await c.cmd('QUIT'))).toBe('221 2.0.0');
+    const t = await SmtpClient.implicitTlsVia(subsEdge, v2('198.51.100.24'));
+    expect((await t.next()).code).toBe(220);
+    await t.cmd('EHLO legit.example');
+    expect((await t.cmd(`AUTH PLAIN ${Buffer.from(`\0${alice.address}\0wrong`).toString('base64')}`)).code).toBe(535);
+    t.close();
+    expect(await eventually(async () => (await w.db.auditEvent.count({ where: { action: 'auth.failure', ip: '198.51.100.24' } })) === 1)).toBe(true);
   });
 
   it('smtp-in from the edge: a legitimate header, then SMTP, is served with the forwarded address', async () => {

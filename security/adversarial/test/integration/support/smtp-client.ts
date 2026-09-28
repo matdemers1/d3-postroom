@@ -67,6 +67,13 @@ export class SmtpClient {
     return c;
   }
 
+  /** Implicit TLS behind the edge: `prefix` (a PROXY header) first, then the handshake (PST-T-4.17). */
+  static async implicitTlsVia(port: number, prefix: Buffer): Promise<SmtpClient> {
+    const c = await SmtpClient.plain(port, prefix);
+    await c.upgrade();
+    return c;
+  }
+
   private attach(s: Duplex): void {
     s.on('data', this.onData);
     s.on('end', this.onEnd);

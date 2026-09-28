@@ -174,9 +174,11 @@ export class World {
       throttle: this.throttle(),
       log: this.log,
       idleTimeoutMs: 30_000,
+      edgePeers: [EDGE_PEER],
+      proxyTimeoutMs: 1_000,
       ...overrides,
     });
-    const listen = async (server: NonNullable<SubmissionListeners['submissions']> | SubmissionListeners['submission']): Promise<number> =>
+    const listen = async (server: SubmissionListeners['submission']): Promise<number> =>
       new Promise((resolve, reject) => {
         server.once('error', reject);
         server.listen(0, '127.0.0.1', () => {

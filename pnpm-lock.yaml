@@ -420,6 +420,9 @@ importers:
       '@postroom/mime':
         specifier: workspace:*
         version: link:../../packages/mime
+      '@postroom/proxy-protocol':
+        specifier: workspace:*
+        version: link:../../packages/proxy-protocol
       '@postroom/smtp-proto':
         specifier: workspace:*
         version: link:../../packages/smtp-proto
