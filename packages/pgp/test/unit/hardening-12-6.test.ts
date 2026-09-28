@@ -39,7 +39,7 @@ afterAll(() => {
     if (gpgconf !== null && existsSync(gpgconf)) spawnSync(gpgconf, ['--homedir', d, '--kill', 'all']);
     rmSync(d, { recursive: true, force: true });
   }
-});
+}, 60_000);
 function scratch(): string {
   const d = mkdtempSync(join(tmpdir(), 'pst-t126-'));
   chmodSync(d, 0o700);

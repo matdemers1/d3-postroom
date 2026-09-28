@@ -59,7 +59,8 @@ afterAll(() => {
     if (gpgconf !== null && existsSync(gpgconf)) spawnSync(gpgconf, ['--homedir', d, '--kill', 'all']);
     rmSync(d, { recursive: true, force: true });
   }
-});
+  // One gpgconf --kill per directory: well past the default 10 s hook budget on a loaded machine.
+}, 60_000);
 
 function scratch(): string {
   const d = mkdtempSync(join(tmpdir(), 'pst-t122-'));
