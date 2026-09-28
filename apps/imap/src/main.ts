@@ -5,7 +5,6 @@
 // IMAPS_PORT (993), IMAP_PORT (143; 0 disables), LISTEN_HOST, EDGE_PEER_ADDRESS, PROXY_TIMEOUT_MS,
 // IMAP_MAX_CONNECTIONS_PER_IP (20), IMAP_IDLE_TIMEOUT_MS (30 min, never less), IMAP_PREAUTH_TIMEOUT_MS
 // (60 s), IMAP_MAX_APPEND_SIZE (100 MB), IMAP_STRUCTURE_CACHE (1000), HEALTH_PORT. (ManageSieve on 4190 is its own daemon, apps/managesieve.)
-import { readFileSync } from 'node:fs';
 import { createBlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
 import { envInt, envString, runDaemon, type DaemonContext } from '@postroom/daemon';
@@ -13,6 +12,7 @@ import { createDb } from '@postroom/db';
 import { loadConfig } from './config.js';
 import { DAEMON } from './daemon.js';
 import { createImapListeners } from './server.js';
+import { tlsHealth, watchTlsPair } from '@postroom/smtp-proto';
 
 export async function start(ctx: DaemonContext): Promise<void> {
   const config = loadConfig(ctx.env);
@@ -25,19 +25,12 @@ export async function start(ctx: DaemonContext): Promise<void> {
 
   // TLS is required before LOGIN, so without a certificate nothing can log in: fail closed, loudly,
   // with no 993 listener at all, and say so on /health.
-  let tls: { key: Buffer; cert: Buffer } | null = null;
-  if (config.tlsCertFile === undefined || config.tlsKeyFile === undefined) {
-    ctx.log('no-tls-certificate', { message: 'TLS_CERT_FILE/TLS_KEY_FILE not set: no 993, no STARTTLS, no login' });
-  } else {
-    try {
-      tls = { key: readFileSync(config.tlsKeyFile), cert: readFileSync(config.tlsCertFile) };
-    } catch (error) {
-      ctx.log('no-tls-certificate', {
-        message: 'cannot read the TLS certificate: no 993, no STARTTLS, no login',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
+  // The pair is watched (PST-REQ-020, PST-T-11.13): a renewal, or a first issuance after boot, is
+  // served without a restart; until one loads, /health says degraded.
+  const tls = watchTlsPair({ certFile: config.tlsCertFile, keyFile: config.tlsKeyFile, log: ctx.log });
+  ctx.onShutdown(() => {
+    tls.close();
+  });
 
   const kek = loadKek({ env: ctx.env });
   const blobs = createBlobStore({ root: config.blobRoot, db, kek });
@@ -63,12 +56,10 @@ export async function start(ctx: DaemonContext): Promise<void> {
   ctx.onShutdown(() => listeners.close());
 
 
-  ctx.log('listening', { host: config.host, ports: listening, tls: tls !== null, edgePeers: config.edgePeers });
+  ctx.log('listening', { host: config.host, ports: listening, tls: tls.context() !== null, edgePeers: config.edgePeers });
   ctx.addHealth(async () => {
     await db.$queryRaw`SELECT 1`;
-    return tls === null
-      ? { status: 'degraded', reason: 'no TLS certificate loaded', tls: 'none', listening, imapSessions: listeners.activeSessions() }
-      : { tls: 'ok', listening, imapSessions: listeners.activeSessions() };
+    return { listening, imapSessions: listeners.activeSessions(), ...tlsHealth(tls) };
   });
 }
 
