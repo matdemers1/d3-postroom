@@ -1,5 +1,27 @@
 # DNS records
 
+## MX and the mail host
+
+Published at go-live, 2026-09-28 (PST-T-4.5), after the security gate report was green
+(`security/gate-report.md`, PST-REQ-086):
+
+| Name | Type | Value | Notes |
+|---|---|---|---|
+| `d3cloud.io` | MX | `10 mx.d3cloud.io` | the only MX; TTL 300 |
+| `mx.d3cloud.io` | A | `18.208.39.127` | the edge's static IP, DNS-only (never proxied) |
+| `18.208.39.127` | PTR | `mx.d3cloud.io` | set by AWS; FCrDNS holds |
+
+The edge's Lightsail firewall is open to the world on 25, 465, 587 and 993 only; 4190 stays closed
+until a managesieve daemon runs in production. `edge/ports.sh show` lists what is open.
+
+Check:
+
+```bash
+dig +short @1.1.1.1 MX d3cloud.io
+dig +short @1.1.1.1 -x 18.208.39.127
+```
+
+
 ## Autoconfig
 
 Mail client autoconfiguration (PST-T-3.6, PST-REQ-076). Published 2026-09-27:
@@ -27,8 +49,8 @@ autoconfig router at the site root ahead of the session gate and the SPA fallbac
 > iOS/macOS Mail can also be provisioned by the signed `.mobileconfig` profile (PST-T-8.6), which
 > needs no DNS record.
 
-The documents name `mx.d3cloud.io` for IMAP (993) and submission (465/587). That host exists only
-once the edge does, so autoconfiguration completes end to end after go-live. The XML documents,
+The documents name `mx.d3cloud.io` for IMAP (993) and submission (465/587). That host is
+live since go-live (2026-09-28), so autoconfiguration completes end to end. The XML documents,
 both URLs, unknown-domain 404s and the POX exchange are covered by
 `apps/api/test/unit/autoconfig.test.ts`.
 
