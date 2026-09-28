@@ -27,7 +27,7 @@ import { envInt, envString } from '@postroom/daemon';
 import { buildReply, matchAttendee, parseInvite, replyBlockReason, serializeReply, type ParsedInvite, type Partstat } from '@postroom/imip';
 import { parseICalendar, serializeICalendar, type Component } from '@postroom/ical';
 import { acceptSubmission, sendableAddresses, type AcceptOutcome, type SubmissionStorage } from '@postroom/submission';
-import { createWebmailCapsEnforcer } from '@postroom/submission/caps';
+import { accountCapFromEnv, createWebmailCapsEnforcer } from '@postroom/submission/caps';
 import { Router, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
@@ -84,6 +84,10 @@ function refusalStatus(outcome: Exclude<AcceptOutcome, { ok: true }>): { status:
       return { status: 503, error: 'dkim_unconfigured' };
     case 'cap-exceeded':
       return { status: 429, error: 'recipient_cap' };
+    case 'account-cap':
+      return { status: 429, error: 'account_cap' };
+    case 'recipient-suppressed':
+      return { status: 422, error: 'recipient_suppressed' };
   }
 }
 
@@ -96,16 +100,19 @@ export function invitesRoutes(deps: ApiDeps): Router {
   };
 
   // The composer's cap enforcer (compose/index.ts), built from the same factory and the same env.
+  const sendAlert = createAlertSender(
+    { url: envString(deps.env, 'MAIL_RELAY_URL', ''), token: envString(deps.env, 'MAIL_RELAY_TOKEN', ''), to: envString(deps.env, 'ALERT_TO', '') },
+    { log },
+  );
   const webmailCaps = createWebmailCapsEnforcer({
     db,
     hourlyDefault: envInt(deps.env, 'SUBMISSION_CAP_HOURLY', 100),
     dailyDefault: envInt(deps.env, 'SUBMISSION_CAP_DAILY', 500),
-    sendAlert: createAlertSender(
-      { url: envString(deps.env, 'MAIL_RELAY_URL', ''), token: envString(deps.env, 'MAIL_RELAY_TOKEN', ''), to: envString(deps.env, 'ALERT_TO', '') },
-      { log },
-    ),
+    sendAlert,
     log,
   });
+  // PST-T-11.11: and the account-wide cap, the same as the composer's.
+  const accountCap = accountCapFromEnv(deps.env, { sendAlert, log });
 
   let storage: SubmissionStorage | null = null;
   const storageFor = (res: Response): SubmissionStorage | null => {
@@ -270,11 +277,13 @@ export function invitesRoutes(deps: ApiDeps): Router {
           enforceCaps: (tx, recipients, at) => webmailCaps(tx, me.accountId, recipients, at),
           auditContext: ctx,
         },
-        { db, storage: () => store, now: rt.now, log },
+        { db, storage: () => store, now: rt.now, log, accountCap },
       );
       if (!outcome.ok) {
         const { status, error } = refusalStatus(outcome);
-        res.status(status).json({ error, message: outcome.reply.lines.join(' ') });
+        const message = outcome.reply.lines.join(' ');
+        // PST-REQ-179: a suppressed organizer is named, as the composer's refusal names its recipients.
+        res.status(status).json(outcome.reason === 'recipient-suppressed' ? { error, message, addresses: outcome.suppressed } : { error, message });
         return;
       }
 

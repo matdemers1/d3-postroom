@@ -609,8 +609,9 @@ model OutboundRecipient {
   createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  message     OutboundMessage   @relation(fields: [outboundMessageId], references: [id], onDelete: Cascade)
-  attemptsLog DeliveryAttempt[]
+  message      OutboundMessage       @relation(fields: [outboundMessageId], references: [id], onDelete: Cascade)
+  attemptsLog  DeliveryAttempt[]
+  suppressions SuppressedRecipient[]
 
   @@index([state, nextAttemptAt])
   @@index([outboundMessageId])
@@ -641,6 +642,36 @@ model DeliveryAttempt {
 
   @@index([recipientId, startedAt])
   @@map("delivery_attempt")
+}
+
+/// PST-T-11.10: the suppression list. An address lands here when a delivery attempt to it ends in a
+/// permanent 5.1.x failure (PST-REQ-176) or when an admin adds it (PST-REQ-178); while it is here
+/// every sending path refuses to queue mail to it (PST-REQ-179). One row per address, however many
+/// times it bounced: a repeat bounce bumps bounceCount and lastAt and keeps the newest reply.
+model SuppressedRecipient {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// The whole address, lowercased (@postroom/delivery's suppressionKey): the unique key.
+  address            String   @unique
+  /// hard-bounce | manual
+  reason             String
+  /// The remote reply that caused it (null for a manual add).
+  code               Int?
+  enhanced           String?
+  text               String?
+  /// The outbound recipient whose bounce caused it; kept (as null) when the queue row is purged.
+  sourceRecipientId  String?  @map("source_recipient_id") @db.Uuid
+  bounceCount        Int      @default(1) @map("bounce_count")
+  firstAt            DateTime @default(now()) @map("first_at") @db.Timestamptz(6)
+  lastAt             DateTime @default(now()) @map("last_at") @db.Timestamptz(6)
+  /// Manual adds: who, and the operator's note. The audit row has both too (PST-REQ-181).
+  createdByAccountId String?  @map("created_by_account_id") @db.Uuid
+  note               String?
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sourceRecipient OutboundRecipient? @relation(fields: [sourceRecipientId], references: [id], onDelete: SetNull)
+
+  @@index([lastAt])
+  @@map("suppressed_recipient")
 }
 
 // ─── PST-P-2: the inbound spool, verdicts, greylisting ───────────────────────────────────────────

@@ -108,6 +108,9 @@ services:
     env_file: [/DATA/postroom/postroom.env]
     environment:
       HEALTH_PORT: "9106"
+      # wireguard monitor (PST-T-4.13, PST-REQ-182): the worker is not in the sidecar's netns, so it
+      # reaches the tiny busybox-httpd/CGI endpoint the sidecar serves on the default compose network.
+      WIREGUARD_HEALTH_URL: http://wireguard:9108/cgi-bin/health
     restart: unless-stopped
     volumes:
       - blobs:/var/lib/postroom/blobs

@@ -18,9 +18,10 @@ import { audited, getAuditContext, recordAudit } from '@postroom/audit';
 import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { envInt, envString } from '@postroom/daemon';
+import { findSuppressed } from '@postroom/delivery';
 import { collectMessage, decodeEncodedWords, parseMailboxes, parseMessageIdList, type Mailbox } from '@postroom/mime';
-import { acceptSubmission, sendableAddresses, type AcceptOutcome, type SubmissionStorage } from '@postroom/submission';
-import { createWebmailCapsEnforcer } from '@postroom/submission/caps';
+import { acceptSubmission, sendableAddresses, suppressedReply, type AcceptOutcome, type SubmissionStorage } from '@postroom/submission';
+import { accountCapFromEnv, createWebmailCapsEnforcer } from '@postroom/submission/caps';
 import { ensureDkimKeys, loadSigningKeys } from '@postroom/submission/dkim';
 import { Router, type Request, type Response } from 'express';
 import type { z } from 'zod';
@@ -96,7 +97,17 @@ export function refusalStatus(outcome: Exclude<AcceptOutcome, { ok: true }>): { 
       return { status: 503, error: 'dkim_unconfigured' };
     case 'cap-exceeded':
       return { status: 429, error: 'recipient_cap' };
+    case 'account-cap':
+      return { status: 429, error: 'account_cap' };
+    case 'recipient-suppressed':
+      return { status: 422, error: 'recipient_suppressed' };
   }
+}
+
+/** The JSON a refusal answers with: `addresses` names the suppressed recipients (PST-REQ-179). */
+export function refusalBody(outcome: Exclude<AcceptOutcome, { ok: true }>, message: string = outcome.reply.lines.join(' ')): { error: string; message: string; addresses?: readonly string[] } {
+  const { error } = refusalStatus(outcome);
+  return outcome.reason === 'recipient-suppressed' ? { error, message, addresses: outcome.suppressed } : { error, message };
 }
 
 /** A mailbox as the composer's input field shows it: `Name <a@b>`, the name quoted only when it must be. */
@@ -137,6 +148,8 @@ export function composeRoutes(deps: ApiDeps): Router {
     log,
   };
   const webmailCaps = createWebmailCapsEnforcer(capsOptions);
+  // PST-T-11.11: the account-wide cap acceptSubmission enforces, from the same env as SMTP and the worker.
+  const accountCap = accountCapFromEnv(deps.env, { sendAlert: capsOptions.sendAlert, log });
   const maxRecipients = envInt(deps.env, 'SUBMISSION_MAX_RECIPIENTS', 100);
 
   let storage: SubmissionStorage | null = null;
@@ -211,6 +224,14 @@ export function composeRoutes(deps: ApiDeps): Router {
         const envelope = [...new Set([...to, ...cc, ...bcc].map((m) => m.address))];
         if (envelope.length === 0) throw new HttpRefusal(400, 'no_recipients', 'Add at least one recipient');
         if (envelope.length > maxRecipients) throw new HttpRefusal(400, 'too_many_recipients', `At most ${String(maxRecipients)} recipients per message`);
+        // PST-REQ-179: named up front, for the whole envelope, so a held send is never accepted
+        // only to fail at release, and a Bcc copy is never refused after the main copy went. The
+        // accepting transaction checks again (a suppression added in between still wins).
+        const suppressed = await findSuppressed(db, envelope);
+        if (suppressed.length > 0) {
+          res.status(422).json({ error: 'recipient_suppressed', message: suppressedReply(suppressed).lines.join(' '), addresses: suppressed.map((m) => m.address) });
+          return;
+        }
 
         const now = rt.now();
         const hold = holdOf(body, now);
@@ -363,14 +384,13 @@ export function composeRoutes(deps: ApiDeps): Router {
               });
             },
           },
-          { db, storage: () => store, now: rt.now, log },
+          { db, storage: () => store, now: rt.now, log, accountCap },
         ).finally(() => {
           // A refusal stops reading part-way: let go of the original's blob stream too.
           original?.destroy();
         });
         if (!outcome.ok) {
-          const { status, error } = refusalStatus(outcome);
-          res.status(status).json({ error, message: outcome.reply.lines.join(' ') });
+          res.status(refusalStatus(outcome).status).json(refusalBody(outcome));
           return;
         }
         await reap(store.blobs, [reaped, ...reaped2]);
@@ -401,13 +421,12 @@ export function composeRoutes(deps: ApiDeps): Router {
                 });
               },
             },
-            { db, storage: () => store, now: rt.now, log },
+            { db, storage: () => store, now: rt.now, log, accountCap },
           );
           if (!copyOutcome.ok) {
             // The primary copy is already queued: say exactly who did not get theirs.
-            const { status, error } = refusalStatus(copyOutcome);
             log('bcc-copy-refused', { outboundId: outcome.outboundId, reason: copyOutcome.reason });
-            res.status(status).json({ error, message: `Sent, but the Bcc copy for ${bccCopy.address} was refused: ${copyOutcome.reply.lines.join(' ')}` });
+            res.status(refusalStatus(copyOutcome).status).json(refusalBody(copyOutcome, `Sent, but the Bcc copy for ${bccCopy.address} was refused: ${copyOutcome.reply.lines.join(' ')}`));
             return;
           }
         }
@@ -878,6 +897,8 @@ export function mdnRoutes(deps: ApiDeps): Router {
     log,
   };
   const webmailCaps = createWebmailCapsEnforcer(capsOptions);
+  // PST-T-11.11: the account-wide cap acceptSubmission enforces, from the same env as SMTP and the worker.
+  const accountCap = accountCapFromEnv(deps.env, { sendAlert: capsOptions.sendAlert, log });
 
   router.post(
     '/:id/mdn',
@@ -1001,11 +1022,10 @@ export function mdnRoutes(deps: ApiDeps): Router {
               if (marked === null) throw new Error('message vanished while sending its MDN');
             },
           },
-          { db, storage: () => store, now: rt.now, log },
+          { db, storage: () => store, now: rt.now, log, accountCap },
         );
         if (!outcome.ok) {
-          const { status, error } = refusalStatus(outcome);
-          res.status(status).json({ error, message: outcome.reply.lines.join(' ') });
+          res.status(refusalStatus(outcome).status).json(refusalBody(outcome));
           return;
         }
         const filed = sentCopy as { id: string; mailboxId: string } | null;

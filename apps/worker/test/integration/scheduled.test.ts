@@ -298,6 +298,45 @@ describe.skipIf(baseUrl === undefined)('scheduled loop (PST-T-9.1)', () => {
     expect(await db.message.count({ where: { id: pending.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
   });
 
+  it('PST-T-11.11: a held send released over the account-wide cap fails with account-cap, keeps the draft, and alerts once (PST-REQ-177, PST-REQ-180)', async () => {
+    const me = await person();
+    const alerts: string[] = [];
+    // Real time, not the test clock: the cap counts outbound rows the database stamps with its own now().
+    const accountCapped: ReleaseDeps = {
+      ...deps,
+      now: () => new Date(),
+      accountCap: { hourly: 3, daily: 1000, sendAlert: (m) => (alerts.push(m.subject), Promise.resolve({ sent: true })) },
+    };
+    const first = await hold(me, { releaseAt: new Date() });
+    expect(await releaseOne(accountCapped, first.id)).toBe('released'); // 2 recipients of 3
+    const second = await hold(me, { releaseAt: new Date() });
+    expect(await releaseOne(accountCapped, second.id)).toBe('failed');
+    expect(await outboundFor(me, second.messageIdHeader)).toHaveLength(0);
+    const row = await db.pendingSend.findUniqueOrThrow({ where: { id: second.id } });
+    expect(row.reason).toMatch(/^account-cap: Outbound recipient limit reached for this account; try again later$/);
+    expect(await db.message.count({ where: { id: second.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
+    const third = await hold(me, { releaseAt: new Date() });
+    expect(await releaseOne(accountCapped, third.id)).toBe('failed');
+    expect(alerts).toEqual(['Postroom: account outbound cap reached']);
+  });
+
+  it('PST-T-11.10: a recipient suppressed while the send was held fails it with recipient-suppressed, naming the suppression', async () => {
+    const me = await person();
+    const pending = await hold(me, { releaseAt: clock.now() });
+    // PST-REQ-179: listed after the hold (a hard bounce from another message, or an admin).
+    const listed = await db.suppressedRecipient.create({ data: { address: 'secret@example.org', reason: 'hard-bounce', code: 550, enhanced: '5.1.1', text: 'No such user' } });
+    try {
+      expect(await releaseOne(deps, pending.id)).toBe('failed');
+      expect(await outboundFor(me, pending.messageIdHeader)).toHaveLength(0);
+      const row = await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id } });
+      expect(row.state).toBe('failed');
+      expect(row.reason).toMatch(/^recipient-suppressed: secret@example\.org is on this server's suppression list \(after a hard bounce\)/);
+      expect(await db.message.count({ where: { id: pending.draftMessageId ?? '', mailboxId: me.box.Drafts } })).toBe(1);
+    } finally {
+      await db.suppressedRecipient.delete({ where: { id: listed.id } });
+    }
+  });
+
   // --- PST-T-12.7: a held send with several copies (an encrypted send with Bcc) -----------------------
 
   /**

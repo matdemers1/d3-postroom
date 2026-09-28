@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@postroom/alerts": "workspace:*",
+    "@postroom/auth-checks": "workspace:*",
     "@postroom/daemon": "workspace:*",
     "@postroom/db": "workspace:*",
     "@postroom/dnsbl": "workspace:*",

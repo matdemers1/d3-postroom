@@ -83,7 +83,8 @@ describe('header inspection and rewrite', () => {
     const fields = parseHeaderFields(block('From: me@d3cloud.io\r\nBcc: secret@x.test,\r\n other@y.test\r\nTo: you@x.test\r\n'));
     const r = rewriteHeaders(fields, { domain: 'd3cloud.io', now: new Date('2026-09-25T08:05:09Z') });
     const text = r.block.toString('latin1');
-    expect(text).not.toMatch(/bcc|secret|other/i);
+    // A Bcc header line, not the letters: a random Message-ID UUID can contain "bcc" (it is hex).
+    expect(text).not.toMatch(/^bcc:|secret|other/im);
     expect(text.startsWith('From: me@d3cloud.io\r\nTo: you@x.test\r\n')).toBe(true);
     expect(r.messageId).toMatch(/^<[0-9a-f-]{36}@d3cloud\.io>$/);
     expect(text).toContain(`Message-ID: ${r.messageId}\r\n`);

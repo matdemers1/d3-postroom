@@ -39,7 +39,8 @@ export const INVITES_ROUTES: RouteSpec[] = [
       '403': err('Missing CSRF header, or none of the caller’s addresses is an attendee.'),
       '409': err('Not a REQUEST, no ORGANIZER or one that is not a single valid mailbox, or the calendar object changed at the same time.'),
       '413': err('Header block too large.'),
-      '429': err('Recipient cap exceeded.'),
+      '422': { description: 'The organizer is on the suppression list (PST-REQ-179).', schema: 'SuppressedRefusal' },
+      '429': err('recipient_cap, or account_cap: the account-wide outbound cap is reached (PST-REQ-177).'),
     },
   },
   {

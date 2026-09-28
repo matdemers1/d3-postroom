@@ -25,9 +25,19 @@ describe('buildMonitors defaults (PST-T-4.7 fix #5)', () => {
     expect(ntp).not.toBeNull();
   });
 
-  it('always includes backlog, cert-expiry-disabled-without-files, disk, blocklist-disabled, and backup-drill', () => {
+  it('always includes backlog, cert-expiry-disabled-without-files, disk, blocklist-disabled, delivery, dkim (PST-T-4.13), and backup-drill', () => {
     const { monitors } = buildMonitors({ db, env: {}, backupsConfigured: false });
     const names = monitors.map((m) => m.name).sort();
-    expect(names).toEqual(['backlog', 'backup-drill', 'disk']);
+    expect(names).toEqual(['backlog', 'backup-drill', 'delivery', 'disk', 'dkim']);
+  });
+
+  it('excludes wireguard with no WIREGUARD_HEALTH_URL configured (PST-T-4.13, PST-REQ-182)', () => {
+    const { monitors } = buildMonitors({ db, env: {}, backupsConfigured: false });
+    expect(monitors.map((m) => m.name)).not.toContain('wireguard');
+  });
+
+  it('includes wireguard once WIREGUARD_HEALTH_URL is set', () => {
+    const { monitors } = buildMonitors({ db, env: { WIREGUARD_HEALTH_URL: 'http://wireguard:9108/cgi-bin/health' }, backupsConfigured: false });
+    expect(monitors.map((m) => m.name)).toContain('wireguard');
   });
 });

@@ -24,6 +24,7 @@ const ROUTE_NAMES: { test: (pathname: string) => boolean; name: string }[] = [
   { test: (p) => p === '/admin/health', name: 'Health' },
   { test: (p) => p === '/admin/jobs', name: 'Jobs' },
   { test: (p) => p === '/admin/queue', name: 'Outbound queue' },
+  { test: (p) => p === '/admin/suppressions', name: 'Suppression list' },
   { test: (p) => p === '/admin/deliverability', name: 'Deliverability' },
   { test: (p) => p === '/admin/smtp', name: 'SMTP sessions' },
   { test: (p) => p === '/admin/setup', name: 'Setup wizard' },

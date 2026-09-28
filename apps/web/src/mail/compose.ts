@@ -193,6 +193,23 @@ export function resumableDraft(drafts: readonly SavedDraft[], draft: ComposeDraf
   return drafts.find((d) => d.sourceId === draft.sourceId && d.mode === draft.mode) ?? null;
 }
 
+/**
+ * PST-T-11.10 (PST-REQ-179): a send refused because recipients are on the suppression list — which
+ * addresses, why an address gets there, and what to do about it.
+ */
+export function suppressedText(body: unknown): string {
+  const raw = typeof body === 'object' && body !== null ? (body as { addresses?: unknown }).addresses : undefined;
+  const addresses = Array.isArray(raw) ? raw.filter((a): a is string => typeof a === 'string') : [];
+  if (addresses.length === 0) {
+    return 'Nothing was sent: a recipient is on this server’s suppression list. Remove them, or ask an admin to take the address off the list.';
+  }
+  const one = addresses.length === 1;
+  const names = one ? addresses[0] : `${addresses.slice(0, -1).join(', ')} and ${addresses[addresses.length - 1] ?? ''}`;
+  return one
+    ? `Nothing was sent: ${names} is on this server’s suppression list, because mail to it bounced as undeliverable or an admin added it. Remove it from the message, or ask an admin to take it off the list.`
+    : `Nothing was sent: ${names} are on this server’s suppression list, because mail to them bounced as undeliverable or an admin added them. Remove them from the message, or ask an admin to take them off the list.`;
+}
+
 /** A refused send, in words the person can act on. */
 export function sendErrorText(error: unknown): string {
   if (!(error instanceof ApiError)) return serverUnreachable('So nothing was sent — check your connection and try again.');
@@ -210,6 +227,11 @@ export function sendErrorText(error: unknown): string {
       return 'Your domain has no DKIM keys yet, and Postroom never sends unsigned mail. Ask the operator to create them.';
     case 'recipient_cap':
       return 'You have reached your sending limit for now. Nothing was sent; try again later.';
+    // PST-REQ-177: the account-wide cap, across every app password and the webmail together.
+    case 'account_cap':
+      return 'This account has reached its sending limit for now. Nothing was sent; try again later.';
+    case 'recipient_suppressed':
+      return suppressedText(error.body);
     case 'blobstore_not_configured':
       return 'Postroom is not set up to store mail yet, so nothing was sent.';
     case 'send_at_past':

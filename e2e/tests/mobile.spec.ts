@@ -420,7 +420,7 @@ test.describe('signed in', () => {
     await assertMobileFriendly(page, '/account/keys');
   });
 
-  test('Admin: sessions, health, jobs, queue, deliverability, SMTP sessions', async ({ page }) => {
+  test('Admin: sessions, health, jobs, queue, suppression list, deliverability, SMTP sessions', async ({ page }) => {
     const t = tag();
 
     await page.goto('/admin/sessions');
@@ -441,6 +441,14 @@ test.describe('signed in', () => {
     await page.goto('/admin/queue');
     await expect(page.getByRole('heading', { name: 'Outbound queue', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/admin/queue');
+
+    // PST-T-11.10: a hard-bounce entry, so the list has a row with its Remove button to hit-test.
+    const seededSuppression = await api.post('/api/admin/suppressions/dev-seed-bounce', { headers: CSRF, data: { address: `gone-${t}@mobile.test` } });
+    if (seededSuppression.status() === 404) throw new Error('the stack has no dev-seed-bounce route: start the api with POSTROOM_E2E_SEED=1');
+    await page.goto('/admin/suppressions');
+    await expect(page.getByRole('heading', { name: 'Suppression list', level: 1 })).toBeVisible();
+    await expect(page.getByText(`gone-${t}@mobile.test`)).toBeVisible();
+    await assertMobileFriendly(page, '/admin/suppressions');
 
     await page.goto('/admin/deliverability');
     await expect(page.getByRole('heading', { name: 'Deliverability', level: 1 })).toBeVisible();

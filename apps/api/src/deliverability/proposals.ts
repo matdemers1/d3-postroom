@@ -12,7 +12,7 @@
 //
 // Postroom never edits DNS (CLAUDE.md): the proposal names the exact new TXT value to publish and
 // stops there.
-import type { Db } from '@postroom/db';
+import { reportMailboxesFor, ruaOf, type Db } from '@postroom/db';
 import { isAuthorizedSource } from './authorized.js';
 
 /** none | quarantine | reject (RFC 7489 policy_published/p) — restated here rather than imported
@@ -66,16 +66,14 @@ function isDisposition(v: unknown): v is DmarcDisposition {
   return v === 'none' || v === 'quarantine' || v === 'reject';
 }
 
-/** The DMARC report address to publish as `rua`: REPORTS_MAILBOX, else dmarc@<domain>. Mirrors
- * index.ts's reportAddress, applied to the domain the proposal is for (not necessarily primary). */
-async function ruaAddress(db: Db, env: NodeJS.ProcessEnv, domain: string): Promise<string | null> {
-  const configured = (env['REPORTS_MAILBOX'] ?? '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .find((s) => s.includes('@'));
-  if (configured !== undefined) return configured;
+/** The DMARC `rua=` value to publish: exactly what the DNS checker suggests for the domain the
+ * proposal is for — DMARC_RUA verbatim, else the shared report mailboxes (REPORTS_MAILBOX, else
+ * dmarc-reports@<domain>, PST-T-4.15) — so accepting a proposal never sends reports somewhere unread. */
+export async function ruaAddress(db: Db, env: NodeJS.ProcessEnv, domain: string): Promise<string | null> {
   const row = await db.domain.findUnique({ where: { name: domain } });
-  return row === null ? null : `dmarc@${domain}`;
+  if (row === null) return null;
+  const verbatim = env['DMARC_RUA']?.trim() ?? '';
+  return verbatim !== '' ? verbatim : ruaOf(reportMailboxesFor(env, domain).dmarc);
 }
 
 function buildTxtValue(policy: PolicyPublishedJson, proposedStage: DmarcDisposition, proposedPct: number, rua: string | null): string {
@@ -84,7 +82,7 @@ function buildTxtValue(policy: PolicyPublishedJson, proposedStage: DmarcDisposit
   parts.push(`pct=${String(proposedPct)}`);
   if (typeof policy.adkim === 'string' && policy.adkim !== '') parts.push(`adkim=${policy.adkim}`);
   if (typeof policy.aspf === 'string' && policy.aspf !== '') parts.push(`aspf=${policy.aspf}`);
-  if (rua !== null) parts.push(`rua=mailto:${rua}`);
+  if (rua !== null) parts.push(`rua=${rua}`);
   if (typeof policy.fo === 'string' && policy.fo !== '') parts.push(`fo=${policy.fo}`);
   return parts.join('; ');
 }

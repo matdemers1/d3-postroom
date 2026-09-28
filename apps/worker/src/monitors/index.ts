@@ -8,9 +8,12 @@ import { createBacklogMonitor } from './backlog.js';
 import { createBackupMonitor } from './backup.js';
 import { createBlocklistMonitor } from './blocklist.js';
 import { createCertMonitor } from './cert.js';
+import { createDeliveryMonitor } from './delivery.js';
 import { createDiskMonitor } from './disk.js';
+import { createDkimMonitor } from './dkim.js';
 import { createNtpMonitor, type NtpMonitor } from './ntp.js';
 import { createTunnelMonitor } from './tunnel.js';
+import { createWireguardMonitor } from './wireguard.js';
 import type { Monitor } from './types.js';
 
 export { createMonitorRunner, monitorStateKey, type Log, type MonitorRunner, type MonitorStatus } from './runner.js';
@@ -76,6 +79,12 @@ export function buildMonitors(opts: BuildMonitorsOptions): WorkerMonitors {
       configured: opts.backupsConfigured,
       maxAgeS: envInt(env, 'BACKUP_MAX_AGE_S', 36 * 3_600),
     }),
+    createWireguardMonitor({
+      url: envString(env, 'WIREGUARD_HEALTH_URL', ''),
+      thresholdS: envInt(env, 'WIREGUARD_HANDSHAKE_MAX_AGE_S', 180),
+    }),
+    createDeliveryMonitor({ db: opts.db }),
+    createDkimMonitor({ db: opts.db, maxAwaitingDays: envInt(env, 'DKIM_AWAITING_DNS_MAX_DAYS', 7) }),
     ntp,
   ];
 

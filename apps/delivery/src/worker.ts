@@ -25,6 +25,7 @@ import { enqueue, type Handler } from '@postroom/queue';
 import { OUTBOUND_QUEUE, outboundJobKey, type OutboundJobPayload } from './enqueue.js';
 import { holdGroup, isCredentialFrozen } from './hold.js';
 import { nextState, parseNotify, type AttemptOutcome, type DsnIntent } from './state.js';
+import { recordHardBounce, shouldSuppress } from './suppression.js';
 import type { DeliveryResult, Transport } from './transports/types.js';
 
 export const IN_FLIGHT = 'in flight';
@@ -284,12 +285,17 @@ export function createDeliveryWorker(options: DeliveryWorkerOptions): DeliveryWo
             log('attempt-lost-race', { recipientId: recipient.id, attemptId, outcome: t.attemptOutcome });
           } else {
             intents.push(...t.dsn);
+            // PST-REQ-176: a 5.1.x hard bounce suppresses the address, in this same commit.
+            if (shouldSuppress(outcome, t) && outcome.kind === 'permanent') {
+              await recordHardBounce(tx, { address: recipient.address, recipientId: recipient.id, code: outcome.code, enhanced: outcome.enhanced ?? '', text: outcome.text, at: finishedAt });
+              log('recipient-suppressed', { recipientId: recipient.id, address: recipient.address, enhanced: outcome.enhanced });
+            }
           }
           await tx.deliveryAttempt.update({
             where: { id: attemptId },
             data: {
               finishedAt,
-              transport: options.transports[transportName]?.name ?? transportName,
+              transport: result.transport ?? options.transports[transportName]?.name ?? transportName,
               outcome: moved.count === 0 ? 'error' : t.attemptOutcome,
               error: outcome.kind === 'error' ? outcome.error : (moved.count === 0 ? 'finished after recovery had closed the attempt' : null),
               remoteCode: outcome.kind === 'error' ? null : (outcome.code ?? null),

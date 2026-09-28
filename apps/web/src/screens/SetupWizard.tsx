@@ -385,7 +385,9 @@ function DnsStep({ domain, busy, onNext }: { domain: string; busy: boolean; onNe
 }
 
 function MailboxStep({ view, busy, onSubmit }: { view: WizardView; busy: boolean; onSubmit: (localPart: string) => void }) {
-  const initial = (view.mailbox ?? view.addresses[0] ?? 'postmaster').split('@')[0] ?? '';
+  // No 'postmaster' default: the api keeps postmaster@ as an alias of the admin (PST-REQ-186), so
+  // suggesting it as the operator's own mailbox would only earn a 409 address_taken.
+  const initial = (view.mailbox ?? view.addresses[0] ?? '').split('@')[0] ?? '';
   const [localPart, setLocalPart] = useState(initial);
   return (
     <Section title="Mailbox" description="The address the test is sent from. Use your own, or add another address to your account.">

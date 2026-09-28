@@ -2,7 +2,7 @@
 // charted by day, by source and by reporting organization. Mounted by app.ts behind requireAdmin.
 // Reads only; the rows are written by the worker's report sweep (apps/worker/src/reports), which
 // reads every message filed to the report mailboxes (REPORTS_MAILBOX / TLSRPT_MAILBOX, default
-// dmarc@ and tlsrpt@ the primary domain). Admin routes are not in openapi.json, by convention.
+// dmarc-reports@ and tls-reports@ each domain; see @postroom/db role-addresses). Admin routes are not in openapi.json, by convention.
 //
 // POST /dev/seed exists only when POSTROOM_E2E_SEED=1 (the e2e stack; see admin-dev): it files a
 // message carrying report attachments into the report mailbox — creating that service mailbox if
@@ -10,7 +10,7 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { audited, getAuditContext } from '@postroom/audit';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
-import { AccountKind, AddressKind, DEFAULT_MAILBOXES, randomUidValidity, type Db, type Prisma } from '@postroom/db';
+import { AccountKind, AddressKind, addressList, DEFAULT_MAILBOXES, randomUidValidity, reportMailboxesFor, type Db, type Prisma } from '@postroom/db';
 import { buildMessage } from '@postroom/mime';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -48,12 +48,13 @@ const SeedBody = z.object({
     .max(10),
 });
 
-/** The DMARC report address: the first of REPORTS_MAILBOX, else dmarc@<primary domain>. */
-async function reportAddress(db: Db, env: NodeJS.ProcessEnv): Promise<string | null> {
-  const configured = (env['REPORTS_MAILBOX'] ?? '').split(',').map((s) => s.trim().toLowerCase()).find((s) => s.includes('@'));
+/** The DMARC report address: the first of the shared report mailboxes (REPORTS_MAILBOX, else
+ * dmarc-reports@<primary domain>, PST-T-4.15) — the one the DNS checker publishes and ingest reads. */
+export async function reportAddress(db: Db, env: NodeJS.ProcessEnv): Promise<string | null> {
+  const configured = addressList(env['REPORTS_MAILBOX'])[0];
   if (configured !== undefined) return configured;
   const primary = await db.domain.findFirst({ where: { isPrimary: true }, select: { name: true } });
-  return primary === null ? null : `dmarc@${primary.name}`;
+  return primary === null ? null : (reportMailboxesFor(env, primary.name).dmarc[0] ?? null);
 }
 
 export function deliverabilityRoutes(deps: ApiDeps): Router {

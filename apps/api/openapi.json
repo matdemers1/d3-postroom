@@ -615,7 +615,9 @@
               "TLS-RPT",
               "SRV",
               "autoconfig",
-              "autodiscover"
+              "autodiscover",
+              "Role address",
+              "Report mailbox"
             ]
           },
           "name": {
@@ -629,8 +631,10 @@
               "TXT",
               "PTR",
               "SRV",
-              "CNAME"
-            ]
+              "CNAME",
+              "RCPT"
+            ],
+            "description": "RCPT rows are addresses checked in the database: they must exist and deliver (PST-REQ-186)."
           },
           "expected": {
             "description": "The value to publish; null when it cannot be known yet (no edge, no DKIM key).",
@@ -4446,6 +4450,170 @@
         ],
         "additionalProperties": false
       },
+      "SuppressedRefusal": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "const": "recipient_suppressed"
+          },
+          "message": {
+            "type": "string",
+            "description": "The 550 5.1.1 reply, naming the suppression."
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The suppressed recipients, lowercased."
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "addresses"
+        ],
+        "additionalProperties": false
+      },
+      "Suppression": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "address": {
+            "type": "string",
+            "description": "Lowercased."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "hard-bounce",
+              "manual"
+            ]
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The remote reply that caused it (null for a manual add)."
+          },
+          "enhanced": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bounceCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "firstAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "lastAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "note": {
+            "description": "The operator’s reason, for a manual add.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "recipientId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "outboundMessageId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "subject": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "recipientId",
+                  "outboundMessageId",
+                  "subject"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The outbound recipient whose bounce caused it; null for a manual add, or once the queue row is gone."
+          }
+        },
+        "required": [
+          "id",
+          "address",
+          "reason",
+          "code",
+          "enhanced",
+          "text",
+          "bounceCount",
+          "firstAt",
+          "lastAt",
+          "note",
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "SuppressionList": {
+        "type": "object",
+        "properties": {
+          "suppressions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Suppression"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "suppressions",
+          "total"
+        ],
+        "additionalProperties": false
+      },
       "Template": {
         "type": "object",
         "properties": {
@@ -4758,7 +4926,7 @@
           "Admin"
         ],
         "summary": "Expected vs live DNS for one of Postroom’s domains, with pass/fail per record (PST-REQ-099).",
-        "description": "MX, SPF (evaluated for EDGE_PUBLIC_IP), DKIM (p= compared per live selector), DMARC (parsed), PTR (forward-confirmed), MTA-STS, TLS-RPT, SRV and autoconfig/autodiscover. Answers come from Postroom’s own resolver (DNS_RESOLVER). A resolver that does not answer makes a row unknown, never pass. Nothing at a no-reply subdomain is ever checked. Admin only.",
+        "description": "MX, SPF (evaluated for EDGE_PUBLIC_IP), DKIM (p= compared per live selector), DMARC (parsed), PTR (forward-confirmed), MTA-STS, TLS-RPT, SRV and autoconfig/autodiscover, plus RCPT rows (not DNS): postmaster@, abuse@ and the rua= report mailboxes must exist and deliver (PST-REQ-186). Answers come from Postroom’s own resolver (DNS_RESOLVER). A resolver that does not answer makes a row unknown, never pass. Nothing at a no-reply subdomain is ever checked. Admin only.",
         "parameters": [
           {
             "name": "domain",
@@ -5349,6 +5517,281 @@
           },
           "409": {
             "description": "An earlier step is not done yet (step_not_reached), or the step conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/suppressions": {
+      "get": {
+        "operationId": "listSuppressions",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "The suppression list, newest first, each with the bounce that caused it (PST-REQ-178).",
+        "description": "While an address is listed, every sending path refuses mail to it (PST-REQ-179). Admin only.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Only addresses containing this text (case-insensitive).",
+            "schema": {
+              "description": "Only addresses containing this text (case-insensitive).",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 320
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "At most this many, newest first; default 100.",
+            "schema": {
+              "description": "At most this many, newest first; default 100.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuppressionList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or (mutations) no fresh step-up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "addSuppression",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Add an address to the suppression list by hand (PST-REQ-178).",
+        "description": "Needs a fresh step-up. Audited as admin.suppression.add with the address, the actor and the reason (PST-REQ-181).",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 320,
+                    "pattern": "^[^\\s<>@]+@[^\\s<>@]+$",
+                    "description": "The address to refuse mail to; stored lowercased."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "description": "Why: written to the audit log and kept as the entry’s note."
+                  }
+                },
+                "required": [
+                  "address",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Added.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Suppression"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid address or reason.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or (mutations) no fresh step-up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already on the list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/suppressions/{id}": {
+      "delete": {
+        "operationId": "removeSuppression",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Remove an address from the suppression list, so mail to it is accepted again (PST-REQ-178).",
+        "description": "Needs a fresh step-up. Audited as admin.suppression.remove with the address, the actor and the reason (PST-REQ-181).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "description": "Why it may receive mail again: written to the audit log."
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "400": {
+            "description": "Invalid id or reason.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or (mutations) no fresh step-up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not on the list.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8068,8 +8511,18 @@
               }
             }
           },
+          "422": {
+            "description": "A recipient is on the suppression list (PST-REQ-179): nothing was sent or held; `addresses` names them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuppressedRefusal"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "The recipient cap is reached.",
+            "description": "recipient_cap: the webmail’s recipient cap is reached; account_cap: the account-wide outbound cap across every sending path is reached (PST-REQ-177). Nothing was sent.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10833,8 +11286,18 @@
               }
             }
           },
+          "422": {
+            "description": "The organizer is on the suppression list (PST-REQ-179).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuppressedRefusal"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "Recipient cap exceeded.",
+            "description": "recipient_cap, or account_cap: the account-wide outbound cap is reached (PST-REQ-177).",
             "content": {
               "application/json": {
                 "schema": {
@@ -10928,6 +11391,26 @@
           },
           "409": {
             "description": "It already asked and got one, or it never asked for one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The receipt’s recipient is on the suppression list (PST-REQ-179).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuppressedRefusal"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "recipient_cap, or account_cap: the account-wide outbound cap is reached (PST-REQ-177).",
             "content": {
               "application/json": {
                 "schema": {

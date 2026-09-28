@@ -28,6 +28,7 @@
 // Replay-safe: the script, the message and the store are the same on a re-run, so the recorded
 // decisions are the same; the only side effect (vacation) is guarded by that row.
 import { Readable } from 'node:stream';
+import { domainPart, domainsAligned } from '@postroom/auth-checks';
 import type { BlobStore } from '@postroom/blobstore';
 import { Prisma, type Db } from '@postroom/db';
 import { encodeQuotedPrintable, formatHeader, parseMessage, TextPartDecoder } from '@postroom/mime';
@@ -191,6 +192,42 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
+/** The shape verify.ts already treats as REQUIRED_VERDICTS['spf' | 'dkim'] — read defensively, since
+ * this JSON is smtp-in's, not ours. */
+interface VacationSenderVerdicts {
+  readonly spf?: { readonly result?: unknown; readonly domain?: unknown; readonly scope?: unknown };
+  readonly dkim?: readonly { readonly result?: unknown; readonly domain?: unknown; readonly testing?: unknown }[];
+}
+
+function asVerdicts(raw: unknown): VacationSenderVerdicts {
+  return typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? raw : {};
+}
+
+/**
+ * PST-REQ-188: a Sieve vacation reply goes only to a sender whose envelope domain has an SPF pass
+ * (for the MAIL FROM identity smtp-in already checked) or a DKIM pass aligned with it — the same
+ * authentication PST-REQ-184 requires of our own domains claiming the header From, applied here to
+ * the envelope sender the reply is addressed to. Without this, a forged envelope sender that still
+ * passes classification (junk/quarantine checks) gets an auto-reply, and Postroom becomes a
+ * backscatter source. Reuses the DMARC alignment helper (relaxed: organizational domain) rather
+ * than a strict match, since a DKIM d= at a subdomain of the sender's domain is still that sender.
+ */
+export function senderAuthorizedForVacation(envelopeFrom: string, verdicts: unknown): { readonly ok: boolean; readonly reason: string } {
+  const domain = domainPart(envelopeFrom);
+  if (domain === '') return { ok: false, reason: `envelope sender ${envelopeFrom === '' ? '<>' : envelopeFrom} has no domain to check` };
+  const v = asVerdicts(verdicts);
+  const spf = v.spf;
+  if (spf !== undefined && spf.result === 'pass' && spf.scope === 'mfrom' && typeof spf.domain === 'string' && domainsAligned(spf.domain, domain, 'strict')) {
+    return { ok: true, reason: `sender domain ${domain} has an SPF pass` };
+  }
+  const dkim = (v.dkim ?? []).find(
+    (d): d is { result: string; domain: string; testing?: unknown } =>
+      d.result === 'pass' && d.testing !== true && typeof d.domain === 'string' && domainsAligned(d.domain, domain, 'relaxed'),
+  );
+  if (dkim !== undefined) return { ok: true, reason: `sender domain ${domain} has an aligned DKIM pass (d=${dkim.domain})` };
+  return { ok: false, reason: `sender domain ${domain} has no SPF pass or aligned DKIM pass` };
+}
+
 function crlf(text: string): string {
   const body = text.replace(/\r\n|\r|\n/g, '\r\n');
   return body.endsWith('\r\n') ? body : `${body}\r\n`;
@@ -252,6 +289,8 @@ async function sendVacation(action: VacationAction, ctx: VacationContext): Promi
   if (done !== null) return { ...base, sent: true, reason: 'already sent for this message (a replay sends nothing new)' };
   if (ctx.junk) return { ...base, respond: false, reason: 'suppressed: the message was filed as junk (no backscatter)' };
   if (inbound.disposition === 'quarantine') return { ...base, respond: false, reason: 'suppressed: the message was quarantined (no backscatter)' };
+  const auth = senderAuthorizedForVacation(action.to, inbound.verdicts);
+  if (!auth.ok) return { ...base, respond: false, reason: `suppressed: ${auth.reason} (PST-REQ-188, no backscatter)` };
   const now = deps.now();
   const cap = deps.vacationDailyCap ?? DEFAULT_VACATION_DAILY_CAP;
   const sentToday = await deps.db.sieveVacationReply.count({ where: { accountId, sentAt: { gte: new Date(now.getTime() - DAY_MS) } } });
@@ -285,7 +324,9 @@ async function sendVacation(action: VacationAction, ctx: VacationContext): Promi
         recipients: [{ address: action.to }],
         sessionId: `sieve-${inbound.id}`,
         submittedVia: VACATION_SUBMITTED_VIA,
-        // The per-account daily cap above bounds vacation replies; the handle/:days store bounds them per sender.
+        // The per-account daily cap above bounds vacation replies; the handle/:days store bounds them per
+        // sender. They still count toward the account-wide cap acceptSubmission enforces (PST-REQ-177):
+        // over it, the refusal below just means no reply — the stage records why and never retries it.
         enforceCaps: () => Promise.resolve(),
         auditContext: { requestId: `sieve-vacation-${inbound.id}-${accountId}`, userAgent: 'worker/sieve' },
         withinTransaction: async (tx, accepted) => {
@@ -294,7 +335,7 @@ async function sendVacation(action: VacationAction, ctx: VacationContext): Promi
           });
         },
       },
-      { db: deps.db, storage: () => storage, now: deps.now, log: deps.log },
+      { db: deps.db, storage: () => storage, now: deps.now, log: deps.log, ...(deps.accountCap === undefined ? {} : { accountCap: deps.accountCap }) },
     );
     if (!outcome.ok) return { ...base, reason: `not sent: the submission path refused it (${outcome.reason})` };
     return { ...base, sent: true, reason: `sent from ${from} to ${action.to}`, outboundMessageId: outcome.outboundId };

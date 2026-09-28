@@ -33,6 +33,11 @@
       "source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./fake": {
+      "source": "./src/transports/fake.ts",
+      "types": "./dist/transports/fake.d.ts",
+      "default": "./dist/transports/fake.js"
     }
   }
 }

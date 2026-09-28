@@ -6,6 +6,7 @@
 import type { BlobStore } from '@postroom/blobstore';
 import type { Kek } from '@postroom/crypto';
 import type { Db } from '@postroom/db';
+import type { AccountCap } from '@postroom/submission/caps';
 import { releaseDue, type ReleaseDeps, type WebmailCaps } from './release.js';
 import { checkDue } from './remind.js';
 import { returnDue } from './snooze.js';
@@ -21,6 +22,7 @@ export interface ScheduledLoopOptions {
   readonly blobs: BlobStore;
   readonly kek: () => Kek;
   readonly caps: WebmailCaps;
+  readonly accountCap?: AccountCap;
   readonly intervalMs?: number;
   readonly now?: () => Date;
   readonly log?: (event: string, fields?: Record<string, unknown>) => void;
@@ -29,7 +31,7 @@ export interface ScheduledLoopOptions {
 /** One pass of all three. */
 export async function runScheduledOnce(o: ScheduledLoopOptions): Promise<{ released: number; returned: number; resurfaced: number }> {
   const now = o.now ?? ((): Date => new Date());
-  const deps: ReleaseDeps = { db: o.db, blobs: o.blobs, kek: o.kek, caps: o.caps, now, ...(o.log === undefined ? {} : { log: o.log }) };
+  const deps: ReleaseDeps = { db: o.db, blobs: o.blobs, kek: o.kek, caps: o.caps, ...(o.accountCap === undefined ? {} : { accountCap: o.accountCap }), now, ...(o.log === undefined ? {} : { log: o.log }) };
   const sent = await releaseDue(deps);
   const returned = await returnDue({ db: o.db, now, ...(o.log === undefined ? {} : { log: o.log }) });
   const reminders = await checkDue({ db: o.db, now, ...(o.log === undefined ? {} : { log: o.log }) });

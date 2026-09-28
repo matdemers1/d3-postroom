@@ -39,13 +39,15 @@ status = 'foreign';` (and the equivalent on `tlsrpt_report`).
 
 ## Setting it up
 
-1. Create the service mailboxes on **Admin → Service accounts**: local part `dmarc` and `tlsrpt`
-   (or whatever `REPORTS_MAILBOX` / `TLSRPT_MAILBOX` name). No app password is needed — nothing
-   submits through them.
+1. The service mailboxes `dmarc-reports@` and `tls-reports@` each served domain (or whatever
+   `REPORTS_MAILBOX` / `TLSRPT_MAILBOX` name) are created by the api itself, at start and when the
+   setup wizard completes (PST-T-4.15, PST-REQ-186), together with the `postmaster@` and `abuse@`
+   aliases. The admin DNS checker fails a row for any that is missing. No app password is needed —
+   nothing submits through them.
 2. Publish the records (verify with `dig @1.1.1.1`, never the local resolver):
    ```
-   _dmarc.d3cloud.io.     TXT "v=DMARC1; p=quarantine; rua=mailto:dmarc@d3cloud.io"
-   _smtp._tls.d3cloud.io. TXT "v=TLSRPTv1; rua=mailto:tlsrpt@d3cloud.io"
+   _dmarc.d3cloud.io.     TXT "v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@d3cloud.io"
+   _smtp._tls.d3cloud.io. TXT "v=TLSRPTv1; rua=mailto:tls-reports@d3cloud.io"
    ```
    Never touch `no-reply.d3cloud.io`'s records — that subdomain belongs to Cloudflare Email Service.
 3. Reports arrive about once a day per receiver. Google and Microsoft are the first two to expect.
@@ -54,8 +56,8 @@ status = 'foreign';` (and the equivalent on `tlsrpt_report`).
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `REPORTS_MAILBOX` | `dmarc@<primary domain>` | DMARC report address(es), comma-separated |
-| `TLSRPT_MAILBOX` | `tlsrpt@<primary domain>` | TLS-RPT report address(es), comma-separated |
+| `REPORTS_MAILBOX` | `dmarc-reports@<domain>` | DMARC report address(es), comma-separated |
+| `TLSRPT_MAILBOX` | `tls-reports@<domain>` | TLS-RPT report address(es), comma-separated |
 | `REPORTS_SWEEP_MS` | `10000` | How often the sweep looks for new messages |
 
 API: `DELIVERABILITY_RDNS=0` turns off the reverse-DNS column (lookups are bounded to the 25 busiest

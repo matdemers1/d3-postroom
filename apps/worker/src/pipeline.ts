@@ -15,6 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import type { BlobStore } from '@postroom/blobstore';
 import type { Kek } from '@postroom/crypto';
+import type { AccountCap } from '@postroom/submission/caps';
 import { InboundState, type Db, type InboundMessage, type Job, type Prisma } from '@postroom/db';
 import { enqueue, type Handler } from '@postroom/queue';
 import { classifyStage } from './stages/classify.js';
@@ -54,6 +55,8 @@ export interface PipelineOptions {
   kek?: () => Kek;
   /** Vacation replies per account per 24 hours (default 200). */
   vacationDailyCap?: number;
+  /** PST-T-11.11: the account-wide outbound cap (ACCOUNT_CAP_HOURLY/DAILY) a vacation reply counts toward. */
+  accountCap?: AccountCap;
 }
 
 export interface RunOptions {
@@ -104,6 +107,7 @@ export function createInboundPipeline(options: PipelineOptions): InboundPipeline
     ...(options.faults === undefined ? {} : { faults: options.faults }),
     ...(options.kek === undefined ? {} : { kek: options.kek }),
     ...(options.vacationDailyCap === undefined ? {} : { vacationDailyCap: options.vacationDailyCap }),
+    ...(options.accountCap === undefined ? {} : { accountCap: options.accountCap }),
   };
 
   const record = async (id: string, stage: StageName, result: Json): Promise<void> => {

@@ -1,10 +1,15 @@
-// The smtp-in listener: PROXY v2 from the edge peer only (PST-REQ-016), a per-IP connection cap,
-// and one smtp-proto session per connection with Postroom's inbound policy as its hooks.
+// The smtp-in listener: PROXY v2 from the edge peer only (PST-REQ-016), a per-network connection
+// rate and a per-IP connection cap, and one smtp-proto session per connection with Postroom's
+// inbound policy as its hooks.
 //
-// Policy, in order: EHLO/HELO required (the engine); SPF evaluated at MAIL FROM and recorded, never
-// rejected on here (DMARC decides in PST-T-2.6); every RCPT resolved against the domains and
-// addresses we serve — anything else is 550 and nothing relays (PST-REQ-052/053/068); DATA streams
-// through the DKIM verifier into data.ts with the verdicts and a Received header (PST-REQ-055/069).
+// Policy, in order: a /24 (/64) over its connection rate or unknown-recipient limit is 421 at
+// connect (PST-REQ-185, ratelimit.ts); EHLO/HELO required (the engine); a DNSBL-listed client is
+// 554 at MAIL FROM, waiting a bounded time for the lookup that started at connect; SPF evaluated at
+// MAIL FROM and recorded, never rejected on here (DMARC decides in PST-T-2.6); every RCPT resolved
+// against the domains and addresses we serve — anything else is 550 and nothing relays
+// (PST-REQ-052/053/068), and an unknown user counts toward the /24's unknown-recipient limit; DATA
+// streams through the DKIM verifier into data.ts with the verdicts and a Received header
+// (PST-REQ-055/069).
 import { randomUUID } from 'node:crypto';
 import { createServer, type AddressInfo, type Server, type Socket } from 'node:net';
 import type { Readable } from 'node:stream';
@@ -41,9 +46,10 @@ import {
   type InboundRecipient,
   type InboundStorage,
 } from './data.js';
-import type { DnsblVerdict } from './decide.js';
+import { replyText, type DnsblVerdict } from './decide.js';
 import { checkGreylist, isPrivateClient, isSoftListed, type GreylistInput, type GreylistVerdict } from './greylist.js';
 import { buildReceived, receivedProtocol } from './headers.js';
+import { InboundRateLimits, RATE_LIMIT_DEFAULTS, type RateLimitOptions, type RateLimitRefusal } from './ratelimit.js';
 import { canonicalIp, type ReverseLookup } from './rdns.js';
 import { prismaRecipientStore, resolveRecipient, RecipientReplies, type RecipientStore } from './recipients.js';
 import { attachTranscriptTap, TranscriptRecorder } from './transcript.js';
@@ -71,6 +77,11 @@ export interface SmtpInOptions {
   /** The client IP's DNSBL verdict (PST-REQ-058), looked up once per session at connect, like
    * `reverseLookup`. Without it, `verdicts.dnsbl` is undefined and decide.ts never rejects on it. */
   readonly dnsblLookup?: (ip: string) => Promise<DnsblVerdict>;
+  /** How long MAIL FROM waits for that lookup (default 3 s). A listed client is 554 at MAIL FROM;
+   * a lookup still pending after the wait lets the transaction on, and end of DATA decides. */
+  readonly dnsblWaitMs?: number;
+  /** PST-REQ-185 limits; each field defaults to RATE_LIMIT_DEFAULTS (30/min, 20 unknown per 10 min). */
+  readonly rateLimits?: Partial<RateLimitOptions>;
   readonly acceptMessage?: AcceptMessage;
   /** Durable storage for DATA (PST-T-2.6). Without it (and without `acceptMessage`) DATA is 451. */
   readonly storage?: InboundStorage;
@@ -86,6 +97,8 @@ export interface SmtpInServer {
   close(): Promise<void>;
   /** Open sessions, for /health. */
   activeSessions(): number;
+  /** Networks the rate limiter is tracking, for /health (bounded; see ratelimit.ts). */
+  rateLimitTracked(): { connections: number; unknownRecipients: number };
 }
 
 /** A PROXY v2 or v1 header at the start of a stream from someone who is not the edge. */
@@ -129,7 +142,25 @@ interface TransactionState {
   readonly params: MailParams;
   readonly spf: EvaluateSpfResult;
   readonly recipients: InboundRecipient[];
-  readonly log: { id: string; from: string; spf: string; rcpts: RcptLog[]; data?: { code: number; enhanced?: string } };
+  readonly log: TransactionLog;
+}
+
+interface TransactionLog {
+  id: string;
+  from: string;
+  spf: string;
+  rcpts: RcptLog[];
+  data?: { code: number; enhanced?: string };
+  /** MAIL FROM was refused (the DNSBL at MAIL FROM); no transaction was opened. */
+  refused?: { code: number; enhanced?: string; reason: string };
+}
+
+const DEFAULT_DNSBL_WAIT_MS = 3_000;
+
+/** The 421 for a network over a PST-REQ-185 limit. */
+export function rateLimitReply(hostname: string, refusal: RateLimitRefusal): SmtpReply {
+  const what = refusal.limit === 'connection-rate' ? 'Too many connections from your network' : 'Too many unknown recipients from your network';
+  return reply(421, '4.7.0', `${hostname} ${what}, try again later`);
 }
 
 function mailFromText(from: ReversePath): string | null {
@@ -153,8 +184,10 @@ class InboundConnection {
   private dnsbl: Promise<DnsblVerdict | undefined> = Promise.resolve(undefined);
   private tx: TransactionState | null = null;
   private sessionRcpts = 0;
-  readonly transactions: TransactionState['log'][] = [];
+  readonly transactions: TransactionLog[] = [];
   readonly errors: string[] = [];
+  /** Why this session was cut off by a rate limit, for the session log line. */
+  rateLimited: RateLimitRefusal | null = null;
 
   constructor(
     private readonly opts: SmtpInOptions,
@@ -163,7 +196,47 @@ class InboundConnection {
     readonly clientPort: number | undefined,
     private readonly proxied: boolean,
     private readonly acceptor: AcceptMessage,
+    private readonly limits: InboundRateLimits,
+    private readonly socketClosed: Promise<void>,
+    private readonly destroySocket: () => void,
   ) {}
+
+  /** The connect-time DNSBL verdict, waiting at most `dnsblWaitMs` for it. */
+  private async dnsblWithin(): Promise<DnsblVerdict | undefined> {
+    let timer: NodeJS.Timeout | undefined;
+    const pending = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => { resolve(undefined); }, this.opts.dnsblWaitMs ?? DEFAULT_DNSBL_WAIT_MS);
+    });
+    try {
+      return await Promise.race([this.dnsbl, pending]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Answer with `r` and end the session (PST-REQ-185). The engine has no "reply and close" return
+   * for RCPT, so the session is closed from here — `close()` queues `r` behind any replies still
+   * waiting to go out, flushes, and ends the socket — and this hook resolves only once the socket
+   * is gone, so the engine never reads another pipelined command. What the engine then queues is
+   * dropped with the closed socket. A peer that will not read is destroyed after a bound.
+   */
+  private async disconnect(r: SmtpReply): Promise<SmtpReply> {
+    this.session?.close(r);
+    let timer: NodeJS.Timeout | undefined;
+    const bound = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        this.destroySocket();
+        resolve();
+      }, 10_000);
+    });
+    try {
+      await Promise.race([this.socketClosed, bound]);
+    } finally {
+      clearTimeout(timer);
+    }
+    return r;
+  }
 
   hooks(): ServerHooks {
     const hooks: ServerHooks = {
@@ -205,6 +278,21 @@ class InboundConnection {
 
   private async onMail(from: ReversePath, params: MailParams, ctx: Readonly<SessionContext>): Promise<SmtpReply | undefined> {
     const mailFrom = mailFromText(from);
+    // The lookup started at connect; by MAIL FROM it has normally finished. Refusing here rather
+    // than after DATA spares both sides the body (and us the spooling of it).
+    const dnsbl = await this.dnsblWithin();
+    if (dnsbl?.listed === true) {
+      const why = `client IP is listed on ${dnsbl.zone}${dnsbl.reason === undefined ? '' : `: ${dnsbl.reason}`}`;
+      const r = reply(554, '5.7.1', replyText(`Transaction refused: ${why}`));
+      this.transactions.push({
+        id: randomUUID().replace(/-/g, '').slice(0, 20),
+        from: mailFrom ?? '<>',
+        spf: 'not-evaluated',
+        rcpts: [],
+        refused: { code: r.code, enhanced: '5.7.1', reason: why },
+      });
+      return r;
+    }
     const spf = await evaluateSpf({
       ip: this.clientIp,
       mailFrom,
@@ -239,7 +327,15 @@ class InboundConnection {
       return answer(reply(452, '4.5.3', 'Too many recipients in this session'), 'session-limit');
     }
     const res = await resolveRecipient(this.store, to);
-    if (!res.ok) return answer(res.reject, res.reason);
+    if (!res.ok) {
+      // PST-REQ-185: a network guessing addresses (a directory-harvest attack) is cut off.
+      const refusal = res.reason === 'no-such-user' ? this.limits.onUnknownRecipient(this.clientIp) : null;
+      if (refusal !== null) {
+        this.rateLimited = refusal;
+        return this.disconnect(answer(rateLimitReply(this.opts.hostname, refusal), 'rate-limited'));
+      }
+      return answer(res.reject, res.reason);
+    }
     // Hosts on the LAN/tailnet (and the loopback) are never greylisted: the policy exists for
     // strangers on the internet, and PROXY v2 means internet clients never look private here.
     const greylist =
@@ -325,6 +421,7 @@ export function createSmtpInServer(opts: SmtpInOptions): SmtpInServer {
   const store = opts.recipientStore ?? prismaRecipientStore(opts.db);
   const acceptor = opts.acceptMessage ?? (opts.storage === undefined ? defaultAcceptMessage : createAcceptMessage(opts.storage));
   const perIp = new Map<string, number>();
+  const limits = new InboundRateLimits({ ...RATE_LIMIT_DEFAULTS, ...opts.rateLimits });
   const sessions = new Set<ServerSession>();
   const sockets = new Set<Socket>();
 
@@ -369,6 +466,14 @@ export function createSmtpInServer(opts: SmtpInOptions): SmtpInServer {
       });
     }
 
+    // PST-REQ-185: counted on the real client's address (PROXY v2), never the edge's.
+    const refusal = limits.onConnect(clientIp);
+    if (refusal !== null) {
+      opts.log('connection-refused', { clientIp, via, reason: refusal.limit, network: refusal.network });
+      socket.end(formatReply(rateLimitReply(opts.hostname, refusal), { enhanced: true }));
+      return;
+    }
+
     const open = perIp.get(clientIp) ?? 0;
     if (open >= opts.maxConnectionsPerIp) {
       opts.log('connection-refused', { clientIp, via, reason: 'per-IP connection limit', open });
@@ -379,7 +484,10 @@ export function createSmtpInServer(opts: SmtpInOptions): SmtpInServer {
     socket.once('close', () => { release(clientIp); });
 
     const started = Date.now();
-    const conn = new InboundConnection(opts, store, clientIp, clientPort, via === 'proxy', acceptor);
+    const socketClosed = new Promise<void>((resolve) => socket.once('close', () => { resolve(); }));
+    const conn = new InboundConnection(opts, store, clientIp, clientPort, via === 'proxy', acceptor, limits, socketClosed, () => {
+      socket.destroy();
+    });
     const session = createServerSession(socket, {
       hostname: opts.hostname,
       maxSize: opts.maxSize,
@@ -428,6 +536,7 @@ export function createSmtpInServer(opts: SmtpInOptions): SmtpInServer {
       commands: session.stats.commands,
       transactions: conn.transactions,
       errors: conn.errors,
+      ...(conn.rateLimited === null ? {} : { rateLimited: conn.rateLimited }),
       durationMs: Date.now() - started,
     });
   }
@@ -459,5 +568,6 @@ export function createSmtpInServer(opts: SmtpInOptions): SmtpInServer {
         }, 1_000).unref();
       }),
     activeSessions: () => sessions.size,
+    rateLimitTracked: () => limits.tracked(),
   };
 }

@@ -100,12 +100,17 @@ describe.skipIf(!baseUrl)('admin DNS checker (PST-T-4.8, PST-REQ-099)', () => {
       'SRV _carddavs._tcp.d3cloud.io': 'pass',
       'autoconfig autoconfig.d3cloud.io': 'pass',
       'autodiscover autodiscover.d3cloud.io': 'pass',
+      // PST-T-4.15: nothing has reconciled the role addresses in this database, so each one fails.
+      'Role address postmaster@d3cloud.io': 'fail',
+      'Role address abuse@d3cloud.io': 'fail',
+      'Report mailbox dmarc-reports@d3cloud.io': 'fail',
+      'Report mailbox tls-reports@d3cloud.io': 'fail',
     });
     const spf = report.rows.find((r) => r.record === 'SPF');
     expect(spf?.expected).toBe(`v=spf1 ip4:${EDGE} -all`);
     expect(spf?.live).toEqual(['v=spf1 ip4:198.51.100.9 -all']);
     expect(spf?.reason).toMatch(/fail .*not authorised/);
-    expect(report.summary).toMatchObject({ fail: 1, pass: 8, pending: 5 });
+    expect(report.summary).toMatchObject({ fail: 5, pass: 8, pending: 5 });
   });
 
   it('fixing the SPF record turns it green on re-check', async () => {

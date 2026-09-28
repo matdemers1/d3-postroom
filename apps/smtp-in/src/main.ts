@@ -1,6 +1,9 @@
 // Inbound SMTP on :25 (PST-P-2), inside the wireguard sidecar's network namespace. Connections from
 // the edge carry PROXY v2; anything else is a direct connection and must not.
 // Storage (PST-T-2.6): BLOB_ROOT, POSTROOM_KEK, TRUSTED_ARC_SEALERS (comma-separated, default google.com).
+// Rate limits (PST-REQ-185): SMTP_IN_CONN_PER_MIN (30), SMTP_IN_UNKNOWN_RCPT_PER_10MIN (20); the
+// windows are SMTP_IN_CONN_WINDOW_MS / SMTP_IN_UNKNOWN_RCPT_WINDOW_MS. SMTP_IN_DNSBL_WAIT_MS (3000)
+// bounds how long MAIL FROM waits for the DNSBL verdict.
 import { existsSync, readFileSync } from 'node:fs';
 import { adaptDnsResolver } from '@postroom/auth-checks';
 import { createBlobStore } from '@postroom/blobstore';
@@ -65,6 +68,14 @@ export async function start(ctx: DaemonContext): Promise<void> {
     dkimDns: resolver,
     reverseLookup: reverseLookupVia(resolver),
     dnsblLookup: (ip) => dnsbl.lookup(ip),
+    dnsblWaitMs: config.dnsblWaitMs,
+    // PST-REQ-185: in-memory, per daemon (smtp-in is a single instance), bounded — see ratelimit.ts.
+    rateLimits: {
+      connectionsPerWindow: config.connectionsPerWindow,
+      connectionWindowMs: config.connectionWindowMs,
+      unknownRecipientsPerWindow: config.unknownRecipientsPerWindow,
+      unknownRecipientWindowMs: config.unknownRecipientWindowMs,
+    },
     storage: { db, blobs, dns: resolver, trustedArcSealers, log: ctx.log },
     log: ctx.log,
   });
@@ -79,7 +90,7 @@ export async function start(ctx: DaemonContext): Promise<void> {
   ctx.onShutdown(() => smtp.close());
   ctx.addHealth(async () => {
     await db.$queryRaw`SELECT 1`;
-    return { smtpSessions: smtp.activeSessions(), starttls: tls !== undefined };
+    return { smtpSessions: smtp.activeSessions(), starttls: tls !== undefined, rateLimitedNetworks: smtp.rateLimitTracked() };
   });
 }
 

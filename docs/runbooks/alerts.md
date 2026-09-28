@@ -36,6 +36,9 @@ plus, separately, the NTP reading (PST-REQ-100):
 | `disk` | `BLOB_ROOT` (and `PGDATA`, if set) is over `DISK_THRESHOLD_PCT` used | `DISK_THRESHOLD_PCT` (80), `PGDATA` (unset) |
 | `blocklist` | `EDGE_PUBLIC_IP` is listed on any of the major blocklists it checks (PST-REQ-124) | `EDGE_PUBLIC_IP` (`''` disables), `DNS_RESOLVER` (`127.0.0.1:53`), `SPAMHAUS_DQS_KEY`, `BLOCKLIST_ZONES`, `BLOCKLIST_INTERVAL_MS` (6h), `BLOCKLIST_ZONE_TIMEOUT_MS` (5s) |
 | `backup-drill` | the last backup or drill failed, or either is older than `BACKUP_MAX_AGE_S` — only once backups are configured (`BACKUP_BUCKET` set); an unconfigured install never fires this | `BACKUP_MAX_AGE_S` (36 h) |
+| `wireguard` | the edge peer's latest WireGuard handshake is older than `WIREGUARD_HANDSHAKE_MAX_AGE_S` (PST-REQ-182); silent (`ok: true`) when the sidecar reports itself unconfigured | `WIREGUARD_HEALTH_URL` (unset/`''` **disables** — see Production values), `WIREGUARD_HANDSHAKE_MAX_AGE_S` (180) |
+| `delivery` | permanent (`bounced`) DeliveryAttempt outcomes exceed 20% of at least 10 attempts in the last hour, or an SES attempt hits an account-level refusal — quota, paused/suspended, or 454 throttling sustained 15 min (PST-REQ-183) | none (always on) |
+| `dkim` | a DKIM key has been `pending` (awaiting its TXT in DNS) for more than `DKIM_AWAITING_DNS_MAX_DAYS` | `DKIM_AWAITING_DNS_MAX_DAYS` (7) |
 | `ntp` | SNTP offset from `NTP_SERVER` exceeds `NTP_SKEW_THRESHOLD_MS` (PST-REQ-100) | `NTP_SERVER` (unset/`''` **disables** — see Production values), `NTP_SKEW_THRESHOLD_MS` (2000) |
 
 Every monitor's `check()` runs under a hard ceiling (`MONITOR_CHECK_TIMEOUT_MS`, default 30 s) — a
@@ -46,17 +49,64 @@ monitor never causes two ticks to run concurrently against the same state.
 
 ## Production values (not defaulted — reach the public internet only when told to)
 
-`tunnel` and `ntp` are the only two monitors that reach past the host's own filesystem/database, and
-both are **off unless configured** — an unconfigured install must never phone home on its own. Set
-on the host:
+`tunnel`, `ntp` and `wireguard` are the monitors that reach past the host's own filesystem/database,
+and all three are **off unless configured** — an unconfigured install must never phone home on its
+own. Set on the host:
 
 ```
 TUNNEL_HEALTH_URL=https://mail.d3cloud.io/health
 NTP_SERVER=time.cloudflare.com
+WIREGUARD_HEALTH_URL=http://wireguard:9108/cgi-bin/health
 ```
 
-With neither set, `/health`'s `ntp` field reads the string `"not configured"` (not an object), and
-`tunnel` is simply absent from the `monitors` array.
+With none set, `/health`'s `ntp` field reads the string `"not configured"` (not an object), and
+`tunnel`/`wireguard` are simply absent from the `monitors` array. `docker/wireguard`'s sidecar always
+serves its handshake-age endpoint (busybox httpd + a CGI script, `docker/wireguard/health-http.cgi`)
+on :9108, on the default compose network — the worker is not in the sidecar's own network namespace,
+unlike the protocol daemons `DAEMON_HEALTH_URLS` reaches the same way.
+
+## WireGuard: handshake age from outside the sidecar's netns (PST-T-4.13, PST-REQ-182)
+
+`wg show wg0 latest-handshakes` only means anything inside the sidecar container, and the worker
+deliberately does not share its network namespace (only the protocol daemons do, PST-ADR-002). The
+sidecar's CGI script answers:
+
+```json
+{"configured": true, "latestHandshake": 1758857400, "ageSeconds": 42}
+```
+
+or, holding a bare namespace (`WG_PRIVATE_KEY` unset):
+
+```json
+{"configured": false}
+```
+
+The monitor treats `configured: false` as quiet (`ok: true`) — that is a deliberately-unconfigured
+sidecar, not a down tunnel. Once configured, it fires when `ageSeconds` is missing/null (no handshake
+yet) or exceeds `WIREGUARD_HANDSHAKE_MAX_AGE_S` (default 180s, PST-REQ-182's 3 minutes).
+
+## Delivery: permanent failure rate and SES account-level refusals (PST-T-4.13, PST-REQ-183)
+
+`delivery` looks at every `DeliveryAttempt` row started in the last hour. It fires when:
+
+- permanent failures (`outcome: 'bounced'` — RFC 5xx, apps/delivery's own terminal state) exceed 20%
+  of at least 10 attempts (fewer than 10 attempts never fires on rate alone — too little volume to
+  mean anything), or
+- any `transport: 'ses'` attempt's remote reply is an **account-level** refusal rather than a
+  per-recipient rejection: `454` with a throttling reply sustained across attempts spanning at least
+  15 minutes (`classifySesRefusal` in `src/monitors/delivery.ts`), or `"Account ... paused"` /
+  `"Sending suspended"` / `"quota exceeded"` in the reply text — an immediate fire, no waiting window,
+  since a paused account will not resolve itself.
+
+A single throttled SES attempt is normal backpressure and never fires alone; it takes a spread of
+throttling attempts across the 15-minute window to count as "sustained".
+
+## DKIM stuck awaiting DNS (PST-T-4.13)
+
+`dkim` looks for `DkimKey` rows still `state: 'pending'` with `dnsVerifiedAt: null` (apps/submission's
+`dkim-rotation.ts` — created, the new selector's TXT not yet seen with the matching `p=`) whose
+`createdAt` is older than `DKIM_AWAITING_DNS_MAX_DAYS` (default 7). A rotation normally completes in
+minutes; one still pending after a week means the record was never published.
 
 ## Delivery: an alert only counts once it is actually sent
 

@@ -26,6 +26,17 @@ export interface SmtpInConfig {
   readonly spamhausDqsKey: string | undefined;
   readonly tlsCertFile: string | undefined;
   readonly tlsKeyFile: string | undefined;
+  /** PST-REQ-185: connections per client /24 (IPv6 /64) per window before 421 at connect. */
+  readonly connectionsPerWindow: number;
+  /** The connection-rate window; one minute. Configurable so tests need not wait a minute. */
+  readonly connectionWindowMs: number;
+  /** PST-REQ-185: unknown recipients per /24 (/64) per window before 421 and a disconnect. */
+  readonly unknownRecipientsPerWindow: number;
+  /** The unknown-recipient window; ten minutes. */
+  readonly unknownRecipientWindowMs: number;
+  /** How long MAIL FROM waits for the connect-time DNSBL lookup before letting the transaction on
+   * (a listing that arrives later is still refused at end of DATA). */
+  readonly dnsblWaitMs: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): SmtpInConfig {
@@ -52,5 +63,10 @@ export function loadConfig(env: NodeJS.ProcessEnv): SmtpInConfig {
     spamhausDqsKey: dqsKey === '' ? undefined : dqsKey,
     tlsCertFile: cert === '' ? undefined : cert,
     tlsKeyFile: key === '' ? undefined : key,
+    connectionsPerWindow: envInt(env, 'SMTP_IN_CONN_PER_MIN', 30),
+    connectionWindowMs: envInt(env, 'SMTP_IN_CONN_WINDOW_MS', 60_000),
+    unknownRecipientsPerWindow: envInt(env, 'SMTP_IN_UNKNOWN_RCPT_PER_10MIN', 20),
+    unknownRecipientWindowMs: envInt(env, 'SMTP_IN_UNKNOWN_RCPT_WINDOW_MS', 600_000),
+    dnsblWaitMs: envInt(env, 'SMTP_IN_DNSBL_WAIT_MS', 3_000),
   };
 }

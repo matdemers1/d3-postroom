@@ -29,7 +29,20 @@ export type {
   MessageSearch,
   ExpungedMessage,
   SenderPin,
+  SuppressedRecipient,
 } from './generated/prisma/client.js';
 export { normalizeDomain, normalizeLocalPart, parseAddress, randomUidValidity, type ParsedAddress } from './normalize.js';
 export { seed, DEFAULT_MAILBOXES, type SeedOptions, type SeedResult } from './seeding.js';
 export { schemaRevision } from './revision.js';
+export {
+  POSTMASTER_LOCAL_PART,
+  ABUSE_LOCAL_PART,
+  ROLE_LOCAL_PARTS,
+  DMARC_REPORTS_LOCAL_PART,
+  TLS_REPORTS_LOCAL_PART,
+  addressList,
+  reportMailboxesFor,
+  ruaOf,
+  type ReportMailboxEnv,
+  type ReportMailboxAddresses,
+} from './role-addresses.js';

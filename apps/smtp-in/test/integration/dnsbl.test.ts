@@ -1,4 +1,5 @@
-// PST-T-2.9: the DNSBL client, boot-time trust (PST-REQ-063) and the end-of-DATA 554 (PST-REQ-058).
+// PST-T-2.9: the DNSBL client, boot-time trust (PST-REQ-063) and the 554 (PST-REQ-058) — at MAIL FROM
+// since PST-T-11.12 (the lookup starts at connect; MAIL FROM waits a bounded time for it).
 //
 // Boot-time: smtp-in is spawned exactly as production runs it (src/main.ts under tsx, the same
 // entrypoint kill.test.ts uses) with DNS_RESOLVER pointed at a public resolver — the daemon must
@@ -204,7 +205,7 @@ describe.skipIf(baseUrl === undefined)('DNSBL (PST-T-2.9)', () => {
     });
   });
 
-  describe('end-of-DATA rejection (PST-REQ-058)', () => {
+  describe('rejection at MAIL FROM (PST-REQ-058, PST-T-11.12)', () => {
     let t: TestDatabase;
     let blobRoot = '';
     let dns: { socket: UdpSocket; port: number };
@@ -250,10 +251,15 @@ describe.skipIf(baseUrl === undefined)('DNSBL (PST-T-2.9)', () => {
       });
     }
 
-    async function transaction(source: string): Promise<TestClient> {
+    async function session(source: string): Promise<TestClient> {
       const c = await TestClient.open(child.port, proxyHeader(source));
       expect((await c.next()).code).toBe(220);
       expect((await c.cmd('EHLO sender.example')).code).toBe(250);
+      return c;
+    }
+
+    async function transaction(source: string): Promise<TestClient> {
+      const c = await session(source);
       expect(codeOf(await c.cmd('MAIL FROM:<bob@sender.example>'))).toBe('250 2.1.0');
       expect(codeOf(await c.cmd('RCPT TO:<matt@d3cloud.io>'))).toBe('250 2.1.5');
       const r = await c.cmd('DATA');
@@ -261,10 +267,9 @@ describe.skipIf(baseUrl === undefined)('DNSBL (PST-T-2.9)', () => {
       return c;
     }
 
-    it('an SBL-listed client IP is 554 5.7.1 at DATA, naming the list', async () => {
-      const c = await transaction(LISTED_IP);
-      c.write('Subject: hi\r\n\r\nhello\r\n.\r\n');
-      const r = await c.next();
+    it('an SBL-listed client IP is 554 5.7.1 at MAIL FROM, naming the list, before any body is sent', async () => {
+      const c = await session(LISTED_IP);
+      const r = await c.cmd('MAIL FROM:<bob@sender.example>');
       expect(codeOf(r)).toBe('554 5.7.1');
       expect(r.lines.join(' ')).toMatch(/SBL/);
       await c.quit();
