@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { stringToSign, type Fetcher, type SnsMessage } from '../src/ses/sns.js';
 
 export const TOPIC = 'arn:aws:sns:us-east-1:123456789012:postroom-ses';
-export const CERT_URL = 'https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem';
+export const CERT_URL = 'https://sns.us-east-1.amazonaws.com/SimpleNotificationService-9c6465fa7f48f5cacd23014631ec1136.pem';
 export const SUBSCRIBE_URL = 'https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&TopicArn=arn:aws:sns:us-east-1:123456789012:postroom-ses&Token=abc';
 
 export interface SnsSigner {
@@ -67,7 +67,7 @@ export function notification(message: string, over: Partial<SnsMessage> = {}): O
     MessageId: randomUUID(),
     TopicArn: TOPIC,
     Message: message,
-    Timestamp: '2026-09-27T12:10:01.000Z',
+    Timestamp: new Date().toISOString(),
     UnsubscribeURL: 'https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=x',
     ...over,
   };

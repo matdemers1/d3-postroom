@@ -11,27 +11,29 @@
 // extends it from the synchronous SMTP reply (apps/delivery/src/worker.ts) to asynchronous reports,
 // through the same recordHardBounce.
 //
-// How a bounce changes a recipient. The state machine (state.ts) has no edge out of `delivered`,
-// because the queue never moves a delivered recipient again, and that stays true: this module is
-// the only writer of the one extra edge, `delivered → bounced`, taken only when a report ties a
-// specific outbound recipient to a failure. The recipient keeps its deliveredAt (when the remote
-// accepted) and gains a DeliveryAttempt row with outcome `bounced`, transport `async-dsn` or
-// `ses-notification`, and the remote's status and diagnostic, so the delivery timeline shows what
-// happened and in what order; lastText is prefixed with where the news came from. A recipient in
-// any other state is left alone: queued/deferred/attempting belong to the queue, bounced already
-// is bounced, cancelled was never sent. No failure DSN is generated for an async bounce: for a DSN
-// the sender already has the remote's own report in their INBOX.
+// Who may change a recipient: only a signed SES notification. An inbound SMTP DSN (RFC 3464) is
+// recorded and nothing else — no state change, no attempt row, no suppression — whatever its
+// sender. A DSN is a message anyone can send, and there is no sound way to authenticate one against
+// the failed recipient's domain: a real Gmail bounce is DKIM-signed by google.com, not gmail.com,
+// and a null reverse-path or a MAILER-DAEMON From is free to forge from any domain with passing
+// SPF/DKIM/DMARC. The attack that rules it out: account A sends one message to attacker@evil.example
+// and victim@gmail.com; the attacker, who now knows the Message-ID and the co-recipient, sends a
+// null-sender "5.1.1" DSN naming victim@gmail.com. Acting on it would bounce the victim and put
+// the address on the suppression list, which is global — every account could no longer mail them.
+// Anyone who sees a Message-ID and a recipient list (co-recipients, anyone reading a later reply's
+// References) could do the same. So a DSN row is information for the sender and the admin: the
+// parsed Final-Recipient, Status and Diagnostic-Code, and the outbound message and recipient it
+// names (correlation is still restricted to mail the receiving account sent).
 //
-// Why a DSN cannot be used to suppress someone else's mail (the forgery reasoning). A DSN is just
-// a message anyone can send. So an inbound DSN only acts when (1) it comes from a null reverse-path
-// or a MAILER-DAEMON/postmaster From (the caller checks, apps/worker/src/feedback), (2) it names the
-// original by Message-ID or ENVID, (3) that original is outbound mail sent by an account the DSN was
-// delivered to, and (4) the failed recipient is one of that message's recipients. Message-IDs we
-// generate are random UUIDs, so only a party that received the message (or saw its headers) can
-// name it; and such a party can at worst mark its *own* address as bounced, which is the same as
-// refusing the mail. One account's inbound DSN never touches another account's outbound rows.
-// An SES notification is authenticated by its SNS signature instead, so it is `trusted`: a
-// Permanent bounce suppresses the address even when the outbound row is gone.
+// A signed SES notification (`trusted`, verified in apps/api/src/ses) is the authoritative path,
+// and today carries all outbound mail. A Permanent bounce takes the one extra edge the state
+// machine (state.ts) does not have, `delivered → bounced`: the recipient keeps its deliveredAt
+// (when SES accepted), gains a DeliveryAttempt with outcome `bounced`, transport
+// `ses-notification` and SES's status and diagnostic, and its lastText is prefixed with where the
+// news came from. With a 5.1.x or no status it also suppresses the address, through
+// recordHardBounce (PST-REQ-176) — even when the outbound row is gone. A recipient in any other
+// state is left alone: queued/deferred/attempting belong to the queue, bounced is bounced,
+// cancelled was never sent. No failure DSN is generated: SES's email feedback forwarding sends one.
 import { recordAudit } from '@postroom/audit';
 import { RecipientState, type Db, type Prisma } from '@postroom/db';
 import { decodeXtext } from '@postroom/dsn';
@@ -149,7 +151,8 @@ export interface AsyncBounceInput {
   /** SES bounceType/bounceSubType, recorded as-is. */
   readonly feedbackType?: string | null;
   readonly correlation: Correlation;
-  /** Authenticated by its transport (a verified SNS signature): may suppress without a queue row. */
+  /** Authenticated by its transport (a verified SNS signature). Only a trusted bounce changes a
+   * recipient or suppresses an address; an untrusted one (an SMTP DSN) is recorded, nothing more. */
   readonly trusted: boolean;
   /** Reasons the caller refuses to act on this report at all (unauthenticated sender, quarantine). */
   readonly refuse?: readonly string[];
@@ -175,9 +178,10 @@ export interface AsyncBounceResult {
 }
 
 /**
- * Record one asynchronous bounce and act on it, in `tx`: mark the correlated recipient bounced
- * (delivered → bounced only) and, for a final 5.1.x (or, trusted, a final bounce with no status),
- * suppress the address through recordHardBounce. Idempotent by `dedupeKey`.
+ * Record one asynchronous bounce, in `tx`. Only when `trusted` (a signed SES notification) is it
+ * acted on: the correlated recipient is marked bounced (delivered → bounced only) and, for a final
+ * 5.1.x or status-less bounce, the address is suppressed through recordHardBounce. An untrusted
+ * report (an SMTP DSN) is recorded only. Idempotent by `dedupeKey`.
  */
 export async function recordAsyncBounce(tx: Tx, input: AsyncBounceInput): Promise<AsyncBounceResult> {
   const address = suppressionKey(input.address);
@@ -212,67 +216,66 @@ export async function recordAsyncBounce(tx: Tx, input: AsyncBounceInput): Promis
     if (corr === null) reasons.push('no outbound message matches the report (Message-ID/ENVID)' + (input.correlation.accountIds === undefined ? '' : ' among mail the receiving account sent'));
     else if (recipient === null) reasons.push(`outbound message ${corr.outboundMessageId} has no recipient ${address}`);
 
-    if (recipient !== null && input.final) {
-      if (recipient.state === RecipientState.delivered) {
-        const origin = input.source === 'dsn' ? 'async DSN' : 'SES bounce notification';
-        const text = `[${origin}] ${diagnostic ?? input.status ?? 'bounced after delivery'}`;
-        const moved = await tx.outboundRecipient.updateMany({
-          where: { id: recipient.id, state: RecipientState.delivered },
-          data: { state: RecipientState.bounced, lastCode: input.code, lastEnhanced: input.status, lastText: text.slice(0, MAX_DIAGNOSTIC) },
-        });
-        marked = moved.count === 1;
-        if (marked) {
-          await tx.deliveryAttempt.create({
-            data: {
-              recipientId: recipient.id,
-              // When Postroom learned of it, so the timeline reads delivered → bounced; the remote's
-              // own time is the feedback row's reportedAt.
-              startedAt: input.now,
-              finishedAt: input.now,
-              transport: input.source === 'dsn' ? 'async-dsn' : 'ses-notification',
-              mxHost: typeof input.detail?.['remoteMta'] === 'string' ? input.detail['remoteMta'] : null,
-              remoteCode: input.code,
-              remoteEnhanced: input.status,
-              remoteText: diagnostic,
-              outcome: 'bounced',
-            },
+    if (!input.trusted) {
+      // An SMTP DSN: informational only (see the top of this file).
+      reasons.push('an SMTP DSN cannot be authenticated: recorded for the sender and admin, nothing changed');
+    } else {
+      if (recipient !== null && input.final) {
+        if (recipient.state === RecipientState.delivered) {
+          const text = `[SES bounce notification] ${diagnostic ?? input.status ?? 'bounced after delivery'}`;
+          const moved = await tx.outboundRecipient.updateMany({
+            where: { id: recipient.id, state: RecipientState.delivered },
+            data: { state: RecipientState.bounced, lastCode: input.code, lastEnhanced: input.status, lastText: text.slice(0, MAX_DIAGNOSTIC) },
           });
-          reasons.push(`recipient ${recipient.id} was delivered; the remote's later ${input.status ?? 'failure'} marks it bounced`);
+          marked = moved.count === 1;
+          if (marked) {
+            await tx.deliveryAttempt.create({
+              data: {
+                recipientId: recipient.id,
+                // When Postroom learned of it, so the timeline reads delivered → bounced; the remote's
+                // own time is the feedback row's reportedAt.
+                startedAt: input.now,
+                finishedAt: input.now,
+                transport: 'ses-notification',
+                mxHost: typeof input.detail?.['remoteMta'] === 'string' ? input.detail['remoteMta'] : null,
+                remoteCode: input.code,
+                remoteEnhanced: input.status,
+                remoteText: diagnostic,
+                outcome: 'bounced',
+              },
+            });
+            reasons.push(`recipient ${recipient.id} was delivered; the remote's later ${input.status ?? 'failure'} marks it bounced`);
+          } else {
+            reasons.push(`recipient ${recipient.id} left delivered between read and write; not changed`);
+          }
+        } else if (recipient.state === RecipientState.bounced) {
+          reasons.push(`recipient ${recipient.id} is already bounced; nothing to change`);
         } else {
-          reasons.push(`recipient ${recipient.id} left delivered between read and write; not changed`);
+          reasons.push(`recipient ${recipient.id} is ${recipient.state}: the queue owns it, so the report is only recorded`);
         }
-      } else if (recipient.state === RecipientState.bounced) {
-        reasons.push(`recipient ${recipient.id} is already bounced; nothing to change`);
-      } else {
-        reasons.push(`recipient ${recipient.id} is ${recipient.state}: the queue owns it, so the report is only recorded`);
+      } else if (recipient !== null) {
+        reasons.push(`not a final failure (${input.feedbackType ?? 'transient'}); recorded only`);
       }
-    } else if (recipient !== null) {
-      reasons.push(`not a final failure (${input.feedbackType ?? 'transient'}); recorded only`);
-    }
 
-    const addressStatus = input.status !== null && ADDRESS_STATUS.test(input.status);
-    const eligible = input.final && (addressStatus || (input.trusted && input.status === null));
-    // Untrusted (an SMTP DSN): only when this very report tied itself to a recipient we had
-    // delivered. Trusted (signed SES): unless the queue already bounced it (the synchronous path has
-    // then decided, and counted, already).
-    const allowed = input.trusted ? recipient?.state !== RecipientState.bounced : marked;
-    if (eligible && allowed) {
-      await recordHardBounce(tx, {
-        address,
-        recipientId: recipient?.id ?? null,
-        code: input.code,
-        enhanced: input.status ?? '',
-        text: diagnostic ?? `${input.source} permanent bounce`,
-        at: input.now,
-        requestId: input.requestId,
-        actorLabel: input.source === 'dsn' ? 'async-dsn' : 'ses-sns',
-      });
-      suppressed = true;
-      reasons.push(input.status === null ? 'permanent bounce with no status from a signed notification: address suppressed' : `${input.status} is an address status (5.1.x): address suppressed (PST-REQ-176)`);
-    } else if (input.final && !addressStatus && !(input.trusted && input.status === null)) {
-      reasons.push(`${input.status ?? 'no status'} is not 5.1.x: the address is not suppressed`);
-    } else if (eligible) {
-      reasons.push('not suppressed: the report did not bounce a delivered recipient of ours');
+      const addressStatus = input.status !== null && ADDRESS_STATUS.test(input.status);
+      const eligible = input.final && (addressStatus || input.status === null);
+      // Unless the queue already bounced it: the synchronous path has then decided, and counted, already.
+      if (eligible && recipient?.state !== RecipientState.bounced) {
+        await recordHardBounce(tx, {
+          address,
+          recipientId: recipient?.id ?? null,
+          code: input.code,
+          enhanced: input.status ?? '',
+          text: diagnostic ?? `${input.source} permanent bounce`,
+          at: input.now,
+          requestId: input.requestId,
+          actorLabel: 'ses-sns',
+        });
+        suppressed = true;
+        reasons.push(input.status === null ? 'permanent bounce with no status from a signed notification: address suppressed' : `${input.status} is an address status (5.1.x): address suppressed (PST-REQ-176)`);
+      } else if (input.final && !eligible) {
+        reasons.push(`${input.status ?? 'no status'} is not 5.1.x: the address is not suppressed`);
+      }
     }
     action = marked && suppressed ? 'bounced-suppressed' : marked ? 'bounced' : suppressed ? 'suppressed' : 'recorded';
   }
@@ -317,16 +320,30 @@ export interface ComplaintInput {
   readonly inboundMessageId?: string | null;
   readonly detail?: Record<string, JsonValue>;
   readonly reportedAt: Date;
+  /** For the hourly alert cap. */
+  readonly now: Date;
+  /** Complaint alerts per rolling hour, server-wide (default COMPLAINT_ALERTS_PER_HOUR). */
+  readonly alertsPerHour?: number;
   readonly requestId: string;
 }
+
+/**
+ * At most this many complaint alerts (ARF and SES together) in any rolling hour, counted from
+ * delivery_feedback.alertedAt. An ARF report is unsigned — anyone who knows one of our Message-IDs
+ * can send one — so alerts are capped to keep forged reports from burying the operator; the rows
+ * are still all recorded.
+ */
+export const COMPLAINT_ALERTS_PER_HOUR = 5;
+const HOUR_MS = 3_600_000;
 
 export interface ComplaintResult {
   readonly feedbackId: string;
   readonly duplicate: boolean;
   readonly outboundMessageId: string | null;
   readonly accountId: string | null;
-  /** Send one operator alert for this row (then markAlerted). False for a duplicate, and for an
-   * unsigned report that names no message of ours: an alert anyone could trigger is noise. */
+  /** Send one operator alert for this row (then markAlerted). False for a duplicate; for an unsigned
+   * report that names no message of ours, or about a message already alerted on (one alert per
+   * outbound message, ever); and once COMPLAINT_ALERTS_PER_HOUR alerts went out in the last hour. */
   readonly alertDue: boolean;
   readonly reasons: string[];
 }
@@ -343,8 +360,24 @@ export async function recordComplaint(tx: Tx, input: ComplaintInput): Promise<Co
   const reasons: string[] = [];
   if (corr === null) reasons.push('no outbound message matches the report (Message-ID/ENVID)');
   else reasons.push(`complaint about outbound message ${corr.outboundMessageId}`);
-  const alertDue = corr !== null || input.trusted;
-  reasons.push(alertDue ? 'operator alert due' : 'no alert: an unsigned report about no message of ours');
+  let alertDue = corr !== null || input.trusted;
+  if (!alertDue) reasons.push('no alert: an unsigned report about no message of ours');
+  if (alertDue && !input.trusted && corr !== null) {
+    const earlier = await tx.deliveryFeedback.count({ where: { kind: 'complaint', outboundMessageId: corr.outboundMessageId, alertedAt: { not: null }, id: { not: id } } });
+    if (earlier > 0) {
+      alertDue = false;
+      reasons.push('no alert: the operator was already alerted about this outbound message');
+    }
+  }
+  if (alertDue) {
+    const cap = input.alertsPerHour ?? COMPLAINT_ALERTS_PER_HOUR;
+    const recent = await tx.deliveryFeedback.count({ where: { kind: 'complaint', alertedAt: { gte: new Date(input.now.getTime() - HOUR_MS) } } });
+    if (recent >= cap) {
+      alertDue = false;
+      reasons.push(`no alert: ${String(recent)} complaint alerts in the last hour (cap ${String(cap)}); recorded only`);
+    }
+  }
+  if (alertDue) reasons.push('operator alert due');
   await tx.deliveryFeedback.update({
     where: { id },
     data: {

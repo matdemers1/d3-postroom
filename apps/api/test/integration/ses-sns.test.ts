@@ -3,8 +3,9 @@
 // SubscriptionConfirmation is confirmed by fetching its SubscribeURL; a Permanent 5.1.1 bounce marks
 // the delivered recipient bounced (correlated by the SES message id SES answered DATA with) and
 // suppresses the address; a Transient one only records; a complaint is recorded and alerts once;
-// and forged signatures, unlisted topics, foreign certificate hosts and malformed bodies are refused
-// before anything is written. The certificate is served by an injected fetcher: no network.
+// and forged signatures, unlisted topics, certificate or SubscribeURL hosts outside the topic's
+// region (S3 look-alikes included), topics outside SES_SNS_REGION, stale or future Timestamps and
+// malformed bodies are refused before anything is written. The certificate is served by an injected fetcher: no network.
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,6 +23,7 @@ import { TestClock, baseConfig } from './helpers.js';
 const baseUrl = process.env['DATABASE_URL'];
 const signer = makeSnsSigner();
 const fixtures = join(import.meta.dirname, '..', 'fixtures', 'ses');
+const EU_TOPIC = 'arn:aws:sns:eu-west-1:123456789012:postroom-ses';
 
 describe.skipIf(!baseUrl || signer === undefined)('POST /api/ses/sns (PST-T-11.15)', () => {
   const s = signer as NonNullable<typeof signer>;
@@ -72,7 +74,7 @@ describe.skipIf(!baseUrl || signer === undefined)('POST /api/ses/sns (PST-T-11.1
     accountId = (await seed(db, { operatorName: 'Operator', domain: 'd3cloud.io' })).operatorId;
     app = createApp({
       db,
-      env: { SES_SNS_TOPIC_ARNS: `arn:aws:sns:us-east-1:123456789012:unrelated, ${TOPIC}`, SES_SNS_REGION: 'us-east-1' },
+      env: { SES_SNS_TOPIC_ARNS: `arn:aws:sns:us-east-1:123456789012:unrelated, ${TOPIC}, ${EU_TOPIC}`, SES_SNS_REGION: 'us-east-1' },
       config: baseConfig(clock, { webOrigin: 'https://mail.d3cloud.io' }),
       sesSns: {
         fetch: fetcher.fetch,
@@ -89,7 +91,7 @@ describe.skipIf(!baseUrl || signer === undefined)('POST /api/ses/sns (PST-T-11.1
   });
 
   it('confirms a SubscriptionConfirmation by fetching its SubscribeURL, audited (no session, no CSRF header)', async () => {
-    const m = s.sign({ Type: 'SubscriptionConfirmation', MessageId: randomUUID(), TopicArn: TOPIC, Message: 'You have chosen to subscribe…', Timestamp: '2026-09-27T12:00:00.000Z', Token: 'abc', SubscribeURL: SUBSCRIBE_URL }, '1');
+    const m = s.sign({ Type: 'SubscriptionConfirmation', MessageId: randomUUID(), TopicArn: TOPIC, Message: 'You have chosen to subscribe…', Timestamp: new Date().toISOString(), Token: 'abc', SubscribeURL: SUBSCRIBE_URL }, '1');
     const res = await post(m, 'SubscriptionConfirmation');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, confirmed: true });
@@ -100,10 +102,12 @@ describe.skipIf(!baseUrl || signer === undefined)('POST /api/ses/sns (PST-T-11.1
 
   it('refuses a SubscribeURL that is not SNS, fetching nothing', async () => {
     const before = fetcher.urls.length;
-    const m = s.sign({ Type: 'SubscriptionConfirmation', MessageId: randomUUID(), TopicArn: TOPIC, Message: 'x', Timestamp: 't', Token: 'abc', SubscribeURL: 'https://attacker.example/confirm' });
-    const res = await post(m, 'SubscriptionConfirmation');
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: 'sns_subscribe_url_refused' });
+    for (const url of ['https://attacker.example/confirm', 'https://sns.s3.amazonaws.com/?Action=ConfirmSubscription', 'https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription']) {
+      const m = s.sign({ Type: 'SubscriptionConfirmation', MessageId: randomUUID(), TopicArn: TOPIC, Message: 'x', Timestamp: new Date().toISOString(), Token: 'abc', SubscribeURL: url });
+      const res = await post(m, 'SubscriptionConfirmation');
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: 'sns_subscribe_url_refused' });
+    }
     expect(fetcher.urls.slice(before)).toEqual([]);
   });
 
@@ -191,6 +195,16 @@ describe.skipIf(!baseUrl || signer === undefined)('POST /api/ses/sns (PST-T-11.1
     expect(wrongHost.body).toEqual({ error: 'sns_cert_url_refused' });
     const wrongRegion = await post(s.sign({ ...notification(payload), SigningCertURL: CERT_URL.replace('us-east-1', 'eu-west-1') }));
     expect(wrongRegion.body).toEqual({ error: 'sns_cert_url_refused' });
+    const s3Host = await post(s.sign({ ...notification(payload), SigningCertURL: CERT_URL.replace('sns.us-east-1.amazonaws.com', 'sns.s3.amazonaws.com') }));
+    expect(s3Host.body).toEqual({ error: 'sns_cert_url_refused' });
+    // A listed topic in another region than SES_SNS_REGION.
+    const otherRegionTopic = await post(s.sign({ ...notification(payload, { TopicArn: EU_TOPIC }), SigningCertURL: CERT_URL.replace('us-east-1', 'eu-west-1') }));
+    expect(otherRegionTopic.body).toEqual({ error: 'sns_region_refused' });
+    // Stale and future-dated messages: 400, before any fetch.
+    const stale = await post(s.sign(notification(payload, { Timestamp: new Date(Date.now() - 25 * 3_600_000).toISOString() })));
+    expect([stale.status, stale.body]).toEqual([400, { error: 'sns_message_stale' }]);
+    const future = await post(s.sign(notification(payload, { Timestamp: new Date(Date.now() + 10 * 60_000).toISOString() })));
+    expect([future.status, future.body]).toEqual([400, { error: 'sns_message_future' }]);
     expect(fetcher.urls.slice(before)).toEqual([]);
 
     expect((await post('{not json')).status).toBe(400);

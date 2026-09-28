@@ -65,7 +65,7 @@ number that gets an SES account paused — is invisible.
 
    ```bash
    SES_SNS_TOPIC_ARNS=arn:aws:sns:us-east-1:<account>:postroom-ses
-   SES_SNS_REGION=us-east-1     # the certificate must come from sns.us-east-1.amazonaws.com
+   SES_SNS_REGION=us-east-1     # optional: refuse topics in any other region
    ```
 
    Redeploy. An empty `SES_SNS_TOPIC_ARNS` refuses every POST (403 `sns_topic_refused`).
@@ -83,8 +83,7 @@ number that gets an SES account paused — is invisible.
    `X-SES-CONFIGURATION-SET` header; the identity default applies to everything it relays.)
 6. Leave **email feedback forwarding** on for the identity: the sender then also gets the bounce
    as a normal DSN in their INBOX. That DSN goes through the inbound pipeline too and is only
-   recorded (the recipient is already bounced, or the DSN names a Message-ID SES rewrote), so
-   nothing is counted twice.
+   recorded: a plain DSN is informational (see below), so nothing is counted twice.
 
 ### Check it
 
@@ -102,7 +101,7 @@ simulator address from the suppression list afterwards.
 | `UnsubscribeConfirmation` | audited; never resubscribes by itself |
 | Bounce, `Permanent` | the correlated recipient `delivered → bounced` with SES's status and diagnostic (a `ses-notification` attempt row; `lastText` starts `[SES bounce notification]`); with status 5.1.x **or no status**, the address is suppressed |
 | Bounce, `Transient` / `Undetermined` | recorded only |
-| Complaint | recorded against the message; **one operator alert** per notification (D3 Auth relay) |
+| Complaint | recorded against the message; **one operator alert** per notification (D3 Auth relay), within the hourly cap below |
 | anything else (Delivery, Send, …) | 200 and ignored, so SNS does not retry |
 
 Every event is a `delivery_feedback` row with what was done and why (`reasons`), and an audit row.
@@ -115,24 +114,38 @@ suppresses the address even when no outbound row matches (the queue row was purg
 makes the notification trustworthy on its own.
 
 **Security.** The route has no session and no CSRF check; its authentication is the SNS signature
-(SignatureVersion 1 = SHA1withRSA, 2 = SHA256withRSA, over AWS's string-to-sign). The TopicArn is
-checked against `SES_SNS_TOPIC_ARNS` *before* anything is fetched; the signing certificate is only
-fetched from `https://sns.<region>.amazonaws.com/….pem` (no redirects, 5 s timeout) and cached by
-URL. Bodies over 256 KB get 413, non-JSON 400, a bad signature 403. A message is never logged whole.
+(SignatureVersion 1 = SHA1withRSA, 2 = SHA256withRSA, over AWS's string-to-sign). Before anything
+is fetched: the TopicArn must be in `SES_SNS_TOPIC_ARNS`; its region (from the ARN) must equal
+`SES_SNS_REGION` when that is set; the `Timestamp` must be at most 24 hours old and at most
+5 minutes ahead (else 400); and a `SubscribeURL` must be on the topic region's host. The signing
+certificate is only fetched from exactly `https://sns.<topic region>.amazonaws.com/SimpleNotificationService-<hex>.pem`
+— never a look-alike such as `sns.s3.amazonaws.com`, which is an S3 bucket anyone can create — with
+no redirects and a 5 s timeout. Certificates are cached by URL and the one that last verified a
+message is pinned; a failed fetch is remembered for 10 minutes; at most 10 fetches go out per
+minute. Bodies over 256 KB get 413, non-JSON 400, a bad signature 403. A message is never logged
+whole.
 
 ## Bounces and complaints that arrive as mail
 
-The same happens without SES in the loop. The inbound pipeline's last stage, `feedback`, reads every
-filed message that is a `multipart/report`:
+**SES notifications are authoritative; plain DSNs are informational.** The inbound pipeline's last
+stage, `feedback`, reads every filed message that is a `multipart/report`:
 
-- **`report-type=delivery-status`** (RFC 3464 DSN): each `Action: failed` recipient bounces the
-  matching delivered recipient with the remote status; 5.1.x suppresses the address. Only when the
-  DSN comes from a null reverse-path or a `MAILER-DAEMON`/`postmaster` From, was not quarantined,
-  and names — by returned `Message-ID` or `Original-Envelope-Id` — outbound mail sent by an account
-  the DSN was delivered to, with that recipient on it. Anything else is recorded as `ignored` with
-  the reason. The DSN is still filed to the user's mailbox like any mail.
+- **`report-type=delivery-status`** (RFC 3464 DSN): each `Action: failed` recipient becomes a
+  `delivery_feedback` row — Final-Recipient, Status, Diagnostic-Code, and the outbound message and
+  recipient it names (only among mail the account it was delivered to sent) — so the sender and
+  the admin can see it. **It changes nothing**: no recipient state, no attempt row, no suppression,
+  whatever its sender. A DSN is an ordinary message: a null reverse-path or a `MAILER-DAEMON` From
+  can be sent from any domain with passing SPF/DKIM/DMARC, and a real bounce cannot be
+  authenticated against the failed recipient's domain (a Gmail bounce is signed by google.com, not
+  gmail.com). Acting on one would let anyone who saw a Message-ID and a recipient list — a
+  co-recipient, a later reply's References — mark a co-recipient bounced and put them on the
+  suppression list, which every account's sending path obeys. A DSN that does not even look like
+  one (no null sender, no MAILER-DAEMON/postmaster From), or that smtp-in quarantined, is recorded
+  as `ignored`. The DSN itself is filed to the user's mailbox like any mail.
 - **`report-type=feedback-report`** (RFC 5965 ARF, e.g. from a mailbox provider's feedback loop to
-  `abuse@`): recorded against the outbound message its returned copy names, with one operator alert.
-  An ARF report that names no message of ours is recorded without an alert.
+  `abuse@`): recorded against the outbound message its returned copy names. ARF is unsigned, so
+  alerts are capped: at most **one alert per outbound message, ever**, none for a report that names
+  no message of ours, and at most **5 complaint alerts per hour** server-wide (ARF and SES together,
+  counted from `delivery_feedback.alerted_at`). Every report is still recorded.
 
 Replaying the `feedback` stage (Admin → Jobs) records nothing twice and alerts once.

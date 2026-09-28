@@ -1,17 +1,22 @@
-// Stage 7, feedback (PST-T-11.15, extending PST-REQ-176 to asynchronous reports). Runs after the
-// message is filed and notified, so a report is always delivered to the user's mailbox like any
-// other mail first; this stage only reads it, and never drops or moves it.
+// Stage 7, feedback (PST-T-11.15). Runs after the message is filed and notified, so a report is
+// always delivered to the user's mailbox like any other mail first; this stage only reads it, and
+// never drops or moves it. It changes no mail either: everything here is informational.
 //
 //   multipart/report; report-type=delivery-status  a remote's DSN about mail we sent. Each `failed`
-//      recipient goes through @postroom/delivery's recordAsyncBounce: a delivered recipient of the
-//      named original becomes bounced with the remote status, and a 5.1.x suppresses the address.
+//      recipient becomes a delivery_feedback row (Final-Recipient, Status, Diagnostic-Code, and the
+//      outbound message and recipient it names), and nothing else: no state change, no
+//      suppression. A DSN is forgeable and cannot be authenticated against the failed recipient's
+//      domain, so acting on one would let anyone who saw a Message-ID and a recipient list bounce
+//      and globally suppress a co-recipient (the reasoning is in apps/delivery/src/feedback.ts).
+//      Signed SES notifications (apps/api/src/ses) are the path that bounces and suppresses.
 //   multipart/report; report-type=feedback-report  an ARF abuse report. Recorded against the
-//      outbound message it names, with one operator alert through the D3 Auth relay (PST-REQ-096).
+//      outbound message it names; an operator alert through the D3 Auth relay (PST-REQ-096), at
+//      most one per outbound message ever and within the hourly complaint-alert cap.
 //
-// A DSN is only acted on when it looks like one: a null reverse-path, or a From of MAILER-DAEMON or
-// postmaster; and smtp-in did not quarantine it. Otherwise each recipient is recorded as `ignored`
-// with the reason. Correlation is restricted to outbound mail sent by the accounts the DSN was
-// delivered to — the rest of the forgery reasoning is in apps/delivery/src/feedback.ts.
+// A DSN that does not even look like one — neither a null reverse-path nor a MAILER-DAEMON or
+// postmaster From — or that smtp-in quarantined is recorded as `ignored` with the reason; the rest
+// as `recorded`. Correlation is restricted to outbound mail sent by the accounts the DSN was
+// delivered to, so one account's inbound mail never names another account's messages.
 //
 // Idempotent: every event has a dedupe key derived from the spool row (`dsn:<id>:<n>`,
 // `arf:<id>`), so a replay or a crash-and-resume records nothing twice and alerts once.
@@ -63,7 +68,7 @@ export async function feedbackStage(
     const dsn = parseDeliveryStatus(report.body);
     if (dsn.truncated) reasons.push('more recipients than are read; the rest were skipped');
     const refuse: string[] = [];
-    if (!fromBounceSender(inbound.envelopeFrom, report)) refuse.push('not from a null reverse-path or a MAILER-DAEMON/postmaster From: a DSN anyone could have sent');
+    if (!fromBounceSender(inbound.envelopeFrom, report)) refuse.push('does not look like a DSN: not from a null reverse-path or a MAILER-DAEMON/postmaster From');
     if (ctx.verify.disposition === 'quarantine') refuse.push('smtp-in quarantined this message');
     if (messageIds.length === 0 && dsn.originalEnvelopeId === null) reasons.push('the DSN names no original (no returned Message-ID, no Original-Envelope-Id)');
     for (const [i, r] of dsn.recipients.entries()) {
@@ -133,6 +138,7 @@ export async function feedbackStage(
         originalMessageId: report.originalMessageId,
       },
       reportedAt: inbound.receivedAt,
+      now: deps.now(),
       requestId,
     }),
   );
