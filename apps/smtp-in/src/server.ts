@@ -31,6 +31,7 @@ import {
   reply,
   Replies,
   tlsUpgrader,
+  toTlsSource,
   type ForwardPath,
   type MailParams,
   type ReversePath,
@@ -38,6 +39,7 @@ import {
   type ServerSession,
   type SessionContext,
   type SmtpReply,
+  type TlsInput,
 } from '@postroom/smtp-proto';
 import {
   acceptMessage as defaultAcceptMessage,
@@ -69,8 +71,9 @@ export interface SmtpInOptions {
   readonly maxRecipientsPerSession: number;
   readonly maxErrors: number;
   readonly idleTimeoutMs: number;
-  /** Enables opportunistic STARTTLS (RFC 3207: never required on an MX). */
-  readonly tls?: { readonly key: Buffer | string; readonly cert: Buffer | string } | undefined;
+  /** Enables opportunistic STARTTLS (RFC 3207: never required on an MX). A fixed pair, or a
+   * reloadable source (PST-T-11.13) read at each connection and each upgrade. */
+  readonly tls?: TlsInput;
   readonly spfDns: SpfDns;
   readonly dkimDns: DkimDns;
   readonly reverseLookup: ReverseLookup;
@@ -260,12 +263,15 @@ class InboundConnection {
         this.errors.push(errorMessage(err));
       },
     };
-    if (this.opts.tls) {
-      const upgrade = tlsUpgrader({ key: this.opts.tls.key, cert: this.opts.tls.cert });
+    // PST-T-11.13: STARTTLS is offered when a certificate is loaded as this connection opens, and
+    // the upgrade uses whichever pair is current when it happens (a renewal in between is fine).
+    const tls = toTlsSource(this.opts.tls);
+    const atConnect = tls.context();
+    if (atConnect !== null) {
       return {
         ...hooks,
         upgradeTls: async (socket) => {
-          const secured = await upgrade(socket);
+          const secured = await tlsUpgrader({ secureContext: tls.context() ?? atConnect })(socket);
           // The tap was on the plaintext socket; STARTTLS hands the engine a new Duplex, which needs
           // its own tap (PST-T-6.3) — the plaintext one is discarded along with `socket`.
           if (this.recorder) attachTranscriptTap(secured, this.recorder);
@@ -417,7 +423,9 @@ class InboundConnection {
   }
 }
 
-export function createSmtpInServer(opts: SmtpInOptions): SmtpInServer {
+export function createSmtpInServer(options: SmtpInOptions): SmtpInServer {
+  // One source for every connection: a fixed pair's context is built once, not per connection.
+  const opts: SmtpInOptions = { ...options, tls: toTlsSource(options.tls) };
   const store = opts.recipientStore ?? prismaRecipientStore(opts.db);
   const acceptor = opts.acceptMessage ?? (opts.storage === undefined ? defaultAcceptMessage : createAcceptMessage(opts.storage));
   const perIp = new Map<string, number>();

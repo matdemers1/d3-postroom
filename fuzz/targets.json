@@ -118,6 +118,15 @@
       "corpus": "fuzz/pgp/corpus",
       "fixtures": "fuzz/pgp/fixtures",
       "note": "OpenPGP packet framing, keys, v4 signatures, PKESK/SEIPD decrypt path, ASCII armor and cleartext framework; the DER/BER reader and CMS SignedData/EnvelopedData/certificate readers (PST-T-12.1)"
+    },
+    {
+      "name": "dsn-report",
+      "status": "active",
+      "package": "packages/dsn",
+      "target": "fuzz/dsn-report/target.mjs",
+      "corpus": "fuzz/dsn-report/corpus",
+      "fixtures": "fuzz/dsn-report/fixtures",
+      "note": "RFC 3464 message/delivery-status and RFC 5965 message/feedback-report readers (PST-T-11.15): total, bounded, and every Status an x.y.z code"
     }
   ]
 }

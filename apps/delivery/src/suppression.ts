@@ -48,11 +48,18 @@ export function shouldSuppress(outcome: AttemptOutcome, transition: Pick<Transit
 
 export interface HardBounce {
   address: string;
-  recipientId: string;
-  code: number;
+  /** The outbound recipient that bounced; null for an asynchronous bounce Postroom could not tie to
+   * one (PST-T-11.15: an SES Permanent bounce for a queue row already purged). */
+  recipientId: string | null;
+  /** The SMTP reply code; null when an asynchronous report gave only an enhanced status. */
+  code: number | null;
   enhanced: string;
   text: string;
   at: Date;
+  /** The audit row's request id; default `delivery:<recipientId>` (the synchronous bounce path). */
+  requestId?: string;
+  /** The audit actor's label; default 'delivery'. */
+  actorLabel?: string;
 }
 
 /**
@@ -65,7 +72,7 @@ export async function recordHardBounce(tx: Tx, bounce: HardBounce): Promise<void
   const address = suppressionKey(bounce.address);
   const rows = await tx.$queryRaw<{ id: string; bounce_count: number }[]>`
     INSERT INTO suppressed_recipient (address, reason, code, enhanced, text, source_recipient_id, bounce_count, first_at, last_at, created_at)
-    VALUES (${address}, 'hard-bounce', ${bounce.code}, ${bounce.enhanced}, ${bounce.text}, ${bounce.recipientId}::uuid, 1, ${bounce.at}, ${bounce.at}, ${bounce.at})
+    VALUES (${address}, 'hard-bounce', ${bounce.code}::int, ${bounce.enhanced}, ${bounce.text}, ${bounce.recipientId}::uuid, 1, ${bounce.at}, ${bounce.at}, ${bounce.at})
     ON CONFLICT (address) DO UPDATE SET
       code = EXCLUDED.code,
       enhanced = EXCLUDED.enhanced,
@@ -76,7 +83,7 @@ export async function recordHardBounce(tx: Tx, bounce: HardBounce): Promise<void
     RETURNING id::text AS id, bounce_count`;
   const row = rows[0];
   await recordAudit(tx, {
-    actor: { kind: 'system', label: 'delivery' },
+    actor: { kind: 'system', label: bounce.actorLabel ?? 'delivery' },
     action: 'suppression.add',
     entityType: 'suppressed_recipient',
     entityId: row?.id ?? null,
@@ -90,7 +97,7 @@ export async function recordHardBounce(tx: Tx, bounce: HardBounce): Promise<void
       sourceRecipientId: bounce.recipientId,
       bounceCount: row?.bounce_count ?? 1,
     },
-    context: { requestId: `delivery:${bounce.recipientId}` } satisfies RequestContext,
+    context: { requestId: bounce.requestId ?? `delivery:${bounce.recipientId ?? 'none'}` } satisfies RequestContext,
   });
 }
 

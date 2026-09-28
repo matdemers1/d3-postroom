@@ -1,5 +1,5 @@
 // The worker daemon: runs the inbound pipeline (PST-T-2.7) on the 'inbound' queue — verify, parse,
-// classify, sieve, file, notify — for every message smtp-in spooled — and, on their own queues and
+// classify, sieve, file, notify, feedback — for every message smtp-in spooled — and, on their own queues and
 // worker, the nightly backup and restore drill (PST-T-0.16, PST-T-0.17). ACME joins in a later phase.
 import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
@@ -64,6 +64,11 @@ await runDaemon({
       kek: () => loadKek({ env: ctx.env }),
       vacationDailyCap: envInt(ctx.env, 'SIEVE_VACATION_DAILY_CAP', 200),
       accountCap,
+      // PST-T-11.15: one operator alert per ARF complaint, through the D3 Auth relay.
+      sendAlert: createAlertSender(
+        { url: envString(ctx.env, 'MAIL_RELAY_URL', ''), token: envString(ctx.env, 'MAIL_RELAY_TOKEN', ''), to: envString(ctx.env, 'ALERT_TO', '') },
+        { log: ctx.log },
+      ),
     });
     const leaseMs = envInt(ctx.env, 'INBOUND_LEASE_MS', 300_000);
     const worker = await startWorker({

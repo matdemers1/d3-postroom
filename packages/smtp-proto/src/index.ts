@@ -9,3 +9,4 @@ export * from './reply.js';
 export * from './reply-parser.js';
 export * from './session.js';
 export * from './tls.js';
+export * from './tls-reload.js';

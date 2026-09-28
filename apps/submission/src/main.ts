@@ -9,13 +9,13 @@
 // SUBMISSION_MAX_RECIPIENTS (100), SUBMISSION_CAP_HOURLY (100) / SUBMISSION_CAP_DAILY (500) per app
 // password, ACCOUNT_CAP_HOURLY (200) / ACCOUNT_CAP_DAILY (1000) per account across every sending path
 // (PST-T-11.11 — the api and worker read the same two), LISTEN_HOST, HEALTH_PORT.
-import { readFileSync } from 'node:fs';
 import type { Server } from 'node:net';
 import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
 import { envInt, envString, runDaemon } from '@postroom/daemon';
 import { createDb } from '@postroom/db';
+import { tlsHealth, watchTlsPair } from '@postroom/smtp-proto';
 import { accountCapFromEnv, createCapsChecker, createCapsEnforcer } from './caps/index.js';
 import { DAEMON } from './daemon.js';
 import { createSubmissionListeners, type SubmissionStorage } from './server.js';
@@ -43,22 +43,13 @@ await runDaemon({
     if (pepper === '') ctx.log('no-pepper', { message: 'PASSWORD_PEPPER is not set: every AUTH will be refused' });
 
     // TLS is required before AUTH, so without a certificate nothing can be submitted: fail closed,
-    // loudly, and say so on /health.
-    const certFile = envString(ctx.env, 'TLS_CERT_FILE', '');
-    const keyFile = envString(ctx.env, 'TLS_KEY_FILE', '');
-    let tls: { key: Buffer; cert: Buffer } | null = null;
-    if (certFile === '' || keyFile === '') {
-      ctx.log('no-tls-certificate', { message: 'TLS_CERT_FILE/TLS_KEY_FILE not set: no STARTTLS, no 465, no AUTH, nothing can be submitted' });
-    } else {
-      try {
-        tls = { key: readFileSync(keyFile), cert: readFileSync(certFile) };
-      } catch (error) {
-        ctx.log('no-tls-certificate', {
-          message: 'cannot read the TLS certificate: no STARTTLS, no 465, no AUTH, nothing can be submitted',
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    // loudly, and say so on /health. The pair is watched (PST-REQ-020, PST-T-11.13): a renewal, or a
+    // first issuance after boot, is served without a restart.
+    const tls = watchTlsPair({
+      certFile: envString(ctx.env, 'TLS_CERT_FILE', ''),
+      keyFile: envString(ctx.env, 'TLS_KEY_FILE', ''),
+      log: ctx.log,
+    });
 
     let storage: SubmissionStorage | undefined;
     const capsOptions = {
@@ -102,13 +93,10 @@ await runDaemon({
     const port465 = envInt(ctx.env, 'SUBMISSIONS_PORT', 465);
     if (listeners.submissions !== null) await listen(listeners.submissions, port465, host);
 
-    ctx.addHealth(() =>
-      tls === null
-        ? { status: 'degraded', tls: 'degraded: no TLS certificate', listening: [port587] }
-        : { tls: 'ok', listening: [port587, port465] },
-    );
+    ctx.addHealth(() => ({ ...tlsHealth(tls), listening: listeners.submissions === null ? [port587] : [port587, port465] }));
     ctx.log('listening', { host, submission: port587, submissions: listeners.submissions === null ? null : port465 });
     ctx.onShutdown(async () => {
+      tls.close();
       await listeners.close();
       await db.$disconnect();
     });

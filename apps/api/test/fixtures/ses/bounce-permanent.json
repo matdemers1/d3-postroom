@@ -1,0 +1,39 @@
+{
+  "eventType": "Bounce",
+  "bounce": {
+    "bounceType": "Permanent",
+    "bounceSubType": "General",
+    "bouncedRecipients": [
+      {
+        "emailAddress": "nobody@example.net",
+        "action": "failed",
+        "status": "5.1.1",
+        "diagnosticCode": "smtp; 550 5.1.1 user unknown"
+      }
+    ],
+    "timestamp": "2026-09-27T12:10:00.000Z",
+    "feedbackId": "0100019a-feedback-0001-000000",
+    "reportingMTA": "dsn; e226-55.smtp-out.us-east-1.amazonses.com"
+  },
+  "mail": {
+    "timestamp": "2026-09-27T12:09:58.000Z",
+    "source": "matt@d3cloud.io",
+    "sendingAccountId": "123456789012",
+    "messageId": "__SES_MESSAGE_ID__",
+    "destination": ["nobody@example.net"],
+    "headersTruncated": false,
+    "headers": [
+      { "name": "From", "value": "Matt <matt@d3cloud.io>" },
+      { "name": "To", "value": "nobody@example.net" },
+      { "name": "Message-ID", "value": "<__MESSAGE_ID__>" },
+      { "name": "Subject", "value": "Hello" }
+    ],
+    "commonHeaders": {
+      "from": ["Matt <matt@d3cloud.io>"],
+      "to": ["nobody@example.net"],
+      "messageId": "__SES_MESSAGE_ID__",
+      "subject": "Hello"
+    },
+    "tags": { "ses:configuration-set": ["postroom"] }
+  }
+}

@@ -28,6 +28,7 @@
     "@postroom/dsn": "workspace:*",
     "@postroom/dav-store": "workspace:*",
     "@postroom/auth-checks": "workspace:*",
+    "@postroom/smtp-proto": "workspace:*",
     "pg": "^8.23.0",
     "@postroom/classifier": "workspace:*"
   },

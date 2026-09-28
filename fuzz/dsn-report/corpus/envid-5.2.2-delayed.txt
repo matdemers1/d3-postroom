@@ -1,0 +1,15 @@
+Reporting-MTA: dns;mail.example.com
+Original-Envelope-Id: pst+2Denv+2D0042
+Arrival-Date: Fri, 25 Sep 2026 12:59:58 +0000
+
+Final-Recipient: rfc822;full@example.com
+Action: failed
+Status: 5.2.2 (mailbox full)
+Diagnostic-Code: smtp;552-5.2.2 The email account that you tried to reach is
+ over quota.
+Last-Attempt-Date: Fri, 25 Sep 2026 13:00:00 +0000
+
+Final-Recipient: rfc822;later@example.com
+Action: delayed
+Status: 4.4.1
+Will-Retry-Until: Wed, 30 Sep 2026 12:59:58 +0000

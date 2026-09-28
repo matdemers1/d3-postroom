@@ -830,7 +830,7 @@ export interface HealthTile {
 }
 
 /** Matches apps/api/src/admin-jobs/index.ts's STAGES. */
-export const INBOUND_STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify'] as const;
+export const INBOUND_STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify', 'feedback'] as const;
 export type InboundStage = (typeof INBOUND_STAGES)[number];
 
 /** Matches apps/api/src/admin-queue/index.ts's ListQuery. */

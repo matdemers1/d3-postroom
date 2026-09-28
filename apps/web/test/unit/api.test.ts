@@ -75,7 +75,7 @@ describe('isSafeNextPath (PST-DA-040)', () => {
 
 describe('INBOUND_STAGES', () => {
   it('matches the pipeline order the replay endpoint accepts (apps/api/src/admin-jobs/index.ts)', () => {
-    expect(INBOUND_STAGES).toEqual(['verify', 'parse', 'classify', 'sieve', 'file', 'notify']);
+    expect(INBOUND_STAGES).toEqual(['verify', 'parse', 'classify', 'sieve', 'file', 'notify', 'feedback']);
   });
 });
 

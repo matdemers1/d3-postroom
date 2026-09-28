@@ -219,14 +219,31 @@ export class ImapClient {
     if (this.model === null || this.filling) return;
     this.pendingExists = 0;
     let fetchedTo = 0; // slots 1..fetchedTo have been asked about
+    let nooped = false;
     this.filling = true;
     try {
       for (;;) {
         const first = this.model.indexOf(0);
         if (first < 0) return;
         if (first < fetchedTo) {
+          // A slot the FETCH left empty may be a message the other session expunged: the server may
+          // not send EXPUNGE during FETCH (RFC 9051 §7.5.1) and may omit its data, reporting the
+          // EXPUNGE at the next command that allows one. Give it that command once — a NOOP, as a
+          // real client would — then ask again; only a slot still empty after that is a divergence.
+          if (!nooped) {
+            nooped = true;
+            const tag = this.tag();
+            this.write(`${tag} NOOP\r\n`);
+            const r = await this.collect(tag);
+            if (!r.tagged.startsWith(`${tag} OK`)) {
+              this.violations.push(`NOOP answered ${r.tagged}`);
+              return;
+            }
+            fetchedTo = 0;
+            continue;
+          }
           const still = this.model.flatMap((u, i) => (u === 0 && i < fetchedTo ? [i + 1] : []));
-          this.violations.push(`FETCH (UID) left ${still.join(',')} without a UID (model ${String(this.model.length)} long)`);
+          this.violations.push(`FETCH (UID) left ${still.join(',')} without a UID, even after a NOOP (model ${String(this.model.length)} long)`);
           return;
         }
         const range = `${String(first + 1)}:${String(this.model.length)}`;

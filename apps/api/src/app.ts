@@ -32,6 +32,7 @@ import { exportRoutes } from './export/index.js';
 import { senderRoutes } from './senders/index.js';
 import { unsubscribeRoutes } from './unsubscribe/index.js';
 import { sieveRoutes } from './sieve/index.js';
+import { sesSnsRoutes } from './ses/index.js';
 import { importRoutes } from './import/index.js';
 import { mobileconfigRoutes } from './mobileconfig/index.js';
 import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
@@ -110,6 +111,10 @@ export function createApp(deps: ApiDeps): Express {
     res.setHeader('Cache-Control', 'no-store');
     next();
   };
+  // PST-T-11.15: SES bounce/complaint notifications from SNS. No session and no CSRF — SNS can hold
+  // neither; its authentication is the message signature, checked in the route — and its own body
+  // parser, because SNS posts JSON as text/plain. Ahead of the /api chain below, which it never reaches.
+  app.use('/api/ses', noStore, auditContext(), mutationAuditGuard(deps.db), sesSnsRoutes(deps));
   app.use('/api', noStore, auditContext(), express.json({ limit: '1mb' }), mutationAuditGuard(deps.db), csrfGuard(deps));
   app.use('/api/auth', authRoutes(deps));
   if (adminDevEnabled(deps.env)) app.use('/api/admin/dev', requireAdmin(deps), adminDevRoutes(deps));

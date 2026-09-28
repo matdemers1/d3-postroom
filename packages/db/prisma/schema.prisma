@@ -579,6 +579,7 @@ model OutboundMessage {
   account     Account             @relation(fields: [accountId], references: [id], onDelete: Restrict)
   appPassword AppPassword?        @relation(fields: [appPasswordId], references: [id], onDelete: SetNull)
   recipients  OutboundRecipient[]
+  feedback    DeliveryFeedback[]
 
   @@index([accountId, createdAt])
   /// PST-T-6.7 (PST-REQ-119): the mailbox message → outbound lookup joins on this pair — a Sent
@@ -612,6 +613,7 @@ model OutboundRecipient {
   message      OutboundMessage       @relation(fields: [outboundMessageId], references: [id], onDelete: Cascade)
   attemptsLog  DeliveryAttempt[]
   suppressions SuppressedRecipient[]
+  feedback     DeliveryFeedback[]
 
   @@index([state, nextAttemptAt])
   @@index([outboundMessageId])
@@ -642,6 +644,50 @@ model DeliveryAttempt {
 
   @@index([recipientId, startedAt])
   @@map("delivery_attempt")
+}
+
+/// PST-T-11.15: what came back after the remote accepted a message — an asynchronous bounce (a
+/// remote DSN, RFC 3464, or an SES Bounce notification) or a complaint (an ARF report, RFC 5965, or
+/// an SES Complaint notification) — with what Postroom did about it and why. One row per event and
+/// address; `dedupeKey` makes a replayed pipeline job or a redelivered SNS message a no-op.
+model DeliveryFeedback {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// bounce | complaint
+  kind                String
+  /// dsn | arf | ses
+  source              String
+  /// dsn:<inbound id>:<n> · arf:<inbound id> · ses:<SNS MessageId>:<n>
+  dedupeKey           String    @unique @map("dedupe_key")
+  /// The recipient the event is about, lowercased; null when the report named none.
+  address             String?
+  outboundMessageId   String?   @map("outbound_message_id") @db.Uuid
+  outboundRecipientId String?   @map("outbound_recipient_id") @db.Uuid
+  /// The spooled DSN/ARF message this came in as (null for SES notifications).
+  inboundMessageId    String?   @map("inbound_message_id") @db.Uuid
+  /// The remote's enhanced status (5.1.1) for a bounce.
+  status              String?
+  /// ARF Feedback-Type or SES complaintFeedbackType; for a bounce, the SES bounceType/bounceSubType.
+  feedbackType        String?   @map("feedback_type")
+  /// The remote's Diagnostic-Code text, cut to 1000 characters.
+  diagnostic          String?
+  /// bounced · bounced-suppressed · suppressed · recorded · ignored
+  action              String
+  /// Why `action` is what it is (PST-REQ-103's rule: decisions store their reasons).
+  reasons             Json      @default("[]")
+  /// Report metadata only (reporting MTA, user agent, source IP, arrival date); never a body.
+  detail              Json      @default("{}")
+  reportedAt          DateTime  @map("reported_at") @db.Timestamptz(6)
+  /// When the operator alert for a complaint was sent; null when none was (or none was due).
+  alertedAt           DateTime? @map("alerted_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  outboundMessage   OutboundMessage?   @relation(fields: [outboundMessageId], references: [id], onDelete: SetNull)
+  outboundRecipient OutboundRecipient? @relation(fields: [outboundRecipientId], references: [id], onDelete: SetNull)
+  inboundMessage    InboundMessage?    @relation(fields: [inboundMessageId], references: [id], onDelete: SetNull)
+
+  @@index([outboundMessageId])
+  @@index([kind, createdAt])
+  @@map("delivery_feedback")
 }
 
 /// PST-T-11.10: the suppression list. An address lands here when a delivery attempt to it ends in a
@@ -721,6 +767,7 @@ model InboundMessage {
 
   session  InboundSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   messages Message[]
+  feedback DeliveryFeedback[]
 
   @@index([state, receivedAt])
   @@map("inbound_message")

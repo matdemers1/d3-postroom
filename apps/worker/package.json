@@ -33,7 +33,8 @@
     "@postroom/sieve": "workspace:*",
     "@postroom/submission": "workspace:*",
     "@postroom/dav-store": "workspace:*",
-    "@postroom/reports": "workspace:*"
+    "@postroom/reports": "workspace:*",
+    "@postroom/delivery": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

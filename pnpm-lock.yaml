@@ -288,6 +288,9 @@ importers:
       '@postroom/search':
         specifier: workspace:*
         version: link:../../packages/search
+      '@postroom/smtp-proto':
+        specifier: workspace:*
+        version: link:../../packages/smtp-proto
       pg:
         specifier: ^8.23.0
         version: 8.23.0
@@ -322,6 +325,9 @@ importers:
       '@postroom/sieve':
         specifier: workspace:*
         version: link:../../packages/sieve
+      '@postroom/smtp-proto':
+        specifier: workspace:*
+        version: link:../../packages/smtp-proto
     devDependencies:
       tsx:
         specifier: ^4.23.13
@@ -482,6 +488,9 @@ importers:
       '@postroom/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@postroom/delivery':
+        specifier: workspace:*
+        version: link:../delivery
       '@postroom/dnsbl':
         specifier: workspace:*
         version: link:../../packages/dnsbl

@@ -1,0 +1,19 @@
+{
+  "eventType": "Complaint",
+  "complaint": {
+    "complainedRecipients": [{ "emailAddress": "user@example.com" }],
+    "timestamp": "2026-09-27T13:00:00.000Z",
+    "feedbackId": "0100019a-feedback-0003-000000",
+    "userAgent": "ExampleMail/1.0",
+    "complaintFeedbackType": "abuse",
+    "arrivalDate": "2026-09-27T12:59:00.000Z"
+  },
+  "mail": {
+    "timestamp": "2026-09-27T12:58:00.000Z",
+    "source": "matt@d3cloud.io",
+    "messageId": "__SES_MESSAGE_ID__",
+    "destination": ["user@example.com"],
+    "headersTruncated": false,
+    "commonHeaders": { "from": ["matt@d3cloud.io"], "to": ["user@example.com"], "messageId": "__SES_MESSAGE_ID__" }
+  }
+}
