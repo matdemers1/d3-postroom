@@ -1,0 +1,12 @@
+Feedback-Type: abuse
+User-Agent: SomeGenerator/1.0
+Version: 1
+Original-Mail-From: <matt@d3cloud.io>
+Original-Rcpt-To: <user@example.com>
+Arrival-Date: Fri, 25 Sep 2026 13:50:00 +0000
+Reporting-MTA: dns; mail.example.com
+Source-IP: 192.0.2.1
+Authentication-Results: mail.example.com;
+               spf=pass smtp.mail=matt@d3cloud.io
+Reported-Domain: d3cloud.io
+Removal-Recipient: user@example.com

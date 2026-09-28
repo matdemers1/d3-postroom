@@ -1,0 +1,51 @@
+From: <abusedesk@example.com>
+Date: Fri, 25 Sep 2026 14:00:00 +0000
+Subject: FW: Earn money
+To: <abuse@d3cloud.io>
+Message-ID: <arf-1@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=feedback-report;
+     boundary="part1_13d.2e68ed54_boundary"
+
+--part1_13d.2e68ed54_boundary
+Content-Type: text/plain; charset="US-ASCII"
+Content-Transfer-Encoding: 7bit
+
+This is an email abuse report for an email message received from IP
+192.0.2.1 on Fri, 25 Sep 2026 13:50:00 +0000.  For more information
+about this format please see http://www.mipassoc.org/arf/.
+
+--part1_13d.2e68ed54_boundary
+Content-Type: message/feedback-report
+
+Feedback-Type: abuse
+User-Agent: SomeGenerator/1.0
+Version: 1
+Original-Mail-From: <matt@d3cloud.io>
+Original-Rcpt-To: <user@example.com>
+Arrival-Date: Fri, 25 Sep 2026 13:50:00 +0000
+Reporting-MTA: dns; mail.example.com
+Source-IP: 192.0.2.1
+Authentication-Results: mail.example.com;
+               spf=pass smtp.mail=matt@d3cloud.io
+Reported-Domain: d3cloud.io
+Removal-Recipient: user@example.com
+
+--part1_13d.2e68ed54_boundary
+Content-Type: message/rfc822
+Content-Disposition: inline
+
+From: <matt@d3cloud.io>
+Received: from mailserver.d3cloud.io (mailserver.d3cloud.io [192.0.2.1])
+        by mail.example.com; Fri, 25 Sep 2026 13:50:00 +0000
+To: <user@example.com>
+Subject: Earn money
+MIME-Version: 1.0
+Content-type: text/plain
+Message-ID: <3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7@d3cloud.io>
+Date: Fri, 25 Sep 2026 13:49:00 +0000
+
+Spam Spam Spam
+Spam Spam Spam
+
+--part1_13d.2e68ed54_boundary--
