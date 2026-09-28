@@ -296,7 +296,8 @@ export type DnsStatus = 'pass' | 'fail' | 'missing' | 'pending' | 'unknown';
 export interface DnsCheckRow {
   record: string;
   name: string;
-  type: 'MX' | 'TXT' | 'PTR' | 'SRV' | 'CNAME';
+  /** RCPT rows are addresses checked in the database (postmaster@, abuse@, report mailboxes). */
+  type: 'MX' | 'TXT' | 'PTR' | 'SRV' | 'CNAME' | 'RCPT';
   expected: string | null;
   afterGoLive: boolean;
   note: string | null;
