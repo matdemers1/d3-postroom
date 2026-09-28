@@ -152,7 +152,8 @@ describe.skipIf(signer === undefined)('the poller', () => {
     const h = await start();
     const m = s.sign(notification(BOUNCE));
     const id = sqs.push(JSON.stringify(m));
-    await until(() => sqs.deleted.includes(id));
+    // The fake records the delete when the request arrives; the loop counts it after the response.
+    await until(() => sqs.deleted.includes(id) && loop?.status().deleted === 1);
     expect(h.processed).toEqual([m.MessageId]);
     expect(h.audits).toEqual([]);
     expect(loop?.status()).toMatchObject({ enabled: true, queue: 'postroom-ses-feedback', processed: 1, deleted: 1, lastError: null });
