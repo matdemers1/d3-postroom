@@ -10,7 +10,7 @@
 // bounce lands in the shared Inbox while the other specs run.
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
-import { ensureOperator, seedMail, signInCookies, tag } from './support.js';
+import { clearSuppressions, ensureOperator, seedMail, signInCookies, tag } from './support.js';
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 });
 // The composer flows run in the three-pane desktop layout; the mobile project skips the file (and so
@@ -67,6 +67,8 @@ test.afterAll(async () => {
 });
 
 test.beforeEach(async ({ context }) => {
+  // Earlier sends to these example addresses hard-bounce off a null MX and are suppressed.
+  await clearSuppressions(api);
   await context.addCookies(cookies);
   // These specs prove what a send does once it goes. The undo window (PST-T-9.1, default 10 s) is
   // its own spec's subject, so it is off here: a send goes at once, as it did before undo existed.

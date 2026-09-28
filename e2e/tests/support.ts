@@ -152,3 +152,16 @@ export async function seedMail(request: APIRequestContext, messages: SeedMessage
 
 /** A short random tag, so a test finds its own messages in a mailbox other tests also fill. */
 export const tag = (): string => Math.random().toString(36).slice(2, 8);
+
+/**
+ * The real-world example addresses the specs send to. example.org and example.com publish a null
+ * MX (RFC 7505), so the stack's delivery worker hard-bounces them with 5.1.10 and — correctly —
+ * suppresses them (PST-REQ-176). A spec that sends to one again clears it first through the
+ * e2e-only route (POSTROOM_E2E_SEED=1), audited like any other change.
+ */
+export const EXAMPLE_RECIPIENTS = ['alice@example.org', 'bob@example.org', 'carol@example.org', 'dan@example.org', 'erin@example.org', 'billing@example.org'];
+
+export async function clearSuppressions(request: APIRequestContext, addresses: readonly string[] = EXAMPLE_RECIPIENTS): Promise<void> {
+  const res = await request.post('/api/admin/suppressions/dev-clear', { headers: { 'x-postroom-csrf': '1' }, data: { addresses } });
+  if (!res.ok()) throw new Error(`suppressions/dev-clear answered ${String(res.status())}: ${await res.text()}`);
+}
