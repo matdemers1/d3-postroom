@@ -8518,7 +8518,7 @@
             }
           },
           "429": {
-            "description": "The recipient cap is reached.",
+            "description": "recipient_cap: the webmail’s recipient cap is reached; account_cap: the account-wide outbound cap across every sending path is reached (PST-REQ-177). Nothing was sent.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11293,7 +11293,7 @@
             }
           },
           "429": {
-            "description": "Recipient cap exceeded.",
+            "description": "recipient_cap, or account_cap: the account-wide outbound cap is reached (PST-REQ-177).",
             "content": {
               "application/json": {
                 "schema": {
@@ -11401,6 +11401,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SuppressedRefusal"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "recipient_cap, or account_cap: the account-wide outbound cap is reached (PST-REQ-177).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

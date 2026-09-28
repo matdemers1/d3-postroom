@@ -370,4 +370,19 @@ describe.skipIf(!baseUrl)('composer API (PST-T-3.11)', () => {
     expect(await db.outboundMessage.count({ where: { accountId: me.id } })).toBe(1);
     expect(await db.message.count({ where: { mailboxId: me.sent } })).toBe(1);
   });
+
+  it('PST-T-11.11: the account-wide cap (ACCOUNT_CAP_HOURLY) refuses the send with 429 account_cap, queuing, filing and freezing nothing', async () => {
+    // The webmail's own cap stays at its default (100); only the account-wide one is low.
+    const accountCapped = createApp({ db, env: { DATABASE_URL: testDb.url, BLOB_ROOT: blobRoot, ACCOUNT_CAP_HOURLY: '3' }, config: baseConfig(clock) });
+    const me = await person(accountCapped);
+    expect((await send(me, { to: ['a@example.org', 'b@example.org'], text: 'x' }, accountCapped)).status).toBe(201);
+    const over = await send(me, { to: ['c@example.org', 'd@example.org'], text: 'x' }, accountCapped);
+    expect(over.status).toBe(429);
+    expect(over.body).toMatchObject({ error: 'account_cap' });
+    expect((over.body as { message: string }).message).toMatch(/limit reached for this account/);
+    expect(await db.outboundMessage.count({ where: { accountId: me.id } })).toBe(1);
+    expect(await db.message.count({ where: { mailboxId: me.sent } })).toBe(1);
+    // Recorded once, as the system, for the operator (PST-REQ-180); the relay is unconfigured here.
+    expect(await db.auditEvent.count({ where: { action: 'account.outbound_cap_reached', entityId: me.id } })).toBe(1);
+  });
 });

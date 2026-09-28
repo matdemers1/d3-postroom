@@ -6,7 +6,9 @@
 //
 // Environment: DATABASE_URL, POSTROOM_KEK, PASSWORD_PEPPER, BLOB_ROOT, TLS_CERT_FILE, TLS_KEY_FILE,
 // SUBMISSION_HOSTNAME, SUBMISSION_PORT (587), SUBMISSIONS_PORT (465), SUBMISSION_MAX_SIZE (100 MB),
-// SUBMISSION_MAX_RECIPIENTS (100), LISTEN_HOST, HEALTH_PORT.
+// SUBMISSION_MAX_RECIPIENTS (100), SUBMISSION_CAP_HOURLY (100) / SUBMISSION_CAP_DAILY (500) per app
+// password, ACCOUNT_CAP_HOURLY (200) / ACCOUNT_CAP_DAILY (1000) per account across every sending path
+// (PST-T-11.11 — the api and worker read the same two), LISTEN_HOST, HEALTH_PORT.
 import { readFileSync } from 'node:fs';
 import type { Server } from 'node:net';
 import { createAlertSender } from '@postroom/alerts';
@@ -14,7 +16,7 @@ import { createBlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
 import { envInt, envString, runDaemon } from '@postroom/daemon';
 import { createDb } from '@postroom/db';
-import { createCapsChecker, createCapsEnforcer } from './caps/index.js';
+import { accountCapFromEnv, createCapsChecker, createCapsEnforcer } from './caps/index.js';
 import { DAEMON } from './daemon.js';
 import { createSubmissionListeners, type SubmissionStorage } from './server.js';
 
@@ -91,6 +93,7 @@ await runDaemon({
       tls,
       checkCaps,
       enforceCaps,
+      accountCap: accountCapFromEnv(ctx.env, { sendAlert: capsOptions.sendAlert, log: ctx.log }),
       log: ctx.log,
     });
 

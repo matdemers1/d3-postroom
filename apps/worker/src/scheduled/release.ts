@@ -34,6 +34,7 @@ import type { BlobStore } from '@postroom/blobstore';
 import type { Kek } from '@postroom/crypto';
 import type { Db, Prisma } from '@postroom/db';
 import { acceptSubmission, sendableAddresses } from '@postroom/submission';
+import type { AccountCap } from '@postroom/submission/caps';
 import { assignThread } from '@postroom/threading';
 import { fileCopy, removeMessage, specialMailboxName, type Tx } from './mailbox.js';
 
@@ -48,6 +49,8 @@ export interface ReleaseDeps {
   readonly blobs: BlobStore;
   readonly kek: () => Kek;
   readonly caps: WebmailCaps;
+  /** PST-T-11.11: the account-wide cap acceptSubmission enforces (ACCOUNT_CAP_HOURLY/DAILY; default 200 / 1000). */
+  readonly accountCap?: AccountCap;
   readonly now: () => Date;
   readonly log?: Log;
   /** Test seam: runs inside the accepting transaction just before it commits (a crash there). */
@@ -160,6 +163,7 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
     return (await finishUnsent(deps, id, 'failed', 'the held send has no copy to send')) ? 'failed' : 'skipped';
   }
   const later = sendable.slice(1);
+  const accountCap = deps.accountCap === undefined ? {} : { accountCap: deps.accountCap };
   const submitter = { accountId: row.accountId, addresses: new Set(addresses) };
   const auditContext = { requestId: `pending-send:${row.id}` };
   let filed: { id: string; mailboxId: string } | null = null;
@@ -216,7 +220,7 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
                   await ctx.pendingSendCopy.update({ where: { id: c.id }, data: { outboundId: copyAccepted.outboundId } });
                 },
               },
-              { db: nestedDb(tx), storage: () => storage, now: deps.now, log, deferred },
+              { db: nestedDb(tx), storage: () => storage, now: deps.now, log, deferred, ...accountCap },
             );
             if (!got.ok) throw new CopyRefused(got.reason, got.reply.lines, c.recipients);
             copyOutbound.push({ role: c.role, recipients: c.recipients.length, outboundId: got.outboundId });
@@ -272,7 +276,7 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
           });
         },
       },
-      { db: deps.db, storage: () => storage, now: deps.now, log, ...(deps.beforeCommit === undefined ? {} : { beforeCommit: deps.beforeCommit }) },
+      { db: deps.db, storage: () => storage, now: deps.now, log, ...accountCap, ...(deps.beforeCommit === undefined ? {} : { beforeCommit: deps.beforeCommit }) },
     );
   } catch (error) {
     // Rolled back: nothing the copies queued exists, so nothing of theirs is announced; an alert still goes, now that the lock is gone.

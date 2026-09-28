@@ -69,6 +69,14 @@ answer could not be trusted this cycle, and the monitor will recheck it.
    ```
 
    which re-enqueues everything that was held (`reenqueueHeld`).
+
+   Above the per-credential caps sits the account-wide one (PST-T-11.11): `ACCOUNT_CAP_HOURLY` /
+   `ACCOUNT_CAP_DAILY` (200 / 1000, read by submission, api and worker alike) over every sending
+   path together — all app passwords, the webmail, held sends and vacation replies. It freezes
+   nothing; it refuses with 452 4.5.3 until the window passes, and its first refusal per window is
+   the "account outbound cap reached" alert and an `account.outbound_cap_reached` audit row
+   (`apps/submission/src/caps/account.ts`). An account that trips it with no credential frozen is
+   spread across paths — look at all of them.
 4. **Freeze/hold everything manually** if the cause is not yet isolated and mail is still going
    out: revoke or leave frozen every credential that could be responsible rather than waiting for
    the cap to catch a slower abuse pattern.

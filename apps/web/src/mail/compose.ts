@@ -227,6 +227,9 @@ export function sendErrorText(error: unknown): string {
       return 'Your domain has no DKIM keys yet, and Postroom never sends unsigned mail. Ask the operator to create them.';
     case 'recipient_cap':
       return 'You have reached your sending limit for now. Nothing was sent; try again later.';
+    // PST-REQ-177: the account-wide cap, across every app password and the webmail together.
+    case 'account_cap':
+      return 'This account has reached its sending limit for now. Nothing was sent; try again later.';
     case 'recipient_suppressed':
       return suppressedText(error.body);
     case 'blobstore_not_configured':
