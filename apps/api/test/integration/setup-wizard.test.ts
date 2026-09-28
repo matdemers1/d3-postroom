@@ -127,6 +127,7 @@ describe.skipIf(!baseUrl)('setup wizard (PST-T-4.8, PST-REQ-098)', () => {
     const mv = WizardView.parse(mailbox.body);
     expect(mv).toMatchObject({ step: 'test', mailbox: 'postmaster@d3cloud.io' });
     expect(mv.addresses).toContain('postmaster@d3cloud.io');
+    const postmasterOwner = (await db.address.findFirstOrThrow({ where: { localPart: 'postmaster' } })).accountId;
 
     // Resumable: a fresh GET (another device) sees the same place.
     expect(await view()).toMatchObject({ step: 'test', mailbox: 'postmaster@d3cloud.io', completed: false });
@@ -157,8 +158,26 @@ describe.skipIf(!baseUrl)('setup wizard (PST-T-4.8, PST-REQ-098)', () => {
     expect(WizardView.parse(done.body)).toMatchObject({ step: 'done', completed: true });
     expect(await view()).toMatchObject({ step: 'done', completed: true });
 
+    // PST-T-4.15 (PST-REQ-186): a finished setup has postmaster@, abuse@ and the report mailboxes.
+    // postmaster@ was chosen as the operator's own mailbox above, so it is left exactly as it was.
+    const at = async (localPart: string) => db.address.findFirst({ where: { localPart, domain: { name: 'd3cloud.io' } }, include: { targets: true, account: true } });
+    const operator = await db.account.findFirstOrThrow({ where: { isAdmin: true }, orderBy: { createdAt: 'asc' } });
+    expect(await at('postmaster')).toMatchObject({ kind: 'primary', accountId: postmasterOwner });
+    expect(await at('abuse')).toMatchObject({ kind: 'alias', targets: [{ accountId: operator.id }] });
+    expect(await at('dmarc-reports')).toMatchObject({ kind: 'service', account: { kind: 'service' } });
+    expect(await at('tls-reports')).toMatchObject({ kind: 'service', account: { kind: 'service' } });
+    const rcptRows = DnsReport.parse((await request(app).get('/api/admin/dns').set('cookie', admin.cookie)).body).rows.filter((r) => r.type === 'RCPT');
+    expect(rcptRows.map((r) => [r.name, r.status])).toEqual([
+      ['postmaster@d3cloud.io', 'pass'],
+      ['abuse@d3cloud.io', 'pass'],
+      ['dmarc-reports@d3cloud.io', 'pass'],
+      ['tls-reports@d3cloud.io', 'pass'],
+    ]);
+
     const actions = (await db.auditEvent.findMany({ where: { action: { startsWith: 'setup_wizard.' } }, orderBy: { at: 'asc' } })).map((a) => a.action);
     expect(actions).toEqual(expect.arrayContaining(['setup_wizard.domain', 'setup_wizard.dkim', 'setup_wizard.dns', 'setup_wizard.mailbox', 'setup_wizard.test', 'setup_wizard.complete']));
+    const roleActions = (await db.auditEvent.findMany({ where: { action: { startsWith: 'role_address.' } } })).map((a) => a.action).sort();
+    expect(roleActions).toEqual(['role_address.alias.create', 'role_address.service_mailbox.create', 'role_address.service_mailbox.create']);
     await waitForAuditGuard();
     expect(missingAuditCount.value).toBe(guardMissesBefore);
   });

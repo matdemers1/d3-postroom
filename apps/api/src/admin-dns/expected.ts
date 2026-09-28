@@ -5,6 +5,7 @@
 //
 // Two records are deliberately never suggested here: anything at no-reply.<domain> (Cloudflare Email
 // Service's own subdomain, with its own DMARC p=reject) and any record for another domain.
+import { reportMailboxesFor, ruaOf } from '@postroom/db';
 import { reverseDnsName } from '@postroom/dns';
 import { mtaStsEnvConfig, mtaStsPolicyId as mtaStsPolicyIdOf, renderMtaStsPolicy } from '../mta-sts/policy.js';
 
@@ -19,9 +20,12 @@ export type RecordKind =
   | 'TLS-RPT'
   | 'SRV'
   | 'autoconfig'
-  | 'autodiscover';
+  | 'autodiscover'
+  // PST-T-4.15: checked against the database, not DNS (addresses.ts); their type is RCPT.
+  | 'Role address'
+  | 'Report mailbox';
 
-export type DnsType = 'MX' | 'TXT' | 'PTR' | 'SRV' | 'CNAME';
+export type DnsType = 'MX' | 'TXT' | 'PTR' | 'SRV' | 'CNAME' | 'RCPT';
 
 export interface ExpectedRecord {
   /** Which check this row is. */
@@ -70,9 +74,12 @@ export interface ExpectedInput {
   /** EDGE_PUBLIC_IP, or null while the edge is not provisioned. */
   readonly edgeIp: string | null;
   readonly dkim: readonly DkimKeyView[];
-  /** Where DMARC aggregate reports go (DMARC_RUA), default mailto:dmarc-reports@<domain>. */
+  /**
+   * Where DMARC aggregate reports go: DMARC_RUA verbatim, else the shared report mailboxes
+   * (REPORTS_MAILBOX, default mailto:dmarc-reports@<domain>) — the same ones ingest reads (PST-T-4.15).
+   */
   readonly dmarcRua: string;
-  /** Where TLS-RPT reports go (TLSRPT_RUA), default mailto:tls-reports@<domain>. */
+  /** Where TLS-RPT reports go: TLSRPT_RUA verbatim, else TLSRPT_MAILBOX, default mailto:tls-reports@<domain>. */
   readonly tlsRptRua: string;
   /**
    * The `id=` the policy Postroom would serve at mta-sts.<domain> would carry right now (PST-T-4.12),
@@ -247,6 +254,8 @@ export interface HostEnv {
   readonly EDGE_PUBLIC_IP?: string | undefined;
   readonly DMARC_RUA?: string | undefined;
   readonly TLSRPT_RUA?: string | undefined;
+  readonly REPORTS_MAILBOX?: string | undefined;
+  readonly TLSRPT_MAILBOX?: string | undefined;
   readonly MTA_STS_MODE?: string | undefined;
   readonly MTA_STS_MAX_AGE?: string | undefined;
 }
@@ -267,6 +276,7 @@ export function hostsFromEnv(env: HostEnv, domain: string, webOrigin: string): O
   } catch {
     mtaStsPolicyId = null;
   }
+  const reports = reportMailboxesFor(env, d);
   return {
     domain: d,
     mxHostname,
@@ -274,8 +284,8 @@ export function hostsFromEnv(env: HostEnv, domain: string, webOrigin: string): O
     submissionHostname: set(env.SUBMISSION_HOSTNAME) ?? mxHostname,
     webHostname: new URL(webOrigin).hostname,
     edgeIp: set(env.EDGE_PUBLIC_IP),
-    dmarcRua: set(env.DMARC_RUA) ?? `mailto:dmarc-reports@${d}`,
-    tlsRptRua: set(env.TLSRPT_RUA) ?? `mailto:tls-reports@${d}`,
+    dmarcRua: set(env.DMARC_RUA) ?? ruaOf(reports.dmarc),
+    tlsRptRua: set(env.TLSRPT_RUA) ?? ruaOf(reports.tls),
     mtaStsPolicyId,
   };
 }

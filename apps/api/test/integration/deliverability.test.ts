@@ -151,7 +151,7 @@ describe.skipIf(!baseUrl)('deliverability (PST-T-7.1, PST-REQ-122)', () => {
     expect(res.status).toBe(200);
     const body = res.body as Body;
     expect(body.range.days).toBe(30);
-    expect(body.mailboxes.dmarc).toBe('dmarc@d3cloud.io');
+    expect(body.mailboxes.dmarc).toBe('dmarc-reports@d3cloud.io');
     expect(body.dmarc.totals).toEqual({ reports: 2, messages: 69, pass: 64, fail: 5, dkimPass: 64, spfPass: 59, dispositions: { none: 64, quarantine: 5, reject: 0 } });
     expect(body.dmarc.byDay.map((d) => [d.pass, d.fail])).toEqual([
       [47, 3],
@@ -224,8 +224,8 @@ describe.skipIf(!baseUrl)('deliverability (PST-T-7.1, PST-REQ-122)', () => {
     expect((await request(app).post('/api/admin/deliverability/dev/seed').set(CSRF).set('cookie', admin).send(payload)).status).toBe(404);
     const res = await request(seedApp).post('/api/admin/deliverability/dev/seed').set(CSRF).set('cookie', admin).send(payload);
     expect(res.status).toBe(201);
-    expect((res.body as { address: string }).address).toBe('dmarc@d3cloud.io');
-    const address = await db.address.findFirstOrThrow({ where: { localPart: 'dmarc' }, include: { account: true } });
+    expect((res.body as { address: string }).address).toBe('dmarc-reports@d3cloud.io');
+    const address = await db.address.findFirstOrThrow({ where: { localPart: 'dmarc-reports' }, include: { account: true } });
     expect(address.account?.kind).toBe('service');
     const inbox = await db.mailbox.findFirstOrThrow({ where: { accountId: address.accountId ?? '', name: 'INBOX' }, include: { messages: true } });
     expect(inbox.messages.map((m) => m.subject)).toEqual(['Report domain: d3cloud.io']);
@@ -349,7 +349,7 @@ describe.skipIf(!baseUrl)('DMARC progression proposals (PST-T-7.2, PST-REQ-123)'
     expect(p?.proposal?.currentStage).toBe('none');
     expect(p?.proposal?.proposedStage).toBe('quarantine');
     expect(p?.proposal?.proposedPct).toBe(100);
-    expect(p?.proposal?.txtValue).toBe('v=DMARC1; p=quarantine; pct=100; adkim=r; aspf=r; rua=mailto:dmarc@d3cloud.io');
+    expect(p?.proposal?.txtValue).toBe('v=DMARC1; p=quarantine; pct=100; adkim=r; aspf=r; rua=mailto:dmarc-reports@d3cloud.io');
     expect(p?.proposal?.evidence.days).toHaveLength(14);
     expect(p?.proposal?.evidence.days.every((d) => d.reports === 1 && d.messages === 10 && d.sources.includes(EDGE_IP) && d.orgs.includes('google.com'))).toBe(true);
   });

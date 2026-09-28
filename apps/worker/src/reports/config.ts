@@ -1,13 +1,14 @@
 // Which mailboxes hold reports (PST-T-7.1, PST-REQ-122). The DMARC record's `rua=` and the
 // `_smtp._tls` record's `rua=` point at service mailboxes (created on the admin Service accounts
-// screen, PST-T-1.12): REPORTS_MAILBOX (default dmarc@<primary domain>) and TLSRPT_MAILBOX (default
-// tlsrpt@<primary domain>). Either may be a comma-separated list. An address that does not exist
-// yet is simply skipped: nothing is ingested until the mailbox is created.
+// screen, PST-T-1.12, or by the api's role-address reconciler, PST-T-4.15): REPORTS_MAILBOX (default
+// dmarc-reports@<domain>) and TLSRPT_MAILBOX (default tls-reports@<domain>). Either may be a
+// comma-separated list. An address that does not exist yet is simply skipped: nothing is ingested
+// until the mailbox is created.
 //
 // Every receiving folder of those accounts is read, not only INBOX: the classifier may sort a
 // report into Updates or Notifications, and a report is a report wherever it was filed. Sent,
 // Drafts, Trash and Rejects are never read.
-import { SpecialUse, type Db } from '@postroom/db';
+import { addressList, reportMailboxesFor, SpecialUse, type Db } from '@postroom/db';
 
 export interface ReportMailboxes {
   /** The configured addresses, lowercased. */
@@ -18,28 +19,23 @@ export interface ReportMailboxes {
 
 const SKIPPED: readonly SpecialUse[] = [SpecialUse.sent, SpecialUse.drafts, SpecialUse.trash, SpecialUse.rejects];
 
-function list(value: string | undefined): string[] {
-  return (value ?? '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter((s) => s.includes('@'));
-}
-
-/** The report addresses for this install: env if set, else dmarc@ / tlsrpt@ the primary domain. */
+/**
+ * The report addresses for this install, from the one shared definition (@postroom/db's
+ * reportMailboxesFor, PST-T-4.15) that the DNS checker's rua= and the DMARC proposals also use:
+ * REPORTS_MAILBOX / TLSRPT_MAILBOX if set, else dmarc-reports@ / tls-reports@ each served domain,
+ * the primary first — each domain's DNS names its own, and the api's reconciler creates them.
+ */
 export async function reportAddresses(db: Db, env: NodeJS.ProcessEnv): Promise<string[]> {
-  let primary: string | null = null;
-  const domain = async (): Promise<string | null> => (primary ??= (await db.domain.findFirst({ where: { isPrimary: true }, select: { name: true } }))?.name ?? null);
-  const dmarc = list(env['REPORTS_MAILBOX']);
-  const tls = list(env['TLSRPT_MAILBOX']);
+  const domains = await db.domain.findMany({ orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], select: { name: true } });
   const out = new Set<string>();
-  for (const a of dmarc) out.add(a);
-  for (const a of tls) out.add(a);
-  if (dmarc.length === 0 || tls.length === 0) {
-    const d = await domain();
-    if (d !== null) {
-      if (dmarc.length === 0) out.add(`dmarc@${d}`);
-      if (tls.length === 0) out.add(`tlsrpt@${d}`);
-    }
+  if (domains.length === 0) {
+    for (const a of addressList(env['REPORTS_MAILBOX'])) out.add(a);
+    for (const a of addressList(env['TLSRPT_MAILBOX'])) out.add(a);
+  }
+  for (const d of domains) {
+    const r = reportMailboxesFor(env, d.name);
+    for (const a of r.dmarc) out.add(a);
+    for (const a of r.tls) out.add(a);
   }
   return [...out];
 }
