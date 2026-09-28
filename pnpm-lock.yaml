@@ -482,6 +482,9 @@ importers:
       '@postroom/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@postroom/delivery':
+        specifier: workspace:*
+        version: link:../delivery
       '@postroom/dnsbl':
         specifier: workspace:*
         version: link:../../packages/dnsbl

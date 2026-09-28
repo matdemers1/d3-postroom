@@ -1,8 +1,11 @@
 // The inbound pipeline's shared shapes (PST-T-2.7, PST-REQ-061).
 //
-// Every spooled InboundMessage runs through six stages, in order, as ONE 'inbound' job:
+// Every spooled InboundMessage runs through seven stages, in order, as ONE 'inbound' job:
 //
-//   verify → parse → classify → sieve → file → notify
+//   verify → parse → classify → sieve → file → notify → feedback
+//
+// (`feedback`, PST-T-11.15, reads a filed DSN or ARF report and acts on the outbound mail it names.
+// It is last so that a report is always filed like any other mail first.)
 //
 // Each stage leaves a marker `{ stage, at, result }` under `InboundMessage.verdicts.pipeline.stages`
 // (no new column: the spool row's verdicts JSON already holds every decision's reasons). A stage
@@ -18,8 +21,9 @@ import type { Blob as BlobRow, Db, InboundMessage, Prisma } from '@postroom/db';
 import type { BlobStore } from '@postroom/blobstore';
 import type { Kek } from '@postroom/crypto';
 import type { AccountCap } from '@postroom/submission/caps';
+import type { SendAlert } from '@postroom/alerts';
 
-export const STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify'] as const;
+export const STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify', 'feedback'] as const;
 export type StageName = (typeof STAGES)[number];
 
 export function isStageName(value: unknown): value is StageName {
@@ -243,6 +247,8 @@ export interface StageDeps {
   readonly vacationDailyCap?: number;
   /** PST-T-11.11: the account-wide outbound cap a vacation reply counts toward (ACCOUNT_CAP_HOURLY/DAILY; default 200 / 1000). */
   readonly accountCap?: AccountCap;
+  /** PST-T-11.15: the operator alert for an ARF complaint, through the D3 Auth relay (PST-REQ-096). */
+  readonly sendAlert?: SendAlert;
 }
 
 /** What a stage sees: the spool row and the results of the stages before it. */
