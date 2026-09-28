@@ -68,6 +68,11 @@ describe('SES relay drops the Ed25519 DKIM signature (PST-REQ-045)', () => {
     );
   });
 
+  it('keeps an Ed25519 signature when it is the only one (DMARC needs at least one)', () => {
+    const block = ['DKIM-Signature: v=1; a=ed25519-sha256; d=d3cloud.io; s=e; bh=x; b=z', 'From: a@d3cloud.io'].join('\r\n');
+    expect(dropEd25519DkimFields(block)).toBe(block);
+  });
+
   it('passes a message through unchanged when it has no Ed25519 signature', async () => {
     const out = await collect(withoutEd25519Dkim(chunked(MESSAGE, 3)));
     expect(out.equals(MESSAGE)).toBe(true);

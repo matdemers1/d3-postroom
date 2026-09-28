@@ -14,7 +14,20 @@ import { Readable } from 'node:stream';
 export const HEADER_CAP = 1024 * 1024;
 const END = Buffer.from('\r\n\r\n', 'latin1');
 
-/** Remove every Ed25519 DKIM-Signature field from a raw header block (CRLF lines, folded or not). */
+/** A DKIM-Signature field's a= value, or null when the field is not a DKIM-Signature. */
+function dkimAlgorithm(field: string): string | null {
+  const colon = field.indexOf(':');
+  if (colon < 0 || field.slice(0, colon).trim().toLowerCase() !== 'dkim-signature') return null;
+  // The a= tag, with folding whitespace removed (RFC 6376 §3.2).
+  const algo = /(?:^|;)\s*a\s*=\s*([^;]+)/i.exec(field.slice(colon + 1).replace(/[\r\n\t ]+/g, ''));
+  return algo?.[1]?.toLowerCase() ?? '';
+}
+
+/**
+ * Remove the Ed25519 DKIM-Signature fields from a raw header block (CRLF lines, folded or not) — but
+ * only when another, non-Ed25519 signature remains: a message signed with Ed25519 alone keeps it
+ * (SES accepts one signature, and DMARC needs at least one).
+ */
 export function dropEd25519DkimFields(block: string): string {
   const lines = block.split('\r\n');
   const fields: string[][] = [];
@@ -22,15 +35,10 @@ export function dropEd25519DkimFields(block: string): string {
     if ((line.startsWith(' ') || line.startsWith('\t')) && fields.length > 0) fields[fields.length - 1]?.push(line);
     else fields.push([line]);
   }
+  const algos = fields.map((f) => dkimAlgorithm(f.join('\r\n')));
+  if (!algos.some((a) => a !== null && a !== 'ed25519-sha256')) return block;
   return fields
-    .filter((f) => {
-      const text = f.join('\r\n');
-      const colon = text.indexOf(':');
-      if (colon < 0 || text.slice(0, colon).trim().toLowerCase() !== 'dkim-signature') return true;
-      // The a= tag, with folding whitespace removed (RFC 6376 §3.2).
-      const algo = /(?:^|;)\s*a\s*=\s*([^;]+)/i.exec(text.slice(colon + 1).replace(/[\r\n\t ]+/g, ''));
-      return algo?.[1]?.toLowerCase() !== 'ed25519-sha256';
-    })
+    .filter((_, i) => algos[i] !== 'ed25519-sha256')
     .map((f) => f.join('\r\n'))
     .join('\r\n');
 }
