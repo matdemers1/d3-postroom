@@ -4,6 +4,18 @@ PST-T-13.2, PST-REQ-163. Builds on PST-ADR-002/PST-ADR-003, `edge/cloud-init.yam
 `edge/provision.sh`, and [`docs/runbooks/ses.md`](ses.md) (the interim fallback this runbook points
 at — read that one for the mechanics of turning SES on).
 
+> [!note] The FCrDNS guard (PST-T-4.16, PST-REQ-187)
+> AWS's port-25 request is not the only gate on direct delivery. Before dialling :25 at all, the
+> `delivery` daemon checks that `PTR(EDGE_PUBLIC_IP)` equals `MX_HOSTNAME` and that host's `A`
+> record equals `EDGE_PUBLIC_IP` (a cached lookup, refreshed at most every 15 minutes). While that
+> does not hold — or `EDGE_PUBLIC_IP` is unset — an eligible recipient goes through SES when it is
+> configured, otherwise it is deferred; the `DeliveryAttempt` row records why. In production today
+> `EDGE_PUBLIC_IP=18.208.39.127`, `MX_HOSTNAME=mx.d3cloud.io` (its A record already resolves to that
+> IP), but the PTR is still AWS's default `ec2-18-208-39-127.compute-1.amazonaws.com` — an rDNS
+> change request is pending with AWS. `DELIVERY_SES_DOMAINS=*` covers every recipient in the
+> meantime, so the guard is not yet load-bearing; it becomes so the moment that variable is
+> narrowed, which is the whole point: direct delivery must never start before FCrDNS is right.
+
 ## Purpose
 
 AWS blocks outbound TCP 25 on Lightsail (and EC2) instances by default, ecosystem-wide anti-spam
