@@ -4,13 +4,15 @@
 // session engine has already discarded every plaintext byte buffered after STARTTLS before it calls
 // this (PST-REQ-029); anything arriving later is fed to the TLS layer, where it is not a handshake.
 
-import { TLSSocket, type SecureContextOptions, type TlsOptions } from 'node:tls';
+import { TLSSocket, type SecureContext, type SecureContextOptions, type TlsOptions } from 'node:tls';
 import type { Duplex } from 'node:stream';
 
 export interface TlsUpgraderOptions extends SecureContextOptions {
   /** Handshake deadline in ms. Default 30 s. */
   readonly handshakeTimeoutMs?: number;
   readonly minVersion?: TlsOptions['minVersion'];
+  /** A ready-made context (a reloadable source's current one, PST-T-11.13); key/cert are then unused. */
+  readonly secureContext?: SecureContext;
 }
 
 export function tlsUpgrader(options: TlsUpgraderOptions): (socket: Duplex) => Promise<TLSSocket> {

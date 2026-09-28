@@ -6,8 +6,8 @@
 //                only; the account password is never consulted.
 //   PST-REQ-075  every check goes through the shared, audit-backed throttle.
 //
-// Without a certificate there is no 993 at all (fail closed), and 143 advertises LOGINDISABLED with
-// no STARTTLS, so nothing can log in.
+// Without a certificate 993 accepts nothing (fail closed: not created at all when none can ever
+// load), and 143 advertises LOGINDISABLED with no STARTTLS, so nothing can log in.
 import { createServer, type AddressInfo, type Server, type Socket } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { createSecureContext, type SecureContext } from 'node:tls';
@@ -32,7 +32,7 @@ export interface ImapServerOptions {
   readonly kek?: Kek;
   /** PASSWORD_PEPPER; without it every login is refused as temporarily unavailable. */
   readonly pepper: string | undefined;
-  readonly tls: { readonly key: Buffer | string; readonly cert: Buffer | string } | null;
+  readonly tls: TlsOption;
   readonly edgePeers: readonly string[];
   readonly proxyTimeoutMs?: number;
   readonly maxConnectionsPerIp?: number;
@@ -53,8 +53,28 @@ export interface ImapServerOptions {
   readonly idlePollMs?: number;
 }
 
+/**
+ * Where the certificate comes from (PST-REQ-020, PST-T-11.13): read at each connection, so a renewed
+ * pair serves the next handshake while open sessions keep theirs. Structurally the reloadable source
+ * `watchTlsPair` returns; a fixed pair (tests) becomes a provider that never changes. `canChange`
+ * says a certificate may appear later, so an implicit-TLS listener is worth binding without one.
+ */
+export interface TlsContextProvider {
+  context(): SecureContext | null;
+  readonly canChange: boolean;
+}
+
+export type TlsOption = { readonly key: Buffer | string; readonly cert: Buffer | string } | TlsContextProvider | null;
+
+function toTlsProvider(tls: TlsOption): TlsContextProvider {
+  if (tls !== null && 'context' in tls) return tls;
+  const fixed = tls === null ? null : createSecureContext({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' });
+  return { context: () => fixed, canChange: false };
+}
+
 export interface ImapListeners {
-  /** 993, implicit TLS; null without a certificate. */
+  /** 993, implicit TLS; null when no certificate can ever load. Bound before one has loaded (it is
+   * watched and may be issued after boot), it refuses connections until one does. */
   readonly imaps: Server | null;
   /** 143, STARTTLS. */
   readonly imap: Server;
@@ -125,7 +145,7 @@ export function createImapListeners(o: ImapServerOptions): ImapListeners {
       }),
     );
   const authenticate = imapAuthenticator(o.db, o.pepper, o.throttle ?? createAuthThrottle({ db: o.db }));
-  const secureContext: SecureContext | null = o.tls === null ? null : createSecureContext({ key: o.tls.key, cert: o.tls.cert, minVersion: 'TLSv1.2' });
+  const tls = toTlsProvider(o.tls);
   const maxPerIp = o.maxConnectionsPerIp ?? 20;
   const perIp = new Map<string, number>();
   const sessions = new Set<ImapSession>();
@@ -136,7 +156,6 @@ export function createImapListeners(o: ImapServerOptions): ImapListeners {
     blobs: o.blobs,
     structures,
     authenticate,
-    secureContext,
     registry,
     log,
     ...(o.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: o.idleTimeoutMs }),
@@ -200,9 +219,12 @@ export function createImapListeners(o: ImapServerOptions): ImapListeners {
       else perIp.set(clientIp, n);
     });
 
+    // The pair current as this connection opens: its STARTTLS or 993 handshake presents it.
+    const secureContext = tls.context();
     let secure = false;
     if (implicitTls) {
       if (secureContext === null) {
+        log('connection-refused', { clientIp, via, reason: 'no TLS certificate loaded' });
         socket.destroy();
         return;
       }
@@ -215,7 +237,7 @@ export function createImapListeners(o: ImapServerOptions): ImapListeners {
         return;
       }
     }
-    const session = new ImapSession(stream, secure, clientIp, sessionOptions);
+    const session = new ImapSession(stream, secure, clientIp, { ...sessionOptions, secureContext });
     sessions.add(session);
     await session.done;
     sessions.delete(session);
@@ -229,7 +251,7 @@ export function createImapListeners(o: ImapServerOptions): ImapListeners {
   };
 
   const imap = createServer(onConnection(false));
-  const imaps = secureContext === null ? null : createServer(onConnection(true));
+  const imaps = tls.context() === null && !tls.canChange ? null : createServer(onConnection(true));
 
   const closeServer = (server: Server): Promise<void> =>
     new Promise((resolve) => {

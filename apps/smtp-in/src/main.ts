@@ -4,7 +4,6 @@
 // Rate limits (PST-REQ-185): SMTP_IN_CONN_PER_MIN (30), SMTP_IN_UNKNOWN_RCPT_PER_10MIN (20); the
 // windows are SMTP_IN_CONN_WINDOW_MS / SMTP_IN_UNKNOWN_RCPT_WINDOW_MS. SMTP_IN_DNSBL_WAIT_MS (3000)
 // bounds how long MAIL FROM waits for the DNSBL verdict.
-import { existsSync, readFileSync } from 'node:fs';
 import { adaptDnsResolver } from '@postroom/auth-checks';
 import { createBlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
@@ -12,6 +11,7 @@ import { envInt, envString, runDaemon, type DaemonContext } from '@postroom/daem
 import { createDb } from '@postroom/db';
 import { createResolver } from '@postroom/dns';
 import { createDnsblChecker } from '@postroom/dnsbl';
+import { tlsHealth, watchTlsPair } from '@postroom/smtp-proto';
 import { loadConfig } from './config.js';
 import { DAEMON } from './daemon.js';
 import { reverseLookupVia } from './rdns.js';
@@ -46,11 +46,12 @@ export async function start(ctx: DaemonContext): Promise<void> {
     .split(',')
     .map((d) => d.trim().toLowerCase())
     .filter((d) => d !== '');
-  const { tlsCertFile: certFile, tlsKeyFile: keyFile } = config;
-  const tls =
-    certFile !== undefined && keyFile !== undefined && existsSync(certFile) && existsSync(keyFile)
-      ? { cert: readFileSync(certFile), key: readFileSync(keyFile) }
-      : undefined;
+  // PST-REQ-020 / PST-T-11.13: the pair is watched, so a renewal (or a first issuance after boot)
+  // is served without a restart. Without one, STARTTLS is not offered and /health says degraded.
+  const tls = watchTlsPair({ certFile: config.tlsCertFile, keyFile: config.tlsKeyFile, log: ctx.log });
+  ctx.onShutdown(() => {
+    tls.close();
+  });
 
   const smtp = createSmtpInServer({
     db,
@@ -84,13 +85,18 @@ export async function start(ctx: DaemonContext): Promise<void> {
     port: bound.port,
     host: config.host,
     hostname: config.hostname,
-    starttls: tls !== undefined,
+    starttls: tls.context() !== null,
     edgePeers: config.edgePeers,
   });
   ctx.onShutdown(() => smtp.close());
   ctx.addHealth(async () => {
     await db.$queryRaw`SELECT 1`;
-    return { smtpSessions: smtp.activeSessions(), starttls: tls !== undefined, rateLimitedNetworks: smtp.rateLimitTracked() };
+    return {
+      smtpSessions: smtp.activeSessions(),
+      starttls: tls.context() !== null,
+      rateLimitedNetworks: smtp.rateLimitTracked(),
+      ...tlsHealth(tls),
+    };
   });
 }
 
