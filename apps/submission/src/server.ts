@@ -22,9 +22,12 @@ import {
   formatMailbox,
   reply,
   tlsUpgrader,
+  toTlsSource,
   type AuthResult,
   type ServerSession,
   type SmtpReply,
+  type TlsContextSource,
+  type TlsInput,
 } from '@postroom/smtp-proto';
 import { acceptSubmission, AcceptReplies, suppressedReply, type SubmissionStorage } from './accept.js';
 import { allowAllCaps, allowAllEnforcement, type CheckCaps, type EnforceCaps } from './caps-seam.js';
@@ -84,8 +87,9 @@ export interface SubmissionOptions {
   readonly pepper: string | undefined;
   /** Opened on first use, so the daemon can boot (and report health) before the KEK is needed. */
   readonly storage: () => SubmissionStorage;
-  /** PEM key + certificate. Null: 587 serves without STARTTLS, so AUTH (and so MAIL) is impossible. */
-  readonly tls: { readonly key: string | Buffer; readonly cert: string | Buffer } | null;
+  /** PEM key + certificate, or a reloadable source (PST-T-11.13). None loaded: 587 serves without
+   * STARTTLS, so AUTH (and so MAIL) is impossible. */
+  readonly tls: TlsInput;
   /** PST-REQ-075: shared, audit-backed tarpit. Default: one per listener set, on `db`. */
   readonly throttle?: AuthThrottle;
   /** RCPT-time, best-effort (see caps-seam.ts). Not what makes the cap correct under concurrency. */
@@ -129,6 +133,9 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
   });
   let login: Login | null = null;
 
+  const tls = toTlsSource(o.tls);
+  const atConnect = tls.context();
+
   const owns = (address: string): boolean => login?.addresses.has(address.toLowerCase()) === true;
 
   // PST-T-6.3: no InboundSession here, so the transcript's sessionId is just a random id (as the
@@ -155,15 +162,17 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
       startTls: true,
     },
     hooks: {
-      ...(o.tls === null
+      // PST-T-11.13: STARTTLS is offered when a certificate is loaded as the connection opens; the
+      // upgrade uses whichever pair is current when it happens.
+      ...(atConnect === null
         ? {}
         : {
-            upgradeTls: ((tls) => async (sock: Duplex) => {
-              const secured = await tlsUpgrader({ key: tls.key, cert: tls.cert })(sock);
+            upgradeTls: async (sock: Duplex) => {
+              const secured = await tlsUpgrader({ secureContext: tls.context() ?? atConnect })(sock);
               // The tap was on the plaintext socket; STARTTLS hands the engine a new Duplex.
               attachTranscriptTap(secured, recorder);
               return secured;
-            })(o.tls),
+            },
           }),
 
       onAuth: async (request, sasl, ctx): Promise<AuthResult> => {
@@ -338,7 +347,8 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
 export interface SubmissionListeners {
   /** 587: plaintext, STARTTLS when a certificate is configured. */
   readonly submission: TcpServer;
-  /** 465: implicit TLS. Null without a certificate. */
+  /** 465: implicit TLS. Null when no certificate can ever load (a fixed pair of none, or no files
+   * configured); with watched files it exists from boot and refuses connections until one loads. */
   readonly submissions: TlsServer | null;
   close(): Promise<void>;
 }
@@ -346,7 +356,9 @@ export interface SubmissionListeners {
 /** Create (not yet listening) the 587 and 465 servers. */
 export function createSubmissionListeners(options: SubmissionOptions): SubmissionListeners {
   // One throttle for every session, so a success in one connection ends the streak for the next.
-  const o: SubmissionOptions = { ...options, throttle: options.throttle ?? createAuthThrottle({ db: options.db }) };
+  // One TLS source for every connection, so a fixed pair's context is built once.
+  const tls: TlsContextSource = toTlsSource(options.tls);
+  const o: SubmissionOptions = { ...options, tls, throttle: options.throttle ?? createAuthThrottle({ db: options.db }) };
   const sockets = new Set<Socket | TLSSocket>();
   const track = (s: Socket | TLSSocket): void => {
     sockets.add(s);
@@ -358,15 +370,32 @@ export function createSubmissionListeners(options: SubmissionOptions): Submissio
     serveSubmission(socket, false, socket.remoteAddress, o);
   });
   let submissions: TlsServer | null = null;
-  if (o.tls !== null) {
-    submissions = createTlsServer({ key: o.tls.key, cert: o.tls.cert, minVersion: 'TLSv1.2' }, (socket) => {
+  let unsubscribe = (): void => undefined;
+  if (tls.context() !== null || tls.canChange) {
+    const pair = tls.pair();
+    const server = createTlsServer({ ...(pair === null ? {} : { key: pair.key, cert: pair.cert }), minVersion: 'TLSv1.2' }, (socket) => {
       track(socket);
       serveSubmission(socket, true, socket.remoteAddress, o);
     });
-    submissions.on('tlsClientError', (err, socket) => {
-      log('tls-error', { ip: socket.remoteAddress, error: errorText(err) });
+    // PST-T-11.13: a renewed pair applies to the next handshake; sessions already open keep theirs.
+    const off = tls.onChange((next) => {
+      server.setSecureContext({ key: next.key, cert: next.cert, minVersion: 'TLSv1.2' });
+    });
+    unsubscribe = () => {
+      off();
+    };
+    // Bound before any certificate loaded (it may be issued after boot): refuse outright rather
+    // than attempt a handshake that has no certificate to offer.
+    server.prependListener('connection', (socket: Socket) => {
+      if (tls.context() !== null) return;
+      log('connection-refused', { ip: socket.remoteAddress, reason: 'no TLS certificate loaded' });
       socket.destroy();
     });
+    server.on('tlsClientError', (err, socket) => {
+      if (tls.context() !== null) log('tls-error', { ip: socket.remoteAddress, error: errorText(err) });
+      socket.destroy();
+    });
+    submissions = server;
   }
   const closeServer = (server: TcpServer | TlsServer): Promise<void> =>
     new Promise((resolve) => {
@@ -382,6 +411,7 @@ export function createSubmissionListeners(options: SubmissionOptions): Submissio
     submission,
     submissions,
     close: async () => {
+      unsubscribe();
       const closing = [closeServer(submission), ...(submissions === null ? [] : [closeServer(submissions)])];
       for (const s of sockets) s.destroy();
       await Promise.all(closing);

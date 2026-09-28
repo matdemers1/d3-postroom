@@ -22,7 +22,7 @@ export interface ManageSieveServerOptions {
   readonly db: Db;
   /** PASSWORD_PEPPER; without it every login is refused as temporarily unavailable. */
   readonly pepper: string | undefined;
-  readonly tls: { readonly key: Buffer | string; readonly cert: Buffer | string } | null;
+  readonly tls: TlsOption;
   readonly edgePeers: readonly string[];
   readonly proxyTimeoutMs?: number;
   readonly maxConnectionsPerIp?: number;
@@ -57,6 +57,25 @@ function canonicalIp(ip: string): string {
   return ip.startsWith('::ffff:') && ip.includes('.') ? ip.slice(7) : ip;
 }
 
+/**
+ * Where the certificate comes from (PST-REQ-020, PST-T-11.13): read at each connection, so a renewed
+ * pair serves the next handshake while open sessions keep theirs. Structurally the reloadable source
+ * `watchTlsPair` returns; a fixed pair (tests) becomes a provider that never changes. `canChange`
+ * says a certificate may appear later, so an implicit-TLS listener is worth binding without one.
+ */
+export interface TlsContextProvider {
+  context(): SecureContext | null;
+  readonly canChange: boolean;
+}
+
+export type TlsOption = { readonly key: Buffer | string; readonly cert: Buffer | string } | TlsContextProvider | null;
+
+function toTlsProvider(tls: TlsOption): TlsContextProvider {
+  if (tls !== null && 'context' in tls) return tls;
+  const fixed = tls === null ? null : createSecureContext({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' });
+  return { context: () => fixed, canChange: false };
+}
+
 export function manageSieveAuthenticator(db: Db, pepper: string | undefined, throttle: AuthThrottle): Authenticator {
   return async (username, password, ip, signal) => {
     const attempt = { protocol: THROTTLE_PROTOCOL, username, ip };
@@ -82,7 +101,7 @@ export function manageSieveAuthenticator(db: Db, pepper: string | undefined, thr
 export function createManageSieveServer(o: ManageSieveServerOptions): ManageSieveServer {
   const log: Log = o.log ?? (() => undefined);
   const authenticate = manageSieveAuthenticator(o.db, o.pepper, o.throttle ?? createAuthThrottle({ db: o.db }));
-  const secureContext: SecureContext | null = o.tls === null ? null : createSecureContext({ key: o.tls.key, cert: o.tls.cert, minVersion: 'TLSv1.2' });
+  const tls = toTlsProvider(o.tls);
   const maxPerIp = o.maxConnectionsPerIp ?? 10;
   const perIp = new Map<string, number>();
   const sessions = new Set<ManageSieveSession>();
@@ -139,7 +158,8 @@ export function createManageSieveServer(o: ManageSieveServerOptions): ManageSiev
     const session = new ManageSieveSession(stream, false, clientIp, {
       db: o.db,
       authenticate,
-      secureContext,
+      // The pair current as this connection opens; STARTTLS presents it (PST-T-11.13).
+      secureContext: tls.context(),
       log,
       ...(o.preauthTimeoutMs === undefined ? {} : { preauthTimeoutMs: o.preauthTimeoutMs }),
       ...(o.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: o.idleTimeoutMs }),

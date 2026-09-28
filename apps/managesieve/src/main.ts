@@ -51,7 +51,7 @@ export async function start(ctx: DaemonContext): Promise<void> {
   ctx.addHealth(async () => {
     await db.$queryRaw`SELECT 1`;
     return tls === null
-      ? { status: 'degraded', tls: 'degraded: no TLS certificate', port: address.port, sessions: server.activeSessions() }
+      ? { status: 'degraded', reason: 'no TLS certificate loaded', tls: 'none', port: address.port, sessions: server.activeSessions() }
       : { tls: 'ok', port: address.port, sessions: server.activeSessions() };
   });
 }
