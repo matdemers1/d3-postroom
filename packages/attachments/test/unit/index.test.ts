@@ -367,7 +367,9 @@ describe('regression: nested-ZIP evasion, malformed central directory, zip bombs
     // The bug this regresses: inflateRawSync(compressed) with no limit raised RSS by ~1 GB to
     // return 32 bytes. Bounded streaming inflate should stay well under that.
     expect(after - before).toBeLessThan(64 * 1024 * 1024);
-  });
+    // Building and inflating the 500 MB bomb takes ~2 s alone but past the default 10 s on a loaded
+    // machine; the assertion is about memory, not speed.
+  }, 60_000);
 
   it('inspectAttachment flags a genuinely bomb-like declared compression ratio without hanging or ballooning memory', () => {
     const zip = zipBomb(64 * 1024 * 1024); // still a huge, real expansion ratio, kept smaller so the full pipeline test stays fast
