@@ -1,6 +1,8 @@
 // PST-T-4.13, PST-REQ-182: the wireguard monitor's pure logic against a faked sidecar endpoint, and
 // — through the real runner — proof that a stopped handshake fires exactly one FIRING and, once it
 // resumes, exactly one RESOLVED.
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Db } from '@postroom/db';
 import type { AlertMessage, AlertResult } from '@postroom/alerts';
@@ -107,5 +109,18 @@ describe('wireguard monitor (PST-REQ-182)', () => {
     await runner.runOnce(); // firing -> ok
     expect(calls).toHaveLength(2);
     expect(calls[1]?.subject).toBe('[Postroom] RESOLVED: wireguard');
+  });
+});
+
+// The sidecar's real CGI script (docker/wireguard/health-http.cgi), run as busybox httpd would: its
+// header block must end in CRLF, or Node's HTTP parser refuses the response and the monitor reads a
+// healthy tunnel as unreachable (found in production, 2026-09-28).
+describe('docker/wireguard/health-http.cgi', () => {
+  const script = join(import.meta.dirname, '..', '..', '..', '..', '..', 'docker', 'wireguard', 'health-http.cgi');
+  it('emits a CRLF header block and a JSON body when unconfigured', () => {
+    const out = execFileSync('sh', [script], { env: { PATH: process.env['PATH'] ?? '' } }).toString('latin1');
+    expect(out.startsWith('Content-Type: application/json\r\n\r\n')).toBe(true);
+    expect(JSON.parse(out.slice(out.indexOf('\r\n\r\n') + 4))).toEqual({ configured: false });
+    expect(out.slice(0, out.indexOf('\r\n\r\n'))).not.toMatch(/(?<!\r)\n/);
   });
 });

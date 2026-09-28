@@ -3,8 +3,9 @@
 # this container's network namespace — can learn the peer's handshake age. `{"configured":false}`
 # when WG_PRIVATE_KEY is unset (a bare namespace, deliberately not brought up): the worker's
 # wireguard monitor must stay quiet on that, not treat it as a down tunnel.
-echo 'Content-Type: application/json'
-echo
+# CGI header lines end in CRLF: busybox httpd passes them through verbatim, and a strict HTTP client
+# (Node's) refuses a bare LF (HPE_INVALID_HEADER_TOKEN) — the monitor would then read a healthy tunnel as down.
+printf 'Content-Type: application/json\r\n\r\n'
 if [ -z "${WG_PRIVATE_KEY:-}" ]; then
   printf '{"configured":false}'
   exit 0
