@@ -76,8 +76,8 @@ describe.skipIf(baseUrl === undefined)('Sieve in the inbound pipeline (PST-T-9.5
       orderBy: { id: 'asc' },
     });
 
-  const deliver = async (opts: { message: Buffer; recipients: TestRecipient[]; envelopeFrom?: string }) => {
-    const { id } = await spool(db, blobs, { ...opts, verdicts: PASS_VERDICTS });
+  const deliver = async (opts: { message: Buffer; recipients: TestRecipient[]; envelopeFrom?: string; verdicts?: Record<string, unknown> }) => {
+    const { id } = await spool(db, blobs, { ...opts, verdicts: opts.verdicts ?? PASS_VERDICTS });
     await pipeline.run(id);
     return { id, copies: await copiesOf(id) };
   };
@@ -287,5 +287,74 @@ describe.skipIf(baseUrl === undefined)('Sieve in the inbound pipeline (PST-T-9.5
     expect(copies[0]?.mailbox.specialUse).toBe('junk');
     expect(await vacationReplies(me.id)).toHaveLength(0);
     expect((await sieveOutcome(id, me.id)).vacation?.reason).toMatch(/^suppressed: the message was (filed as junk|quarantined)/);
+  });
+
+  it('no vacation reply to a forged envelope sender (PST-REQ-188): no aligned SPF or DKIM pass for its domain', async () => {
+    const me = await makeAccount('awayforged');
+    await activate(me.id, 'require "vacation";\r\nvacation "away";\r\n');
+
+    // The envelope claims victim@example.org, but what actually authenticated (SPF and DKIM) is
+    // attacker.net — the classic envelope-forgery shape a vacation auto-reply must not reward.
+    const forged = {
+      ...PASS_VERDICTS,
+      spf: { result: 'pass', domain: 'attacker.net', scope: 'mfrom', reasons: ['spf pass for attacker.net'] },
+      dkim: [{ result: 'pass', domain: 'attacker.net', selector: 's1', testing: false, reasons: ['body hash ok'] }],
+    };
+    const { id } = await deliver({
+      message: message({ from: 'Victim <victim@example.org>', to: me.address, subject: 'hi' }),
+      recipients: [me.rcpt()],
+      envelopeFrom: 'victim@example.org',
+      verdicts: forged,
+    });
+    expect(await vacationReplies(me.id)).toHaveLength(0);
+    const vacation = (await sieveOutcome(id, me.id)).vacation;
+    expect(vacation).toMatchObject({ respond: false, sent: false });
+    expect(vacation?.reason).toMatch(/PST-REQ-188/);
+    expect(vacation?.reason).toMatch(/example\.org has no SPF pass or aligned DKIM pass/);
+
+    // A message with an SPF fail and no DKIM at all is refused the same way (the fail case).
+    const failVerdicts = {
+      ...PASS_VERDICTS,
+      spf: { result: 'fail', domain: 'example.org', scope: 'mfrom', reasons: ['spf fail'] },
+      dkim: [],
+    };
+    const { id: id2 } = await deliver({
+      message: message({ from: 'Victim <victim@example.org>', to: me.address, subject: 'hi again' }),
+      recipients: [me.rcpt()],
+      envelopeFrom: 'victim2@example.org',
+      verdicts: failVerdicts,
+    });
+    expect(await vacationReplies(me.id)).toHaveLength(0);
+    expect((await sieveOutcome(id2, me.id)).vacation).toMatchObject({ respond: false, sent: false });
+  });
+
+  it('the daily vacation cap still applies once a sender is authenticated', async () => {
+    const capped = createInboundPipeline({ db, blobs, now: clock.now, kek: () => kek, vacationDailyCap: 1 });
+    const me = await makeAccount('awaycapped');
+    await activate(me.id, 'require "vacation";\r\nvacation "away";\r\n');
+
+    const first = await spool(db, blobs, {
+      message: message({ from: 'Alice <alice@example.org>', to: me.address, subject: 'one' }),
+      recipients: [me.rcpt()],
+      envelopeFrom: 'alice@example.org',
+      verdicts: PASS_VERDICTS,
+    });
+    await capped.run(first.id);
+    expect(await vacationReplies(me.id)).toHaveLength(1);
+    expect((await sieveOutcome(first.id, me.id)).vacation).toMatchObject({ respond: true, sent: true });
+
+    // A second, differently-authenticated sender the same day is still refused: the cap, not
+    // authentication, is why.
+    const second = await spool(db, blobs, {
+      message: message({ from: 'Carol <carol@example.org>', to: me.address, subject: 'two' }),
+      recipients: [me.rcpt()],
+      envelopeFrom: 'carol@example.org',
+      verdicts: PASS_VERDICTS,
+    });
+    await capped.run(second.id);
+    expect(await vacationReplies(me.id)).toHaveLength(1);
+    const vacation = (await sieveOutcome(second.id, me.id)).vacation;
+    expect(vacation).toMatchObject({ respond: false, sent: false });
+    expect(vacation?.reason).toMatch(/daily vacation cap \(1\) is reached/);
   });
 });
