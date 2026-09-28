@@ -41,7 +41,8 @@ ENV NODE_ENV=production POSTROOM_REVISION=${REVISION} WEB_DIST=/app/apps/web/dis
 WORKDIR /app
 # Code stays root-owned so the service user cannot modify it; only the data dirs are writable.
 COPY --from=build /repo ./
-RUN mkdir -p /var/lib/postroom/blobs /var/lib/postroom/backups \
+# certs: the ACME job's output (PST-T-0.15); a new named volume copies this node-owned directory.
+RUN mkdir -p /var/lib/postroom/blobs /var/lib/postroom/backups /var/lib/postroom/certs \
     && chown -R node:node /var/lib/postroom \
     && ln -s /app/bin/postroom.mjs /usr/local/bin/postroom
 USER node

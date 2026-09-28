@@ -32,7 +32,7 @@ plus, separately, the NTP reading (PST-REQ-100):
 |---|---|---|
 | `tunnel` | a GET to `TUNNEL_HEALTH_URL` times out or answers non-2xx | `TUNNEL_HEALTH_URL` (unset/`''` **disables** — see Production values) |
 | `backlog` | outbound pending jobs + inbound unfiled messages exceed `BACKLOG_THRESHOLD`, or the oldest of either exceeds `BACKLOG_MAX_AGE_S` | `BACKLOG_THRESHOLD` (500), `BACKLOG_MAX_AGE_S` (3600) |
-| `cert-expiry` | any cert in `TLS_CERT_FILES` is within `CERT_WARN_DAYS` of `notAfter`, or cannot be read/parsed (PST-REQ-021) | `TLS_CERT_FILES` (comma list; `''` disables), `CERT_WARN_DAYS` (14) |
+| `cert-expiry` | any cert in `TLS_CERT_FILES` is within `CERT_WARN_DAYS` of `notAfter`, or cannot be read/parsed (PST-REQ-021) | `TLS_CERT_FILES` (comma list; `''` disables; unset with ACME on → the ACME job's live `fullchain.pem`, see `acme.md`), `CERT_WARN_DAYS` (14) |
 | `disk` | `BLOB_ROOT` (and `PGDATA`, if set) is over `DISK_THRESHOLD_PCT` used | `DISK_THRESHOLD_PCT` (80), `PGDATA` (unset) |
 | `blocklist` | `EDGE_PUBLIC_IP` is listed on any of the major blocklists it checks (PST-REQ-124) | `EDGE_PUBLIC_IP` (`''` disables), `DNS_RESOLVER` (`127.0.0.1:53`), `SPAMHAUS_DQS_KEY`, `BLOCKLIST_ZONES`, `BLOCKLIST_INTERVAL_MS` (6h), `BLOCKLIST_ZONE_TIMEOUT_MS` (5s) |
 | `backup-drill` | the last backup or drill failed, or either is older than `BACKUP_MAX_AGE_S` — only once backups are configured (`BACKUP_BUCKET` set); an unconfigured install never fires this | `BACKUP_MAX_AGE_S` (36 h) |

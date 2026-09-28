@@ -1,6 +1,7 @@
 // The worker daemon: runs the inbound pipeline (PST-T-2.7) on the 'inbound' queue — verify, parse,
 // classify, sieve, file, notify, feedback — for every message smtp-in spooled — and, on their own queues and
-// worker, the nightly backup and restore drill (PST-T-0.16, PST-T-0.17). ACME joins in a later phase.
+// worker, the nightly backup and restore drill (PST-T-0.16, PST-T-0.17), and the ACME DNS-01
+// certificate job for the mail ports (PST-T-0.15).
 import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
@@ -10,6 +11,9 @@ import { startWorker } from '@postroom/queue';
 import { backupHandler, BACKUP_QUEUE } from './backup/job.js';
 import { DRILL_QUEUE, startNightly } from './backup/schedule.js';
 import { maintenanceDeps } from './backup/wire.js';
+import { startAcmeLoop } from './acme/schedule.js';
+import { readLastAcme } from './acme/state.js';
+import { acmeDeps } from './acme/wire.js';
 import { DAEMON } from './daemon.js';
 import { drillHandler } from './drill/drill.js';
 import { createExportSweeper, exportHandler, EXPORT_QUEUE } from './export/index.js';
@@ -187,6 +191,19 @@ await runDaemon({
     });
     ctx.onShutdown(() => scheduled.stop());
 
+    // PST-T-0.15 (PST-REQ-020): obtain and renew the mx certificate by ACME DNS-01 through the
+    // delegated challenge zone, into the certs volume the protocol daemons hot-reload from. Off
+    // unless ACME_DNS_TOKEN and ACME_DOMAINS are set. Its own block and its own shutdown hook.
+    const acme = startAcmeLoop({
+      deps: acmeDeps(ctx.env, db, ctx.log),
+      log: ctx.log,
+      startDelayMs: envInt(ctx.env, 'ACME_START_DELAY_MS', 60_000),
+      intervalMs: envInt(ctx.env, 'ACME_CHECK_MS', 3_600_000),
+    });
+    ctx.onShutdown(() => {
+      acme.stop();
+    });
+
     // Health alerts through the D3 Auth relay (PST-T-4.7, PST-REQ-096, PST-REQ-097): tunnel,
     // backlog, cert expiry, disk, blocklist, backup/drill and NTP skew, each alerting once on
     // firing and once again on recovery — never through Postroom's own outbound queue.
@@ -218,6 +235,7 @@ await runDaemon({
     ctx.addHealth(async () => ({
       inbound: await inboundHealth(db),
       ...(await maintenanceHealth(db)),
+      lastAcme: await readLastAcme(db),
       monitors: monitorRunner.statuses(),
       ntp: ntp === null ? ('not configured' as const) : (ntp.getStatus() ?? ('pending' as const)),
     }));

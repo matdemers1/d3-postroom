@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // One image, one entrypoint per daemon (PST-ADR-001, PST-REQ-004): `postroom <daemon>` runs that
 // daemon's built main; `postroom migrate` applies Prisma migrations; `postroom seed` seeds;
-// `postroom backup` / `postroom drill` run one backup or restore drill now (PST-T-0.16, PST-T-0.17).
+// `postroom backup` / `postroom drill` run one backup or restore drill now (PST-T-0.16, PST-T-0.17);
+// `postroom acme [--staging] [--force]` runs the certificate job once now (PST-T-0.15).
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -37,7 +38,15 @@ if (command !== undefined && DAEMONS.includes(command)) {
   }
   const { main } = await import(cli);
   process.exit(await main(command));
+} else if (command === 'acme') {
+  const cli = join(root, 'apps', 'worker', 'dist', 'acme', 'cli.js');
+  if (!existsSync(cli)) {
+    console.error(`postroom: acme is not built into this image (${cli} is missing)`);
+    process.exit(1);
+  }
+  const { main } = await import(cli);
+  process.exit(await main(rest));
 } else {
-  console.error(`usage: postroom <${DAEMONS.join('|')}|migrate|seed|backup|drill>`);
+  console.error(`usage: postroom <${DAEMONS.join('|')}|migrate|seed|backup|drill|acme>`);
   process.exit(command === undefined ? 1 : 2);
 }
