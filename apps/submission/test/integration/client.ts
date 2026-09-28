@@ -2,10 +2,55 @@
 // parsing from @postroom/smtp-proto. Accepts the test's self-signed certificate.
 import { once } from 'node:events';
 import { createConnection, type Socket } from 'node:net';
+import { Duplex } from 'node:stream';
 import { connect as tlsConnect, type TLSSocket } from 'node:tls';
 import { ReplyParser, type SmtpReply } from '@postroom/smtp-proto';
 
 export const b64 = (s: string): string => Buffer.from(s, 'utf8').toString('base64');
+
+/**
+ * A Duplex over a socket whose first write is prefixed with `prefix` — so a PROXY v2 header and the
+ * TLS ClientHello leave in ONE socket write, as the edge's forwarder may coalesce them (PST-T-4.17).
+ */
+class PrefixFirstWrite extends Duplex {
+  constructor(
+    private readonly socket: Socket,
+    private prefix: Buffer | null,
+  ) {
+    super();
+    socket.on('data', (chunk: Buffer) => {
+      if (!this.push(chunk)) socket.pause();
+    });
+    socket.on('end', () => {
+      this.push(null);
+    });
+    socket.on('error', (err) => {
+      this.destroy(err);
+    });
+    socket.on('close', () => {
+      this.destroy();
+    });
+  }
+
+  override _read(): void {
+    this.socket.resume();
+  }
+
+  override _write(chunk: Buffer, _enc: BufferEncoding, cb: (err?: Error | null) => void): void {
+    const out = this.prefix === null ? chunk : Buffer.concat([this.prefix, chunk]);
+    this.prefix = null;
+    this.socket.write(out, cb);
+  }
+
+  override _final(cb: (err?: Error | null) => void): void {
+    this.socket.end(cb);
+  }
+
+  override _destroy(err: Error | null, cb: (err?: Error | null) => void): void {
+    this.socket.destroy();
+    cb(err);
+  }
+}
 
 export class SmtpTestClient {
   private parser = new ReplyParser();
@@ -40,16 +85,59 @@ export class SmtpTestClient {
     w?.();
   }
 
-  static async plain(port: number): Promise<SmtpTestClient> {
+  /** `prefix` (a PROXY header, say) is written as soon as the connection opens. */
+  static async plain(port: number, prefix?: Buffer): Promise<SmtpTestClient> {
     const socket = createConnection({ host: '127.0.0.1', port });
     await once(socket, 'connect');
+    const client = new SmtpTestClient(socket);
+    if (prefix !== undefined) socket.write(prefix);
+    return client;
+  }
+
+  /**
+   * Implicit TLS (465). With `prefix`, it is sent before the handshake: in a write of its own, or —
+   * `oneWrite` — in the same socket write as the ClientHello.
+   */
+  static async implicitTls(port: number, prefix?: Buffer, oneWrite = false): Promise<SmtpTestClient> {
+    if (prefix === undefined) {
+      const socket = tlsConnect({ host: '127.0.0.1', port, rejectUnauthorized: false });
+      await once(socket, 'secureConnect');
+      return new SmtpTestClient(socket);
+    }
+    const raw = createConnection({ host: '127.0.0.1', port });
+    raw.setNoDelay(true);
+    await once(raw, 'connect');
+    let under: Duplex = raw;
+    if (oneWrite) under = new PrefixFirstWrite(raw, prefix);
+    else raw.write(prefix);
+    const socket = tlsConnect({ socket: under, rejectUnauthorized: false });
+    await once(socket, 'secureConnect');
     return new SmtpTestClient(socket);
   }
 
-  static async implicitTls(port: number): Promise<SmtpTestClient> {
-    const socket = tlsConnect({ host: '127.0.0.1', port, rejectUnauthorized: false });
-    await once(socket, 'secureConnect');
-    return new SmtpTestClient(socket);
+  /** Resolves once the server closes the connection (true), or false after `timeoutMs`. */
+  async closedWithin(timeoutMs = 5_000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (!this.closed && Date.now() < deadline) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, Math.max(1, deadline - Date.now()));
+        this.waiter = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+    }
+    return this.closed;
+  }
+
+  /** Replies received and not yet read with next(). */
+  get pending(): readonly SmtpReply[] {
+    return this.queue;
+  }
+
+  /** Raw bytes, no CRLF added. */
+  write(bytes: Buffer | string): void {
+    this.socket.write(bytes);
   }
 
   get encrypted(): boolean {

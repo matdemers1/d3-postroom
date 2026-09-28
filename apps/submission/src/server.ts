@@ -8,11 +8,16 @@
 //   PST-REQ-060  250 only after the signed blob is fsynced and its rows and jobs are committed.
 //   PST-REQ-179  a suppressed recipient is refused at RCPT (550 5.1.1, just that one), and again,
 //                authoritatively, inside the accepting transaction.
+//   PST-REQ-016  PROXY v2 is accepted only from the edge's WireGuard peer, and required from it, on
+//                587 and 465 (read before the TLS handshake); its source is the client address for
+//                the throttle, the logs and the transcript. A PROXY header from anyone else closes
+//                the connection (PST-T-4.17).
 import { randomUUID } from 'node:crypto';
 import { createServer as createTcpServer, type Server as TcpServer, type Socket } from 'node:net';
 import type { Duplex, Readable } from 'node:stream';
-import { createServer as createTlsServer, type Server as TlsServer, type TLSSocket } from 'node:tls';
+import { createServer as createTlsServer, type TLSSocket } from 'node:tls';
 import { createAuthThrottle, type AuthThrottle } from '@postroom/auth-throttle';
+import { isTrustedProxyPeer, readProxyHeader } from '@postroom/proxy-protocol';
 import { verifyProtocolLogin } from '@postroom/credentials';
 import type { Db, Prisma } from '@postroom/db';
 import { findSuppressed } from '@postroom/delivery';
@@ -32,6 +37,7 @@ import {
 import { acceptSubmission, AcceptReplies, suppressedReply, type SubmissionStorage } from './accept.js';
 import { allowAllCaps, allowAllEnforcement, type CheckCaps, type EnforceCaps } from './caps-seam.js';
 import { isCredentialFrozen, type AccountCap } from './caps/index.js';
+import { canonicalIp, refuseStrayProxyHeader, SocketDuplex } from './proxy.js';
 import { SASL_MECHANISMS, readCredentials } from './sasl.js';
 import { attachTranscriptTap, TranscriptRecorder } from './transcript.js';
 
@@ -98,6 +104,11 @@ export interface SubmissionOptions {
   readonly enforceCaps?: EnforceCaps;
   /** PST-T-11.11: the account-wide cap (ACCOUNT_CAP_HOURLY/DAILY), enforced by acceptSubmission; default 200 / 1000. */
   readonly accountCap?: AccountCap;
+  /** PST-REQ-016: the edge's WireGuard peer address(es) (EDGE_PEER_ADDRESS), the only sources a
+   * PROXY v2 header is accepted from, and required from. Default none: every connection is direct. */
+  readonly edgePeers?: readonly string[];
+  /** A connection from the peer must present its PROXY header within this long (default 5 s). */
+  readonly proxyTimeoutMs?: number;
   readonly log?: (event: string, fields?: Record<string, unknown>) => void;
   readonly faults?: SubmissionFaults;
   readonly idleTimeoutMs?: number;
@@ -348,8 +359,9 @@ export interface SubmissionListeners {
   /** 587: plaintext, STARTTLS when a certificate is configured. */
   readonly submission: TcpServer;
   /** 465: implicit TLS. Null when no certificate can ever load (a fixed pair of none, or no files
-   * configured); with watched files it exists from boot and refuses connections until one loads. */
-  readonly submissions: TlsServer | null;
+   * configured); with watched files it exists from boot and refuses connections until one loads.
+   * A plain TCP server: from the edge peer the PROXY header precedes the ClientHello (PST-T-4.17). */
+  readonly submissions: TcpServer | null;
   close(): Promise<void>;
 }
 
@@ -359,45 +371,129 @@ export function createSubmissionListeners(options: SubmissionOptions): Submissio
   // One TLS source for every connection, so a fixed pair's context is built once.
   const tls: TlsContextSource = toTlsSource(options.tls);
   const o: SubmissionOptions = { ...options, tls, throttle: options.throttle ?? createAuthThrottle({ db: options.db }) };
+  const edgePeers = o.edgePeers ?? [];
   const sockets = new Set<Socket | TLSSocket>();
   const track = (s: Socket | TLSSocket): void => {
     sockets.add(s);
     s.on('close', () => sockets.delete(s));
   };
   const log = o.log ?? noLog;
+
+  /**
+   * PST-REQ-016: from the edge peer the PROXY v2 header is required, promptly, with a source; its
+   * source is the client. Resolves the client address (bytes read past the header are put back on
+   * the socket), or null once the connection has been refused and destroyed.
+   */
+  async function readEdgeHeader(socket: Socket): Promise<string | null> {
+    const peer = socket.remoteAddress ?? '';
+    try {
+      const { header, rest } = await readProxyHeader(socket, { timeoutMs: o.proxyTimeoutMs ?? 5_000, maxBytes: 4096 });
+      if (header.command !== 'PROXY' || header.source === undefined) {
+        log('proxy-refused', { peer, reason: `PROXY ${header.command} without a source address` });
+        socket.destroy();
+        return null;
+      }
+      if (rest.length > 0) socket.unshift(rest);
+      return canonicalIp(header.source.address);
+    } catch (err) {
+      log('proxy-refused', { peer, reason: errorText(err) });
+      socket.destroy();
+      return null;
+    }
+  }
+
   const submission = createTcpServer((socket) => {
     track(socket);
-    serveSubmission(socket, false, socket.remoteAddress, o);
+    const peer = socket.remoteAddress ?? '';
+    if (!isTrustedProxyPeer(peer, edgePeers)) {
+      // Direct (LAN, tailnet): served exactly as before, unless the stream opens with a PROXY header.
+      refuseStrayProxyHeader(socket, () => {
+        log('proxy-refused', { peer, reason: 'PROXY header from a peer that is not the edge' });
+      });
+      serveSubmission(socket, false, socket.remoteAddress, o);
+      return;
+    }
+    socket.on('error', (err) => {
+      log('socket-error', { peer, error: err.message });
+    });
+    void readEdgeHeader(socket).then((clientIp) => {
+      if (clientIp === null) return;
+      log('connection', { clientIp, via: 'proxy', port: 'submission' });
+      serveSubmission(socket, false, clientIp, o);
+    });
   });
-  let submissions: TlsServer | null = null;
+
+  let submissions: TcpServer | null = null;
   let unsubscribe = (): void => undefined;
   if (tls.context() !== null || tls.canChange) {
     const pair = tls.pair();
-    const server = createTlsServer({ ...(pair === null ? {} : { key: pair.key, cert: pair.cert }), minVersion: 'TLSv1.2' }, (socket) => {
+    // Direct connections are handed to this (never listening) TLS server, so they keep exactly the
+    // handshake, reload and error handling they always had.
+    const direct = createTlsServer({ ...(pair === null ? {} : { key: pair.key, cert: pair.cert }), minVersion: 'TLSv1.2' }, (socket) => {
       track(socket);
       serveSubmission(socket, true, socket.remoteAddress, o);
     });
     // PST-T-11.13: a renewed pair applies to the next handshake; sessions already open keep theirs.
     const off = tls.onChange((next) => {
-      server.setSecureContext({ key: next.key, cert: next.cert, minVersion: 'TLSv1.2' });
+      direct.setSecureContext({ key: next.key, cert: next.cert, minVersion: 'TLSv1.2' });
     });
     unsubscribe = () => {
       off();
     };
     // Bound before any certificate loaded (it may be issued after boot): refuse outright rather
     // than attempt a handshake that has no certificate to offer.
-    server.prependListener('connection', (socket: Socket) => {
+    direct.prependListener('connection', (socket: Socket) => {
       if (tls.context() !== null) return;
       log('connection-refused', { ip: socket.remoteAddress, reason: 'no TLS certificate loaded' });
       socket.destroy();
     });
-    server.on('tlsClientError', (err, socket) => {
+    direct.on('tlsClientError', (err, socket) => {
       if (tls.context() !== null) log('tls-error', { ip: socket.remoteAddress, error: errorText(err) });
       socket.destroy();
     });
-    submissions = server;
+
+    // From the edge the PROXY header comes first, then the handshake over the rest of the stream —
+    // through SocketDuplex, so a ClientHello that arrived in the header's chunk is not lost.
+    const viaEdge = async (socket: Socket): Promise<void> => {
+      const clientIp = await readEdgeHeader(socket);
+      if (clientIp === null) return;
+      // The pair current as this handshake starts, as for a direct connection.
+      const secureContext = tls.context();
+      if (secureContext === null) {
+        log('connection-refused', { ip: clientIp, via: 'proxy', reason: 'no TLS certificate loaded' });
+        socket.destroy();
+        return;
+      }
+      let secured: TLSSocket;
+      try {
+        secured = await tlsUpgrader({ secureContext })(new SocketDuplex(socket));
+      } catch (err) {
+        log('tls-error', { ip: clientIp, via: 'proxy', error: errorText(err) });
+        socket.destroy();
+        return;
+      }
+      log('connection', { clientIp, via: 'proxy', port: 'submissions' });
+      serveSubmission(secured, true, clientIp, o);
+    };
+
+    submissions = createTcpServer((socket) => {
+      const peer = socket.remoteAddress ?? '';
+      track(socket);
+      if (!isTrustedProxyPeer(peer, edgePeers)) {
+        // A stray PROXY header here is no ClientHello: the handshake fails and the socket closes.
+        direct.emit('connection', socket);
+        return;
+      }
+      socket.on('error', (err) => {
+        log('socket-error', { peer, error: err.message });
+      });
+      viaEdge(socket).catch((err: unknown) => {
+        log('connection-error', { peer, error: errorText(err) });
+        socket.destroy();
+      });
+    });
   }
-  const closeServer = (server: TcpServer | TlsServer): Promise<void> =>
+  const closeServer = (server: TcpServer): Promise<void> =>
     new Promise((resolve) => {
       if (!server.listening) {
         resolve();

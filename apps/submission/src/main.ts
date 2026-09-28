@@ -1,14 +1,17 @@
 // Authenticated submission on 587 (STARTTLS) and 465 (implicit TLS) — PST-T-1.2.
 //
-// Reachable on the LAN and the tailnet only until the security gate passes: the edge's Lightsail
-// firewall keeps 465/587 closed and the edge does not forward them (PST-REQ-026) — that is the
-// edge's configuration, not this daemon's.
+// Reachable directly on the LAN and the tailnet, and — once the security gate passes and the edge
+// goes live (PST-T-4.5) — through the edge, which forwards 465 and 587 over WireGuard with a PROXY v2
+// header on every connection. From EDGE_PEER_ADDRESS that header is required (read before the TLS
+// handshake on 465) and its source is the client; from anyone else a PROXY header closes the
+// connection (PST-REQ-016, PST-T-4.17).
 //
 // Environment: DATABASE_URL, POSTROOM_KEK, PASSWORD_PEPPER, BLOB_ROOT, TLS_CERT_FILE, TLS_KEY_FILE,
 // SUBMISSION_HOSTNAME, SUBMISSION_PORT (587), SUBMISSIONS_PORT (465), SUBMISSION_MAX_SIZE (100 MB),
 // SUBMISSION_MAX_RECIPIENTS (100), SUBMISSION_CAP_HOURLY (100) / SUBMISSION_CAP_DAILY (500) per app
 // password, ACCOUNT_CAP_HOURLY (200) / ACCOUNT_CAP_DAILY (1000) per account across every sending path
-// (PST-T-11.11 — the api and worker read the same two), LISTEN_HOST, HEALTH_PORT.
+// (PST-T-11.11 — the api and worker read the same two), EDGE_PEER_ADDRESS (10.77.0.1, comma list),
+// PROXY_TIMEOUT_MS (5000), LISTEN_HOST, HEALTH_PORT.
 import type { Server } from 'node:net';
 import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore } from '@postroom/blobstore';
@@ -18,6 +21,7 @@ import { createDb } from '@postroom/db';
 import { tlsHealth, watchTlsPair } from '@postroom/smtp-proto';
 import { accountCapFromEnv, createCapsChecker, createCapsEnforcer } from './caps/index.js';
 import { DAEMON } from './daemon.js';
+import { proxyConfigFromEnv } from './proxy.js';
 import { createSubmissionListeners, type SubmissionStorage } from './server.js';
 
 function listen(server: Server, port: number, host: string): Promise<void> {
@@ -66,6 +70,7 @@ await runDaemon({
       ),
       log: ctx.log,
     };
+    const proxy = proxyConfigFromEnv(ctx.env);
     const checkCaps = createCapsChecker(capsOptions);
     const enforceCaps = createCapsEnforcer(capsOptions);
     const listeners = createSubmissionListeners({
@@ -85,6 +90,8 @@ await runDaemon({
       checkCaps,
       enforceCaps,
       accountCap: accountCapFromEnv(ctx.env, { sendAlert: capsOptions.sendAlert, log: ctx.log }),
+      edgePeers: proxy.edgePeers,
+      proxyTimeoutMs: proxy.proxyTimeoutMs,
       log: ctx.log,
     });
 
@@ -94,7 +101,7 @@ await runDaemon({
     if (listeners.submissions !== null) await listen(listeners.submissions, port465, host);
 
     ctx.addHealth(() => ({ ...tlsHealth(tls), listening: listeners.submissions === null ? [port587] : [port587, port465] }));
-    ctx.log('listening', { host, submission: port587, submissions: listeners.submissions === null ? null : port465 });
+    ctx.log('listening', { host, submission: port587, submissions: listeners.submissions === null ? null : port465, edgePeers: proxy.edgePeers });
     ctx.onShutdown(async () => {
       tls.close();
       await listeners.close();

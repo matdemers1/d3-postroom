@@ -35,6 +35,7 @@
     "@postroom/db": "workspace:*",
     "@postroom/credentials": "workspace:*",
     "@postroom/smtp-proto": "workspace:*",
+    "@postroom/proxy-protocol": "workspace:*",
     "@postroom/delivery": "workspace:*",
     "@postroom/blobstore": "workspace:*",
     "@postroom/crypto": "workspace:*",
