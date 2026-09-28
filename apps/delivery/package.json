@@ -38,6 +38,16 @@
       "source": "./src/transports/fake.ts",
       "types": "./dist/transports/fake.d.ts",
       "default": "./dist/transports/fake.js"
+    },
+    "./ses-feedback": {
+      "source": "./src/ses-feedback/index.ts",
+      "types": "./dist/ses-feedback/index.d.ts",
+      "default": "./dist/ses-feedback/index.js"
+    },
+    "./ses-feedback/testing": {
+      "source": "./src/ses-feedback/testing.ts",
+      "types": "./dist/ses-feedback/testing.d.ts",
+      "default": "./dist/ses-feedback/testing.js"
     }
   }
 }
