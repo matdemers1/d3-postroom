@@ -2,7 +2,7 @@
 // charted by day, by source and by reporting organization. Mounted by app.ts behind requireAdmin.
 // Reads only; the rows are written by the worker's report sweep (apps/worker/src/reports), which
 // reads every message filed to the report mailboxes (REPORTS_MAILBOX / TLSRPT_MAILBOX, default
-// dmarc@ and tlsrpt@ the primary domain). Admin routes are not in openapi.json, by convention.
+// dmarc-reports@ and tls-reports@ each domain; see @postroom/db role-addresses). Admin routes are not in openapi.json, by convention.
 //
 // POST /dev/seed exists only when POSTROOM_E2E_SEED=1 (the e2e stack; see admin-dev): it files a
 // message carrying report attachments into the report mailbox — creating that service mailbox if
