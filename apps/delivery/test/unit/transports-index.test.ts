@@ -69,6 +69,8 @@ describe('guardDirectTransport', () => {
     expect(direct.calls).toBe(0);
     expect(ses.calls).toBe(1);
     expect(result.details).toEqual({ mxHost: 'email-smtp.us-east-1.amazonaws.com' });
+    // The attempt is recorded as carried by SES, not as the 'direct' key it was routed to.
+    expect(result.transport).toBe('ses');
   });
 
   it('defers every recipient with the reason when FCrDNS does not hold and SES is not configured', async () => {

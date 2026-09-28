@@ -47,6 +47,11 @@ export interface DeliveryResult {
   details: AttemptDetails;
   /** Keyed by DeliveryRecipient.id. A recipient with no entry is treated as an `error` (temporary). */
   results: Record<string, AttemptOutcome>;
+  /**
+   * The transport that actually carried this attempt, when it differs from the one it was routed to
+   * (the FCrDNS guard hands a `direct` attempt to SES). DeliveryAttempt.transport records this.
+   */
+  transport?: string;
 }
 
 /**

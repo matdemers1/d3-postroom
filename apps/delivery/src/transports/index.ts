@@ -83,7 +83,7 @@ export function guardDirectTransport(direct: Transport, ses: Transport | undefin
     deliver: async (request: DeliveryRequest): Promise<DeliveryResult> => {
       const verdict = await guard.check();
       if (verdict.valid) return direct.deliver(request);
-      if (ses !== undefined) return ses.deliver(request);
+      if (ses !== undefined) return { ...(await ses.deliver(request)), transport: ses.name };
       const results: Record<string, AttemptOutcome> = {};
       for (const r of request.recipients) results[r.id] = { kind: 'temporary', text: verdict.reason };
       return { details: {}, results };

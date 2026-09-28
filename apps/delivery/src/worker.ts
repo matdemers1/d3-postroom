@@ -295,7 +295,7 @@ export function createDeliveryWorker(options: DeliveryWorkerOptions): DeliveryWo
             where: { id: attemptId },
             data: {
               finishedAt,
-              transport: options.transports[transportName]?.name ?? transportName,
+              transport: result.transport ?? options.transports[transportName]?.name ?? transportName,
               outcome: moved.count === 0 ? 'error' : t.attemptOutcome,
               error: outcome.kind === 'error' ? outcome.error : (moved.count === 0 ? 'finished after recovery had closed the attempt' : null),
               remoteCode: outcome.kind === 'error' ? null : (outcome.code ?? null),
