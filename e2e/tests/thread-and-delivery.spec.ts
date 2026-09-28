@@ -36,20 +36,32 @@ interface DeliveryView {
   recipients: { id: string; state: string }[];
 }
 
+/**
+ * Cancels every recipient of these outbound messages and waits until none is left in the queue.
+ *
+ * PST-T-11.18: cancelling is part of the poll, not a single pass before it. The delivery daemon
+ * claims a new recipient the moment the send commits, and one it has claimed is `attempting` —
+ * which cancel refuses (409 not_cancellable, apps/delivery/src/cancel.ts: in flight may already be
+ * on the remote's disk). In this stack the attempt ends a few milliseconds later as `deferred`
+ * (FCrDNS: no EDGE_PUBLIC_IP), cancellable again, but a single pass had already looked and moved
+ * on: the recipient then sat `deferred`, next retry in 5 minutes, and the count stayed at 1.
+ */
 async function cancelOutbound(ids: readonly string[]): Promise<void> {
-  for (const id of ids) {
-    const view = (await (await api.get(`/api/messages/${id}/delivery`)).json()) as DeliveryView;
-    for (const r of view.recipients) {
-      if (r.state === 'queued' || r.state === 'deferred') await api.post(`/api/messages/${id}/recipients/${r.id}/cancel`, { headers: CSRF });
-    }
-  }
   await expect
     .poll(
       async () => {
         let busy = 0;
         for (const id of ids) {
           const view = (await (await api.get(`/api/messages/${id}/delivery`)).json()) as DeliveryView;
-          busy += view.recipients.filter((r) => r.state === 'queued' || r.state === 'attempting' || r.state === 'deferred').length;
+          for (const r of view.recipients) {
+            if (r.state === 'queued' || r.state === 'deferred') {
+              const res = await api.post(`/api/messages/${id}/recipients/${r.id}/cancel`, { headers: CSRF });
+              if (res.ok()) continue;
+              // 409: the daemon claimed it between the read and the cancel; it counts as busy.
+              if (res.status() !== 409) throw new Error(`cancel answered ${String(res.status())}: ${await res.text()}`);
+            }
+            if (r.state === 'queued' || r.state === 'attempting' || r.state === 'deferred') busy++;
+          }
         }
         return busy;
       },
