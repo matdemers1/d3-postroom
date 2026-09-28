@@ -12,7 +12,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext } from '@playwright/test';
 import { ensureOperator, signInCookies } from './support.js';
 
-test.describe.configure({ mode: 'serial', timeout: 360_000 });
+test.describe.configure({ mode: 'serial', timeout: 180_000 });
 
 const CSRF = { 'x-postroom-csrf': '1' };
 const fixtures = join(import.meta.dirname, '..', '..', 'packages', 'reports', 'test', 'fixtures');
@@ -27,6 +27,13 @@ let cookies: Awaited<ReturnType<BrowserContext['cookies']>> = [];
 const cookieHeader = (): string => cookies.map((c) => `${c.name}=${c.value}`).join('; ');
 
 test.beforeAll(async ({ playwright }, testInfo) => {
+  // PST-T-11.9: a beforeAll hook does not get describe.configure's timeout — Playwright gives every
+  // hook the project timeout (30 s by default) unless the hook sets its own. This one can need more:
+  // signInCookies may wait up to one 30 s TOTP step for a fresh code (support.ts, freshCode: the
+  // spec before it burned the current one), and only then seeds and waits up to a sweep tick
+  // (REPORTS_SWEEP_MS, 10 s) for the rows. On CI both waits landed together and the hook died at
+  // 30 s, seconds before the worker ingested the seed — the reports were never late.
+  test.setTimeout(120_000);
   const baseURL = testInfo.project.use.baseURL;
   api = await playwright.request.newContext(baseURL === undefined ? {} : { baseURL });
   const operator = await ensureOperator(api);
@@ -45,9 +52,7 @@ test.beforeAll(async ({ playwright }, testInfo) => {
   if (seeded.status() === 404) throw new Error('the stack has no deliverability dev seed route: start the api with POSTROOM_E2E_SEED=1');
   expect(seeded.status()).toBe(201);
 
-  // The worker's sweep turns the filed messages into rows. The report address is an alias on the
-  // operator's account, so the sweep reads every message earlier specs filed there first, oldest
-  // first: on a full suite the seed waits behind that backlog, minutes on CI. A second project run
+  // The worker's sweep turns the filed messages into rows, within one tick. A second project run
   // re-seeds the same reports: they are recognized as duplicates and the totals stay the same.
   await expect
     .poll(
@@ -56,7 +61,7 @@ test.beforeAll(async ({ playwright }, testInfo) => {
         const body = (await res.json()) as { dmarc: { totals: { reports: number } }; tlsrpt: { totals: { reports: number } } };
         return body.dmarc.totals.reports >= 2 && body.tlsrpt.totals.reports >= 1;
       },
-      { timeout: 300_000, message: 'the reports never appeared — is the worker running against this stack?' },
+      { timeout: 60_000, message: 'the reports never appeared — is the worker running against this stack?' },
     )
     .toBe(true);
 });
