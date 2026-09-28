@@ -1,9 +1,10 @@
-// PST-T-11.15: SNS message verification by hand — AWS's string to sign, the SNS-host allow-list for
-// the certificate and SubscribeURL, SignatureVersion 1 and 2, the certificate cache, and forged
-// signatures, wrong keys and foreign certificate hosts refused. No network: the certificate comes
-// from an injected fetcher.
+// PST-T-11.15: SNS message verification by hand — AWS's string to sign, the region taken from the
+// TopicArn and the exact sns.<region>.amazonaws.com host for the certificate and SubscribeURL (no
+// S3 look-alikes), the Timestamp window, SignatureVersion 1 and 2, the certificate cache (negative
+// cache, rate limit, pinning), and forged signatures, wrong keys and foreign hosts refused. No
+// network: the certificate comes from an injected fetcher, the clock is injected.
 import { describe, expect, it } from 'vitest';
-import { CertCache, SnsError, isSnsUrl, parseSnsMessage, stringToSign, verifySnsMessage } from '../../src/ses/sns.js';
+import { CertCache, SnsError, checkTimestamp, isSnsUrl, parseSnsMessage, snsRegion, stringToSign, topicRegion, verifySnsMessage } from '../../src/ses/sns.js';
 import { CERT_URL, TOPIC, makeKey, makeSnsSigner, notification } from '../sns-signer.js';
 
 const signer = makeSnsSigner();
@@ -21,25 +22,70 @@ describe('stringToSign', () => {
   });
 });
 
-describe('isSnsUrl', () => {
-  it.each([
-    ['https://sns.us-east-1.amazonaws.com/SimpleNotificationService-1.pem', true],
-    ['https://sns.eu-west-2.amazonaws.com/x.pem', true],
-    ['http://sns.us-east-1.amazonaws.com/x.pem', false],
-    ['https://sns.us-east-1.amazonaws.com.evil.example/x.pem', false],
-    ['https://evil.example/sns.us-east-1.amazonaws.com/x.pem', false],
-    ['https://sns.us-east-1.amazonaws.com:8443/x.pem', false],
-    ['https://user@sns.us-east-1.amazonaws.com/x.pem', false],
-    ['https://s3.amazonaws.com/x.pem', false],
-    ['https://sns.us-east-1.amazonaws.com/x.txt', false],
-    ['not a url', false],
-  ])('%s → %s (certificate)', (url, ok) => {
-    expect(isSnsUrl(url, { pem: true })).toBe(ok);
+const PEM = 'SimpleNotificationService-9c6465fa7f48f5cacd23014631ec1136.pem';
+
+/** What `fn` throws, as { status, code }; null when it does not throw. */
+function thrown(fn: () => unknown): { status: number; code: string } | null {
+  try {
+    fn();
+    return null;
+  } catch (e) {
+    return e instanceof SnsError ? { status: e.status, code: e.code } : { status: 0, code: String(e) };
+  }
+}
+
+describe('topicRegion / snsRegion', () => {
+  it('takes the region from the TopicArn', () => {
+    expect(topicRegion(TOPIC)).toBe('us-east-1');
+    expect(topicRegion('arn:aws:sns:us-gov-west-1:123456789012:t')).toBe('us-gov-west-1');
+    expect(topicRegion('arn:aws:sns:s3:123456789012:t')).toBeNull();
+    expect(topicRegion('arn:aws:sqs:us-east-1:123456789012:t')).toBeNull();
+    expect(topicRegion('arn:aws:sns:us-east-1:1234:t')).toBeNull();
   });
 
-  it('pins the region when one is configured', () => {
-    expect(isSnsUrl('https://sns.us-east-1.amazonaws.com/x.pem', { region: 'us-east-1', pem: true })).toBe(true);
-    expect(isSnsUrl('https://sns.eu-west-1.amazonaws.com/x.pem', { region: 'us-east-1', pem: true })).toBe(false);
+  it('refuses a topic outside SES_SNS_REGION, and a TopicArn that is not one', () => {
+    expect(snsRegion({ TopicArn: TOPIC }, 'us-east-1')).toBe('us-east-1');
+    expect(snsRegion({ TopicArn: TOPIC })).toBe('us-east-1');
+    expect(thrown(() => snsRegion({ TopicArn: TOPIC }, 'eu-west-1'))).toEqual({ status: 403, code: 'sns_region_refused' });
+    expect(thrown(() => snsRegion({ TopicArn: 'nope' }))).toEqual({ status: 403, code: 'sns_topic_refused' });
+  });
+});
+
+describe('isSnsUrl', () => {
+  it.each([
+    [`https://sns.us-east-1.amazonaws.com/${PEM}`, true],
+    [`https://SNS.us-east-1.amazonaws.com/${PEM}`, true],
+    [`https://sns.eu-west-2.amazonaws.com/${PEM}`, false], // not the topic's region
+    [`https://sns.s3.amazonaws.com/${PEM}`, false], // an S3 bucket's virtual host
+    [`https://sns.s3-us-west-2.amazonaws.com/${PEM}`, false],
+    [`http://sns.us-east-1.amazonaws.com/${PEM}`, false],
+    [`https://sns.us-east-1.amazonaws.com.evil.example/${PEM}`, false],
+    [`https://evil.example/sns.us-east-1.amazonaws.com/${PEM}`, false],
+    [`https://sns.us-east-1.amazonaws.com:8443/${PEM}`, false],
+    [`https://user@sns.us-east-1.amazonaws.com/${PEM}`, false],
+    [`https://sns.us-east-1.amazonaws.com/${PEM}?x=1`, false],
+    ['https://sns.us-east-1.amazonaws.com/x.pem', false], // not AWS's certificate path
+    ['https://sns.us-east-1.amazonaws.com/SimpleNotificationService-zz.pem', false],
+    ['not a url', false],
+  ])('%s → %s (certificate, topic in us-east-1)', (url, ok) => {
+    expect(isSnsUrl(url, { region: 'us-east-1', pem: true })).toBe(ok);
+  });
+
+  it('a SubscribeURL needs the exact regional host but any path', () => {
+    expect(isSnsUrl('https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&Token=x', { region: 'us-east-1' })).toBe(true);
+    expect(isSnsUrl('https://sns.s3.amazonaws.com/?Action=ConfirmSubscription', { region: 'us-east-1' })).toBe(false);
+  });
+});
+
+describe('checkTimestamp', () => {
+  const now = new Date('2026-09-27T12:00:00Z');
+  it('accepts the last 24 hours and up to 5 minutes ahead; refuses the rest with 400', () => {
+    const at = (Timestamp: string): { status: number; code: string } | null => thrown(() => { checkTimestamp({ Timestamp }, now); });
+    expect(at('2026-09-26T12:00:01.000Z')).toBeNull();
+    expect(at('2026-09-27T12:04:59.000Z')).toBeNull();
+    expect(at('2026-09-26T11:59:59.000Z')).toEqual({ status: 400, code: 'sns_message_stale' });
+    expect(at('2026-09-27T12:05:01.000Z')).toEqual({ status: 400, code: 'sns_message_future' });
+    expect(at('yesterday')).toEqual({ status: 400, code: 'invalid_sns_message' });
   });
 });
 
@@ -77,10 +123,21 @@ describe.skipIf(signer === undefined)('verifySnsMessage', () => {
     await expect(verifySnsMessage(forged, new CertCache(s.fetcher().fetch))).rejects.toMatchObject({ code: 'sns_signature_invalid' });
   });
 
-  it('never fetches a certificate from a host that is not SNS', async () => {
+  it('never fetches a certificate from a host that is not the topic region\'s SNS', async () => {
     const { fetch, urls } = s.fetcher();
-    const m = s.sign({ ...notification('{}'), SigningCertURL: 'https://attacker.example/cert.pem' });
-    await expect(verifySnsMessage(m, new CertCache(fetch))).rejects.toMatchObject({ status: 403, code: 'sns_cert_url_refused' });
+    for (const url of ['https://attacker.example/cert.pem', `https://sns.s3.amazonaws.com/${PEM}`, `https://sns.eu-west-1.amazonaws.com/${PEM}`]) {
+      await expect(verifySnsMessage(s.sign({ ...notification('{}'), SigningCertURL: url }), new CertCache(fetch))).rejects.toMatchObject({ status: 403, code: 'sns_cert_url_refused' });
+    }
+    expect(urls).toEqual([]);
+  });
+
+  it('refuses a stale or future-dated message before fetching anything', async () => {
+    const { fetch, urls } = s.fetcher();
+    const now = new Date();
+    const stale = s.sign(notification('{}', { Timestamp: new Date(now.getTime() - 25 * 3_600_000).toISOString() }));
+    const future = s.sign(notification('{}', { Timestamp: new Date(now.getTime() + 10 * 60_000).toISOString() }));
+    await expect(verifySnsMessage(stale, new CertCache(fetch), now)).rejects.toMatchObject({ status: 400, code: 'sns_message_stale' });
+    await expect(verifySnsMessage(future, new CertCache(fetch), now)).rejects.toMatchObject({ status: 400, code: 'sns_message_future' });
     expect(urls).toEqual([]);
   });
 
@@ -91,7 +148,57 @@ describe.skipIf(signer === undefined)('verifySnsMessage', () => {
   });
 
   it('refuses when the certificate is not valid at the given time', async () => {
-    const m = s.sign(notification('{}'));
-    await expect(verifySnsMessage(m, new CertCache(s.fetcher().fetch), new Date('2000-01-01T00:00:00Z'))).rejects.toMatchObject({ code: 'sns_cert_expired' });
+    const at = new Date('2000-01-01T00:00:00Z');
+    const m = s.sign(notification('{}', { Timestamp: at.toISOString() }));
+    await expect(verifySnsMessage(m, new CertCache(s.fetcher().fetch), at)).rejects.toMatchObject({ code: 'sns_cert_expired' });
+  });
+});
+
+describe.skipIf(signer === undefined)('CertCache: bounded fetching', () => {
+  const s = signer as NonNullable<typeof signer>;
+  const url = (n: number): string => `https://sns.us-east-1.amazonaws.com/SimpleNotificationService-${n.toString(16).padStart(32, '0')}.pem`;
+
+  it('remembers a failed fetch for 10 minutes', async () => {
+    let clock = 0;
+    let calls = 0;
+    const certs = new CertCache(() => {
+      calls++;
+      return Promise.resolve(new Response('nope', { status: 404 }));
+    }, { now: () => clock });
+    await expect(certs.get(url(1), 'us-east-1')).rejects.toMatchObject({ code: 'sns_cert_unavailable' });
+    await expect(certs.get(url(1), 'us-east-1')).rejects.toMatchObject({ code: 'sns_cert_unavailable' });
+    clock += 9 * 60_000;
+    await expect(certs.get(url(1), 'us-east-1')).rejects.toMatchObject({ code: 'sns_cert_unavailable' });
+    expect(calls).toBe(1);
+    clock += 2 * 60_000;
+    await expect(certs.get(url(1), 'us-east-1')).rejects.toMatchObject({ code: 'sns_cert_unavailable' });
+    expect(calls).toBe(2);
+  });
+
+  it('sends at most 10 fetches a minute, however many URLs it is asked for', async () => {
+    let clock = 0;
+    let calls = 0;
+    const certs = new CertCache(() => {
+      calls++;
+      return Promise.resolve(new Response('nope', { status: 404 }));
+    }, { now: () => clock });
+    for (let i = 0; i < 25; i++) await expect(certs.get(url(100 + i), 'us-east-1')).rejects.toBeInstanceOf(SnsError);
+    expect(calls).toBe(10);
+    await expect(certs.get(url(200), 'us-east-1')).rejects.toMatchObject({ code: 'sns_cert_rate_limited' });
+    clock += 60_001;
+    await expect(certs.get(url(201), 'us-east-1')).rejects.toMatchObject({ code: 'sns_cert_unavailable' });
+    expect(calls).toBe(11);
+  });
+
+  it('keeps the certificate that verified a message pinned while other URLs churn the cache', async () => {
+    let clock = 0;
+    const certs = new CertCache((u) => Promise.resolve(new Response(u === CERT_URL || u.startsWith('https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0') ? s.cert : 'x')), { now: () => clock, fetchesPerMinute: 1000 });
+    await verifySnsMessage(s.sign(notification('{}')), certs);
+    for (let i = 0; i < 40; i++) {
+      clock += 1;
+      await certs.get(url(i), 'us-east-1');
+    }
+    expect(certs.isCached(CERT_URL)).toBe(true);
+    expect(certs.isCached(url(0))).toBe(false);
   });
 });

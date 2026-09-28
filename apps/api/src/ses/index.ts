@@ -6,8 +6,10 @@
 // Public — no session, no CSRF — because its authentication is the SNS message signature
 // (./sns.ts), checked before anything is read or written; mounted ahead of the session gate in
 // app.ts. Only topics listed in SES_SNS_TOPIC_ARNS are accepted (none listed: every POST is
-// refused), and the TopicArn is checked before any certificate is fetched, so a stranger's POST
-// never makes Postroom fetch anything. The body is SNS's text/plain JSON, at most 256 KB; a message
+// refused). The topic, its region (the only sns.<region>.amazonaws.com host ever fetched from), the
+// Timestamp (at most 24 h old, 5 min ahead) and a SubscribeURL are all checked before any
+// certificate is fetched, so a stranger's POST never makes Postroom fetch anything, and certificate
+// fetches are cached, negatively cached and rate-limited (CertCache). The body is SNS's text/plain JSON, at most 256 KB; a message
 // is never logged whole (only its type, id and topic).
 //
 //   SubscriptionConfirmation  the SubscribeURL (same SNS-host allow-list) is fetched to confirm; audited.
@@ -16,7 +18,11 @@
 //                             marks the correlated recipient bounced and, with a 5.1.x or no status,
 //                             suppresses the address; Transient/Undetermined are recorded only.
 //   Notification, Complaint   each complained recipient → recordComplaint, and one operator alert
-//                             per notification through the D3 Auth relay (PST-REQ-096).
+//                             per notification through the D3 Auth relay (PST-REQ-096), within the
+//                             server-wide hourly complaint-alert cap.
+//
+// These signed notifications are the only asynchronous path that bounces a recipient or suppresses
+// an address; an SMTP DSN is informational (apps/delivery/src/feedback.ts says why).
 //   anything else             audited as ignored, answered 200 so SNS does not retry it.
 import express, { Router, type Request, type Response } from 'express';
 import { createAlertSender, type SendAlert } from '@postroom/alerts';
@@ -27,9 +33,9 @@ import { smtpCodeOf, statusCode } from '@postroom/dsn';
 import { parseMessageId } from '@postroom/mime';
 import { handle } from '../auth/middleware.js';
 import type { ApiDeps } from '../deps.js';
-import { CertCache, SnsError, isSnsUrl, parseSnsMessage, timedFetch, verifySnsMessage, type Fetcher, type SnsMessage } from './sns.js';
+import { CertCache, SnsError, checkTimestamp, isSnsUrl, parseSnsMessage, snsRegion, timedFetch, verifySnsMessage, type Fetcher, type SnsMessage } from './sns.js';
 
-export { CertCache, SnsError, isSnsUrl, parseSnsMessage, stringToSign, verifySnsMessage, type Fetcher, type SnsMessage } from './sns.js';
+export { CertCache, SnsError, checkTimestamp, isSnsUrl, parseSnsMessage, snsRegion, stringToSign, topicRegion, verifySnsMessage, type Fetcher, type SnsMessage } from './sns.js';
 
 /** SNS messages are at most 256 KB. */
 export const MAX_SNS_BODY = '256kb';
@@ -89,8 +95,8 @@ export function sesSnsRoutes(deps: ApiDeps): Router {
   const options: SesSnsOptions = deps.sesSns ?? {};
   const now = options.now ?? deps.config.now ?? ((): Date => new Date());
   const fetcher = options.fetch ?? timedFetch;
-  const region = envString(deps.env, 'SES_SNS_REGION', '') || undefined;
-  const certs = new CertCache(fetcher, region);
+  const configuredRegion = envString(deps.env, 'SES_SNS_REGION', '') || undefined;
+  const certs = new CertCache(fetcher);
   const sendAlert =
     options.sendAlert ??
     createAlertSender({ url: envString(deps.env, 'MAIL_RELAY_URL', ''), token: envString(deps.env, 'MAIL_RELAY_TOKEN', ''), to: envString(deps.env, 'ALERT_TO', '') }, { log });
@@ -181,6 +187,7 @@ export function sesSnsRoutes(deps: ApiDeps): Router {
             trusted: true,
             detail: { topicArn: m.TopicArn, snsMessageId: m.MessageId, sesFeedbackId: text(c['feedbackId']), userAgent: text(c['userAgent']), arrivalDate: text(c['arrivalDate']), sesMessageId: correlation.transportMessageId },
             reportedAt,
+            now: at,
             requestId,
           }),
         );
@@ -227,13 +234,21 @@ export function sesSnsRoutes(deps: ApiDeps): Router {
         return;
       }
       let m: SnsMessage;
+      let region: string;
       try {
         m = parseSnsMessage(body);
         const headerType = req.get('x-amz-sns-message-type');
         if (headerType !== undefined && headerType !== m.Type) throw new SnsError(400, 'invalid_sns_message', 'x-amz-sns-message-type does not match Type');
         // Before any fetch: a stranger's POST must not make Postroom fetch anything.
         if (!topics.has(m.TopicArn)) throw new SnsError(403, 'sns_topic_refused', topics.size === 0 ? 'SES_SNS_TOPIC_ARNS is not set' : 'TopicArn is not in SES_SNS_TOPIC_ARNS');
-        await verifySnsMessage(m, certs, now());
+        // The topic's own region, and SES_SNS_REGION when set: the only SNS host fetched from.
+        region = snsRegion(m, configuredRegion);
+        // A stale or future-dated message is refused before its certificate is fetched.
+        checkTimestamp(m, now());
+        if (m.Type === 'SubscriptionConfirmation' && !isSnsUrl(m.SubscribeURL ?? '', { region })) {
+          throw new SnsError(403, 'sns_subscribe_url_refused', 'SubscribeURL is not an SNS URL for the topic region');
+        }
+        await verifySnsMessage(m, certs, now(), region);
       } catch (e) {
         if (e instanceof SnsError) {
           refuse(res, e);
@@ -243,11 +258,8 @@ export function sesSnsRoutes(deps: ApiDeps): Router {
       }
 
       if (m.Type === 'SubscriptionConfirmation') {
+        // Checked against the topic region above, before the signature was.
         const url = m.SubscribeURL ?? '';
-        if (!isSnsUrl(url, { region })) {
-          refuse(res, new SnsError(403, 'sns_subscribe_url_refused', 'SubscribeURL is not an SNS URL'), { snsMessageId: m.MessageId });
-          return;
-        }
         let ok = false;
         let status = 0;
         try {

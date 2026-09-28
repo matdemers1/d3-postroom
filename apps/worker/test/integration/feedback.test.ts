@@ -1,10 +1,12 @@
 // PST-T-11.15 / PST-REQ-176 through the real inbound pipeline: the hand-made RFC 3464 and RFC 5965
-// fixtures (packages/dsn/test/fixtures), spooled as smtp-in would, are filed to the user's INBOX
-// like any mail (wherever the classifier sorts them) and then read by the feedback stage. A null-sender 5.1.1 DSN about a delivered
-// message bounces its recipient and suppresses the address; a 5.2.2 DSN correlated by ENVID
-// bounces without suppressing; a forged DSN (a real sender, no MAILER-DAEMON From) or one delivered
-// to another account changes nothing; an ARF report is recorded against its message and raises
-// exactly one alert, however often the stage is replayed.
+// fixtures (packages/dsn/test/fixtures), spooled as smtp-in would, are filed to the user's mailbox
+// like any mail (wherever the classifier sorts them) and then read by the feedback stage. A DSN is
+// informational only: even a null-sender 5.1.1 DSN about a delivered message — including the
+// verifier's attack, a forged DSN naming a co-recipient — is recorded against the recipient it
+// names and changes no state and suppresses nothing. A DSN that does not look like one is recorded
+// as ignored; one delivered to another account names nothing of the sender's. An ARF report is
+// recorded against its message and raises one alert, however often the stage is replayed or the
+// message reported again.
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -89,8 +91,10 @@ describe.skipIf(baseUrl === undefined)('feedback stage: async DSNs and ARF repor
     rmSync(blobRoot, { recursive: true, force: true });
   });
 
-  it('a null-sender 5.1.1 DSN is filed, bounces the delivered recipient and suppresses the address', async () => {
-    const out = await sent(['nobody@example.net', 'someone@example.net']);
+  it('regression (verifier attack): a null-sender 5.1.1 DSN naming a co-recipient is filed and recorded, and changes nothing', async () => {
+    // Account A mails the attacker and the victim together; the attacker mails back a DSN, with a
+    // null reverse-path and a MAILER-DAEMON From, claiming the victim does not exist.
+    const out = await sent(['attacker@evil.example', 'nobody@example.net']);
     const { id } = await spool(db, blobs, { recipients: [toMatt()], envelopeFrom: '', message: fixture(DSN_511, out.mid) });
     expect(await worker.drain()).toBe(1);
 
@@ -98,35 +102,36 @@ describe.skipIf(baseUrl === undefined)('feedback stage: async DSNs and ARF repor
     const copies = await db.message.findMany({ where: { inboundMessageId: id }, include: { mailbox: true } });
     expect(copies.map((c) => c.mailbox.accountId)).toEqual([operatorId]);
 
-    expect(await stateOf(out.rcpt['nobody@example.net'])).toBe('bounced');
-    expect(await stateOf(out.rcpt['someone@example.net'])).toBe('delivered');
-    const rcpt = await db.outboundRecipient.findUniqueOrThrow({ where: { id: out.rcpt['nobody@example.net'] ?? '' }, include: { attemptsLog: true } });
-    expect(rcpt).toMatchObject({ lastCode: 550, lastEnhanced: '5.1.1' });
-    expect(rcpt.attemptsLog).toEqual([expect.objectContaining({ transport: 'async-dsn', outcome: 'bounced', mxHost: 'mailstore.example.net', remoteEnhanced: '5.1.1' })]);
-    expect(await db.suppressedRecipient.findUnique({ where: { address: 'nobody@example.net' } })).toMatchObject({ reason: 'hard-bounce', enhanced: '5.1.1', code: 550, sourceRecipientId: out.rcpt['nobody@example.net'] });
+    const victim = await db.outboundRecipient.findUniqueOrThrow({ where: { id: out.rcpt['nobody@example.net'] ?? '' }, include: { attemptsLog: true } });
+    expect(victim).toMatchObject({ state: 'delivered', lastEnhanced: null });
+    expect(victim.attemptsLog).toEqual([]);
+    expect(await db.suppressedRecipient.findUnique({ where: { address: 'nobody@example.net' } })).toBeNull();
+
+    // Recorded, for the sender and the admin to see.
+    const row = await db.deliveryFeedback.findFirstOrThrow({ where: { inboundMessageId: id } });
+    expect(row).toMatchObject({ kind: 'bounce', source: 'dsn', address: 'nobody@example.net', status: '5.1.1', outboundMessageId: out.id, outboundRecipientId: out.rcpt['nobody@example.net'], action: 'recorded' });
+    expect(row.diagnostic).toMatch(/^550 5\.1\.1/);
+    expect(row.detail).toMatchObject({ reportingMta: 'mx.example.net', remoteMta: 'mailstore.example.net' });
     const marker = await feedbackMarker(id);
-    expect(marker).toMatchObject({ kind: 'dsn', events: [expect.objectContaining({ action: 'bounced-suppressed', duplicate: false })] });
-    expect(await db.auditEvent.count({ where: { requestId: `inbound:${id}` } })).toBe(2);
+    expect(marker).toMatchObject({ kind: 'dsn', events: [expect.objectContaining({ action: 'recorded', duplicate: false })] });
 
     // A replay of the stage records nothing twice.
     await replayInbound(db, id, { fromStage: 'feedback' });
     await worker.drain();
     expect((await feedbackMarker(id)).events).toEqual([expect.objectContaining({ duplicate: true })]);
-    expect((await db.suppressedRecipient.findUniqueOrThrow({ where: { address: 'nobody@example.net' } })).bounceCount).toBe(1);
     expect(await db.deliveryFeedback.count({ where: { inboundMessageId: id } })).toBe(1);
   });
 
-  it('a 5.2.2 DSN with RET=HDRS, correlated by ENVID, bounces without suppressing and skips the delayed recipient', async () => {
+  it('a 5.2.2 DSN with RET=HDRS is correlated by ENVID and recorded; the delayed recipient is skipped', async () => {
     const out = await sent(['full@example.com', 'later@example.com'], { envid: 'pst-env-0042' });
     // The ENVID is the correlation here: the returned headers name a Message-ID we never sent.
     const { id } = await spool(db, blobs, { recipients: [toMatt()], envelopeFrom: '', message: fixture(DSN_522, `${randomUUID()}@elsewhere.example`) });
     await worker.drain();
-    expect(await stateOf(out.rcpt['full@example.com'])).toBe('bounced');
-    expect(await stateOf(out.rcpt['later@example.com'])).toBe('delivered');
-    expect(await db.suppressedRecipient.findUnique({ where: { address: 'full@example.com' } })).toBeNull();
+    expect(await stateOf(out.rcpt['full@example.com'])).toBe('delivered');
     const marker = await feedbackMarker(id);
-    expect(marker.events).toEqual([expect.objectContaining({ action: 'bounced' })]);
+    expect(marker.events).toEqual([expect.objectContaining({ action: 'recorded' })]);
     expect(marker.reasons).toEqual(expect.arrayContaining([expect.stringMatching(/action delayed is not a failure/)]));
+    expect(await db.deliveryFeedback.findFirstOrThrow({ where: { inboundMessageId: id } })).toMatchObject({ outboundRecipientId: out.rcpt['full@example.com'], status: '5.2.2' });
   });
 
   it('a forged DSN — a real reverse-path and a non-daemon From — is recorded as ignored and changes nothing', async () => {
@@ -138,7 +143,7 @@ describe.skipIf(baseUrl === undefined)('feedback stage: async DSNs and ARF repor
     const marker = await feedbackMarker(id);
     expect(marker.events).toEqual([expect.objectContaining({ action: 'ignored' })]);
     const row = await db.deliveryFeedback.findFirstOrThrow({ where: { inboundMessageId: id } });
-    expect(JSON.stringify(row.reasons)).toMatch(/a DSN anyone could have sent/);
+    expect(JSON.stringify(row.reasons)).toMatch(/does not look like a DSN/);
   });
 
   it("a DSN delivered to another account never touches the sender account's mail", async () => {
@@ -166,6 +171,15 @@ describe.skipIf(baseUrl === undefined)('feedback stage: async DSNs and ARF repor
     await worker.drain();
     expect(alerts.length).toBe(before + 1);
     expect(await db.deliveryFeedback.count({ where: { inboundMessageId: id } })).toBe(1);
+
+    // Another report about the same message (a second copy, or a forger repeating it): recorded,
+    // but the operator was already told about this message.
+    const { id: again } = await spool(db, blobs, { recipients: [toMatt()], envelopeFrom: 'abusedesk@example.com', message: fixture(ARF, out.mid) });
+    await worker.drain();
+    const second = await db.deliveryFeedback.findFirstOrThrow({ where: { inboundMessageId: again } });
+    expect(second).toMatchObject({ kind: 'complaint', outboundMessageId: out.id, alertedAt: null });
+    expect(JSON.stringify(second.reasons)).toMatch(/already alerted about this outbound message/);
+    expect(alerts.length).toBe(before + 1);
   });
 
   it('ordinary mail passes the stage untouched', async () => {

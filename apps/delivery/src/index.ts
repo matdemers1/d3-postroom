@@ -28,5 +28,5 @@ export { HELD_TEXT, holdGroup, isCredentialFrozen, reenqueueHeld, thawCredential
 export type { ThawResult } from './hold.js';
 export { findSuppressed, recordHardBounce, shouldSuppress, suppressionKey } from './suppression.js';
 export type { HardBounce, SuppressedMatch, SuppressionReason } from './suppression.js';
-export { complaintAlert, correlateOutbound, markAlerted, recordAsyncBounce, recordComplaint } from './feedback.js';
+export { COMPLAINT_ALERTS_PER_HOUR, complaintAlert, correlateOutbound, markAlerted, recordAsyncBounce, recordComplaint } from './feedback.js';
 export type { AsyncBounceInput, AsyncBounceResult, ComplaintInput, ComplaintResult, CorrelatedOutbound, Correlation, FeedbackAction, FeedbackSource } from './feedback.js';

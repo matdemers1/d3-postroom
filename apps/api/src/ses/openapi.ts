@@ -43,13 +43,13 @@ export const SES_SNS_ROUTES: RouteSpec[] = [
     tag: 'SES',
     summary: 'Amazon SES bounce and complaint notifications, delivered by an SNS HTTPS subscription (PST-T-11.15).',
     description:
-      'No session and no CSRF header: authenticated by the SNS message signature (SignatureVersion 1 SHA1withRSA or 2 SHA256withRSA, certificate fetched only from https://sns.<region>.amazonaws.com and cached). SNS posts the JSON as text/plain; at most 256 KB. Only TopicArn values in SES_SNS_TOPIC_ARNS are accepted. A SubscriptionConfirmation is confirmed by fetching its SubscribeURL. A Permanent bounce marks the correlated delivered recipient bounced and, with a 5.1.x or no status, suppresses the address (PST-REQ-176); a Transient bounce is recorded; a complaint is recorded and alerts the operator once. Every accepted message is audited.',
+      'No session and no CSRF header: authenticated by the SNS message signature (SignatureVersion 1 SHA1withRSA or 2 SHA256withRSA, certificate fetched only from exactly https://sns.<TopicArn region>.amazonaws.com/SimpleNotificationService-<hex>.pem; cached, negatively cached and rate-limited). SNS posts the JSON as text/plain; at most 256 KB. Only TopicArn values in SES_SNS_TOPIC_ARNS (and in SES_SNS_REGION when set) are accepted, and only a Timestamp within the last 24 hours and at most 5 minutes ahead. A SubscriptionConfirmation is confirmed by fetching its SubscribeURL (same regional host). These signed notifications are the only asynchronous path that changes mail: a Permanent bounce marks the correlated delivered recipient bounced and, with a 5.1.x or no status, suppresses the address (PST-REQ-176); a Transient bounce is recorded; a complaint is recorded and alerts the operator, within the hourly complaint-alert cap. Every accepted message is audited.',
     body: SnsEnvelope,
     headers: [{ name: 'x-amz-sns-message-type', required: false, description: 'When present, must equal the body Type.' }],
     responses: {
       '200': { description: 'Accepted (including SES events Postroom ignores, so SNS does not retry them).', schema: 'SesSnsAck' },
-      '400': err('Not JSON, not an SNS message, or a message type header that disagrees with the body.'),
-      '403': err('Unlisted topic, a certificate or SubscribeURL off the SNS allow-list, or a signature that does not verify.'),
+      '400': err('Not JSON, not an SNS message, a message type header that disagrees with the body, or a Timestamp outside the accepted window.'),
+      '403': err('Unlisted topic or region, a certificate or SubscribeURL off the topic region\'s SNS host, certificate fetches rate-limited, or a signature that does not verify.'),
       '413': err('Body over 256 KB.'),
       '502': err('The SubscribeURL confirmation failed.'),
     },
