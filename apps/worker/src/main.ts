@@ -1,7 +1,8 @@
 // The worker daemon: runs the inbound pipeline (PST-T-2.7) on the 'inbound' queue — verify, parse,
 // classify, sieve, file, notify, feedback — for every message smtp-in spooled — and, on their own queues and
-// worker, the nightly backup and restore drill (PST-T-0.16, PST-T-0.17), and the ACME DNS-01
-// certificate job for the mail ports (PST-T-0.15).
+// worker, the nightly backup and restore drill (PST-T-0.16, PST-T-0.17), the ACME DNS-01
+// certificate job for the mail ports (PST-T-0.15), and the SES bounce/complaint poller on SQS
+// (PST-T-11.17).
 import { createAlertSender } from '@postroom/alerts';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { loadKek } from '@postroom/crypto';
@@ -21,6 +22,7 @@ import { inboundHealth, maintenanceHealth } from './health.js';
 import { importHandler, IMPORT_QUEUE } from './import/index.js';
 import { buildMonitors, createMonitorRunner } from './monitors/index.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
+import { startSesFeedback } from './ses-feedback/index.js';
 import { startReportLoop } from './reports/index.js';
 import { createThreadSweeper } from './sweep/thread-sweep.js';
 import { startTrainingLoop } from './training/index.js';
@@ -204,6 +206,20 @@ await runDaemon({
       acme.stop();
     });
 
+    // PST-T-11.17 (PST-REQ-176): SES bounce and complaint notifications, pulled from the SQS queue
+    // the SES feedback topic delivers to — verified and processed exactly as POST /api/ses/sns does.
+    // Off unless SES_FEEDBACK_SQS_URL, SES_FEEDBACK_AWS_ACCESS_KEY_ID, SES_FEEDBACK_AWS_SECRET_ACCESS_KEY
+    // and SES_SNS_TOPIC_ARNS are set. Its shutdown hook is registered last (below), so it runs first.
+    const sesFeedback = startSesFeedback({
+      env: ctx.env,
+      db,
+      log: ctx.log,
+      sendAlert: createAlertSender(
+        { url: envString(ctx.env, 'MAIL_RELAY_URL', ''), token: envString(ctx.env, 'MAIL_RELAY_TOKEN', ''), to: envString(ctx.env, 'ALERT_TO', '') },
+        { log: ctx.log },
+      ),
+    });
+
     // Health alerts through the D3 Auth relay (PST-T-4.7, PST-REQ-096, PST-REQ-097): tunnel,
     // backlog, cert expiry, disk, blocklist, backup/drill and NTP skew, each alerting once on
     // firing and once again on recovery — never through Postroom's own outbound queue.
@@ -236,6 +252,7 @@ await runDaemon({
       inbound: await inboundHealth(db),
       ...(await maintenanceHealth(db)),
       lastAcme: await readLastAcme(db),
+      sesFeedback: sesFeedback.health(),
       monitors: monitorRunner.statuses(),
       ntp: ntp === null ? ('not configured' as const) : (ntp.getStatus() ?? ('pending' as const)),
     }));
@@ -248,5 +265,8 @@ await runDaemon({
       await worker.stop();
       await db.$disconnect();
     });
+    // Hooks run newest first: the SES poller aborts its long poll and finishes the message in hand
+    // before anything above disconnects the database.
+    ctx.onShutdown(() => sesFeedback.stop());
   },
 });
