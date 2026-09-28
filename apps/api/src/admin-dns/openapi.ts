@@ -19,7 +19,7 @@ export const ADMIN_DNS_ROUTES: RouteSpec[] = [
     tag: 'Admin',
     summary: 'Expected vs live DNS for one of Postroom’s domains, with pass/fail per record (PST-REQ-099).',
     description:
-      'MX, SPF (evaluated for EDGE_PUBLIC_IP), DKIM (p= compared per live selector), DMARC (parsed), PTR (forward-confirmed), MTA-STS, TLS-RPT, SRV and autoconfig/autodiscover. Answers come from Postroom’s own resolver (DNS_RESOLVER). A resolver that does not answer makes a row unknown, never pass. Nothing at a no-reply subdomain is ever checked. Admin only.',
+      'MX, SPF (evaluated for EDGE_PUBLIC_IP), DKIM (p= compared per live selector), DMARC (parsed), PTR (forward-confirmed), MTA-STS, TLS-RPT, SRV and autoconfig/autodiscover, plus RCPT rows (not DNS): postmaster@, abuse@ and the rua= report mailboxes must exist and deliver (PST-REQ-186). Answers come from Postroom’s own resolver (DNS_RESOLVER). A resolver that does not answer makes a row unknown, never pass. Nothing at a no-reply subdomain is ever checked. Admin only.',
     query: D.DnsQuery,
     responses: {
       '200': { description: 'The report.', schema: 'DnsReport' },

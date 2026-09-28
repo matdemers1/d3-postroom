@@ -16,9 +16,9 @@ export const DnsQuery = z.object({
 export const CheckStatus = z.enum(['pass', 'fail', 'missing', 'pending', 'unknown']);
 
 export const DnsCheckRow = z.object({
-  record: z.enum(['MX', 'SPF', 'DKIM', 'DMARC', 'PTR', 'MTA-STS', 'MTA-STS host', 'TLS-RPT', 'SRV', 'autoconfig', 'autodiscover']),
+  record: z.enum(['MX', 'SPF', 'DKIM', 'DMARC', 'PTR', 'MTA-STS', 'MTA-STS host', 'TLS-RPT', 'SRV', 'autoconfig', 'autodiscover', 'Role address', 'Report mailbox']),
   name: z.string().describe('The owner name.'),
-  type: z.enum(['MX', 'TXT', 'PTR', 'SRV', 'CNAME']),
+  type: z.enum(['MX', 'TXT', 'PTR', 'SRV', 'CNAME', 'RCPT']).describe('RCPT rows are addresses checked in the database: they must exist and deliver (PST-REQ-186).'),
   expected: z.string().nullable().describe('The value to publish; null when it cannot be known yet (no edge, no DKIM key).'),
   afterGoLive: z.boolean().describe('Published only after the security gate (PST-REQ-086); absent before then is pending.'),
   note: z.string().nullable(),

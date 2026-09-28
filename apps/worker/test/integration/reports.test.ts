@@ -1,6 +1,6 @@
 // PST-T-7.1 / PST-REQ-122 against a real database and blob store: a Google (.zip), a Microsoft
 // (.xml.gz) and a Google TLS-RPT (.json.gz) report, delivered through the inbound pipeline to the
-// dmarc@ service mailbox, become normalized rows exactly once — re-filing the message (a pipeline
+// dmarc-reports@ service mailbox, become normalized rows exactly once — re-filing the message (a pipeline
 // replay) or a second delivery of the same report never duplicates them — and every write is
 // audited as SYSTEM.
 import { randomInt } from 'node:crypto';
@@ -37,7 +37,7 @@ describe.skipIf(baseUrl === undefined)('report ingest (PST-T-7.1, PST-REQ-122)',
   let reportsAccountId = '';
   const env = {} as NodeJS.ProcessEnv;
 
-  const toReports = (): TestRecipient => ({ rcpt: 'dmarc@d3cloud.io', address: 'dmarc@d3cloud.io', accountIds: [reportsAccountId], kind: 'service' });
+  const toReports = (): TestRecipient => ({ rcpt: 'dmarc-reports@d3cloud.io', address: 'dmarc-reports@d3cloud.io', accountIds: [reportsAccountId], kind: 'service' });
   const deliver = async (from: string, suffix: string, contentType: string): Promise<string> => {
     const { filename, data } = fixture(suffix);
     const { id } = await spool(db, blobs, { recipients: [toReports()], message: messageWithAttachment({ from, filename, contentType, data }) });
@@ -51,7 +51,7 @@ describe.skipIf(baseUrl === undefined)('report ingest (PST-T-7.1, PST-REQ-122)',
     const domain = await db.domain.findFirstOrThrow({ where: { isPrimary: true } });
     const account = await db.account.create({ data: { displayName: 'DMARC reports', kind: AccountKind.service } });
     reportsAccountId = account.id;
-    await db.address.create({ data: { localPart: 'dmarc', domainId: domain.id, kind: AddressKind.service, accountId: account.id } });
+    await db.address.create({ data: { localPart: 'dmarc-reports', domainId: domain.id, kind: AddressKind.service, accountId: account.id } });
     for (const mb of DEFAULT_MAILBOXES) {
       await db.mailbox.create({ data: { accountId: account.id, name: mb.name, specialUse: mb.specialUse, uidvalidity: randomUidValidity(randomInt) } });
     }
@@ -66,8 +66,8 @@ describe.skipIf(baseUrl === undefined)('report ingest (PST-T-7.1, PST-REQ-122)',
     rmSync(blobRoot, { recursive: true, force: true });
   });
 
-  it('defaults the report addresses to dmarc@ and tlsrpt@ the primary domain, and honours the env', async () => {
-    expect(await reportAddresses(db, {})).toEqual(['dmarc@d3cloud.io', 'tlsrpt@d3cloud.io']);
+  it('defaults the report addresses to dmarc-reports@ and tls-reports@ (PST-T-4.15, what DNS publishes), and honours the env', async () => {
+    expect(await reportAddresses(db, {})).toEqual(['dmarc-reports@d3cloud.io', 'tls-reports@d3cloud.io']);
     expect(await reportAddresses(db, { REPORTS_MAILBOX: 'Rua@D3cloud.io', TLSRPT_MAILBOX: 'tls@d3cloud.io' })).toEqual(['rua@d3cloud.io', 'tls@d3cloud.io']);
     const resolved = await resolveReportMailboxes(db, {});
     const names = (await db.mailbox.findMany({ where: { id: { in: [...resolved.mailboxIds] } }, select: { name: true } })).map((m) => m.name).sort();

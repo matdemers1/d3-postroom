@@ -20,6 +20,7 @@ import type { z } from 'zod';
 import { isForbiddenName } from '../admin-dns/expected.js';
 import { currentSession, handle, requireStepUp } from '../auth/middleware.js';
 import { runtimeFor } from '../auth/runtime.js';
+import { reconcileRoleAddresses } from '../role-addresses/index.js';
 import type { ApiDeps } from '../deps.js';
 import { DomainRequest, MailboxRequest, TestRequest, WizardView } from './schemas.js';
 import { furthest, loadState, reachable, saveState, type Step, type WizardState } from './state.js';
@@ -104,6 +105,7 @@ export function setupWizardRoutes(deps: ApiDeps): Router {
     next: Step,
     apply: (req: Request, res: Response, state: WizardState, accountId: string) => Promise<{ state: WizardState; after: Record<string, unknown>; reset?: boolean } | null>,
     action: string = name,
+    afterSave?: () => Promise<void>,
   ) =>
     handle(async (req, res) => {
       const me = currentSession(req);
@@ -134,6 +136,7 @@ export function setupWizardRoutes(deps: ApiDeps): Router {
           return { entityId: null, before: { step: before.step }, after: { step: state.step, ...applied.after }, result: null };
         },
       );
+      if (afterSave !== undefined) await afterSave();
       res.json(await viewOf(db, state, me.accountId, await suggestedDomain()));
     });
 
@@ -242,11 +245,22 @@ export function setupWizardRoutes(deps: ApiDeps): Router {
   router.post(
     '/complete',
     stepUp,
-    step('test', 'done', (_req, _res, state) => {
-      if (state.test === null) throw new Refusal(409, 'step_not_reached', 'Send the test message first.');
-      const at = rt.now().toISOString();
-      return Promise.resolve({ state: { ...state, completedAt: at }, after: { completedAt: at, outboundId: state.test.outboundId } });
-    }, 'complete'),
+    step(
+      'test',
+      'done',
+      (_req, _res, state) => {
+        if (state.test === null) throw new Refusal(409, 'step_not_reached', 'Send the test message first.');
+        const at = rt.now().toISOString();
+        return Promise.resolve({ state: { ...state, completedAt: at }, after: { completedAt: at, outboundId: state.test.outboundId } });
+      },
+      'complete',
+      // PST-T-4.15 (PST-REQ-186): a finished setup ends with postmaster@, abuse@ and the report
+      // mailboxes on every domain — synchronously, before the answer. The reconciler audits each
+      // creation itself.
+      async () => {
+        await reconcileRoleAddresses(db, deps.env);
+      },
+    ),
   );
 
   return router;

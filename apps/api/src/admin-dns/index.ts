@@ -11,10 +11,12 @@ import { createResolver, type Resolver } from '@postroom/dns';
 import { Router } from 'express';
 import { handle } from '../auth/middleware.js';
 import type { ApiDeps } from '../deps.js';
+import { checkRoleAddresses } from './addresses.js';
 import { checkRecords, type CheckRow, type CheckStatus } from './check.js';
 import { expectedRecords, hostsFromEnv, isForbiddenName, type DkimKeyView } from './expected.js';
 import { DnsQuery } from './schemas.js';
 
+export { checkRoleAddresses, ruaAddresses } from './addresses.js';
 export { checkRecords, checkRecord, parseSrvRdata, type CheckRow, type CheckStatus } from './check.js';
 export { expectedRecords, hostsFromEnv, isForbiddenName, dkimPublicKey, type ExpectedRecord } from './expected.js';
 
@@ -81,7 +83,11 @@ export async function dnsReport(deps: ApiDeps, requested: string | undefined, no
   const hosts = hostsFromEnv(deps.env, domain.name, deps.config.webOrigin);
   const expected = expectedRecords({ ...hosts, dkim: await dkimKeysOf(deps.db, domain.id) });
   const { resolver, server } = resolverFor(deps);
-  const rows = await checkRecords({ resolver, domain: domain.name, helo: hosts.mxHostname }, expected);
+  const rows = [
+    ...(await checkRecords({ resolver, domain: domain.name, helo: hosts.mxHostname }, expected)),
+    // PST-T-4.15 (PST-REQ-186): the addresses the domain and its rua= values promise exist.
+    ...(await checkRoleAddresses(deps.db, domain.name, { dmarc: hosts.dmarcRua, tls: hosts.tlsRptRua })),
+  ];
   const summary: Record<CheckStatus, number> = { pass: 0, fail: 0, missing: 0, pending: 0, unknown: 0 };
   for (const r of rows) summary[r.status] += 1;
   return { domain: domain.name, resolver: server, checkedAt: now.toISOString(), summary, rows };

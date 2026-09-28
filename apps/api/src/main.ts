@@ -3,6 +3,7 @@ import { createDb } from '@postroom/db';
 import { envInt, envString, revision, runDaemon } from '@postroom/daemon';
 import { createApp } from './app.js';
 import { DAEMON } from './daemon.js';
+import { reconcileAtStart } from './role-addresses/index.js';
 
 await runDaemon({
   name: DAEMON,
@@ -35,6 +36,9 @@ await runDaemon({
       server.once('error', reject);
     });
     ctx.log('listening', { host, port });
+    // PST-T-4.15 (PST-REQ-186): postmaster@, abuse@ and the report mailboxes on every domain. Best
+    // effort and not awaited: a failure is logged, never a reason to refuse to serve.
+    void reconcileAtStart(db, ctx.env, ctx.log);
     ctx.onShutdown(async () => {
       await new Promise<void>((resolve) => server.close(() => { resolve(); }));
       await db.$disconnect();
