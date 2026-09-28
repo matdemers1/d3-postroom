@@ -22,9 +22,13 @@ services:
     env_file: [/DATA/postroom/postroom.env]
     environment:
       HEALTH_PORT: "9101"
+      TLS_CERT_FILE: /var/lib/postroom/certs/mx.d3cloud.io/fullchain.pem
+      TLS_KEY_FILE: /var/lib/postroom/certs/mx.d3cloud.io/privkey.pem
     network_mode: "service:wireguard"
     restart: unless-stopped
-    volumes: [blobs:/var/lib/postroom/blobs]
+    volumes:
+      - blobs:/var/lib/postroom/blobs
+      - certs:/var/lib/postroom/certs:ro
     depends_on:
       postgres: { condition: service_healthy }
       wireguard: { condition: service_started }
@@ -34,9 +38,13 @@ services:
     env_file: [/DATA/postroom/postroom.env]
     environment:
       HEALTH_PORT: "9102"
+      TLS_CERT_FILE: /var/lib/postroom/certs/mx.d3cloud.io/fullchain.pem
+      TLS_KEY_FILE: /var/lib/postroom/certs/mx.d3cloud.io/privkey.pem
     network_mode: "service:wireguard"
     restart: unless-stopped
-    volumes: [blobs:/var/lib/postroom/blobs]
+    volumes:
+      - blobs:/var/lib/postroom/blobs
+      - certs:/var/lib/postroom/certs:ro
     depends_on:
       postgres: { condition: service_healthy }
       wireguard: { condition: service_started }
@@ -46,9 +54,13 @@ services:
     env_file: [/DATA/postroom/postroom.env]
     environment:
       HEALTH_PORT: "9103"
+      TLS_CERT_FILE: /var/lib/postroom/certs/mx.d3cloud.io/fullchain.pem
+      TLS_KEY_FILE: /var/lib/postroom/certs/mx.d3cloud.io/privkey.pem
     network_mode: "service:wireguard"
     restart: unless-stopped
-    volumes: [blobs:/var/lib/postroom/blobs]
+    volumes:
+      - blobs:/var/lib/postroom/blobs
+      - certs:/var/lib/postroom/certs:ro
     depends_on:
       postgres: { condition: service_healthy }
       wireguard: { condition: service_started }
@@ -58,8 +70,11 @@ services:
     env_file: [/DATA/postroom/postroom.env]
     environment:
       HEALTH_PORT: "9107"
+      TLS_CERT_FILE: /var/lib/postroom/certs/mx.d3cloud.io/fullchain.pem
+      TLS_KEY_FILE: /var/lib/postroom/certs/mx.d3cloud.io/privkey.pem
     network_mode: "service:wireguard"
     restart: unless-stopped
+    volumes: [certs:/var/lib/postroom/certs:ro]
     depends_on:
       postgres: { condition: service_healthy }
       wireguard: { condition: service_started }
@@ -111,10 +126,16 @@ services:
       # wireguard monitor (PST-T-4.13, PST-REQ-182): the worker is not in the sidecar's netns, so it
       # reaches the tiny busybox-httpd/CGI endpoint the sidecar serves on the default compose network.
       WIREGUARD_HEALTH_URL: http://wireguard:9108/cgi-bin/health
+      # The ACME DNS-01 job (PST-T-0.15, docs/runbooks/acme.md) writes the mail ports' certificate
+      # into the certs volume; ACME_DNS_TOKEN / ACME_DOMAINS / ACME_CHALLENGE_ZONE(_ID) come from
+      # postroom.env. The cert-expiry monitor watches the live chain the daemons serve.
+      ACME_CERT_DIR: /var/lib/postroom/certs
+      TLS_CERT_FILES: /var/lib/postroom/certs/mx.d3cloud.io/fullchain.pem
     restart: unless-stopped
     volumes:
       - blobs:/var/lib/postroom/blobs
       - backups:/var/lib/postroom/backups
+      - certs:/var/lib/postroom/certs
     depends_on:
       postgres: { condition: service_healthy }
   unbound:
@@ -135,3 +156,4 @@ volumes:
   pgdata:
   blobs:
   backups:
+  certs:

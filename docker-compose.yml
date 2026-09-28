@@ -22,6 +22,14 @@ x-app: &app
   depends_on:
     postgres: { condition: service_healthy }
 
+# The mail ports' certificate (PST-T-0.15, PST-REQ-020): the worker's ACME job writes it to the
+# `certs` volume and smtp-in, submission, imap and managesieve read it from there, read-only, and
+# hot-reload it on renewal (PST-T-11.13). Until the job has issued (or with ACME off, as here in dev
+# and CI) the files are absent and those daemons run without STARTTLS, degraded on /health.
+x-tls-env: &tls-env
+  TLS_CERT_FILE: /var/lib/postroom/certs/mx.d3cloud.io/fullchain.pem
+  TLS_KEY_FILE: /var/lib/postroom/certs/mx.d3cloud.io/privkey.pem
+
 services:
   # The network namespace the protocol daemons live in. With WG_* set it brings up wg0 to the edge
   # (PST-T-0.14); without, it is a bare namespace so the stack still runs on a laptop and in CI.
@@ -45,26 +53,38 @@ services:
     <<: *app
     command: ["smtp-in"]
     network_mode: "service:wireguard"
-    environment: { <<: *app-env, HEALTH_PORT: "9101" }
+    environment: { <<: [*app-env, *tls-env], HEALTH_PORT: "9101" }
+    volumes:
+      - blobs:/var/lib/postroom/blobs
+      - certs:/var/lib/postroom/certs:ro
     depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
   submission:
     <<: *app
     command: ["submission"]
     network_mode: "service:wireguard"
-    environment: { <<: *app-env, HEALTH_PORT: "9102" }
+    environment: { <<: [*app-env, *tls-env], HEALTH_PORT: "9102" }
+    volumes:
+      - blobs:/var/lib/postroom/blobs
+      - certs:/var/lib/postroom/certs:ro
     depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
   imap:
     <<: *app
     command: ["imap"]
     network_mode: "service:wireguard"
-    environment: { <<: *app-env, HEALTH_PORT: "9103" }
+    environment: { <<: [*app-env, *tls-env], HEALTH_PORT: "9103" }
+    volumes:
+      - blobs:/var/lib/postroom/blobs
+      - certs:/var/lib/postroom/certs:ro
     depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
   # ManageSieve (RFC 5804) on 4190 with STARTTLS (PST-T-9.5): the edge forwards 4190 over the tunnel.
   managesieve:
     <<: *app
     command: ["managesieve"]
     network_mode: "service:wireguard"
-    environment: { <<: *app-env, HEALTH_PORT: "9107" }
+    environment: { <<: [*app-env, *tls-env], HEALTH_PORT: "9107" }
+    volumes:
+      - blobs:/var/lib/postroom/blobs
+      - certs:/var/lib/postroom/certs:ro
     depends_on: { postgres: { condition: service_healthy }, wireguard: { condition: service_started } }
   delivery:
     <<: *app
@@ -88,6 +108,9 @@ services:
     volumes:
       - blobs:/var/lib/postroom/blobs
       - backups:/var/lib/postroom/backups
+      # The ACME job (PST-T-0.15) writes the mail ports' certificate here; off until ACME_DNS_TOKEN
+      # and ACME_DOMAINS are set.
+      - certs:/var/lib/postroom/certs
 
   # One-shot: `docker compose run --rm migrate`. Shipyard runs the same argv as its migrate step.
   migrate:
@@ -121,3 +144,4 @@ volumes:
   pgdata:
   blobs:
   backups:
+  certs:

@@ -7,6 +7,7 @@ import type { Db } from '@postroom/db';
 import { createBacklogMonitor } from './backlog.js';
 import { createBackupMonitor } from './backup.js';
 import { createBlocklistMonitor } from './blocklist.js';
+import { acmeConfig, certPaths } from '../acme/config.js';
 import { createCertMonitor } from './cert.js';
 import { createDeliveryMonitor } from './delivery.js';
 import { createDiskMonitor } from './disk.js';
@@ -40,6 +41,17 @@ function splitList(value: string): string[] {
     .filter((v) => v !== '');
 }
 
+/**
+ * TLS_CERT_FILES, or — when it is unset and the ACME job is on (PST-T-0.15) — the live pair the
+ * job writes, <ACME_CERT_DIR>/<first ACME domain>/fullchain.pem, so the monitor watches exactly
+ * what the daemons serve. An explicit TLS_CERT_FILES='' still disables it.
+ */
+function certFiles(env: NodeJS.ProcessEnv): string[] {
+  if (env.TLS_CERT_FILES !== undefined) return splitList(env.TLS_CERT_FILES);
+  const acme = acmeConfig(env);
+  return acme.enabled ? [certPaths(acme.certDir, acme.domains, false).cert] : [];
+}
+
 export function buildMonitors(opts: BuildMonitorsOptions): WorkerMonitors {
   const env = opts.env;
   const dqsKey = envString(env, 'SPAMHAUS_DQS_KEY', '');
@@ -59,7 +71,7 @@ export function buildMonitors(opts: BuildMonitorsOptions): WorkerMonitors {
       maxAgeS: envInt(env, 'BACKLOG_MAX_AGE_S', 3_600),
     }),
     createCertMonitor({
-      files: splitList(envString(env, 'TLS_CERT_FILES', '')),
+      files: certFiles(env),
       warnDays: envInt(env, 'CERT_WARN_DAYS', 14),
     }),
     createDiskMonitor({ paths: diskPaths, thresholdPct: envInt(env, 'DISK_THRESHOLD_PCT', 80) }),

@@ -12,6 +12,7 @@ verification, and rollback/abort, plus its own execution-record section.
 | [`kek-restore.md`](kek-restore.md) | Restore Postgres + blobs on a clean host and unseal the escrowed KEK bundle to prove disaster recovery |
 | [`aws-port25.md`](aws-port25.md) | Get AWS's default outbound port-25 block lifted for the edge, with SES as the interim path |
 | [`blocklisting.md`](blocklisting.md) | Respond to a DNSBL listing of the edge IP: find the cause, freeze/revoke, delist, fall back to SES |
+| [`acme.md`](acme.md) | The mail ports' certificate by ACME DNS-01 through the delegated challenge zone: staging run, forced renewal, token scope, alerts |
 
 Two related runbooks already existed before this task and are referenced from the ones above rather
 than duplicated: [`backups.md`](backups.md) (the full nightly backup and automatic drill design that
@@ -30,6 +31,7 @@ and what happened — never inferred from the code being correct.
 | [`kek-restore.md`](kek-restore.md) | not yet executed | — | needs a clean host, AWS backup-bucket access, and the operator's escrowed `BACKUP_KEK_PASSPHRASE` |
 | [`aws-port25.md`](aws-port25.md) | not yet executed | — | needs operator access to AWS Support Center and a live edge instance |
 | [`blocklisting.md`](blocklisting.md) | not yet executed | — | needs an actual (or rehearsed) blocklist alert and an admin/step-up session |
+| [`acme.md`](acme.md) | not yet executed | — | needs `ACME_DNS_TOKEN`, which exists only on the host: `postroom acme --staging` there after deploy |
 
 ## Relates to
 
