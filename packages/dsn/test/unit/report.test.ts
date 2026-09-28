@@ -15,7 +15,7 @@ import {
   statusCode,
 } from '../../src/report.js';
 
-const fixture = (name: string): string => readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'latin1');
+const fixture = (name: string): string => readFileSync(new URL(`../../../../fuzz/dsn-report/corpus/${name}`, import.meta.url), 'latin1');
 
 /** The body of the part whose Content-Type line is `type` (the fixtures are simple enough to slice). */
 function partBody(message: string, type: string): string {

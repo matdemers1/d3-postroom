@@ -1,5 +1,5 @@
 // PST-T-11.15 / PST-REQ-176 through the real inbound pipeline: the hand-made RFC 3464 and RFC 5965
-// fixtures (packages/dsn/test/fixtures), spooled as smtp-in would, are filed to the user's mailbox
+// fixtures (fuzz/dsn-report/corpus — synthetic reports; the corpus guard keeps .eml out of package trees), spooled as smtp-in would, are filed to the user's mailbox
 // like any mail (wherever the classifier sorts them) and then read by the feedback stage. A DSN is
 // informational only: even a null-sender 5.1.1 DSN about a delivered message — including the
 // verifier's attack, a forged DSN naming a co-recipient — is recorded against the recipient it
@@ -23,7 +23,7 @@ import { readPipeline } from '../../src/stages/state.js';
 import { Clock, plainMessage, spool, type TestRecipient } from './helpers.js';
 
 const baseUrl = process.env['DATABASE_URL'];
-const fixtures = join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'dsn', 'test', 'fixtures');
+const fixtures = join(import.meta.dirname, '..', '..', '..', '..', 'fuzz', 'dsn-report', 'corpus');
 const DSN_511 = { file: 'dsn-5.1.1-full.eml', mid: '6f1d2c3b-4a5e-4f60-9b7a-8c9d0e1f2a3b@d3cloud.io' };
 const DSN_522 = { file: 'dsn-5.2.2-headers-envid.eml', mid: '0a1b2c3d-5e6f-4a70-8b91-a2b3c4d5e6f7@d3cloud.io' };
 const ARF = { file: 'arf-abuse.eml', mid: '3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7@d3cloud.io' };

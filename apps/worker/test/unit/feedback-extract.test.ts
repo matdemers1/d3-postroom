@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { extractReport } from '../../src/feedback/extract.js';
 
-const fixtures = join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'dsn', 'test', 'fixtures');
+const fixtures = join(import.meta.dirname, '..', '..', '..', '..', 'fuzz', 'dsn-report', 'corpus');
 const blobsOf = (bytes: Buffer) => ({ get: () => Promise.resolve(Readable.from([bytes])) }) as never;
 const read = (name: string) => extractReport(blobsOf(readFileSync(join(fixtures, name))), 'x');
 
