@@ -15,6 +15,7 @@ import { abortReason, connectTcp, errorText, SmtpConnection, type Connector } fr
 import { quitInBackground, RFC5321_TIMEOUTS, runSession, type CommandTimeouts, type Log, type SessionConfig } from '../client/session.js';
 import { DEFAULT_HELO_NAME, raceAbort } from '../client/transport.js';
 import type { AttemptOutcome } from '../state.js';
+import { withoutEd25519Dkim } from './ses-dkim.js';
 import type { AttemptDetails, DeliveryRequest, DeliveryResult, Transport } from './types.js';
 
 export const SES_TRANSPORT = 'ses';
@@ -124,7 +125,9 @@ export function createSesTransport(options: SesTransportOptions): SesTransport {
       }
       if (conn.localAddress !== undefined) details.localIp = conn.localAddress;
       const target = { host, ip };
-      const session = await runSession(conn, target, request, cfg, details);
+      // SES refuses two DKIM-Signature headers: relay with the RSA signature only (ses-dkim.ts).
+      const relayed: DeliveryRequest = { ...request, message: async () => withoutEd25519Dkim(await request.message()) };
+      const session = await runSession(conn, target, relayed, cfg, details);
       quitInBackground(conn, cfg, { domain: request.domain, host, ip, transport: SES_TRANSPORT });
       if (session.kind === 'definitive') {
         return { details, results: { ...everyone(request, { kind: 'error', error: 'no outcome recorded' }), ...session.results } };
