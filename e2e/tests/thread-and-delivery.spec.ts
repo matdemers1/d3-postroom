@@ -12,7 +12,7 @@
 // is cancelled on the outbound queue straight away, so no bounce lands in the shared Inbox.
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
-import { ensureOperator, seedMail, signInCookies, tag } from './support.js';
+import { clearSuppressions, ensureOperator, seedMail, signInCookies, tag } from './support.js';
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 });
 
@@ -64,6 +64,7 @@ test.afterAll(async () => {
 });
 
 test.beforeEach(async ({ context }) => {
+  await clearSuppressions(api);
   await context.addCookies(cookies);
   // These specs prove what a send does once it goes. The undo window (PST-T-9.1, default 10 s) is
   // its own spec's subject, so it is off here: a send goes at once, as it did before undo existed.
@@ -83,6 +84,8 @@ interface SendResponse {
 
 /** A reply, sent for real (not through the UI), so a fixture thread exists before the test opens it. */
 async function sendReply(input: { to: string; subject: string; text: string; inReplyTo: string; references: string[] }): Promise<SendResponse> {
+  // The previous send to this address may already have hard-bounced off example.org's null MX.
+  await clearSuppressions(api, [input.to]);
   const res = await api.post('/api/compose/send', {
     headers: CSRF,
     data: {

@@ -91,6 +91,37 @@ export function adminSuppressionRoutes(deps: ApiDeps): Router {
     }),
   );
 
+  // POST /api/admin/suppressions/dev-clear — e2e only (same gate): removes the listed addresses, so a
+  // spec that sends to a real-world address it reuses (example.org publishes a null MX, which hard-
+  // bounces with 5.1.10 and is suppressed as it should be) starts from a clean list. Audited.
+  router.post(
+    '/dev-clear',
+    handle(async (req, res) => {
+      if (deps.env['POSTROOM_E2E_SEED'] !== '1') {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      const raw = (req.body as { addresses?: unknown } | undefined)?.addresses;
+      const parsed = Array.isArray(raw) && raw.length <= 50 ? raw.map((a) => SuppressionAddress.safeParse(a)) : null;
+      if (parsed === null || parsed.some((p) => !p.success)) {
+        res.status(400).json({ error: 'invalid_request' });
+        return;
+      }
+      const me = currentSession(req);
+      const addresses = parsed.map((p) => suppressionKey(p.data as string));
+      const removed = await audited(
+        db,
+        { kind: 'account', accountId: me.accountId },
+        { action: 'admin.dev.clear-suppression', entityType: 'suppressed_recipient', context: getAuditContext(req) },
+        async (tx) => {
+          const gone = await tx.suppressedRecipient.deleteMany({ where: { address: { in: addresses } } });
+          return { entityId: null, before: { addresses }, after: { removed: gone.count }, result: gone.count };
+        },
+      );
+      res.status(200).json({ removed });
+    }),
+  );
+
   router.get(
     '/',
     handle(async (req, res) => {

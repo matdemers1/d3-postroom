@@ -129,6 +129,33 @@ describe.skipIf(!baseUrl)('suppression list: admin API and the webmail send path
     expect(await db.suppressedRecipient.count({ where: { address: 'x@example.org' } })).toBe(0);
   });
 
+  it('dev-clear exists only on the e2e stack, is admin only, removes just the listed addresses, and is audited', async () => {
+    const admin = await person(true);
+    const user = await person(false);
+    const now = new Date();
+    for (const address of ['clear.me@example.org', 'keep.me@example.org']) {
+      await db.suppressedRecipient.create({ data: { address, reason: 'hard-bounce', code: 556, enhanced: '5.1.10', text: 'null MX', firstAt: now, lastAt: now } });
+    }
+    const body = { addresses: ['Clear.Me@example.org'] };
+    expect((await request(app).post('/api/admin/suppressions/dev-clear').set(CSRF).set('cookie', admin.cookie).send(body)).status).toBe(404);
+
+    try {
+    const e2e = createApp({ db, env: { DATABASE_URL: testDb.url, BLOB_ROOT: blobRoot, POSTROOM_E2E_SEED: '1' }, config: baseConfig(clock) });
+    expect((await request(e2e).post('/api/admin/suppressions/dev-clear').set(CSRF).set('cookie', user.cookie).send(body)).status).toBe(403);
+    expect((await request(e2e).post('/api/admin/suppressions/dev-clear').set(CSRF).set('cookie', admin.cookie).send({ addresses: 'x' })).status).toBe(400);
+    const cleared = await request(e2e).post('/api/admin/suppressions/dev-clear').set(CSRF).set('cookie', admin.cookie).send(body);
+    expect(cleared.status).toBe(200);
+    expect(cleared.body).toEqual({ removed: 1 });
+    expect(await db.suppressedRecipient.count({ where: { address: 'clear.me@example.org' } })).toBe(0);
+    expect(await db.suppressedRecipient.count({ where: { address: 'keep.me@example.org' } })).toBe(1);
+    const audit = await db.auditEvent.findFirstOrThrow({ where: { action: 'admin.dev.clear-suppression' }, orderBy: { at: 'desc' } });
+    expect(audit).toMatchObject({ actorKind: 'account', actorAccountId: admin.id });
+    expect(audit.before).toMatchObject({ addresses: ['clear.me@example.org'] });
+    } finally {
+      await db.suppressedRecipient.deleteMany({ where: { address: { in: ['clear.me@example.org', 'keep.me@example.org'] } } });
+    }
+  });
+
   it('doneWhen: a fake-transport 550 5.1.1 suppresses; 5.7.1 and 4xx do not; the next webmail send is 422 with the addresses', async () => {
     const me = await person();
     const first = await send(me, { to: ['gone@example.org', 'policy@example.org', 'later@example.org', 'fine@example.org'] });
