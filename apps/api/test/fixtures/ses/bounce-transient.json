@@ -1,0 +1,25 @@
+{
+  "eventType": "Bounce",
+  "bounce": {
+    "bounceType": "Transient",
+    "bounceSubType": "MailboxFull",
+    "bouncedRecipients": [
+      {
+        "emailAddress": "full@example.net",
+        "action": "failed",
+        "status": "4.2.2",
+        "diagnosticCode": "smtp; 452 4.2.2 mailbox full"
+      }
+    ],
+    "timestamp": "2026-09-27T12:20:00.000Z",
+    "feedbackId": "0100019a-feedback-0002-000000"
+  },
+  "mail": {
+    "timestamp": "2026-09-27T12:19:58.000Z",
+    "source": "matt@d3cloud.io",
+    "messageId": "__SES_MESSAGE_ID__",
+    "destination": ["full@example.net"],
+    "headersTruncated": false,
+    "commonHeaders": { "from": ["matt@d3cloud.io"], "to": ["full@example.net"], "messageId": "__SES_MESSAGE_ID__" }
+  }
+}

@@ -22,7 +22,7 @@ import type { ApiDeps } from '../deps.js';
 import { DEFAULT_BLOB_ROOT } from '../mail/index.js';
 
 export const INBOUND_QUEUE = 'inbound';
-export const STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify'] as const;
+export const STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify', 'feedback'] as const;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A job in one of these may be put back in line; pending and running ones are already in it. */

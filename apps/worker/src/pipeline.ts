@@ -18,7 +18,9 @@ import type { Kek } from '@postroom/crypto';
 import type { AccountCap } from '@postroom/submission/caps';
 import { InboundState, type Db, type InboundMessage, type Job, type Prisma } from '@postroom/db';
 import { enqueue, type Handler } from '@postroom/queue';
+import type { SendAlert } from '@postroom/alerts';
 import { classifyStage } from './stages/classify.js';
+import { feedbackStage } from './stages/feedback.js';
 import { fileStage, parseRecipients } from './stages/file.js';
 import { notifyStage } from './stages/notify.js';
 import { parseStage } from './stages/parse.js';
@@ -57,6 +59,8 @@ export interface PipelineOptions {
   vacationDailyCap?: number;
   /** PST-T-11.11: the account-wide outbound cap (ACCOUNT_CAP_HOURLY/DAILY) a vacation reply counts toward. */
   accountCap?: AccountCap;
+  /** PST-T-11.15: the operator alert for an ARF complaint (the feedback stage); without it none is sent, and the result says so. */
+  sendAlert?: SendAlert;
 }
 
 export interface RunOptions {
@@ -108,6 +112,7 @@ export function createInboundPipeline(options: PipelineOptions): InboundPipeline
     ...(options.kek === undefined ? {} : { kek: options.kek }),
     ...(options.vacationDailyCap === undefined ? {} : { vacationDailyCap: options.vacationDailyCap }),
     ...(options.accountCap === undefined ? {} : { accountCap: options.accountCap }),
+    ...(options.sendAlert === undefined ? {} : { sendAlert: options.sendAlert }),
   };
 
   const record = async (id: string, stage: StageName, result: Json): Promise<void> => {
@@ -158,6 +163,14 @@ export function createInboundPipeline(options: PipelineOptions): InboundPipeline
         });
       case 'notify': {
         const r = await notifyStage(db, need(results, 'file') as unknown as FileResult);
+        await record(inbound.id, stage, r);
+        return r;
+      }
+      case 'feedback': {
+        const r = await feedbackStage(input, deps, {
+          verify: need(results, 'verify') as unknown as VerifyResult,
+          recipients: parseRecipients(inbound.recipients),
+        });
         await record(inbound.id, stage, r);
         return r;
       }

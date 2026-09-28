@@ -60,6 +60,7 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'PUT /api/senders/{address}/pin',
         'DELETE /api/senders/{address}/pin',
         'POST /api/senders/{address}/screen',
+        'POST /api/ses/sns',
         // PST-T-5.6: one-click unsubscribe (RFC 8058).
         'POST /api/messages/{id}/unsubscribe',
         // PST-T-3.11: the composer.
