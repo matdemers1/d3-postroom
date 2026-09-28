@@ -20,6 +20,21 @@ import { reply, type SmtpReply } from '@postroom/smtp-proto';
 import type { SendAlert } from '@postroom/alerts';
 import { CapExceededError, type CapDecision, type CheckCaps, type EnforceCaps, type SubmissionCredential } from '../caps-seam.js';
 
+// PST-T-11.11: the account-wide cap, enforced by acceptSubmission itself; every app builds it here.
+export {
+  ACCOUNT_CAP_AUDIT_ACTION,
+  ACCOUNT_CAP_DEFAULTS,
+  ACCOUNT_CAP_ENV,
+  ACCOUNT_CAP_EXEMPT_VIA,
+  AccountCapExceededError,
+  AccountCapReplies,
+  accountCapFromEnv,
+  alertAccountCapOnce,
+  enforceAccountCap,
+  type AccountCap,
+  type AccountCapWindow,
+} from './account.js';
+
 export type Log = (event: string, fields?: Record<string, unknown>) => void;
 
 export interface CapsOptions {

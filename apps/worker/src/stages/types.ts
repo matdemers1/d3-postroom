@@ -17,6 +17,7 @@
 import type { Blob as BlobRow, Db, InboundMessage, Prisma } from '@postroom/db';
 import type { BlobStore } from '@postroom/blobstore';
 import type { Kek } from '@postroom/crypto';
+import type { AccountCap } from '@postroom/submission/caps';
 
 export const STAGES = ['verify', 'parse', 'classify', 'sieve', 'file', 'notify'] as const;
 export type StageName = (typeof STAGES)[number];
@@ -240,6 +241,8 @@ export interface StageDeps {
   readonly kek?: () => Kek;
   /** Vacation replies one account may send per rolling 24 hours (default 200). */
   readonly vacationDailyCap?: number;
+  /** PST-T-11.11: the account-wide outbound cap a vacation reply counts toward (ACCOUNT_CAP_HOURLY/DAILY; default 200 / 1000). */
+  readonly accountCap?: AccountCap;
 }
 
 /** What a stage sees: the spool row and the results of the stages before it. */

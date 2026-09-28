@@ -22,7 +22,7 @@ import { createThreadSweeper } from './sweep/thread-sweep.js';
 import { startTrainingLoop } from './training/index.js';
 import { startRetentionLoop } from './retention/index.js';
 import { startScheduledLoop } from './scheduled/index.js';
-import { createWebmailCapsEnforcer } from '@postroom/submission/caps';
+import { accountCapFromEnv, createWebmailCapsEnforcer } from '@postroom/submission/caps';
 
 await runDaemon({
   name: DAEMON,
@@ -46,6 +46,16 @@ await runDaemon({
       verify: (sha256) => getBlobs().verify(sha256),
       gc: (opts) => getBlobs().gc(opts),
     };
+    // PST-T-11.11 (PST-REQ-177, PST-REQ-180): the account-wide outbound cap vacation replies and held
+    // sends count toward — ACCOUNT_CAP_HOURLY / ACCOUNT_CAP_DAILY, the same names submission and the api
+    // read — alerting through the D3 Auth relay.
+    const accountCap = accountCapFromEnv(ctx.env, {
+      sendAlert: createAlertSender(
+        { url: envString(ctx.env, 'MAIL_RELAY_URL', ''), token: envString(ctx.env, 'MAIL_RELAY_TOKEN', ''), to: envString(ctx.env, 'ALERT_TO', '') },
+        { log: ctx.log },
+      ),
+      log: ctx.log,
+    });
     // The KEK signs Sieve vacation replies (PST-T-9.5); loaded on first use, like the blob store.
     const pipeline = createInboundPipeline({
       db,
@@ -53,6 +63,7 @@ await runDaemon({
       log: ctx.log,
       kek: () => loadKek({ env: ctx.env }),
       vacationDailyCap: envInt(ctx.env, 'SIEVE_VACATION_DAILY_CAP', 200),
+      accountCap,
     });
     const leaseMs = envInt(ctx.env, 'INBOUND_LEASE_MS', 300_000);
     const worker = await startWorker({
@@ -165,6 +176,7 @@ await runDaemon({
         ),
         log: ctx.log,
       }),
+      accountCap,
       intervalMs: envInt(ctx.env, 'SCHEDULED_TICK_MS', 15_000),
       log: ctx.log,
     });

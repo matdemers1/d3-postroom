@@ -86,6 +86,7 @@ describe('a refused send, in words', () => {
   it('names what to do', () => {
     expect(sendErrorText(new ApiError(503, 'dkim_unconfigured', {}))).toMatch(/DKIM/);
     expect(sendErrorText(new ApiError(429, 'recipient_cap', {}))).toMatch(/sending limit/);
+    expect(sendErrorText(new ApiError(429, 'account_cap', { error: 'account_cap', message: '...' }))).toBe('This account has reached its sending limit for now. Nothing was sent; try again later.');
     expect(sendErrorText(new ApiError(400, 'invalid_recipient', { error: 'invalid_recipient', message: 'to: "x" is not an address' }))).toBe('to: "x" is not an address');
     expect(sendErrorText(new TypeError('fetch failed'))).toMatch(/nothing was sent/);
   });

@@ -245,6 +245,32 @@ describe.skipIf(baseUrl === undefined)('Sieve in the inbound pipeline (PST-T-9.5
     expect(await db.auditEvent.count({ where: { action: 'submission.accept', actorAccountId: me.id } })).toBe(2);
   });
 
+  it('PST-T-11.11: a vacation reply counts toward the account-wide cap; over it no reply is sent, the mail is still delivered, and nothing retries (PST-REQ-177)', async () => {
+    const me = await makeAccount('awaycapped');
+    await activate(me.id, 'require "vacation";\r\nvacation "away";\r\n');
+    const alerts: string[] = [];
+    // Real time (the cap counts rows the database stamps with now()), and a cap of one recipient.
+    const capped = createInboundPipeline({
+      db,
+      blobs,
+      kek: () => kek,
+      accountCap: { hourly: 1, daily: 1000, sendAlert: (m) => (alerts.push(m.subject), Promise.resolve({ sent: true })) },
+    });
+    const deliverCapped = async (from: string) => {
+      const { id } = await spool(db, blobs, { message: message({ from: `<${from}>`, to: me.address, subject: 'hi' }), recipients: [me.rcpt()], envelopeFrom: from, verdicts: PASS_VERDICTS });
+      await capped.run(id);
+      return { id, copies: await copiesOf(id) };
+    };
+
+    const first = await deliverCapped('carol@example.org');
+    expect((await sieveOutcome(first.id, me.id)).vacation).toMatchObject({ sent: true });
+    const second = await deliverCapped('dave@example.org');
+    expect(second.copies.map((c) => c.mailbox.name)).toEqual(['INBOX']);
+    expect((await sieveOutcome(second.id, me.id)).vacation).toMatchObject({ sent: false, reason: 'not sent: the submission path refused it (account-cap)' });
+    expect(await vacationReplies(me.id)).toHaveLength(1);
+    expect(alerts).toEqual(['Postroom: account outbound cap reached']);
+  });
+
   it('no vacation reply to mail the classifier put in Junk', async () => {
     const me = await makeAccount('awayjunk');
     await activate(me.id, 'require "vacation";\r\nvacation "away";\r\n');

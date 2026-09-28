@@ -28,7 +28,7 @@ import {
 } from '@postroom/smtp-proto';
 import { acceptSubmission, AcceptReplies, suppressedReply, type SubmissionStorage } from './accept.js';
 import { allowAllCaps, allowAllEnforcement, type CheckCaps, type EnforceCaps } from './caps-seam.js';
-import { isCredentialFrozen } from './caps/index.js';
+import { isCredentialFrozen, type AccountCap } from './caps/index.js';
 import { SASL_MECHANISMS, readCredentials } from './sasl.js';
 import { attachTranscriptTap, TranscriptRecorder } from './transcript.js';
 
@@ -92,6 +92,8 @@ export interface SubmissionOptions {
   readonly checkCaps?: CheckCaps;
   /** Authoritative: run inside the accepting transaction, before the insert (see caps-seam.ts). */
   readonly enforceCaps?: EnforceCaps;
+  /** PST-T-11.11: the account-wide cap (ACCOUNT_CAP_HOURLY/DAILY), enforced by acceptSubmission; default 200 / 1000. */
+  readonly accountCap?: AccountCap;
   readonly log?: (event: string, fields?: Record<string, unknown>) => void;
   readonly faults?: SubmissionFaults;
   readonly idleTimeoutMs?: number;
@@ -324,6 +326,7 @@ export function serveSubmission(socket: Duplex, secure: boolean, remoteAddress: 
         now,
         log,
         ...(o.maxHeaderBytes === undefined ? {} : { maxHeaderBytes: o.maxHeaderBytes }),
+        ...(o.accountCap === undefined ? {} : { accountCap: o.accountCap }),
         ...(o.faults?.beforeCommit === undefined ? {} : { beforeCommit: o.faults.beforeCommit }),
       },
     );

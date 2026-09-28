@@ -21,7 +21,7 @@ import { envInt, envString } from '@postroom/daemon';
 import { findSuppressed } from '@postroom/delivery';
 import { collectMessage, decodeEncodedWords, parseMailboxes, parseMessageIdList, type Mailbox } from '@postroom/mime';
 import { acceptSubmission, sendableAddresses, suppressedReply, type AcceptOutcome, type SubmissionStorage } from '@postroom/submission';
-import { createWebmailCapsEnforcer } from '@postroom/submission/caps';
+import { accountCapFromEnv, createWebmailCapsEnforcer } from '@postroom/submission/caps';
 import { ensureDkimKeys, loadSigningKeys } from '@postroom/submission/dkim';
 import { Router, type Request, type Response } from 'express';
 import type { z } from 'zod';
@@ -97,6 +97,8 @@ export function refusalStatus(outcome: Exclude<AcceptOutcome, { ok: true }>): { 
       return { status: 503, error: 'dkim_unconfigured' };
     case 'cap-exceeded':
       return { status: 429, error: 'recipient_cap' };
+    case 'account-cap':
+      return { status: 429, error: 'account_cap' };
     case 'recipient-suppressed':
       return { status: 422, error: 'recipient_suppressed' };
   }
@@ -146,6 +148,8 @@ export function composeRoutes(deps: ApiDeps): Router {
     log,
   };
   const webmailCaps = createWebmailCapsEnforcer(capsOptions);
+  // PST-T-11.11: the account-wide cap acceptSubmission enforces, from the same env as SMTP and the worker.
+  const accountCap = accountCapFromEnv(deps.env, { sendAlert: capsOptions.sendAlert, log });
   const maxRecipients = envInt(deps.env, 'SUBMISSION_MAX_RECIPIENTS', 100);
 
   let storage: SubmissionStorage | null = null;
@@ -380,7 +384,7 @@ export function composeRoutes(deps: ApiDeps): Router {
               });
             },
           },
-          { db, storage: () => store, now: rt.now, log },
+          { db, storage: () => store, now: rt.now, log, accountCap },
         ).finally(() => {
           // A refusal stops reading part-way: let go of the original's blob stream too.
           original?.destroy();
@@ -417,7 +421,7 @@ export function composeRoutes(deps: ApiDeps): Router {
                 });
               },
             },
-            { db, storage: () => store, now: rt.now, log },
+            { db, storage: () => store, now: rt.now, log, accountCap },
           );
           if (!copyOutcome.ok) {
             // The primary copy is already queued: say exactly who did not get theirs.
@@ -893,6 +897,8 @@ export function mdnRoutes(deps: ApiDeps): Router {
     log,
   };
   const webmailCaps = createWebmailCapsEnforcer(capsOptions);
+  // PST-T-11.11: the account-wide cap acceptSubmission enforces, from the same env as SMTP and the worker.
+  const accountCap = accountCapFromEnv(deps.env, { sendAlert: capsOptions.sendAlert, log });
 
   router.post(
     '/:id/mdn',
@@ -1016,7 +1022,7 @@ export function mdnRoutes(deps: ApiDeps): Router {
               if (marked === null) throw new Error('message vanished while sending its MDN');
             },
           },
-          { db, storage: () => store, now: rt.now, log },
+          { db, storage: () => store, now: rt.now, log, accountCap },
         );
         if (!outcome.ok) {
           res.status(refusalStatus(outcome).status).json(refusalBody(outcome));

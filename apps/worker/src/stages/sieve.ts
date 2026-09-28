@@ -285,7 +285,9 @@ async function sendVacation(action: VacationAction, ctx: VacationContext): Promi
         recipients: [{ address: action.to }],
         sessionId: `sieve-${inbound.id}`,
         submittedVia: VACATION_SUBMITTED_VIA,
-        // The per-account daily cap above bounds vacation replies; the handle/:days store bounds them per sender.
+        // The per-account daily cap above bounds vacation replies; the handle/:days store bounds them per
+        // sender. They still count toward the account-wide cap acceptSubmission enforces (PST-REQ-177):
+        // over it, the refusal below just means no reply — the stage records why and never retries it.
         enforceCaps: () => Promise.resolve(),
         auditContext: { requestId: `sieve-vacation-${inbound.id}-${accountId}`, userAgent: 'worker/sieve' },
         withinTransaction: async (tx, accepted) => {
@@ -294,7 +296,7 @@ async function sendVacation(action: VacationAction, ctx: VacationContext): Promi
           });
         },
       },
-      { db: deps.db, storage: () => storage, now: deps.now, log: deps.log },
+      { db: deps.db, storage: () => storage, now: deps.now, log: deps.log, ...(deps.accountCap === undefined ? {} : { accountCap: deps.accountCap }) },
     );
     if (!outcome.ok) return { ...base, reason: `not sent: the submission path refused it (${outcome.reason})` };
     return { ...base, sent: true, reason: `sent from ${from} to ${action.to}`, outboundMessageId: outcome.outboundId };

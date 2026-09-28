@@ -5,6 +5,9 @@
 //   PST-REQ-028  the From header must be one of the submitter's own addresses (553 / 403);
 //   PST-REQ-038  DKIM-signed (Ed25519 + RSA) for the From domain, or refused — never sent unsigned;
 //   PST-REQ-043  the authoritative recipient-cap check, inside the accepting transaction;
+//   PST-REQ-177  the account-wide outbound cap, across every sending path, right after the path's own
+//                cap and in the same transaction (caps/account.ts); only 'e2e-seed' is exempt, and
+//                PST-REQ-180 the first refusal in a window alerts the operator, once;
 //   PST-REQ-179  a recipient on the suppression list refuses the whole message (550 5.1.1), checked
 //                in the same transaction, so a removal or a new hard bounce is seen at once;
 //   PST-REQ-060  the signed blob is fsynced and its queue rows, jobs and audit row committed as one;
@@ -27,6 +30,7 @@ import { enqueueOutbound, findSuppressed, type SuppressedMatch } from '@postroom
 import { parseMailboxes, parseMessageIdList } from '@postroom/mime';
 import { reply, type SmtpReply } from '@postroom/smtp-proto';
 import { CapExceededError } from './caps-seam.js';
+import { ACCOUNT_CAP_DEFAULTS, ACCOUNT_CAP_EXEMPT_VIA, AccountCapExceededError, AccountCapReplies, alertAccountCapOnce, enforceAccountCap, type AccountCap } from './caps/account.js';
 import { loadSigningKeys } from './dkim.js';
 import { fieldValue, inspectHeaders, rewriteHeaders } from './headers.js';
 import { Spool } from './spool.js';
@@ -101,6 +105,13 @@ export interface AcceptDeps {
    * single send), the post-commit effects run here, exactly as before.
    */
   readonly deferred?: DeferredEffects;
+  /**
+   * PST-T-11.11: the account-wide outbound cap (PST-REQ-177), built by every app with
+   * accountCapFromEnv (ACCOUNT_CAP_HOURLY / ACCOUNT_CAP_DAILY). Optional only so that leaving it out
+   * can never switch the cap off: without it the defaults (200 / 1000) are enforced all the same,
+   * with no alert sender to tell the operator.
+   */
+  readonly accountCap?: AccountCap;
 }
 
 /** Where an acceptance inside someone else's transaction hands its post-commit effects (PST-T-9.6). */
@@ -135,6 +146,12 @@ export type AcceptOutcome =
   | {
       readonly ok: false;
       readonly reason: 'header-too-large' | 'from-missing' | 'from-not-owned' | 'dkim-unconfigured' | 'cap-exceeded';
+      readonly reply: SmtpReply;
+    }
+  | {
+      readonly ok: false;
+      /** PST-REQ-177: the account's outbound recipients across every sending path are at its cap; nothing was queued or frozen. */
+      readonly reason: 'account-cap';
       readonly reply: SmtpReply;
     }
   | {
@@ -281,6 +298,7 @@ async function harvestContacts(deps: AcceptDeps, storage: SubmissionStorage, inp
  */
 export async function acceptSubmission(body: Readable, input: AcceptInput, deps: AcceptDeps): Promise<AcceptOutcome> {
   const { submitter } = input;
+  const accountCap: AccountCap = deps.accountCap ?? ACCOUNT_CAP_DEFAULTS;
   const owns = (address: string): boolean => submitter.addresses.has(address.toLowerCase());
 
   // 1. The header block (bounded), and the sender check on it (PST-REQ-028).
@@ -339,6 +357,8 @@ export async function acceptSubmission(body: Readable, input: AcceptInput, deps:
         const suppressed = await findSuppressed(dbTx, recipients);
         if (suppressed.length > 0) throw new RecipientSuppressedError(suppressed);
         await input.enforceCaps(dbTx, recipients, deps.now());
+        // PST-REQ-177, after the path's own cap (its lock first, then the account's: see caps/account.ts).
+        if (input.submittedVia !== ACCOUNT_CAP_EXEMPT_VIA) await enforceAccountCap(dbTx, accountCap, submitter.accountId, recipients.length, deps.now());
         const blob = await storage.blobs.put(
           Readable.from(
             (async function* signed(): AsyncGenerator<Buffer> {
@@ -425,6 +445,24 @@ export async function acceptSubmission(body: Readable, input: AcceptInput, deps:
         if (deps.deferred === undefined) await err.alert?.();
         else if (err.alert !== undefined) deps.deferred.afterEnd(async () => err.alert?.());
         return { ok: false, reason: 'cap-exceeded', reply: err.reply };
+      }
+      if (err instanceof AccountCapExceededError) {
+        deps.log('account-cap-refused', { session: input.sessionId, accountId: submitter.accountId, window: err.window, limit: err.limit });
+        // PST-REQ-180, once the transaction (and the account lock) has ended — against the real
+        // database: inside a release, `deps.db` is a savepoint of the transaction being rolled back.
+        const at = deps.now();
+        const alert = async (): Promise<void> => {
+          await alertAccountCapOnce(deps.deferred?.db ?? deps.db, accountCap, submitter.accountId, err, at);
+        };
+        if (deps.deferred === undefined) {
+          try {
+            await alert();
+          } catch (alertErr) {
+            // The refusal stands whether or not the operator could be told.
+            deps.log('account-cap-alert-failed', { session: input.sessionId, accountId: submitter.accountId, error: alertErr instanceof Error ? alertErr.message : String(alertErr) });
+          }
+        } else deps.deferred.afterEnd(alert);
+        return { ok: false, reason: 'account-cap', reply: AccountCapReplies.reached };
       }
       throw err;
     }
