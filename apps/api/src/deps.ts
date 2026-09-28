@@ -1,4 +1,5 @@
 import type { Db } from '@postroom/db';
+import type { SesSnsOptions } from './ses/index.js';
 
 export interface ApiConfig {
   /** Absolute path of the built web app, served as statics; unset in tests. */
@@ -34,4 +35,6 @@ export interface ApiDeps {
   db: Db;
   config: ApiConfig;
   env: NodeJS.ProcessEnv;
+  /** PST-T-11.15: the SES/SNS endpoint's fetcher and alert sender; tests inject both. */
+  sesSns?: SesSnsOptions | undefined;
 }

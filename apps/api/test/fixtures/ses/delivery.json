@@ -1,0 +1,5 @@
+{
+  "eventType": "Delivery",
+  "delivery": { "timestamp": "2026-09-27T12:00:02.000Z", "recipients": ["fine@example.net"], "smtpResponse": "250 ok" },
+  "mail": { "timestamp": "2026-09-27T12:00:00.000Z", "source": "matt@d3cloud.io", "messageId": "__SES_MESSAGE_ID__", "destination": ["fine@example.net"] }
+}

@@ -4211,6 +4211,65 @@
         ],
         "additionalProperties": false
       },
+      "SesSnsAck": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bounce",
+              "complaint",
+              "ignored"
+            ]
+          },
+          "alerted": {
+            "type": "boolean"
+          },
+          "notificationType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "action": {
+                  "type": "string"
+                },
+                "duplicate": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "address",
+                "duplicate"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false,
+        "description": "What was done with the message."
+      },
       "SieveCheckResult": {
         "type": "object",
         "properties": {
@@ -12267,6 +12326,149 @@
           },
           "403": {
             "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ses/sns": {
+      "post": {
+        "operationId": "sesSnsNotification",
+        "tags": [
+          "SES"
+        ],
+        "summary": "Amazon SES bounce and complaint notifications, delivered by an SNS HTTPS subscription (PST-T-11.15).",
+        "description": "No session and no CSRF header: authenticated by the SNS message signature (SignatureVersion 1 SHA1withRSA or 2 SHA256withRSA, certificate fetched only from https://sns.<region>.amazonaws.com and cached). SNS posts the JSON as text/plain; at most 256 KB. Only TopicArn values in SES_SNS_TOPIC_ARNS are accepted. A SubscriptionConfirmation is confirmed by fetching its SubscribeURL. A Permanent bounce marks the correlated delivered recipient bounced and, with a 5.1.x or no status, suppresses the address (PST-REQ-176); a Transient bounce is recorded; a complaint is recorded and alerts the operator once. Every accepted message is audited.",
+        "parameters": [
+          {
+            "name": "x-amz-sns-message-type",
+            "in": "header",
+            "required": false,
+            "description": "When present, must equal the body Type.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "Type": {
+                    "type": "string",
+                    "enum": [
+                      "Notification",
+                      "SubscriptionConfirmation",
+                      "UnsubscribeConfirmation"
+                    ]
+                  },
+                  "MessageId": {
+                    "type": "string"
+                  },
+                  "TopicArn": {
+                    "type": "string",
+                    "description": "Must be listed in SES_SNS_TOPIC_ARNS."
+                  },
+                  "Message": {
+                    "type": "string",
+                    "description": "For a Notification: the SES event JSON (eventType or notificationType Bounce / Complaint)."
+                  },
+                  "Timestamp": {
+                    "type": "string"
+                  },
+                  "SignatureVersion": {
+                    "type": "string",
+                    "enum": [
+                      "1",
+                      "2"
+                    ]
+                  },
+                  "Signature": {
+                    "type": "string"
+                  },
+                  "SigningCertURL": {
+                    "type": "string",
+                    "description": "https://sns.<region>.amazonaws.com/….pem only."
+                  },
+                  "Subject": {
+                    "type": "string"
+                  },
+                  "Token": {
+                    "type": "string"
+                  },
+                  "SubscribeURL": {
+                    "type": "string"
+                  },
+                  "UnsubscribeURL": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "Type",
+                  "MessageId",
+                  "TopicArn",
+                  "Message",
+                  "Timestamp",
+                  "SignatureVersion",
+                  "Signature",
+                  "SigningCertURL"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted (including SES events Postroom ignores, so SNS does not retry them).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesSnsAck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not JSON, not an SNS message, or a message type header that disagrees with the body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Unlisted topic, a certificate or SubscribeURL off the SNS allow-list, or a signature that does not verify.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body over 256 KB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The SubscribeURL confirmation failed.",
             "content": {
               "application/json": {
                 "schema": {
