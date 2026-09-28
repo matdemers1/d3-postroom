@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fakeResolver, startFakeMx, type FakeMx, type FakeMxScript, type FakeMxTls } from '../../src/client/fake-mx.js';
 import { transportsFromEnv } from '../../src/transports/index.js';
 import { createSesTransport, parseSesDomains, sesClaims, sesConfigFromEnv, type SesTransportOptions } from '../../src/transports/ses.js';
+import { dropEd25519DkimFields } from '../../src/transports/ses-dkim.js';
 import type { DeliveryRequest, Transport } from '../../src/transports/types.js';
 import { routeByClaims } from '../../src/worker.js';
 
@@ -162,7 +163,7 @@ describe('DELIVERY_SES_DOMAINS and configuration', () => {
 });
 
 describe.skipIf(tlsConfig === undefined)('SES smarthost session', () => {
-  it('relays the stored bytes unchanged over verified TLS after AUTH PLAIN, and the DKIM signatures still verify', async () => {
+  it('relays the stored bytes over verified TLS after AUTH PLAIN, minus the Ed25519 signature SES would refuse, and the RSA signature verifies', async () => {
     const m = await smarthost({ auth: { user: USER, password: PASSWORD, mechanisms: ['LOGIN', 'PLAIN'] } });
     const logged: Logged[] = [];
     const result = await ses(m, {}, logged).deliver(request());
@@ -180,9 +181,12 @@ describe.skipIf(tlsConfig === undefined)('SES smarthost session', () => {
     expect(commands?.slice(0, 5)).toEqual(['C: EHLO mx.d3cloud.io', 'C: STARTTLS', 'C: EHLO mx.d3cloud.io', 'C: AUTH PLAIN', `C: MAIL FROM:<me@d3cloud.io>`]);
 
     const received = session?.bodyBuffer() ?? Buffer.alloc(0);
-    expect(received.equals(SIGNED)).toBe(true);
+    // SES refuses two DKIM-Signature headers, so the Ed25519 one is dropped on the way out
+    // (ses-dkim.ts); everything else is the stored bytes, and the RSA signature still verifies.
+    expect(received.equals(Buffer.from(dropEd25519DkimFields(SIGNED.toString('latin1').split('\r\n\r\n')[0] ?? '') + '\r\n\r\n' + SIGNED.toString('latin1').split('\r\n\r\n').slice(1).join('\r\n\r\n'), 'latin1'))).toBe(true);
+    expect(received.toString('latin1').match(/^dkim-signature:/gim)).toHaveLength(1);
     const verdicts = await verifyLocal(received, { ed: keys.ed25519.publicKey, rsa: keys.rsa.publicKey });
-    expect(verdicts.map((v) => v.result)).toEqual(['pass', 'pass']);
+    expect(verdicts.map((v) => [v.result, v.algorithm])).toEqual([['pass', 'rsa-sha256']]);
 
     expect(JSON.stringify(logged)).not.toContain(PASSWORD);
     expect(JSON.stringify(logged)).not.toContain(Buffer.from(`\0${USER}\0${PASSWORD}`).toString('base64'));
