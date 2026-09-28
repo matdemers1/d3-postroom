@@ -330,7 +330,7 @@ describe.skipIf(baseUrl === undefined)('Sieve in the inbound pipeline (PST-T-9.5
 
   it('the daily vacation cap still applies once a sender is authenticated', async () => {
     const capped = createInboundPipeline({ db, blobs, now: clock.now, kek: () => kek, vacationDailyCap: 1 });
-    const me = await makeAccount('awaycapped');
+    const me = await makeAccount('awaydailycap');
     await activate(me.id, 'require "vacation";\r\nvacation "away";\r\n');
 
     const first = await spool(db, blobs, {
