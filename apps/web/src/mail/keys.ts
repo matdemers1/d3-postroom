@@ -19,7 +19,11 @@ export type MailAction =
   | 'goInbox'
   | 'help'
   | 'commandPalette'
-  | 'inspect';
+  | 'inspect'
+  | 'undo'
+  | 'moveTo'
+  | 'select'
+  | 'snooze';
 
 export interface Shortcut {
   keys: string;
@@ -35,6 +39,10 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { keys: 'u', action: 'back', description: 'Back to the list' },
   { keys: 'e', action: 'archive', description: 'Archive' },
   { keys: '#', action: 'delete', description: 'Move to Trash' },
+  { keys: 'v', action: 'moveTo', description: 'Move to a mailbox' },
+  { keys: 'b', action: 'snooze', description: 'Snooze the conversation' },
+  { keys: 'z', action: 'undo', description: 'Undo the last move' },
+  { keys: 'x', action: 'select', description: 'Select or deselect a message' },
   { keys: 'r', action: 'reply', description: 'Reply' },
   { keys: 'a', action: 'replyAll', description: 'Reply all' },
   { keys: 'f', action: 'forward', description: 'Forward' },
@@ -55,6 +63,10 @@ const SINGLE: Readonly<Record<string, MailAction>> = {
   u: 'back',
   e: 'archive',
   '#': 'delete',
+  v: 'moveTo',
+  b: 'snooze',
+  z: 'undo',
+  x: 'select',
   r: 'reply',
   a: 'replyAll',
   f: 'forward',
