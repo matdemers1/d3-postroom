@@ -53,6 +53,20 @@ describe('SES relay drops the Ed25519 DKIM signature (PST-REQ-045)', () => {
     expect(results[0]).toMatchObject({ result: 'pass', selector: 'pr202609r' });
   });
 
+  it('the RSA signature still verifies after SES replaces the Message-ID (PST-T-11.19)', async () => {
+    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const sigs = await signMessage(MESSAGE, { domain: 'd3cloud.io', keys: [{ selector: 'pr202609r', algorithm: 'rsa-sha256', privateKey: rsa.privateKey }] });
+    expect(sigs[0]).not.toMatch(/message-id/i);
+    const relayed = Buffer.from(
+      Buffer.concat([...sigs.map((sig) => Buffer.from(sig, 'latin1')), MESSAGE])
+        .toString('latin1')
+        .replace('Message-ID: <abc@d3cloud.io>', 'Message-ID: <010001a0eab97b0f-57a466ee@email.amazonses.com>'),
+      'latin1',
+    );
+    const results = await verifyLocal(relayed, { pr202609r: rsa.publicKey });
+    expect(results[0]).toMatchObject({ result: 'pass', selector: 'pr202609r' });
+  });
+
   it('removes a folded Ed25519 field, including a= split by folding whitespace, and nothing else', () => {
     const block = [
       'DKIM-Signature: v=1; a=rsa-sha256; d=d3cloud.io; s=r;',

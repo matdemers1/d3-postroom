@@ -31,14 +31,19 @@ export interface SignOptions {
   readonly maxHeaderBytes?: number;
 }
 
-/** Headers signed when present (§5.4.1's recommended set, plus list and feedback headers). */
+/**
+ * Headers signed when present (§5.4.1's recommended set, plus list and feedback headers) — except
+ * Message-ID. Amazon SES replaces the Message-ID of every message it relays, so a signature covering
+ * it fails at every receiver once the SES fallback carries the message (port25's verifier, 2026-09-29:
+ * d=d3cloud.io "signature doesn't verify" with a matching body hash). §5.4.1 recommends signing it but
+ * does not require it; From, Subject, Date and the rest still bind the message (PST-T-11.19).
+ */
 export const DEFAULT_SIGNED_HEADERS: readonly string[] = [
   'from',
   'to',
   'cc',
   'subject',
   'date',
-  'message-id',
   'reply-to',
   'in-reply-to',
   'references',
