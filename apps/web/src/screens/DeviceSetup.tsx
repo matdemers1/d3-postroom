@@ -1,6 +1,7 @@
 import { type SyntheticEvent, useState } from 'react';
 import { Alert, Button, FormActions, FormField, Input, Modal, ModalClose, Page, PageHeader, Section, Stack } from '@d3cloud/ui';
 import { ApiError, api, describeError, generateMobileconfig } from '../api';
+import { SubNav } from './SubNav';
 
 /** Triggers a browser download of a Blob without ever navigating away from this screen. */
 function downloadBlob(blob: Blob, filename: string): void {
@@ -81,6 +82,7 @@ export function DeviceSetup() {
   return (
     <Page>
       <PageHeader title="Set up iPhone / Mac" description="One profile configures Mail, Calendar and Contacts together, with their own app password." />
+      <SubNav />
 
       {notice === null ? null : (
         <Alert tone="info" dynamic>

@@ -57,7 +57,7 @@ import { pushDepth } from '../mobile/push';
 import { composesInPane, draftPath, mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { emptyMailboxCopy, inSegment, isInboxSegment, segmentItems, segmentKeyword, type InboxSegment } from './split';
-import { SPLIT_QUERY, useMediaQuery } from './useMedia';
+import { showsKeyHints, SPLIT_QUERY, useMediaQuery } from './useMedia';
 import { SessionEnded } from '../screens/states';
 // PST-T-14.9: sorting you can see and correct where you read.
 import { sortingApi } from './sorting/api';
@@ -470,7 +470,7 @@ function MailPanes({ route }: { route: MailRoute }) {
     };
     const id = toast.show({
       message,
-      action: { label: 'Undo', shortcut: 'z', onAction: run },
+      action: { label: 'Undo', ...(showsKeyHints() ? { shortcut: 'z' } : {}), onAction: run },
       onDismiss: () => {
         if (undoRef.current?.id === id) undoRef.current = null;
       },
@@ -1210,7 +1210,7 @@ function MailPanes({ route }: { route: MailRoute }) {
     content = (
       <PushFrame key={view} direction={pushDirectionNow} className="pr-push--level">
         {content}
-        {view === 'message' && openDetail !== null ? (
+        {view === 'message' && openDetail !== null && !isNewslettersFeed ? (
           <MobileActionBar
             detail={openDetail}
             canArchive={archive !== undefined && openDetail.mailboxId !== archive.id}

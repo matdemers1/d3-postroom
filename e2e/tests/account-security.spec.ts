@@ -78,7 +78,7 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   // On a phone Settings opens at its index screen (PST-T-14.8); Account is its first row.
   if (isPhone(page)) await page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Account' }).click();
   await expect(page).toHaveURL(/\/settings\/account$/);
-  await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
 
   await page.getByLabel('Current password', { exact: true }).fill(operator.password);
   await page.getByLabel('New password', { exact: true }).fill(STRONG_PASSWORD);
@@ -110,7 +110,7 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   await page.getByRole('button', { name: 'Verify' }).click();
   // PST-DA-040: signing back in returns to the page the session expired away from.
   await expect(page).toHaveURL(/\/settings\/account$/);
-  await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
 });
 
 test('Browser sessions lists sessions and revokes one after step-up', async ({ page, playwright, baseURL }) => {
@@ -149,7 +149,7 @@ test('Account and Browser sessions have no axe violations', async ({ page }) => 
   await signInWithPassword(page, operator);
 
   await page.goto('/settings/account');
-  await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
   const passwordResults = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(passwordResults.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 

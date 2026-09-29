@@ -408,7 +408,8 @@
 
 .pr-thread .pr-thread__collapsed-summary {
   flex: none;
-  max-width: 40%;
+  /* The name before the snippet: a phone row cut "Priya Shah" at 40% (PST-T-14.11). */
+  max-width: 65%;
   font-size: var(--text-14);
   font-weight: var(--weight-semibold);
 }
@@ -508,6 +509,13 @@
 
 /* At phone width every control owns a 44px target (mobile-targets.css, e2e/tests/mobile.spec.ts). */
 @media (max-width: 767px) {
+  /* The recipient summary drops under the name and chip rather than truncating to "to …". */
+  .pr-mhead__who {
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 0;
+  }
+
   .pr-mhead__to,
   .pr-mhead__date {
     display: inline-flex;

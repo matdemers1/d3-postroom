@@ -18,3 +18,14 @@ export function useMediaQuery(query: string): boolean {
     () => true,
   );
 }
+
+/** A mouse or trackpad is the primary pointer: key hints (the toast's `z`) mean something. */
+export const FINE_POINTER_QUERY = '(pointer: fine)';
+
+/**
+ * Whether to draw a key hint at all (PST-T-14.11): on a touch phone a `z` keycap is noise. Read at
+ * the moment a toast is shown; with no matchMedia (tests, SSR) the hint stays.
+ */
+export function showsKeyHints(): boolean {
+  return typeof window === 'undefined' || typeof window.matchMedia !== 'function' || window.matchMedia(FINE_POINTER_QUERY).matches;
+}

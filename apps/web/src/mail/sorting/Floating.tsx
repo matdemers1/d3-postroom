@@ -9,6 +9,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 
 const FOCUSABLE = 'button:not([disabled]), a[href], select:not([disabled]), input:not([disabled])';
+/** A design-system Select's list is portalled to <body>: a press or focus there is still inside. */
+const OWNED_LAYER = '[data-radix-popper-content-wrapper], .d3-sel__content';
+const inOwnedLayer = (node: Node | null): boolean => node instanceof Element && node.closest(OWNED_LAYER) !== null;
 const GAP = 6;
 const MARGIN = 8;
 
@@ -84,6 +87,7 @@ export function Floating({ anchor, returnFocus, opener = null, label, sheet, onC
     const onPointer = (e: PointerEvent) => {
       const target = e.target instanceof Node ? e.target : null;
       if (target !== null && ref.current?.contains(target) === true) return;
+      if (inOwnedLayer(target)) return;
       // A press on the opener is its own toggle.
       if (target !== null && openerRef.current?.contains(target) === true) return;
       closeRef.current();
@@ -98,7 +102,7 @@ export function Floating({ anchor, returnFocus, opener = null, label, sheet, onC
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const target = e.target instanceof HTMLElement ? e.target : null;
-    if (target instanceof HTMLSelectElement || target instanceof HTMLInputElement) return;
+    if (target instanceof HTMLSelectElement || target instanceof HTMLInputElement || target?.getAttribute('role') === 'combobox') return;
     const items = [...(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
     if (items.length === 0) return;
     e.preventDefault();
@@ -121,7 +125,7 @@ export function Floating({ anchor, returnFocus, opener = null, label, sheet, onC
       onBlur={(e) => {
         const next = e.relatedTarget instanceof Node ? e.relatedTarget : null;
         // Focus left for somewhere else on the page (Tab past the last action): close, quietly.
-        if (next !== null && ref.current?.contains(next) !== true && openerRef.current?.contains(next) !== true) closeRef.current();
+        if (next !== null && ref.current?.contains(next) !== true && openerRef.current?.contains(next) !== true && !inOwnedLayer(next)) closeRef.current();
       }}
     >
       {children}

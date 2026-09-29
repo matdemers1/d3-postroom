@@ -50,14 +50,16 @@ export function ChangePassword() {
   };
 
   return (
-    <Page>
-      <PageHeader title="Change password" description="Your web sign-in password. Mail apps use app passwords instead." />
+    // PST-T-14.11: the page is Settings › Account, as its nav entry and tab say; the password form
+    // is a section inside it, at the narrow settings width rather than stretched across the pane.
+    <Page width="narrow">
+      <PageHeader title="Account" description="Your web sign-in. Mail apps use app passwords instead." />
       {notice === null ? null : (
         <Alert tone="info" dynamic>
           {notice}
         </Alert>
       )}
-      <Section title="Change your password">
+      <Section title="Change password">
         <form onSubmit={submit} aria-label="Change password">
           <Stack gap="16">
             {error === null ? null : (
