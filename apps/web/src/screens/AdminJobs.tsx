@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Badge,
   Button,
   EmptyState,
   FormField,
@@ -10,11 +9,14 @@ import {
   Page,
   PageHeader,
   Select,
+  StatusDot,
+  type StatusDotTone,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, INBOUND_STAGES, api, describeError, serverUnreachable, type AdminJob, type InboundStage } from '../api';
 import { Loading, LoadFailed } from './states';
+import '../admin/admin.css';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -29,13 +31,16 @@ const STAGE_OPTIONS = INBOUND_STAGES.map((s) => ({ value: s, label: s }));
 
 const when = (iso: string): string => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
-const STATUS_TONE: Record<string, 'neutral' | 'attention' | 'danger'> = {
+/** D-016: pending, running and done are neutral; a failed job that will retry asks; a dead one failed. */
+const STATUS_TONE: Record<string, StatusDotTone> = {
   pending: 'neutral',
   running: 'neutral',
-  done: 'neutral',
+  done: 'idle',
   failed: 'attention',
   dead: 'danger',
 };
+
+const statusLabel = (status: string): string => status.charAt(0).toUpperCase() + status.slice(1);
 
 /** payload.inboundMessageId, for an 'inbound' queue job (apps/worker/src/stages/types.ts's contract). */
 function inboundMessageIdOf(job: AdminJob): string | null {
@@ -112,14 +117,22 @@ export function AdminJobs() {
   };
 
   const columns: TableColumn<AdminJob>[] = [
-    { key: 'queue', header: 'Queue', cell: (j) => j.queue },
+    { key: 'queue', header: 'Queue', cell: (j) => <span className="pr-mono">{j.queue}</span> },
     {
       key: 'status',
       header: 'Status',
-      cell: (j) => <Badge tone={STATUS_TONE[j.status] ?? 'neutral'}>{j.status}</Badge>,
+      cell: (j) => (
+        <StatusDot tone={STATUS_TONE[j.status] ?? 'neutral'} size="sm">
+          {statusLabel(j.status)}
+        </StatusDot>
+      ),
     },
-    { key: 'attempts', header: 'Attempts', cell: (j) => `${String(j.attempts)}/${String(j.maxAttempts)}` },
-    { key: 'lastError', header: 'Last error', cell: (j) => j.lastError ?? '—' },
+    { key: 'attempts', header: 'Attempts', numeric: true, cell: (j) => `${String(j.attempts)}/${String(j.maxAttempts)}` },
+    {
+      key: 'lastError',
+      header: 'Last error',
+      cell: (j) => (j.lastError === null ? <span className="pr-muted">—</span> : <span className="pr-mono pr-muted pr-wrap">{j.lastError}</span>),
+    },
     { key: 'createdAt', header: 'Created', cell: (j) => when(j.createdAt) },
     {
       key: 'actions',
@@ -167,6 +180,7 @@ export function AdminJobs() {
         <Loading label="Loading jobs" />
       ) : (
         <Table
+          className="pr-admin-table"
           caption="Jobs"
           captionHidden
           columns={columns}

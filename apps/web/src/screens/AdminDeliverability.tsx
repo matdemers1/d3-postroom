@@ -14,11 +14,14 @@ import {
   Section,
   Select,
   Stack,
+  Stat,
+  StatGroup,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
 import { api, evidenceRowText, proposalSummary, type Deliverability, type DeliverabilitySource, type ProposalEvidenceDay, type ProposalResult } from '../api';
 import { Loading, LoadFailed } from './states';
+import '../admin/admin.css';
 
 const RANGES = [
   { value: '7', label: 'Last 7 days' },
@@ -47,7 +50,8 @@ function daysIn(fromIso: string, toIso: string, firstReported: string | undefine
   return out.slice(-400);
 }
 
-const PASS_FILL = { fill: 'var(--color-success)' };
+// D-016: a pass is the normal case, so it is drawn neutral; only a failure takes a hue.
+const PASS_FILL = { fill: 'var(--color-fg-muted)' };
 const FAIL_FILL = { fill: 'var(--color-danger)' };
 const AXIS_TEXT = { fill: 'var(--color-fg-muted)', fontSize: 'var(--text-12)' };
 const AXIS_LINE = { stroke: 'var(--color-border)' };
@@ -135,20 +139,9 @@ function DayChart({ data }: { data: Deliverability }) {
   );
 }
 
-function Stat({ title, value, detail, id }: { title: string; value: string; detail: string; id: string }) {
-  return (
-    <Card as="li" data-stat={id}>
-      <CardBody>
-        <CardTitle as="h3">{title}</CardTitle>
-        <p data-stat-value>{value}</p>
-        <p>{detail}</p>
-      </CardBody>
-    </Card>
-  );
-}
-
-function rateBadge(rate: number) {
-  if (rate >= 0.98) return <Badge tone="neutral">{percent(rate)}</Badge>;
+/** A healthy pass rate is just a number; only one that needs you is badged (D-016). */
+function rateCell(rate: number) {
+  if (rate >= 0.98) return percent(rate);
   if (rate >= 0.5) return <Badge tone="attention">{percent(rate)}</Badge>;
   return <Badge tone="danger">{percent(rate)}</Badge>;
 }
@@ -174,22 +167,24 @@ function ProposalCard({ result }: { result: ProposalResult }) {
   };
 
   const evidenceColumns: TableColumn<ProposalEvidenceDay>[] = [
-    { key: 'day', header: 'Day (UTC)', cell: (d) => d.day },
-    { key: 'reports', header: 'Reports', align: 'end', cell: (d) => count(d.reports) },
-    { key: 'messages', header: 'Messages', align: 'end', cell: (d) => count(d.messages) },
-    { key: 'sources', header: 'Sources', cell: (d) => evidenceRowText(d).sources },
+    { key: 'day', header: 'Day (UTC)', cell: (d) => <span className="pr-mono">{d.day}</span> },
+    { key: 'reports', header: 'Reports', numeric: true, cell: (d) => count(d.reports) },
+    { key: 'messages', header: 'Messages', numeric: true, cell: (d) => count(d.messages) },
+    { key: 'sources', header: 'Sources', cell: (d) => <span className="pr-mono pr-wrap">{evidenceRowText(d).sources}</span> },
     { key: 'orgs', header: 'Reported by', cell: (d) => evidenceRowText(d).orgs },
   ];
 
   return (
-    <Card as="li" data-proposal={result.domain}>
+    <Card as="li" data-proposal={result.domain} className="pr-admin-card">
       <CardBody>
         <CardTitle as="h3">{result.domain}</CardTitle>
         {result.eligible && proposal !== null ? (
           <Stack gap="12">
             <p>{proposalSummary(proposal)}</p>
             <Cluster gap="8">
-              <code data-txt-value>{proposal.txtValue}</code>
+              <code data-txt-value className="pr-dns-value">
+                {proposal.txtValue}
+              </code>
               <Button
                 variant="secondary"
                 onClick={() => {
@@ -205,7 +200,7 @@ function ProposalCard({ result }: { result: ProposalResult }) {
               columns={evidenceColumns}
               rows={proposal.evidence.days}
               rowKey={(d) => d.day}
-              density="compact"
+              className="pr-admin-table"
             />
           </Stack>
         ) : (
@@ -253,32 +248,41 @@ export function AdminDeliverability() {
   }, [loadProposals]);
 
   const sourceColumns: TableColumn<DeliverabilitySource>[] = [
-    { key: 'sourceIp', header: 'Source', cell: (s) => (s.reverseDns === null ? s.sourceIp : `${s.sourceIp} (${s.reverseDns})`) },
+    {
+      key: 'sourceIp',
+      header: 'Source',
+      cell: (s) => (
+        <span className="pr-mono">
+          {s.sourceIp}
+          {s.reverseDns === null ? null : <span className="pr-muted"> ({s.reverseDns})</span>}
+        </span>
+      ),
+    },
     { key: 'orgs', header: 'Reported by', cell: (s) => s.orgs.join(', ') },
-    { key: 'messages', header: 'Messages', align: 'end', cell: (s) => count(s.messages) },
-    { key: 'pass', header: 'Pass', align: 'end', cell: (s) => count(s.pass) },
-    { key: 'fail', header: 'Fail', align: 'end', cell: (s) => count(s.fail) },
-    { key: 'passRate', header: 'Pass rate', align: 'end', cell: (s) => rateBadge(s.passRate) },
+    { key: 'messages', header: 'Messages', numeric: true, cell: (s) => count(s.messages) },
+    { key: 'pass', header: 'Pass', numeric: true, cell: (s) => count(s.pass) },
+    { key: 'fail', header: 'Fail', numeric: true, cell: (s) => count(s.fail) },
+    { key: 'passRate', header: 'Pass rate', numeric: true, cell: (s) => rateCell(s.passRate) },
   ];
   type OrgRow = Deliverability['dmarc']['byOrg'][number];
   const orgColumns: TableColumn<OrgRow>[] = [
     { key: 'org', header: 'Reporter', cell: (o) => o.org },
-    { key: 'reports', header: 'Reports', align: 'end', cell: (o) => count(o.reports) },
-    { key: 'messages', header: 'Messages', align: 'end', cell: (o) => count(o.messages) },
-    { key: 'pass', header: 'Pass', align: 'end', cell: (o) => count(o.pass) },
-    { key: 'fail', header: 'Fail', align: 'end', cell: (o) => count(o.fail) },
+    { key: 'reports', header: 'Reports', numeric: true, cell: (o) => count(o.reports) },
+    { key: 'messages', header: 'Messages', numeric: true, cell: (o) => count(o.messages) },
+    { key: 'pass', header: 'Pass', numeric: true, cell: (o) => count(o.pass) },
+    { key: 'fail', header: 'Fail', numeric: true, cell: (o) => count(o.fail) },
   ];
   type PolicyRow = Deliverability['tlsrpt']['byPolicy'][number];
   const policyColumns: TableColumn<PolicyRow>[] = [
-    { key: 'policyDomain', header: 'Policy domain', cell: (p) => p.policyDomain },
+    { key: 'policyDomain', header: 'Policy domain', cell: (p) => <span className="pr-mono">{p.policyDomain}</span> },
     { key: 'policyType', header: 'Policy', cell: (p) => p.policyType },
-    { key: 'successful', header: 'Successful sessions', align: 'end', cell: (p) => count(p.successful) },
-    { key: 'failed', header: 'Failed sessions', align: 'end', cell: (p) => count(p.failed) },
+    { key: 'successful', header: 'Successful sessions', numeric: true, cell: (p) => count(p.successful) },
+    { key: 'failed', header: 'Failed sessions', numeric: true, cell: (p) => count(p.failed) },
   ];
   type FailureRow = Deliverability['tlsrpt']['byFailureType'][number];
   const failureColumns: TableColumn<FailureRow>[] = [
-    { key: 'resultType', header: 'Failure', cell: (f) => f.resultType },
-    { key: 'sessions', header: 'Sessions', align: 'end', cell: (f) => count(f.sessions) },
+    { key: 'resultType', header: 'Failure', cell: (f) => <span className="pr-mono">{f.resultType}</span> },
+    { key: 'sessions', header: 'Sessions', numeric: true, cell: (f) => count(f.sessions) },
   ];
 
   const empty = data !== null && data.dmarc.totals.reports === 0 && data.tlsrpt.totals.reports === 0;
@@ -296,6 +300,7 @@ export function AdminDeliverability() {
       />
       {proposals !== null && proposals.length > 0 ? (
         <Section
+          surface="plain"
           title="DMARC progression"
           description="14 consecutive UTC days of only aligned passes from authorized sources earn a proposal to tighten the policy, with the evidence attached. Postroom never publishes DNS itself."
         >
@@ -323,54 +328,59 @@ export function AdminDeliverability() {
         </EmptyState>
       ) : (
         <Stack gap="24">
-          <Section title="Summary" surface="plain">
-            <Grid as="ul" minItemWidth="sm" aria-label="Summary">
+          <Card as="section" aria-label="Summary" className="pr-admin-card pr-admin-stats">
+            <StatGroup>
               <Stat
-                id="pass-rate"
-                title="DMARC pass rate"
+                data-stat="pass-rate"
+                label="DMARC pass rate"
                 value={percent(rateOf(data.dmarc.totals.pass, data.dmarc.totals.messages))}
-                detail={`${count(data.dmarc.totals.pass)} of ${count(data.dmarc.totals.messages)} messages`}
+                footnote={`${count(data.dmarc.totals.pass)} of ${count(data.dmarc.totals.messages)} messages`}
               />
-              <Stat id="failed" title="Failed DMARC" value={count(data.dmarc.totals.fail)} detail={`${count(data.dmarc.totals.dispositions.quarantine)} quarantined, ${count(data.dmarc.totals.dispositions.reject)} rejected`} />
-              <Stat id="reports" title="Reports" value={count(data.dmarc.totals.reports)} detail={`from ${count(data.dmarc.byOrg.length)} reporters`} />
               <Stat
-                id="tls"
-                title="TLS sessions"
-                value={count(data.tlsrpt.totals.successful + data.tlsrpt.totals.failed)}
-                detail={`${count(data.tlsrpt.totals.failed)} failed`}
+                data-stat="failed"
+                label="Failed DMARC"
+                value={count(data.dmarc.totals.fail)}
+                footnote={`${count(data.dmarc.totals.dispositions.quarantine)} quarantined, ${count(data.dmarc.totals.dispositions.reject)} rejected`}
               />
-            </Grid>
-          </Section>
+              <Stat data-stat="reports" label="Reports" value={count(data.dmarc.totals.reports)} footnote={`from ${count(data.dmarc.byOrg.length)} reporters`} />
+              <Stat
+                data-stat="tls"
+                label="TLS sessions"
+                value={count(data.tlsrpt.totals.successful + data.tlsrpt.totals.failed)}
+                footnote={`${count(data.tlsrpt.totals.failed)} failed`}
+              />
+            </StatGroup>
+          </Card>
 
-          <Section title="DMARC by day" description="Messages the reporters saw from your domain, by the UTC day each report begins.">
+          <Section title="DMARC by day" description="Messages the reporters saw from your domain, by the UTC day each report begins." className="pr-admin-card">
             <DayChart data={data} />
           </Section>
 
-          <Section title="By source" description="Every IP address that sent mail as your domain. A low pass rate is either a spoofer or a service you have not authorized.">
+          <Section surface="plain" title="By source" description="Every IP address that sent mail as your domain. A low pass rate is either a spoofer or a service you have not authorized.">
             <Table
               caption="DMARC results by sending source"
               captionHidden
               columns={sourceColumns}
               rows={data.dmarc.bySource}
               rowKey={(s) => s.sourceIp}
-              density="compact"
+              className="pr-admin-table"
               empty={<EmptyState kind="empty" heading="No sources in this range" size="row" />}
             />
           </Section>
 
-          <Section title="By reporter">
+          <Section surface="plain" title="By reporter">
             <Table
               caption="DMARC results by reporting organization"
               captionHidden
               columns={orgColumns}
               rows={data.dmarc.byOrg}
               rowKey={(o) => o.org}
-              density="compact"
+              className="pr-admin-table"
               empty={<EmptyState kind="empty" heading="No reports in this range" size="row" />}
             />
           </Section>
 
-          <Section title="TLS reports" description="SMTP TLS reporting (RFC 8460): sessions senders opened to your MX, by policy, and why any failed.">
+          <Section surface="plain" title="TLS reports" description="SMTP TLS reporting (RFC 8460): sessions senders opened to your MX, by policy, and why any failed.">
             <Stack gap="16">
               <Table
                 caption="TLS sessions by policy"
@@ -378,7 +388,7 @@ export function AdminDeliverability() {
                 columns={policyColumns}
                 rows={data.tlsrpt.byPolicy}
                 rowKey={(p) => `${p.policyDomain}/${p.policyType}`}
-                density="compact"
+                className="pr-admin-table"
                 empty={<EmptyState kind="empty" heading="No TLS reports in this range" size="row" />}
               />
               {data.tlsrpt.byFailureType.length === 0 ? null : (
@@ -387,7 +397,7 @@ export function AdminDeliverability() {
                   columns={failureColumns}
                   rows={data.tlsrpt.byFailureType}
                   rowKey={(f) => f.resultType}
-                  density="compact"
+                  className="pr-admin-table"
                 />
               )}
             </Stack>

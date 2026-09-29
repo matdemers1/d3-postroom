@@ -17,6 +17,7 @@ import {
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, type Suppression } from '../api';
 import { Loading, LoadFailed } from './states';
+import '../admin/admin.css';
 
 const when = (iso: string): string => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -114,15 +115,20 @@ export function AdminSuppressions() {
   };
 
   const columns: TableColumn<Suppression>[] = [
-    { key: 'address', header: 'Address', cell: (s) => s.address },
+    { key: 'address', header: 'Address', cell: (s) => <span className="pr-mono">{s.address}</span> },
     {
       key: 'reason',
       header: 'Why',
-      cell: (s) => (s.reason === 'manual' ? <Badge tone="neutral">Added by an admin</Badge> : <Badge tone="danger">Hard bounce</Badge>),
+      // D-016: a listed address is the list doing its job, not something that needs you — so no hue.
+      cell: (s) => <Badge tone="neutral">{s.reason === 'manual' ? 'Added by an admin' : 'Hard bounce'}</Badge>,
     },
-    { key: 'reply', header: 'Bounce or note', cell: replyOf },
-    { key: 'subject', header: 'Bounced message', cell: (s) => (s.source === null ? '—' : (s.source.subject ?? '(no subject)')) },
-    { key: 'bounceCount', header: 'Bounces', align: 'end', cell: (s) => String(s.bounceCount) },
+    {
+      key: 'reply',
+      header: 'Bounce or note',
+      cell: (s) => <span className={s.reason === 'manual' ? 'pr-wrap' : 'pr-mono pr-muted pr-wrap'}>{replyOf(s)}</span>,
+    },
+    { key: 'subject', header: 'Bounced message', cell: (s) => (s.source === null ? <span className="pr-muted">—</span> : (s.source.subject ?? '(no subject)')) },
+    { key: 'bounceCount', header: 'Bounces', numeric: true, cell: (s) => String(s.bounceCount) },
     { key: 'lastAt', header: 'Last', cell: (s) => when(s.lastAt) },
     {
       key: 'actions',
@@ -175,6 +181,7 @@ export function AdminSuppressions() {
         <Loading label="Loading the suppression list" />
       ) : (
         <Table
+          className="pr-admin-table"
           caption="Suppression list"
           captionHidden
           columns={columns}
