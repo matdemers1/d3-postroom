@@ -53,8 +53,8 @@ test('document.title names the screen, not just "Postroom", on navigation (PST-D
   await expect(page).toHaveTitle('Mail — Postroom');
   await page.goto('/calendar');
   await expect(page).toHaveTitle('Calendar — Postroom');
-  await page.goto('/account/keys');
-  await expect(page).toHaveTitle('Keys — Postroom');
+  await page.goto('/settings/keys');
+  await expect(page).toHaveTitle('Encryption keys — Postroom');
 });
 
 test.describe('at 1280 px', () => {

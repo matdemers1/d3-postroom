@@ -1,8 +1,9 @@
 // PST-T-4.9's exit demo, as a suite: a common password on first-run Setup names which rule failed,
 // a signed-in user changes their password over Change password (ending other sessions), and
 // Devices (the caller's own /api/auth/sessions) lists and revokes a session after step-up. Axe on
-// both new screens. Labelled "Devices" in the nav, not "Sessions", so it never collides with the
-// pre-existing admin Sessions link that shares this sidebar.
+// both new screens. Since PST-T-14.3 both live in Settings (reached from the account menu): the
+// caller's own web sessions are "Browser sessions", never "Sessions", so nothing collides with the
+// Admin console's "Sign-in sessions".
 //
 // Runs alongside auth.spec.ts against the same fresh stack: this file sorts before it, so the
 // weak-password test on Setup gets first crack at the not-yet-set-up operator, then this file
@@ -11,7 +12,7 @@
 // the new value into the shared operator file, so every spec after this one keeps working.
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { ensureOperator, freshCode, loadOperator, openNav, saveOperator, signInWithPassword, type Operator } from './support.js';
+import { ensureOperator, freshCode, loadOperator, openNav, openPlace, saveOperator, signInWithPassword, type Operator } from './support.js';
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 });
 
@@ -73,8 +74,8 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   expect((await other.get('/api/auth/state').then((r) => r.json()) as { signedIn: boolean }).signedIn).toBe(true);
 
   await signInWithPassword(page, operator);
-  await openNav(page);
-  await page.getByRole('link', { name: 'Change password' }).click();
+  await openPlace(page, 'Settings');
+  await expect(page).toHaveURL(/\/settings\/account$/);
   await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
 
   await page.getByLabel('Current password', { exact: true }).fill(operator.password);
@@ -98,7 +99,7 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   await page.getByRole('button', { name: new RegExp(`^${operator.displayName}`) }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
   // PST-DA-040: signing out away from '/' remembers the page as ?next=.
-  await expect(page).toHaveURL(/\/signin\?next=%2Faccount%2Fpassword$/);
+  await expect(page).toHaveURL(/\/signin\?next=%2Fsettings%2Faccount$/);
 
   await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
   await page.getByLabel('Password', { exact: true }).fill(operator.password);
@@ -106,11 +107,11 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
   await page.getByRole('button', { name: 'Verify' }).click();
   // PST-DA-040: signing back in returns to the page the session expired away from.
-  await expect(page).toHaveURL(/\/account\/password$/);
+  await expect(page).toHaveURL(/\/settings\/account$/);
   await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
 });
 
-test('Devices lists sessions and revokes one after step-up', async ({ page, playwright, baseURL }) => {
+test('Browser sessions lists sessions and revokes one after step-up', async ({ page, playwright, baseURL }) => {
   const operator = requireOperator();
 
   const other = await signInOtherContext(playwright, baseURL, operator);
@@ -119,9 +120,10 @@ test('Devices lists sessions and revokes one after step-up', async ({ page, play
   expect(otherId).not.toBe('');
 
   await signInWithPassword(page, operator);
+  await openPlace(page, 'Settings');
   await openNav(page);
-  await page.getByRole('link', { name: 'Devices', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Security & devices' }).click();
+  await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
   await expect(page.getByText('This session')).toBeVisible();
 
   await page.locator(`button[data-session-id="${otherId}"]`).click();
@@ -140,17 +142,17 @@ test('Devices lists sessions and revokes one after step-up', async ({ page, play
   await other.dispose();
 });
 
-test('Change password and Devices have no axe violations', async ({ page }) => {
+test('Account and Browser sessions have no axe violations', async ({ page }) => {
   const operator = requireOperator();
   await signInWithPassword(page, operator);
 
-  await page.goto('/account/password');
+  await page.goto('/settings/account');
   await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
   const passwordResults = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(passwordResults.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 
-  await page.goto('/account/sessions');
-  await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
+  await page.goto('/settings/security');
+  await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
   const sessionsResults = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(sessionsResults.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 });

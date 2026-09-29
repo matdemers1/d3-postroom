@@ -1,4 +1,10 @@
-import { useEffect, useState } from 'react';
+// The signed-in frame (PST-T-14.3, PST-REQ-189, PST-ADR-011): three places, one frame. Mail's
+// sidebar holds mailboxes and the Calendar and Contacts places only; Settings and the Admin console
+// are reached from the account menu and each has its own left nav with "Back to Mail". Every nav
+// entry comes from the route table (routes.ts). Places swap with a cross-fade (--dur-2), never a
+// slide (D-024), and each pane sits in an error boundary so one failure never blanks the app.
+import '../styles/places.css';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   AccountMenu,
@@ -13,13 +19,19 @@ import {
   SideNavGroup,
   SideNavItem,
   ThemeSwitch,
+  useAppShell,
 } from '@d3cloud/ui';
-import { api, WIZARD_CHANGED_EVENT, wizardStepsLeft, type AuthState } from '../api';
+import { api, WIZARD_CHANGED_EVENT, wizardStepsLeft, type AuthState, type Mailbox } from '../api';
+import { CommandPalette, PaletteRoleContext } from '../mail/CommandPalette';
 import { findSpecial, mailboxLabel } from '../mail/format';
 import { ComposeIcon, mailboxIcon } from '../mail/icons';
+import { resolveKey } from '../mail/keys';
 import { useOptionalMail } from '../mail/MailContext';
 import { mailPath, parseMailRoute } from '../mail/route';
+import { LAST_VISIT_KEY, mailSidebar, newSinceVisit, parseVisits, type LastVisits } from '../mail/sidebar';
 import { WIDE_QUERY, useMediaQuery } from '../mail/useMedia';
+import { navEntries, PLACE_HOME, PLACE_NAME, routeForPath, type Place } from '../routes';
+import { PaneBoundary } from './PaneBoundary';
 import { NoAccess } from './states';
 
 // Decorative marks, drawn in currentColor so they follow the theme.
@@ -140,15 +152,6 @@ function SetupIcon() {
   );
 }
 
-function DeviceSetupIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
-      <rect x="7" y="2" width="10" height="20" rx="2" />
-      <path d="M11 18h2" />
-    </svg>
-  );
-}
-
 function GlobeIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -202,6 +205,58 @@ function SealIcon() {
   );
 }
 
+function BackIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M15 5l-7 7 7 7" />
+    </svg>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  );
+}
+
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
+    </svg>
+  );
+}
+
+/** Each left-nav entry's mark, by its label in the route table. */
+const NAV_ICONS: Readonly<Record<string, () => ReactNode>> = {
+  Calendar: CalendarIcon,
+  Contacts: ContactsIcon,
+  Account: PersonIcon,
+  'Security & devices': LockIcon,
+  Addresses: MaskIcon,
+  Rules: FilterIcon,
+  Templates: TemplatesIcon,
+  'Import & export': ImportIcon,
+  'Encryption keys': SealIcon,
+  Health: HeartbeatIcon,
+  'Outbound queue': OutboxIcon,
+  Deliverability: ChartIcon,
+  'DNS & DKIM': GlobeIcon,
+  'Live SMTP': TerminalIcon,
+  Jobs: QueueIcon,
+  'Sign-in sessions': SessionsIcon,
+  Suppressions: BlockIcon,
+  Setup: SetupIcon,
+};
+
+function navIcon(label: string) {
+  const Icon = NAV_ICONS[label] ?? KeyIcon;
+  return <Icon />;
+}
+
 /** Steps of the setup wizard (PST-T-4.8) still to do, for an admin; re-read when `pathname` changes (the caller passes '/' outside admin pages, so reading mail never refetches it). */
 function useSetupStepsLeft(isAdmin: boolean, pathname: string): number {
   const [left, setLeft] = useState(0);
@@ -224,18 +279,298 @@ function useSetupStepsLeft(isAdmin: boolean, pathname: string): number {
   return left;
 }
 
-/** The signed-in frame: sidebar (a drawer below `lg`), the account menu, and the page. */
+
+/** Where "Back to Mail" returns: the last mail URL this tab showed (a mailbox, an open message). */
+let lastMailPath = '/';
+
+/** The place on screen before this render — so arriving in a place from another one cross-fades,
+ * while a page load (nothing was on screen) simply appears. */
+let shownPlace: Place | null = null;
+
+/** Whether this mount is a move between places: decided once, when the keyed nav or frame mounts. */
+function usePlaceFade(place: Place): boolean {
+  const [fade] = useState(() => shownPlace !== null && shownPlace !== place);
+  useEffect(() => {
+    shownPlace = place;
+  }, [place]);
+  return fade;
+}
+
+function PlaceFrame({ place, children }: { place: Place; children: ReactNode }) {
+  const fade = usePlaceFade(place);
+  return (
+    <div className={fade ? 'pr-place pr-place--fade' : 'pr-place'} data-place={place}>
+      {children}
+    </div>
+  );
+}
+
+function readVisits(): LastVisits {
+  try {
+    return parseVisits(window.localStorage.getItem(LAST_VISIT_KEY));
+  } catch {
+    return {};
+  }
+}
+
+/** Junk and Rejects remember what you had seen there, so their count is "new since your last visit". */
+function useLastVisits(watched: readonly Mailbox[], currentMailbox: string | null): LastVisits {
+  const [visits, setVisits] = useState<LastVisits>(readVisits);
+  const current = watched.find((m) => m.id === currentMailbox);
+  const currentId = current?.id;
+  const currentUidnext = current?.uidnext;
+  useEffect(() => {
+    if (currentId === undefined || currentUidnext === undefined) return;
+    setVisits((prev) => {
+      if (prev[currentId] === currentUidnext) return prev;
+      const next = { ...prev, [currentId]: currentUidnext };
+      try {
+        window.localStorage.setItem(LAST_VISIT_KEY, JSON.stringify(next));
+      } catch {
+        // Private mode: the count is simply this session's.
+      }
+      return next;
+    });
+  }, [currentId, currentUidnext]);
+  return visits;
+}
+
+function MoreFolders({ mailboxes, currentMailbox }: { mailboxes: readonly Mailbox[]; currentMailbox: string | null }) {
+  const { collapsed } = useAppShell();
+  const holdsCurrent = mailboxes.some((m) => m.id === currentMailbox);
+  const [open, setOpen] = useState(holdsCurrent);
+  useEffect(() => {
+    if (holdsCurrent) setOpen(true);
+  }, [holdsCurrent]);
+  const unseen = mailboxes.reduce((n, m) => n + (m.specialUse === 'trash' ? 0 : m.unseen), 0);
+  return (
+    <SideNavGroup title="More" hideTitle className="pr-nav-quiet">
+      <li className="d3-snav__li">
+        <button
+          type="button"
+          className="d3-snav__item pr-nav-more"
+          aria-expanded={open}
+          aria-controls="pr-nav-more-list"
+          onClick={() => {
+            setOpen((o) => !o);
+          }}
+        >
+          <span className="d3-snav__icon pr-nav-more__chevron" aria-hidden="true">
+            <ChevronIcon />
+          </span>
+          <span className={collapsed ? 'd3-snav__label d3-snav__vh' : 'd3-snav__label'}>More</span>
+          {collapsed ? null : <span className="pr-nav-more__detail">{unseen > 0 ? `${String(unseen)} unread` : 'Trash, folders'}</span>}
+        </button>
+        <ul id="pr-nav-more-list" role="list" className="d3-snav__list pr-nav-more__list" hidden={!open}>
+          {mailboxes.map((m) => (
+            <MailboxItem key={m.id} mailbox={m} current={currentMailbox === m.id} count={m.specialUse === 'trash' ? 0 : m.unseen} countNoun="unread" />
+          ))}
+        </ul>
+      </li>
+    </SideNavGroup>
+  );
+}
+
+function MailboxItem({ mailbox, current, count, countNoun }: { mailbox: Mailbox; current: boolean; count: number; countNoun: string }) {
+  const label = mailboxLabel(mailbox);
+  return (
+    <SideNavItem
+      asChild
+      icon={mailboxIcon(mailbox.specialUse, mailbox.name)}
+      label={label}
+      current={current}
+      {...(count > 0 ? { count, countLabel: `${label}, ${String(count)} ${countNoun}` } : {})}
+    >
+      <RouterLink to={mailPath(mailbox.id)} />
+    </SideNavItem>
+  );
+}
+
+/** Mail's sidebar: mailboxes, then the Calendar and Contacts places. Nothing else. */
+function MailNav({ isAdmin }: { isAdmin: boolean }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const mail = useOptionalMail();
+  const wide = useMediaQuery(WIDE_QUERY);
+  const mailRoute = parseMailRoute(location.pathname, location.search);
+  const mailboxes = mail?.mailboxes ?? null;
+  const inbox = mailboxes === null ? undefined : findSpecial(mailboxes, 'inbox');
+  // '/' is the inbox; '/mail' (the push-nav mailbox list) is no mailbox in particular.
+  const currentMailbox = mailRoute === null ? null : (mailRoute.mailboxId ?? (mailRoute.mailboxIndex ? null : (inbox?.id ?? null)));
+  const groups = mailboxes === null ? null : mailSidebar(mailboxes);
+  const visits = useLastVisits(groups?.safetyNet ?? [], currentMailbox);
+  const places = navEntries('mail', isAdmin);
+  const route = routeForPath(location.pathname);
+  const fade = usePlaceFade('mail');
+
+  return (
+    <SideNav aria-label="Main" {...(fade ? { className: 'pr-place--fade' } : {})}>
+      {wide && mail !== null ? (
+        <li className="pr-nav-compose">
+          <Button
+            variant="primary"
+            icon={<ComposeIcon />}
+            onClick={() => {
+              void navigate(mailPath(mailRoute?.mailboxId ?? null, mailRoute?.messageId ?? null, 'new'));
+            }}
+          >
+            Compose
+          </Button>
+        </li>
+      ) : null}
+      {groups === null ? (
+        <SideNavGroup title="Mailboxes" hideTitle>
+          <SideNavItem asChild icon={<MailIcon />} label="Mail" current={mailRoute !== null}>
+            <RouterLink to="/" />
+          </SideNavItem>
+        </SideNavGroup>
+      ) : (
+        <>
+          <SideNavGroup title="Mailboxes" hideTitle>
+            {groups.primary.map((m) => (
+              <MailboxItem key={m.id} mailbox={m} current={currentMailbox === m.id} count={m.id === inbox?.id ? m.unseen : 0} countNoun="unread" />
+            ))}
+          </SideNavGroup>
+          {groups.sorted.length > 0 ? (
+            <SideNavGroup title="Sorted for you" className="pr-nav-quiet">
+              {groups.sorted.map((m) => (
+                <MailboxItem key={m.id} mailbox={m} current={currentMailbox === m.id} count={m.unseen} countNoun="unread" />
+              ))}
+            </SideNavGroup>
+          ) : null}
+          {groups.safetyNet.length > 0 ? (
+            // The sorter's safety net: one click away, and a quiet count of what is new since you
+            // last looked — never a loud pill for mail you meant not to see.
+            <SideNavGroup title="Junk and rejects" hideTitle className="pr-nav-quiet">
+              {groups.safetyNet.map((m) => (
+                <MailboxItem key={m.id} mailbox={m} current={currentMailbox === m.id} count={newSinceVisit(m, visits)} countNoun="new since your last visit" />
+              ))}
+            </SideNavGroup>
+          ) : null}
+          {groups.more.length > 0 ? <MoreFolders mailboxes={groups.more} currentMailbox={currentMailbox} /> : null}
+        </>
+      )}
+      <SideNavGroup title="Places" hideTitle>
+        {places.map((entry) => (
+          <SideNavItem
+            key={entry.label}
+            asChild
+            icon={navIcon(entry.label)}
+            label={entry.label}
+            current={route !== null && entry.routes.includes(route)}
+          >
+            <RouterLink to={entry.path} />
+          </SideNavItem>
+        ))}
+      </SideNavGroup>
+    </SideNav>
+  );
+}
+
+/** Settings' or the Admin console's own left nav, with the way back to Mail first. */
+function PlaceNav({ place, isAdmin, setupLeft }: { place: 'settings' | 'admin'; isAdmin: boolean; setupLeft: number }) {
+  const location = useLocation();
+  const route = routeForPath(location.pathname);
+  const name = PLACE_NAME[place];
+  const fade = usePlaceFade(place);
+  return (
+    <SideNav aria-label={name} className={[place === 'admin' ? 'pr-nav-admin' : '', fade ? 'pr-place--fade' : ''].filter((c) => c !== '').join(' ')}>
+      <SideNavItem asChild icon={<BackIcon />} label="Back to Mail">
+        <RouterLink to={lastMailPath} />
+      </SideNavItem>
+      <SideNavGroup title={name}>
+        {navEntries(place, isAdmin).map((entry) => {
+          const count = entry.label === 'Setup' ? setupLeft : 0;
+          return (
+            <SideNavItem
+              key={entry.label}
+              asChild
+              icon={navIcon(entry.label)}
+              label={entry.label}
+              current={route !== null && entry.routes.includes(route)}
+              {...(count > 0 ? { count, countLabel: `Setup, ${String(count)} ${count === 1 ? 'step' : 'steps'} left` } : {})}
+            >
+              <RouterLink to={entry.path} />
+            </SideNavItem>
+          );
+        })}
+      </SideNavGroup>
+    </SideNav>
+  );
+}
+
+/** A nav entry with several screens (Security & devices) gets a row of links above them. */
+function SubNav({ place, isAdmin }: { place: Place; isAdmin: boolean }) {
+  const location = useLocation();
+  const route = routeForPath(location.pathname);
+  if (route === null || route.navGroup === undefined || place === 'mail') return null;
+  const entry = navEntries(place, isAdmin).find((e) => e.label === route.navGroup);
+  if (entry === undefined || entry.routes.length < 2) return null;
+  return (
+    <nav aria-label={entry.label}>
+      <ul className="pr-subnav" role="list">
+        {entry.routes.map((r) => (
+          <li key={r.id}>
+            <RouterLink to={r.path} {...(r === route ? { 'aria-current': 'page' as const } : {})}>
+              {r.title}
+            </RouterLink>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+/** ⌘K outside Mail: MailView owns the palette in Mail (with message actions); Settings and the
+ * Admin console get the same palette, with places only. */
+function PlacePalette({ enabled }: { enabled: boolean }) {
+  const navigate = useNavigate();
+  const mail = useOptionalMail();
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const onKey = (e: KeyboardEvent): void => {
+      const { action } = resolveKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, editable: false, activatable: false }, null);
+      if (action !== 'commandPalette') return;
+      e.preventDefault();
+      setOpen((o) => !o);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [enabled]);
+  const onNavigate = useCallback(
+    (path: string) => {
+      void navigate(path);
+    },
+    [navigate],
+  );
+  if (!enabled) return null;
+  return (
+    <CommandPalette
+      open={open}
+      onOpenChange={setOpen}
+      mailboxes={mail?.mailboxes ?? null}
+      target={null}
+      onMove={() => undefined}
+      onNavigate={onNavigate}
+    />
+  );
+}
+
+/** The signed-in frame: the place's nav (a drawer below `lg`), the account menu, and the page. */
 export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: () => Promise<void> }) {
   const location = useLocation();
   const navigate = useNavigate();
   const account = state.account;
-  const mail = useOptionalMail();
-  const wide = useMediaQuery(WIDE_QUERY);
-  const mailRoute = parseMailRoute(location.pathname, location.search);
-  const inbox = mail?.mailboxes === null || mail === null ? undefined : findSpecial(mail.mailboxes, 'inbox');
-  // '/' is the inbox; '/mail' (the push-nav mailbox list) is no mailbox in particular.
-  const setupLeft = useSetupStepsLeft(account?.isAdmin === true, location.pathname.startsWith('/admin') ? location.pathname : '/');
-  const currentMailbox = mailRoute === null ? null : (mailRoute.mailboxId ?? (mailRoute.mailboxIndex ? null : (inbox?.id ?? null)));
+  const isAdmin = account?.isAdmin === true;
+  const place: Place = routeForPath(location.pathname)?.place ?? 'mail';
+  // A non-admin in /admin/* sees the no-access state beside Mail's nav, never the admin nav.
+  const navPlace = place === 'admin' && !isAdmin ? 'mail' : place;
+  const setupLeft = useSetupStepsLeft(isAdmin, place === 'admin' ? location.pathname : '/');
+
+  if (place === 'mail') lastMailPath = location.pathname + location.search;
 
   const signOut = () => {
     api
@@ -247,150 +582,59 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
   };
 
   return (
-    <AppShell
-      storageKey="postroom-shell"
-      brand={
-        <AppShellBrand asChild name="Postroom" mark={<MailIcon />}>
-          <RouterLink to="/" />
-        </AppShellBrand>
-      }
-      nav={
-        <SideNav aria-label="Main">
-          {wide && mail !== null ? (
-            <li className="pr-nav-compose">
-              <Button
-                variant="primary"
-                icon={<ComposeIcon />}
-                onClick={() => {
-                  void navigate(mailPath(mailRoute?.mailboxId ?? null, mailRoute?.messageId ?? null, 'new'));
-                }}
-              >
-                Compose
-              </Button>
-            </li>
-          ) : null}
-          <SideNavGroup title="Mailboxes">
-            {mail?.mailboxes === null || mail === null ? (
-              <SideNavItem asChild icon={<MailIcon />} label="Mail" current={mailRoute !== null}>
-                <RouterLink to="/" />
-              </SideNavItem>
+    <PaletteRoleContext.Provider value={isAdmin}>
+      <AppShell
+        storageKey="postroom-shell"
+        brand={
+          <AppShellBrand asChild name="Postroom" mark={<MailIcon />}>
+            <RouterLink to="/" />
+          </AppShellBrand>
+        }
+        nav={
+          <PaneBoundary name="Navigation" resetKey={location.pathname}>
+            {navPlace === 'settings' || navPlace === 'admin' ? (
+              <PlaceNav key={navPlace} place={navPlace} isAdmin={isAdmin} setupLeft={setupLeft} />
             ) : (
-              mail.mailboxes.map((m) => (
-                <SideNavItem
-                  key={m.id}
-                  asChild
-                  icon={mailboxIcon(m.specialUse, m.name)}
-                  label={mailboxLabel(m)}
-                  current={currentMailbox === m.id}
-                  {...(m.unseen > 0 ? { count: m.unseen, countLabel: `${mailboxLabel(m)}, ${String(m.unseen)} unread` } : {})}
-                >
-                  <RouterLink to={mailPath(m.id)} />
-                </SideNavItem>
-              ))
+              <MailNav key="mail" isAdmin={isAdmin} />
             )}
-          </SideNavGroup>
-          <SideNavGroup title="Organize">
-            <SideNavItem asChild icon={<CalendarIcon />} label="Calendar" current={location.pathname === '/calendar'}>
-              <RouterLink to="/calendar" />
-            </SideNavItem>
-            <SideNavItem asChild icon={<ContactsIcon />} label="Contacts" current={location.pathname.startsWith('/contacts')}>
-              <RouterLink to="/contacts" />
-            </SideNavItem>
-          </SideNavGroup>
-          <SideNavGroup title="Account">
-            <SideNavItem asChild icon={<KeyIcon />} label="App passwords" current={location.pathname === '/app-passwords'}>
-              <RouterLink to="/app-passwords" />
-            </SideNavItem>
-            <SideNavItem asChild icon={<MaskIcon />} label="Masked aliases" current={location.pathname === '/account/aliases'}>
-              <RouterLink to="/account/aliases" />
-            </SideNavItem>
-            <SideNavItem asChild icon={<LockIcon />} label="Change password" current={location.pathname === '/account/password'}>
-              <RouterLink to="/account/password" />
-            </SideNavItem>
-            <SideNavItem asChild icon={<SessionsIcon />} label="Devices" current={location.pathname === '/account/sessions'}>
-              <RouterLink to="/account/sessions" />
-            </SideNavItem>
-            <SideNavItem asChild icon={<ImportIcon />} label="Import mail" current={location.pathname === '/account/import'}>
-              <RouterLink to="/account/import" />
-            </SideNavItem>
-            <SideNavItem asChild icon={<DeviceSetupIcon />} label="Set up iPhone / Mac" current={location.pathname === '/account/device-setup'}>
-              <RouterLink to="/account/device-setup" />
-            </SideNavItem>
-            <SideNavItem asChild icon={<FilterIcon />} label="Rules" current={location.pathname === '/account/rules'}>
-              <RouterLink to="/account/rules" />
-            </SideNavItem>
-            <SideNavItem asChild icon={<TemplatesIcon />} label="Compose templates" current={location.pathname === '/account/templates'}>
-              <RouterLink to="/account/templates" />
-            </SideNavItem>
-            {/* PST-T-12.2: OpenPGP keys and S/MIME certificates. */}
-            <SideNavItem asChild icon={<SealIcon />} label="Keys" current={location.pathname === '/account/keys'}>
-              <RouterLink to="/account/keys" />
-            </SideNavItem>
-          </SideNavGroup>
-          {account?.isAdmin === true ? (
-            <SideNavGroup title="Admin">
-              <SideNavItem
-                asChild
-                icon={<SessionsIcon />}
-                label="Sessions"
-                current={location.pathname === '/admin/sessions'}
-              >
-                <RouterLink to="/admin/sessions" />
-              </SideNavItem>
-              <SideNavItem asChild icon={<HeartbeatIcon />} label="Health" current={location.pathname === '/admin/health'}>
-                <RouterLink to="/admin/health" />
-              </SideNavItem>
-              <SideNavItem asChild icon={<QueueIcon />} label="Jobs" current={location.pathname === '/admin/jobs'}>
-                <RouterLink to="/admin/jobs" />
-              </SideNavItem>
-              <SideNavItem asChild icon={<OutboxIcon />} label="Outbound queue" current={location.pathname === '/admin/queue'}>
-                <RouterLink to="/admin/queue" />
-              </SideNavItem>
-              <SideNavItem asChild icon={<BlockIcon />} label="Suppression list" current={location.pathname === '/admin/suppressions'}>
-                <RouterLink to="/admin/suppressions" />
-              </SideNavItem>
-              <SideNavItem asChild icon={<ChartIcon />} label="Deliverability" current={location.pathname === '/admin/deliverability'}>
-                <RouterLink to="/admin/deliverability" />
-              </SideNavItem>
-              <SideNavItem asChild icon={<TerminalIcon />} label="SMTP sessions" current={location.pathname === '/admin/smtp'}>
-                <RouterLink to="/admin/smtp" />
-              </SideNavItem>
-              <SideNavItem
-                asChild
-                icon={<SetupIcon />}
-                label="Setup"
-                current={location.pathname === '/admin/setup'}
-                {...(setupLeft > 0 ? { count: setupLeft, countLabel: `Setup, ${String(setupLeft)} ${setupLeft === 1 ? 'step' : 'steps'} left` } : {})}
-              >
-                <RouterLink to="/admin/setup" />
-              </SideNavItem>
-              <SideNavItem asChild icon={<GlobeIcon />} label="DNS records" current={location.pathname === '/admin/dns'}>
-                <RouterLink to="/admin/dns" />
-              </SideNavItem>
-            </SideNavGroup>
-          ) : null}
-        </SideNav>
-      }
-      footer={
-        <AccountMenu name={account?.displayName ?? 'Account'} {...(account?.address ? { detail: account.address } : {})}>
-          <ThemeSwitch label="Theme" />
-          <MenuSeparator />
-          <MenuItem tone="danger" onSelect={signOut}>
-            Sign out
-          </MenuItem>
-        </AccountMenu>
-      }
-    >
-      {/* PST-T-11.1: the server refuses every /api/admin call to a non-admin (403); the screen says
-          so itself rather than leaving each admin page to fail its own way. */}
-      {location.pathname.startsWith('/admin/') && account?.isAdmin !== true ? (
-        <Page>
-          <PageHeader title="Admin" />
-          <NoAccess />
-        </Page>
-      ) : (
-        <Outlet />
-      )}
-    </AppShell>
+          </PaneBoundary>
+        }
+        footer={
+          <AccountMenu name={account?.displayName ?? 'Account'} {...(account?.address ? { detail: account.address } : {})}>
+            <MenuItem asChild>
+              <RouterLink to={PLACE_HOME.settings}>Settings</RouterLink>
+            </MenuItem>
+            {isAdmin ? (
+              <MenuItem asChild>
+                <RouterLink to={PLACE_HOME.admin}>{setupLeft > 0 ? `Admin console (${String(setupLeft)} setup ${setupLeft === 1 ? 'step' : 'steps'} left)` : 'Admin console'}</RouterLink>
+              </MenuItem>
+            ) : null}
+            <MenuSeparator />
+            <ThemeSwitch label="Theme" />
+            <MenuSeparator />
+            <MenuItem tone="danger" onSelect={signOut}>
+              Sign out
+            </MenuItem>
+          </AccountMenu>
+        }
+      >
+        <PlaceFrame key={place} place={place}>
+          <SubNav place={navPlace} isAdmin={isAdmin} />
+          <PaneBoundary name="This page" resetKey={location.pathname}>
+            {/* PST-T-11.1: the server refuses every /api/admin call to a non-admin (403); the screen
+                says so itself rather than leaving each admin page to fail its own way. */}
+            {place === 'admin' && !isAdmin ? (
+              <Page>
+                <PageHeader title="Admin" />
+                <NoAccess />
+              </Page>
+            ) : (
+              <Outlet />
+            )}
+          </PaneBoundary>
+        </PlaceFrame>
+        <PlacePalette enabled={place !== 'mail'} />
+      </AppShell>
+    </PaletteRoleContext.Provider>
   );
 }

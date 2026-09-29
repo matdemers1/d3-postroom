@@ -39,21 +39,21 @@ report zero violations.
 | Contacts: new contact | `/contacts/new` | ✅ | n/a (a form) | n/a | n/a | n/a | n/a | n/a |
 | Contacts: one contact | `/contacts/:addressBookId/:name` | ✅ | n/a (one card) | ✅ | ✅ | n/a | n/a | ✅ |
 | Sender profile | `/senders/:address` | ✅ | ✅ *No messages from this sender yet* | ✅ | ✅ | n/a | n/a | ✅ |
-| App passwords | `/app-passwords` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
-| Masked aliases | `/account/aliases` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
-| Change password | `/account/password` | ✅ | n/a (a form) | n/a | n/a | n/a | n/a | n/a |
-| Devices | `/account/sessions` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
-| Import mail | `/account/import` | ✅ | ✅ *No imports yet* | ✅ | ✅ | n/a | n/a | ✅ |
-| Set up iPhone / Mac | `/account/device-setup` | ✅ | n/a (static) | n/a | n/a | n/a | n/a | n/a |
-| Rules | `/account/rules` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
-| Compose templates | `/account/templates` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
-| Admin: Sessions | `/admin/sessions` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
+| Settings: Account | `/settings/account` | ✅ | n/a (a form) | n/a | n/a | n/a | n/a | n/a |
+| Settings: Browser sessions | `/settings/security` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
+| Settings: Devices (app passwords) | `/settings/security/devices` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
+| Settings: Set up iPhone / Mac | `/settings/security/device-setup` | ✅ | n/a (static) | n/a | n/a | n/a | n/a | n/a |
+| Settings: Addresses | `/settings/addresses` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
+| Settings: Import & export | `/settings/import` | ✅ | ✅ *No imports yet* | ✅ | ✅ | n/a | n/a | ✅ |
+| Settings: Rules | `/settings/rules` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
+| Settings: Templates | `/settings/templates` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
+| Admin: Sign-in sessions | `/admin/sessions` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: Health | `/admin/health` | ✅ | ✅ *No health checks reported* | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: Jobs | `/admin/jobs` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: Outbound queue | `/admin/queue` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
-| Admin: Suppression list | `/admin/suppressions` | ✅ | ✅ *No suppressed addresses* | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
+| Admin: Suppressions | `/admin/suppressions` | ✅ | ✅ *No suppressed addresses* | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: Deliverability | `/admin/deliverability` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
-| Admin: SMTP sessions | `/admin/smtp` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
+| Admin: Live SMTP | `/admin/smtp` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 
 ¹ A non-admin who opens `/admin/*` sees the no-access state that `Shell.tsx` renders in place of the
 screen. `redirectFor` in `apps/web/src/api.ts` used to send them back to the inbox without a word,
@@ -62,6 +62,11 @@ and that redirect is gone (1b2034a). The server still refuses every `/api/admin`
 `n/a` means the state cannot happen on that screen. A form or a static page makes no data call, so
 it has nothing to be empty of, wait for, or fail to load. A screen that is not under `/admin/` has
 no admin gate. `*` is any other path: it redirects to `/`, which is the inbox row.
+
+Since PST-T-14.3 every route above is declared once, in `apps/web/src/routes.ts` — its path, title,
+place (Mail, Settings, Admin console), nav group, palette keywords and whether it is admin-only.
+The pre-14.3 URLs (`/app-passwords`, `/account/*`, `/admin`) redirect to their new homes, which
+`e2e/tests/places.spec.ts` checks one by one.
 
 ## Before a session
 

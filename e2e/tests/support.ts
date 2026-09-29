@@ -66,6 +66,14 @@ export async function openNav(page: Page): Promise<void> {
   await drawer.waitFor();
 }
 
+/** PST-T-14.3: Settings and the Admin console are places behind the account menu, not sidebar rows. */
+export async function openPlace(page: Page, item: 'Settings' | 'Admin console'): Promise<void> {
+  await openNav(page);
+  await page.locator('button.d3-acct').click();
+  await page.getByRole('menuitem', { name: new RegExp(`^${item}`) }).click();
+  await page.getByRole('navigation', { name: item }).waitFor();
+}
+
 export async function signInWithPassword(page: Page, operator: Operator): Promise<void> {
   await page.goto('/signin');
   await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);

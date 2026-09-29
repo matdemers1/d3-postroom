@@ -3,7 +3,7 @@
 // Needs a stack on a FRESH database (see the task notes for the env it needs).
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { freshCode, loadOperator, openNav, OPERATOR_DEFAULTS, saveOperator, signInWithPassword, type Operator } from './support.js';
+import { freshCode, loadOperator, openNav, openPlace, OPERATOR_DEFAULTS, saveOperator, signInWithPassword, type Operator } from './support.js';
 
 // Serial, and patient: a TOTP step is burnt on use, so a test may wait for the next 30-second step.
 test.describe.configure({ mode: 'serial', timeout: 180_000 });
@@ -70,7 +70,7 @@ test('/setup redirects to /signin once an operator exists', async ({ page, reque
   expect(again.status()).toBe(409);
 });
 
-test('sign out, then sign in with password + TOTP and reach the admin Sessions page', async ({ page, context }) => {
+test('sign out, then sign in with password + TOTP and reach the admin Sign-in sessions page', async ({ page, context }) => {
   const operator = requireOperator();
   await signInWithPassword(page, operator);
 
@@ -78,9 +78,11 @@ test('sign out, then sign in with password + TOTP and reach the admin Sessions p
   expect(cookie?.httpOnly).toBe(true);
   expect(cookie?.sameSite).toBe('Lax');
 
+  // PST-T-14.3: the Admin console is a place of its own, behind the account menu.
+  await openPlace(page, 'Admin console');
   await openNav(page);
-  await page.getByRole('link', { name: 'Sessions', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /^Sessions/, level: 1 })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Admin console' }).getByRole('link', { name: 'Sign-in sessions' }).click();
+  await expect(page.getByRole('heading', { name: /^Sign-in sessions/, level: 1 })).toBeVisible();
   await expect(page.getByText('This session')).toBeVisible();
 
   // Sign out from the account menu, and the shell is gone.
@@ -118,8 +120,7 @@ test('revoking another session asks for a fresh TOTP (step-up)', async ({ page, 
   expect(otherId).not.toBe('');
 
   await signInWithPassword(page, operator);
-  await openNav(page);
-  await page.getByRole('link', { name: 'Sessions', exact: true }).click();
+  await page.goto('/admin/sessions');
   await page.locator(`button[data-session-id="${otherId}"]`).click();
 
   const dialog = page.getByRole('dialog', { name: 'Confirm it is you' });
@@ -147,9 +148,11 @@ test('Sign in with D3 Auth reaches the shell (needs FAKE_ISSUER_URL)', async ({ 
   await page.goto('/signin');
   await page.getByRole('link', { name: 'Sign in with D3 Auth' }).click();
   await expect(page.getByRole('heading', { name: 'Mail', level: 1 })).toBeVisible();
-  // The fake issuer's user carries roles ['admin'], so the Admin section appears (PST-REQ-007).
+  // The fake issuer's user carries roles ['admin'], so the Admin console is offered (PST-REQ-007).
   await openNav(page);
-  await expect(page.getByRole('link', { name: 'Sessions', exact: true })).toBeVisible();
+  await page.locator('button.d3-acct').click();
+  await expect(page.getByRole('menuitem', { name: /^Admin console/ })).toBeVisible();
+  await page.keyboard.press('Escape');
   const state = (await page.request.get('/api/auth/state').then((r) => r.json())) as { method: string };
   expect(state.method).toBe('oidc');
 });
