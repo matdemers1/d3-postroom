@@ -261,6 +261,43 @@
   }
 }
 
+/* --- On a phone (PST-T-15.8, the canvas's PhoneInbox) ---------------------------------------------- */
+
+/* The rows run edge to edge: 16 px either side, square, with a hairline under each that starts at the
+   text column (16 + the 40 px avatar + 12), as a phone list draws it. The unread dot sits in the
+   gutter. The day headings line up with the text's 16 px edge. */
+.pr-mail[data-layout='push'] .pr-tlist__box {
+  padding-inline: 0;
+}
+
+.pr-mail[data-layout='push'] .pr-mrow,
+.pr-mail[data-layout='push'] .pr-mrow__inner {
+  border-radius: 0;
+}
+
+.pr-mail[data-layout='push'] .pr-mrow__inner {
+  padding-inline: var(--space-16);
+}
+
+.pr-mail[data-layout='push'] .pr-mrow::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--space-16) + var(--space-40) + var(--space-12));
+  right: 0;
+  bottom: 0;
+  height: var(--border-width);
+  background: var(--color-border);
+  pointer-events: none;
+}
+
+.pr-mail[data-layout='push'] .pr-mrow__dot {
+  left: var(--space-4);
+}
+
+.pr-mail[data-layout='push'] .pr-group__head {
+  padding-inline: var(--space-16);
+}
+
 /* --- The action cluster ----------------------------------------------------------------------------- */
 
 .pr-rowacts {

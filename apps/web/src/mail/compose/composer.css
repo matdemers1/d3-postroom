@@ -395,6 +395,72 @@
   }
 }
 
+/* --- The phone's sheet (PST-T-15.8, the canvas's PhoneCompose) -------------------------------------- */
+
+/* A new message or a resumed draft is the whole screen, with one bar at its top: Cancel on the left,
+   the title centred, a round Send on the right. It sticks at the pane's padding edge like the header
+   it replaces, and pulls out over the pane's padding to span it. */
+.pr-mail[data-layout='push'] .pr-compose__sheetbar {
+  position: sticky;
+  top: calc(var(--pr-compose-pad) * -1);
+  z-index: 2;
+  display: grid;
+  flex: none;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 56px;
+  margin: calc(var(--pr-compose-pad) * -1) calc(var(--pr-compose-pad) * -1) 0;
+  padding: var(--space-4) var(--space-8);
+  border-bottom: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.pr-mail[data-layout='push'] .pr-compose__cancel {
+  justify-self: start;
+  color: var(--color-accent);
+  font-size: var(--text-16);
+  font-weight: var(--weight-regular);
+}
+
+.pr-mail[data-layout='push'] .pr-compose__title--sheet {
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-16);
+  line-height: var(--leading-16);
+}
+
+/* The 44 px target, and in it the 32 px accent disc that carries the arrow. */
+.pr-mail[data-layout='push'] .pr-compose__sheetsend {
+  justify-self: end;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+}
+
+.pr-mail[data-layout='push'] .pr-compose__sheetsend > span {
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  transition: background-color var(--motion-hover);
+}
+
+.pr-mail[data-layout='push'] .pr-compose__sheetsend:hover:not(:disabled) {
+  background: transparent;
+}
+
+.pr-mail[data-layout='push'] .pr-compose__sheetsend:hover:not(:disabled) > span {
+  background: var(--color-accent-hover);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pr-compose,
   .pr-compose__reveal {

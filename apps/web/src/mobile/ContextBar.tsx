@@ -29,11 +29,16 @@ export interface ContextBarProps {
   titleIsDuplicate?: boolean | undefined;
   /** At most two IconButtons: Search and Compose. */
   actions?: ReactNode;
+  /**
+   * A large-title screen (PST-T-15.8, the canvas's PhoneInbox): the screen's own heading sits right
+   * under the bar, so the bar draws no hairline and no title of its own.
+   */
+  flush?: boolean | undefined;
 }
 
-export function ContextBar({ back, title, titleIsDuplicate = true, actions }: ContextBarProps) {
+export function ContextBar({ back, title, titleIsDuplicate = true, actions, flush = false }: ContextBarProps) {
   return (
-    <div className="pr-cbar" data-testid="context-bar">
+    <div className={flush ? 'pr-cbar pr-cbar--flush' : 'pr-cbar'} data-testid="context-bar">
       <div className="pr-cbar__lead">
         {back === null || back === undefined ? null : (
           <RouterLink className="pr-cbar__back" to={back.to}>

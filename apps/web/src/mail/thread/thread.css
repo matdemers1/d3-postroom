@@ -711,6 +711,18 @@
   display: none;
 }
 
+/* PST-T-15.8 (the canvas's PhoneThread): on a phone the subject is a 20 px title, then the Priority
+   badge and "N messages" on the line under it. */
+.pr-mail[data-layout='push'] .pr-reader__subject {
+  font-size: var(--text-20);
+  line-height: var(--leading-20);
+}
+
+.pr-mail[data-layout='push'] .pr-subject__meta {
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+}
+
 /* --- Print: the message, not the app around it ---------------------------------------------------- */
 
 @media print {
