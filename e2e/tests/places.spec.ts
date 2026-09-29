@@ -161,6 +161,8 @@ test('the palette lists every place from the route table, grouped, with keycaps'
   await page.keyboard.type('smtp sessions');
   await palette.getByRole('option', { name: /^Live SMTP/ }).click();
   await expect(page).toHaveURL(/\/admin\/smtp$/);
+  await expect(palette).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Live SMTP', level: 1 })).toBeVisible();
 
   // Outside Mail, ⌘K still opens the palette — with places, not message actions.
   await page.keyboard.press('Control+k');
