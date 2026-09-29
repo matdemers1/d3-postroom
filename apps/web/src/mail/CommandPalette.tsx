@@ -1,16 +1,42 @@
 // ⌘K / Ctrl+K (PST-T-9.3, PST-REQ-147): every keyboard action, "Move to <bucket>" for the message
-// under the cursor, "Go to <mailbox>" and — PST-T-14.3 — every place in the route table, in one
-// filterable list grouped as Message actions, Go to, Settings and Admin, with keycaps from keys.ts.
-// Modal already gives it role="dialog"/aria-modal, a focus trap and focus return (it wraps Radix's
-// Dialog); this component layers the combobox/listbox pattern on top — an input owning
-// aria-activedescendant, and a listbox of options it points at — so arrow keys move the selection
-// without moving DOM focus off the input, the way the message list's j/k cursor already works.
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Input, Modal, Stack } from '@d3cloud/ui';
-import '../styles/places.css';
-import type { Mailbox, MessageSummary } from '../api';
-import { buildCommands, filterCommands, groupMatches, type Command, type CommandMatch } from './commands';
+// under the cursor, "Go to <mailbox>" and — PST-T-14.3 — every place in the route table, with
+// keycaps from keys.ts. PST-T-15.5 (PST-REQ-194) rebuilt it on @d3cloud/ui's CommandPalette and made
+// it search: typing asks GET /api/search (debounced, stale answers dropped) for a Messages group —
+// avatar, subject with the match marked, "sender · date" — and filter chips (In, From, Has
+// attachment, Date) narrow that ask to what the search API already honours (palette/search.ts).
+// The library draws the dialog, the combobox/listbox, the arrow keys, Enter, Escape and focus return;
+// it listens for no keys itself (D-078), so ⌘K stays with MailView and Shell, which own `open`.
+import { createContext, useContext, useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useLocation } from 'react-router-dom';
+import {
+  Avatar,
+  CommandPalette as D3CommandPalette,
+  CommandPaletteChip,
+  CommandPaletteHint,
+  type CommandPaletteGroup,
+  type CommandPaletteItem,
+} from '@d3cloud/ui';
+import { api, type Mailbox, type MessageSummary } from '../api';
+import { buildCommands, filterCommands, groupMatches, paletteShortcut, type Command, type CommandSection } from './commands';
+import { mailboxIcon } from './icons';
+import { mailboxLabel } from './format';
 import type { MailAction } from './keys';
+import { parseMailRoute, mailPath } from './route';
+import { CalendarGlyph, PaperclipGlyph, PersonGlyph } from './palette/ChipIcons';
+import { onPaletteOpenRequest } from './palette/open';
+import {
+  createSearchScheduler,
+  currentMailbox,
+  messageDescription,
+  messageLabel,
+  messagesLead,
+  NO_FILTERS,
+  requestKey,
+  searchRequest,
+  senderName,
+  type PaletteFilters,
+  type SearchOutcome,
+} from './palette/search';
 
 /** Whether the signed-in account is an admin — provided by Shell, so the palette MailView mounts
  * filters Admin entries without MailView having to pass the role through. */
@@ -30,42 +56,86 @@ export interface CommandPaletteProps {
   isAdmin?: boolean;
 }
 
-const optionId = (id: string): string => `pr-cmd-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+/** The dialog's and the input's accessible name (the library gives both the one name). */
+export const PALETTE_LABEL = 'Command palette';
+const MESSAGES_GROUP = 'Messages';
 
-function highlighted(label: string, indices: readonly number[]): ReactNode {
-  if (indices.length === 0) return label;
-  const marks = new Set(indices);
-  return label
-    .split('')
-    .map((ch, i) => (marks.has(i) ? <mark key={i}>{ch}</mark> : <span key={i}>{ch}</span>));
+interface SearchState {
+  key: string | null;
+  outcome: SearchOutcome | null;
 }
+const NO_SEARCH: SearchState = { key: null, outcome: null };
 
-function Keycaps({ keys }: { keys: readonly string[] }) {
-  return (
-    <span className="pr-cmdk__keys" aria-hidden="true">
-      {keys.map((k, i) => (k === 'then' || k === 'or' ? <span key={i} className="pr-cmdk__then">{k}</span> : <kbd key={i}>{k}</kbd>))}
-    </span>
-  );
+function commandItem(command: Command, close: () => void): CommandPaletteItem {
+  const shortcut = command.keycaps === undefined ? [] : paletteShortcut(command.keycaps);
+  return {
+    id: command.id,
+    label: command.label,
+    ...(command.hint === undefined ? {} : { description: command.hint }),
+    ...(shortcut.length === 0 ? {} : { shortcut }),
+    ...(command.mailbox === undefined ? {} : { leading: mailboxIcon(command.mailbox.specialUse, command.mailbox.name) }),
+    // Closed before it runs, as before: a command that opens a dialog of its own (Move to…, Snooze…)
+    // opens it after the palette has let go.
+    onSelect: () => {
+      close();
+      command.run();
+      return false;
+    },
+  };
 }
 
 export function CommandPalette({ open, onOpenChange, mailboxes, target, onAction, onMove, onNavigate, onSnooze, isAdmin: isAdminProp }: CommandPaletteProps) {
   const roleFromShell = useContext(PaletteRoleContext);
   const isAdmin = isAdminProp ?? roleFromShell;
+  const location = useLocation();
   const [query, setQuery] = useState('');
-  const [active, setActive] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [filters, setFilters] = useState<PaletteFilters>(NO_FILTERS);
+  const [search, setSearch] = useState<SearchState>(NO_SEARCH);
+  // Text handed over by openPalette(query) — the list's search field — for the next open.
+  const [seed, setSeed] = useState<string | null>(null);
+
+  // Every open starts clean (or with the handed-over text); derived during render, not in an
+  // effect, so the first frame never shows the last visit's query.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setQuery(seed ?? '');
+      setFilters(NO_FILTERS);
+      setSearch(NO_SEARCH);
+    }
+    setSeed(null);
+  }
+
+  useEffect(
+    () =>
+      onPaletteOpenRequest((text) => {
+        setSeed(text ?? '');
+        setQuery(text ?? '');
+        onOpenChange(true);
+      }),
+    [onOpenChange],
+  );
+
+  const route = parseMailRoute(location.pathname, location.search);
+  const here = route === null ? null : currentMailbox(mailboxes, route.mailboxId);
+  const hereId = here?.id ?? null;
+  const request = useMemo(() => (open ? searchRequest(query, filters, hereId) : null), [open, query, filters, hereId]);
+  const key = requestKey(request);
 
   useEffect(() => {
-    if (!open) return;
-    setQuery('');
-    setActive(0);
-    const id = window.setTimeout(() => {
-      inputRef.current?.focus();
-    }, 0);
+    if (request === null) return undefined;
+    const scheduler = createSearchScheduler(
+      (r) => api.search(r.q, r.mailboxId === undefined ? {} : { mailboxId: r.mailboxId }),
+      (settledKey, outcome) => {
+        setSearch({ key: settledKey, outcome });
+      },
+    );
+    scheduler.schedule(request);
     return () => {
-      window.clearTimeout(id);
+      scheduler.cancel();
     };
-  }, [open]);
+  }, [request]);
 
   const commands = useMemo<Command[]>(
     () =>
@@ -82,97 +152,116 @@ export function CommandPalette({ open, onOpenChange, mailboxes, target, onAction
       ),
     [mailboxes, target, onAction, onMove, onNavigate, onSnooze, isAdmin],
   );
-  // Rows are shown under their group headers; arrow keys walk them in that display order.
-  const sections = useMemo(() => groupMatches(filterCommands(commands, query)), [commands, query]);
-  const matches = useMemo<CommandMatch[]>(() => sections.flatMap((s) => s.matches), [sections]);
+  const sections = useMemo<CommandSection[]>(() => groupMatches(filterCommands(commands, query)), [commands, query]);
 
-  useEffect(() => {
-    setActive((a) => (matches.length === 0 ? 0 : Math.min(a, matches.length - 1)));
-  }, [matches.length]);
+  const loading = key !== null && search.key !== key;
+  // While the next answer is on its way the last one stays (the library shows a spinner over it).
+  const outcome = key === null ? null : search.outcome;
 
-  const run = (match: CommandMatch | undefined) => {
-    if (match === undefined) return;
-    onOpenChange(false);
-    match.command.run();
+  const groups = useMemo<CommandPaletteGroup[]>(() => {
+    const close = (): void => {
+      onOpenChange(false);
+    };
+    const commandGroups = sections.map<CommandPaletteGroup>((section) => ({
+      id: section.group,
+      label: section.group,
+      items: section.matches.map((m) => commandItem(m.command, close)),
+    }));
+    if (outcome === null) return commandGroups;
+    const now = new Date();
+    const items: CommandPaletteItem[] = outcome.ok
+      ? outcome.messages.map((m) => {
+          const isDraft = mailboxes?.find((b) => b.id === m.mailboxId)?.specialUse === 'drafts';
+          return {
+            id: m.id,
+            label: messageLabel(m),
+            description: messageDescription(m, now),
+            leading: <Avatar name={senderName(m)} size="sm" tint="auto" />,
+            // Opened the way the list opens one: its mailbox, the message, a draft in the composer.
+            onSelect: () => {
+              close();
+              onNavigate(mailPath(m.mailboxId, m.id, isDraft ? 'draft' : null));
+              return false;
+            },
+          };
+        })
+      : [{ id: 'search-unavailable', label: 'Message search is unavailable right now', disabled: true, onSelect: () => false }];
+    const messages: CommandPaletteGroup = { id: MESSAGES_GROUP, label: MESSAGES_GROUP, items };
+    const top = sections[0]?.matches[0]?.command.label ?? null;
+    if (messagesLead(top, query)) return [messages, ...commandGroups];
+    return [...commandGroups.slice(0, 1), messages, ...commandGroups.slice(1)];
+  }, [sections, outcome, mailboxes, onNavigate, onOpenChange, query]);
+
+  const toggle = (name: keyof PaletteFilters): void => {
+    setFilters((f) => ({ ...f, [name]: !f[name] }));
+  };
+  // A pointer on a chip leaves focus in the input, so typing and the arrow keys carry on.
+  const keepFocus = (e: MouseEvent): void => {
+    e.preventDefault();
   };
 
-  const activeMatch = matches[active];
-  const activeId = activeMatch === undefined ? undefined : optionId(activeMatch.command.id);
-
   return (
-    <Modal
+    <D3CommandPalette
       open={open}
       onOpenChange={onOpenChange}
-      size="lg"
-      className="pr-cmdk"
-      title="Command palette"
-      description="Every action, bucket move and place in Postroom, searched by name."
-    >
-      <Stack gap="8">
-        <Input
-          appearance="filled"
-          ref={inputRef}
-          role="combobox"
-          aria-expanded="true"
-          aria-controls="pr-cmdk-list"
-          aria-autocomplete="list"
-          {...(activeId === undefined ? {} : { 'aria-activedescendant': activeId })}
-          aria-label="Type a command"
-          placeholder="Search commands, places and settings…"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              setActive((a) => (matches.length === 0 ? 0 : (a + 1) % matches.length));
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault();
-              setActive((a) => (matches.length === 0 ? 0 : (a - 1 + matches.length) % matches.length));
-            } else if (e.key === 'Enter') {
-              e.preventDefault();
-              run(matches[active]);
-            }
-          }}
-        />
-        <div id="pr-cmdk-list" role="listbox" aria-label="Commands" className="pr-cmdk__list">
-          {sections.map((section) => (
-            <div key={section.group} role="group" aria-labelledby={`pr-cmdk-g-${optionId(section.group)}`} className="pr-cmdk__group">
-              <div id={`pr-cmdk-g-${optionId(section.group)}`} className="pr-cmdk__heading" role="presentation" aria-hidden="true">
-                {section.group}
-              </div>
-              {section.matches.map((m) => {
-                const index = matches.indexOf(m);
-                return (
-                  <div
-                    key={m.command.id}
-                    id={optionId(m.command.id)}
-                    role="option"
-                    aria-selected={index === active}
-                    className="pr-cmdk__row"
-                    onMouseEnter={() => {
-                      setActive(index);
-                    }}
-                    onClick={() => {
-                      run(m);
-                    }}
-                  >
-                    <span className="pr-cmdk__label">{highlighted(m.command.label, m.indices)}</span>
-                    {m.command.hint === undefined ? null : <span className="pr-cmdk__hint">{m.command.hint}</span>}
-                    {m.command.keycaps === undefined ? null : <Keycaps keys={m.command.keycaps} />}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-        {matches.length === 0 ? (
-          <p className="pr-notice" role="status">
-            Nothing matches “{query}”.
-          </p>
-        ) : null}
-      </Stack>
-    </Modal>
+      query={query}
+      onQueryChange={setQuery}
+      groups={groups}
+      label={PALETTE_LABEL}
+      placeholder="Search mail, mailboxes and actions…"
+      loading={loading}
+      filters={
+        <>
+          {here === null ? null : (
+            <CommandPaletteChip
+              pressed={filters.inMailbox}
+              onMouseDown={keepFocus}
+              onClick={() => {
+                toggle('inMailbox');
+              }}
+            >
+              In: <b>{mailboxLabel(here)}</b>
+            </CommandPaletteChip>
+          )}
+          <CommandPaletteChip
+            pressed={filters.from}
+            onMouseDown={keepFocus}
+            onClick={() => {
+              toggle('from');
+            }}
+          >
+            <PersonGlyph />
+            From
+          </CommandPaletteChip>
+          <CommandPaletteChip
+            pressed={filters.hasAttachment}
+            onMouseDown={keepFocus}
+            onClick={() => {
+              toggle('hasAttachment');
+            }}
+          >
+            <PaperclipGlyph />
+            Has attachment
+          </CommandPaletteChip>
+          <CommandPaletteChip
+            pressed={filters.recent}
+            onMouseDown={keepFocus}
+            onClick={() => {
+              toggle('recent');
+            }}
+          >
+            <CalendarGlyph />
+            Date: last 7 days
+          </CommandPaletteChip>
+        </>
+      }
+      footer={
+        <>
+          <CommandPaletteHint keys={['↑', '↓']}>navigate</CommandPaletteHint>
+          <CommandPaletteHint keys={['↵']}>open</CommandPaletteHint>
+          <CommandPaletteHint keys={['esc']}>close</CommandPaletteHint>
+        </>
+      }
+    />
   );
 }

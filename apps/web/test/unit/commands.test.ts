@@ -2,7 +2,7 @@
 // behaviour — opening with ⌘K, moving a message with it — is e2e/tests/command-palette.spec.ts.
 import { describe, expect, it, vi } from 'vitest';
 import type { Mailbox, MessageSummary } from '../../src/api';
-import { buildCommands, COMMAND_GROUPS, filterCommands, fuzzyMatch, groupMatches, keycapsFor, type CommandContext } from '../../src/mail/commands';
+import { buildCommands, COMMAND_GROUPS, filterCommands, fuzzyMatch, groupMatches, keycapsFor, LEAD_ACTIONS, paletteShortcut, type CommandContext } from '../../src/mail/commands';
 import { SHORTCUTS } from '../../src/mail/keys';
 import { paletteRoutes, ROUTES } from '../../src/routes';
 
@@ -114,7 +114,8 @@ describe('buildCommands', () => {
     expect(commands.find((c) => c.label === 'Rules')?.keycaps).toBeUndefined();
   });
 
-  it('is grouped Message actions, Go to, Settings, Admin — in that order', () => {
+  it('is grouped Actions, Go to, Settings, Admin — in that order', () => {
+    expect([...COMMAND_GROUPS]).toEqual(['Actions', 'Go to', 'Settings', 'Admin']);
     const commands = buildCommands(context({ target: message(INBOX.id) }), true);
     const groups = [...new Set(commands.map((c) => c.group))];
     expect(groups).toEqual([...COMMAND_GROUPS]);
@@ -224,5 +225,33 @@ describe('filterCommands', () => {
     const commands = buildCommands(context());
     const matches = filterCommands(commands, 'zzzzz-not-a-command');
     expect(matches).toEqual([]);
+  });
+});
+
+describe('the Actions group (PST-T-15.5)', () => {
+  it('leads with Archive, Snooze and Move — with their keys — when a conversation is open', () => {
+    const actions = buildCommands(context({ target: message(INBOX.id) })).filter((c) => c.group === 'Actions');
+    expect(actions.slice(0, 3).map((c) => c.id)).toEqual(LEAD_ACTIONS.map((a) => `action:${a}`));
+    expect(actions.slice(0, 3).map((c) => c.keycaps)).toEqual([['e'], ['b'], ['v']]);
+  });
+
+  it('keeps the keyboard order with nothing in hand', () => {
+    const actions = buildCommands(context({ target: null })).filter((c) => c.id.startsWith('action:') && c.group === 'Actions');
+    const order = SHORTCUTS.filter((s) => actions.some((c) => c.id === `action:${s.action}`)).map((s) => `action:${s.action}`);
+    expect(actions.map((c) => c.id)).toEqual(order);
+  });
+
+  it('carries the mailbox on "Go to <mailbox>", so the palette can draw its icon', () => {
+    const goTo = buildCommands(context()).find((c) => c.label === 'Go to Receipts');
+    expect(goTo?.mailbox).toBe(RECEIPTS);
+  });
+});
+
+describe('paletteShortcut', () => {
+  it('draws one key cap per key: a sequence without "then", the first of alternatives', () => {
+    expect(paletteShortcut(['g', 'then', 'i'])).toEqual(['g', 'i']);
+    expect(paletteShortcut(['o', 'or', 'Enter'])).toEqual(['o']);
+    expect(paletteShortcut(['Shift', 'u'])).toEqual(['Shift', 'u']);
+    expect(paletteShortcut(['e'])).toEqual(['e']);
   });
 });
