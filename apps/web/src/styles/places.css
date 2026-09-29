@@ -229,3 +229,9 @@
     transition: none;
   }
 }
+
+/* On the recessed sidebar (PST-T-14.4) the current row is --color-surface-raised, the quiet
+ * count's own fill; the count steps back down to --color-bg there, as CountBadge `quiet` does. */
+.pr-nav-quiet .d3-snav__item[aria-current='page'] .d3-bdg--count {
+  background: var(--color-bg);
+}

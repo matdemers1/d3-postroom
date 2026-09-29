@@ -1,3 +1,4 @@
+import '../styles/fields.css';
 import { type SyntheticEvent, useEffect, useState } from 'react';
 import { Alert, AuthLayout, Button, Card, FormActions, FormField, Input, PasswordInput, Stack, Link } from '@d3cloud/ui';
 import { api, describeError, type AuthState } from '../api';
@@ -87,7 +88,7 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
           {challenge === null ? (
             <Stack as="form" gap="16" onSubmit={submitPassword} aria-label="Sign in with your password">
               <FormField label="Address or username" help="Your address, or just the part before @d3cloud.io.">
-                <Input
+                <Input appearance="filled"
                   name="login"
                   autoComplete="username"
                   autoCapitalize="none"
@@ -120,7 +121,7 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
           ) : (
             <Stack as="form" gap="16" onSubmit={submitCode} aria-label="Enter your authentication code">
               <FormField label="Authentication code" help="Six digits from your authenticator app.">
-                <Input
+                <Input appearance="filled"
                   name="code"
                   inputMode="numeric"
                   autoComplete="one-time-code"

@@ -347,10 +347,10 @@ export function Keys() {
         <form onSubmit={generate}>
           <Stack gap="16">
             <FormField label="Address" help="One of your own addresses.">
-              <Input ref={genAddressRef} name="address" type="email" required value={genAddress} onChange={(e) => { setGenAddress(e.target.value); }} />
+              <Input appearance="filled" ref={genAddressRef} name="address" type="email" required value={genAddress} onChange={(e) => { setGenAddress(e.target.value); }} />
             </FormField>
             <FormField label="Name" optional help="Shown in the key’s user ID; default your display name.">
-              <Input name="name" maxLength={200} value={genName} onChange={(e) => { setGenName(e.target.value); }} />
+              <Input appearance="filled" name="name" maxLength={200} value={genName} onChange={(e) => { setGenName(e.target.value); }} />
             </FormField>
             <FormActions>
               <Button type="submit" variant="primary" loading={genBusy}>
@@ -365,11 +365,11 @@ export function Keys() {
         <form onSubmit={doImport}>
           <Stack gap="16">
             <FormField label="Key or certificate" help="Paste an armored OpenPGP key block, or a PEM certificate (intermediates after it)." {...(importError === null ? {} : { error: importError })}>
-              <Textarea mono rows={8} value={importText} onChange={(e) => { setImportText(e.target.value); }} />
+              <Textarea appearance="filled" mono rows={8} value={importText} onChange={(e) => { setImportText(e.target.value); }} />
             </FormField>
             {kindOfImport === 'certificate' ? (
               <FormField label="Private key" optional help="PEM PKCS#8. With it, the certificate is yours: you can sign with it and open mail encrypted to it.">
-                <Textarea mono rows={6} value={importKey} onChange={(e) => { setImportKey(e.target.value); }} />
+                <Textarea appearance="filled" mono rows={6} value={importKey} onChange={(e) => { setImportKey(e.target.value); }} />
               </FormField>
             ) : null}
             {kindOfImport === 'pgp-secret' || (kindOfImport === 'certificate' && importKey.trim() !== '') ? (
@@ -378,7 +378,7 @@ export function Keys() {
               </FormField>
             ) : null}
             <FormField label="Address" optional help="Which of the key’s addresses this is for, when it has several.">
-              <Input value={importAddress} type="email" onChange={(e) => { setImportAddress(e.target.value); }} />
+              <Input appearance="filled" value={importAddress} type="email" onChange={(e) => { setImportAddress(e.target.value); }} />
             </FormField>
             <FormActions>
               <Button type="submit" variant="primary" loading={importBusy}>
@@ -413,7 +413,7 @@ export function Keys() {
       >
         {revoking?.owner === 'own' && revoking.kind === 'pgp' ? (
           <FormField label="Reason" help="Written into the revocation others receive with your key.">
-            <Select options={REASONS} value={reason} onValueChange={(v) => { setReason((REASONS.find((r) => r.value === v) ?? { value: 'none' as const }).value); }} />
+            <Select appearance="filled" options={REASONS} value={reason} onValueChange={(v) => { setReason((REASONS.find((r) => r.value === v) ?? { value: 'none' as const }).value); }} />
           </FormField>
         ) : null}
       </Modal>
@@ -445,7 +445,7 @@ export function Keys() {
             )}
             {stepUp ? (
               <FormField label="Authentication code">
-                <Input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]*" autoFocus required value={code} onChange={(e) => { setCode(e.target.value); }} />
+                <Input appearance="filled" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]*" autoFocus required value={code} onChange={(e) => { setCode(e.target.value); }} />
               </FormField>
             ) : (
               <FormField label="Passphrase" optional help="At least 8 characters. Leave it empty for an unprotected file.">

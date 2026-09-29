@@ -4,6 +4,7 @@
 // entry comes from the route table (routes.ts). Places swap with a cross-fade (--dur-2), never a
 // slide (D-024), and each pane sits in an error boundary so one failure never blanks the app.
 import '../styles/places.css';
+import '../styles/fields.css';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -584,6 +585,7 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
   return (
     <PaletteRoleContext.Provider value={isAdmin}>
       <AppShell
+        navTone="recessed"
         storageKey="postroom-shell"
         brand={
           <AppShellBrand asChild name="Postroom" mark={<MailIcon />}>

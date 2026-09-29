@@ -1,3 +1,4 @@
+import '../styles/fields.css';
 import { type SyntheticEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -111,7 +112,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                 />
               </FormField>
               <FormField label="Display name" {...(fieldErrors.displayName === undefined ? {} : { error: fieldErrors.displayName })}>
-                <Input
+                <Input appearance="filled"
                   name="displayName"
                   autoComplete="name"
                   required
@@ -122,7 +123,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                 />
               </FormField>
               <FormField label="Username" help={`Just the name. It becomes your address: name@${DOMAIN}.`} {...(loginError === undefined ? {} : { error: loginError })}>
-                <Input
+                <Input appearance="filled"
                   name="login"
                   autoComplete="username"
                   autoCapitalize="none"
@@ -187,7 +188,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                 </DescriptionItem>
               </DescriptionList>
               <FormField label="Authentication code">
-                <Input
+                <Input appearance="filled"
                   name="code"
                   inputMode="numeric"
                   autoComplete="one-time-code"

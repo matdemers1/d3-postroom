@@ -196,7 +196,7 @@ export function AdminQueue() {
       />
       <Cluster gap="12">
         <FormField label="Domain" width="sm">
-          <Input
+          <Input appearance="filled"
             value={domain}
             placeholder="example.com"
             onChange={(e) => {
@@ -205,7 +205,7 @@ export function AdminQueue() {
           />
         </FormField>
         <FormField label="State" width="sm">
-          <Select
+          <Select appearance="filled"
             options={STATE_OPTIONS}
             value={state}
             onValueChange={(v) => {
@@ -239,7 +239,7 @@ export function AdminQueue() {
       <Section title="Bulk, by domain" description="Bounded to 500 recipients per request." surface="plain">
         <Cluster gap="12">
           <FormField label="Domain" width="sm">
-            <Input
+            <Input appearance="filled"
               value={bulkDomain}
               placeholder="example.com"
               onChange={(e) => {
@@ -300,7 +300,7 @@ export function AdminQueue() {
           <Stack gap="12">
             {pending?.action === 'delete' ? (
               <FormField label="Reason" help="Recorded on the audit entry.">
-                <Input
+                <Input appearance="filled"
                   required
                   value={reason}
                   onChange={(e) => {
@@ -310,7 +310,7 @@ export function AdminQueue() {
               </FormField>
             ) : null}
             <FormField label="Authentication code" {...(codeError === null ? {} : { error: codeError })}>
-              <Input
+              <Input appearance="filled"
                 name="code"
                 inputMode="numeric"
                 autoComplete="one-time-code"
