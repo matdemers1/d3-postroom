@@ -1,20 +1,30 @@
 // The command palette's registry (PST-T-9.3, PST-REQ-147): every keyboard action from keys.ts (so
 // the palette can never list one that does nothing, the same guarantee ShortcutsOverlay makes), a
 // "Move to <bucket>" command per mailbox for the message under the cursor, "Go to <mailbox>" for
-// every mailbox, and navigation to the account/admin screens. Pure and DOM-free, so the registry
-// and the fuzzy matcher are unit-tested without a browser.
+// every mailbox, and — since PST-T-14.3 — every place in the route table (routes.ts), grouped as
+// Message actions, Go to, Settings and Admin, with keycaps from keys.ts where a binding exists.
+// Pure and DOM-free, so the registry and the fuzzy matcher are unit-tested without a browser.
 import type { Mailbox, MessageSummary } from '../api';
 import { snoozeChoices } from './compose';
 import { mailboxLabel } from './format';
 import { requestInspect, SHORTCUTS, type MailAction } from './keys';
 import { mailPath } from './route';
+import { paletteRoutes } from '../routes';
+
+/** The palette's groups, in the order it shows them (PST-T-14.3). */
+export const COMMAND_GROUPS = ['Message actions', 'Go to', 'Settings', 'Admin'] as const;
+export type CommandGroup = (typeof COMMAND_GROUPS)[number];
 
 export interface Command {
   id: string;
   label: string;
-  group: string;
+  group: CommandGroup;
   /** Extra text a query can match against, beyond the label (a shortcut key, a synonym). */
   keywords: string;
+  /** The keys that do this without the palette, split into keycaps ('g', 'then', 'i'); from keys.ts only. */
+  keycaps?: string[];
+  /** A one-line hint beside the label. */
+  hint?: string;
   run: () => void;
 }
 
@@ -22,7 +32,8 @@ export interface CommandContext {
   mailboxes: readonly Mailbox[] | null;
   /** The message the cursor or the reading pane is on, if any — what "Move to X" acts on. */
   target: MessageSummary | null;
-  perform: (action: MailAction) => void;
+  /** Absent outside Mail (Settings, the Admin console): no keyboard-action commands there. */
+  perform?: (action: MailAction) => void;
   move: (message: MessageSummary, mailbox: Mailbox) => void;
   navigate: (path: string) => void;
   /** PST-T-9.1: snooze the target's conversation until a time (absent: no snooze commands). */
@@ -31,74 +42,58 @@ export interface CommandContext {
   now?: () => Date;
 }
 
-interface AppScreen {
-  path: string;
-  label: string;
-  /** Only shown to an admin account. */
-  admin?: boolean;
+/** 'g then i' → ['g', 'then', 'i']; 'Shift + u' → ['Shift', 'u']; 'o or Enter' → ['o', 'or', 'Enter']. */
+export function keycapsFor(keys: string): string[] {
+  return keys
+    .split(/\s*\+\s*|\s+/)
+    .filter((k) => k !== '');
 }
 
-/** Every non-mail screen Postroom has today (Shell.tsx's SideNav), so the palette never links to a
- * page the app does not have. */
-export const APP_SCREENS: readonly AppScreen[] = [
-  { path: '/app-passwords', label: 'Go to App passwords' },
-  { path: '/account/password', label: 'Go to Change password' },
-  { path: '/account/sessions', label: 'Go to Devices' },
-  { path: '/account/import', label: 'Go to Import mail' },
-  { path: '/admin/sessions', label: 'Go to Admin sessions', admin: true },
-  { path: '/admin/health', label: 'Go to Admin health', admin: true },
-  { path: '/admin/jobs', label: 'Go to Admin jobs', admin: true },
-  { path: '/admin/queue', label: 'Go to Outbound queue', admin: true },
-  { path: '/admin/suppressions', label: 'Go to Suppression list', admin: true },
-];
+function shortcutKeys(action: MailAction): string[] | undefined {
+  const s = SHORTCUTS.find((x) => x.action === action);
+  return s === undefined ? undefined : keycapsFor(s.keys);
+}
 
-/** Builds the full, ungrouped command list for the current context. */
-export function buildCommands(ctx: CommandContext, isAdmin = true): Command[] {
+const PLACE_GROUP: Readonly<Record<'mail' | 'settings' | 'admin', CommandGroup>> = { mail: 'Go to', settings: 'Settings', admin: 'Admin' };
+
+/** Builds the full command list for the current context, in COMMAND_GROUPS order. */
+export function buildCommands(ctx: CommandContext, isAdmin = false): Command[] {
   const commands: Command[] = [];
+  const perform = ctx.perform;
 
-  for (const s of SHORTCUTS) {
-    // The palette opens itself; a command that opens the thing it is already inside of is noise.
-    if (s.action === 'commandPalette') continue;
-    commands.push({
-      id: `action:${s.action}`,
-      label: s.description,
-      group: 'Action',
-      keywords: s.keys,
-      run: () => {
-        // The drawer listens for inspect requests itself (keys.ts), so it opens from here too.
-        if (s.action === 'inspect') requestInspect();
-        else ctx.perform(s.action);
-      },
-    });
-  }
-
-  if (ctx.mailboxes !== null) {
-    for (const mailbox of ctx.mailboxes) {
+  if (perform !== undefined) {
+    for (const s of SHORTCUTS) {
+      // The palette opens itself; a command that opens the thing it is already inside of is noise.
+      // Go to Inbox is listed with the mailboxes below, carrying g then i as its keycaps.
+      if (s.action === 'commandPalette' || (s.action === 'goInbox' && ctx.mailboxes !== null)) continue;
       commands.push({
-        id: `goto:${mailbox.id}`,
-        label: `Go to ${mailboxLabel(mailbox)}`,
-        group: 'Navigate',
-        keywords: 'mailbox folder',
+        id: `action:${s.action}`,
+        label: s.description,
+        group: s.action === 'goInbox' ? 'Go to' : 'Message actions',
+        keywords: s.keys,
+        keycaps: keycapsFor(s.keys),
         run: () => {
-          ctx.navigate(mailPath(mailbox.id));
+          // The drawer listens for inspect requests itself (keys.ts), so it opens from here too.
+          if (s.action === 'inspect') requestInspect();
+          else perform(s.action);
         },
       });
     }
+  }
 
-    if (ctx.target !== null) {
-      const target = ctx.target;
-      for (const mailbox of ctx.mailboxes) {
-        if (mailbox.id === target.mailboxId) continue;
-        commands.push({
-          id: `move:${mailbox.id}`,
-          label: `Move to ${mailboxLabel(mailbox)}`,
-          group: 'Move',
-          keywords: 'move file bucket',
-          run: () => {
-            ctx.move(target, mailbox);
-          },
-        });
-      }
+  if (ctx.mailboxes !== null && ctx.target !== null) {
+    const target = ctx.target;
+    for (const mailbox of ctx.mailboxes) {
+      if (mailbox.id === target.mailboxId) continue;
+      commands.push({
+        id: `move:${mailbox.id}`,
+        label: `Move to ${mailboxLabel(mailbox)}`,
+        group: 'Message actions',
+        keywords: 'move file bucket',
+        run: () => {
+          ctx.move(target, mailbox);
+        },
+      });
     }
   }
 
@@ -109,7 +104,7 @@ export function buildCommands(ctx: CommandContext, isAdmin = true): Command[] {
       commands.push({
         id: `snooze:${choice.label}`,
         label: `Snooze until ${choice.label.toLowerCase()}`,
-        group: 'Action',
+        group: 'Message actions',
         keywords: 'snooze later remind',
         run: () => {
           snooze(target, choice.until);
@@ -118,20 +113,43 @@ export function buildCommands(ctx: CommandContext, isAdmin = true): Command[] {
     }
   }
 
-  for (const screen of APP_SCREENS) {
-    if (screen.admin === true && !isAdmin) continue;
+  if (ctx.mailboxes !== null) {
+    for (const mailbox of ctx.mailboxes) {
+      const isInbox = mailbox.specialUse === 'inbox' || mailbox.name.toUpperCase() === 'INBOX';
+      const keycaps = isInbox ? shortcutKeys('goInbox') : undefined;
+      commands.push({
+        id: `goto:${mailbox.id}`,
+        label: `Go to ${mailboxLabel(mailbox)}`,
+        group: 'Go to',
+        keywords: 'mailbox folder',
+        ...(keycaps === undefined ? {} : { keycaps }),
+        run: () => {
+          ctx.navigate(mailPath(mailbox.id));
+        },
+      });
+    }
+  }
+
+  // Every other place, straight from the route table — the same entries both navs are built from.
+  for (const route of paletteRoutes(isAdmin)) {
+    if (route.place === 'auth') continue;
+    const keycaps = route.shortcut === undefined ? undefined : shortcutKeys(route.shortcut);
     commands.push({
-      id: `nav:${screen.path}`,
-      label: screen.label,
-      group: 'Go to',
-      keywords: 'settings screen',
+      id: `nav:${route.path}`,
+      label: route.place === 'mail' ? `Go to ${route.title}` : route.title,
+      group: PLACE_GROUP[route.place],
+      keywords: [route.navGroup ?? '', route.keywords, route.place === 'mail' ? '' : route.place].join(' ').trim(),
+      ...(route.hint === undefined ? {} : { hint: route.hint }),
+      ...(keycaps === undefined ? {} : { keycaps }),
       run: () => {
-        ctx.navigate(screen.path);
+        ctx.navigate(route.path);
       },
     });
   }
 
-  return commands;
+  const order = (g: CommandGroup): number => COMMAND_GROUPS.indexOf(g);
+  // Stable: registry order within a group.
+  return commands.map((c, i) => ({ c, i })).sort((a, b) => order(a.c.group) - order(b.c.group) || a.i - b.i).map(({ c }) => c);
 }
 
 export interface FuzzyResult {
@@ -189,9 +207,26 @@ export function filterCommands(commands: readonly Command[], query: string): Com
     // A label match ranks above a keyword-only match of the same shape. Moving the selected message
     // is the action the palette is most often opened for with one in hand, so it breaks a near-tie
     // against "Go to <same name>" (both match a bucket's name equally well otherwise).
-    const relevance = command.group === 'Move' ? 2 : 0;
+    const relevance = command.id.startsWith('move:') ? 2 : 0;
     scored.push({ command, indices: onLabel !== null ? onLabel.indices : [], score: best.score + (onLabel !== null ? 5 : 0) + relevance });
   }
   scored.sort((a, b) => b.score - a.score || a.command.label.localeCompare(b.command.label));
   return scored.map(({ command, indices }) => ({ command, indices }));
+}
+
+export interface CommandSection {
+  group: CommandGroup;
+  matches: CommandMatch[];
+}
+
+/** Matches under their group headers. Groups come in the order their best match does, so the top
+ * result is always the first row; within a group the filter's order is kept. */
+export function groupMatches(matches: readonly CommandMatch[]): CommandSection[] {
+  const sections: CommandSection[] = [];
+  for (const match of matches) {
+    const section = sections.find((s) => s.group === match.command.group);
+    if (section === undefined) sections.push({ group: match.command.group, matches: [match] });
+    else section.matches.push(match);
+  }
+  return sections;
 }

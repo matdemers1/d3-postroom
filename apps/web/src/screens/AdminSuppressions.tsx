@@ -152,7 +152,7 @@ export function AdminSuppressions() {
       />
       <Cluster gap="12">
         <FormField label="Search" width="sm">
-          <Input
+          <Input appearance="filled"
             type="search"
             value={query}
             placeholder="name@example.com"
@@ -219,7 +219,7 @@ export function AdminSuppressions() {
             )}
             {pending?.kind === 'add' ? (
               <FormField label="Address">
-                <Input
+                <Input appearance="filled"
                   type="email"
                   required
                   autoFocus
@@ -232,7 +232,7 @@ export function AdminSuppressions() {
               </FormField>
             ) : null}
             <FormField label="Reason" help="Recorded on the audit entry.">
-              <Input
+              <Input appearance="filled"
                 required
                 value={reason}
                 onChange={(e) => {
@@ -241,7 +241,7 @@ export function AdminSuppressions() {
               />
             </FormField>
             <FormField label="Authentication code" {...(codeError === null ? {} : { error: codeError })}>
-              <Input
+              <Input appearance="filled"
                 name="code"
                 inputMode="numeric"
                 autoComplete="one-time-code"

@@ -120,7 +120,7 @@ export function AdminSessions() {
   return (
     <Page>
       <PageHeader
-        title="Sessions"
+        title="Sign-in sessions"
         description="Everyone signed in to the web app right now."
         {...(sessions === null ? {} : { count: sessions.length, countNoun: { one: 'session', other: 'sessions' } })}
       />
@@ -164,7 +164,7 @@ export function AdminSessions() {
       >
         <form id="step-up" onSubmit={confirmStepUp}>
           <FormField label="Authentication code" {...(codeError === null ? {} : { error: codeError })}>
-            <Input
+            <Input appearance="filled"
               name="code"
               inputMode="numeric"
               autoComplete="one-time-code"

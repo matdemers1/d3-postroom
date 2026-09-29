@@ -200,7 +200,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
     <Section title={`Rule ${n}`} headingLevel={3} actions={<Button variant="danger-ghost" size="sm" aria-label={`Remove rule ${n}`} onClick={onRemove}>Remove</Button>}>
       <Cluster gap="12" align="end">
         <FormField label="When">
-          <Select
+          <Select appearance="filled"
             options={FIELDS}
             value={rule.field}
             onValueChange={(v) => {
@@ -209,7 +209,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
           />
         </FormField>
         <FormField label="Match">
-          <Select
+          <Select appearance="filled"
             options={MATCHES}
             value={rule.match}
             onValueChange={(v) => {
@@ -218,7 +218,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
           />
         </FormField>
         <FormField label="Text">
-          <Input
+          <Input appearance="filled"
             value={rule.value}
             autoComplete="off"
             spellCheck={false}
@@ -228,7 +228,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
           />
         </FormField>
         <FormField label="Then">
-          <Select
+          <Select appearance="filled"
             options={ACTIONS}
             value={rule.action}
             onValueChange={(v) => {
@@ -239,7 +239,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
         </FormField>
         {rule.action === 'move' ? (
           <FormField label="Folder">
-            <Input
+            <Input appearance="filled"
               value={rule.target}
               autoComplete="off"
               onChange={(e) => {
@@ -250,7 +250,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
         ) : null}
         {rule.action === 'bucket' ? (
           <FormField label="Bucket">
-            <Select
+            <Select appearance="filled"
               options={BUCKETS}
               value={rule.target}
               onValueChange={(v) => {
@@ -519,7 +519,7 @@ export function Rules() {
                       label="Sieve script"
                       help={handWritten ? 'Written by hand or in another client, so it is edited here as Sieve.' : 'Switch back to Rules to edit rows again.'}
                     >
-                      <Textarea
+                      <Textarea appearance="filled"
                         mono
                         rows={16}
                         spellCheck={false}

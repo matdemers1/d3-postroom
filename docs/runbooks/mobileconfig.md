@@ -1,7 +1,7 @@
 # Runbook: signed .mobileconfig for Mail + Calendar + Contacts
 
 PST-T-8.6, PST-REQ-139. One button on the web app's **Set up iPhone / Mac** screen
-(`/account/device-setup`) mints a fresh app password (scoped `imap`, `smtp`, `dav`) and hands back
+(`/settings/security/device-setup`, in Settings → Security & devices) mints a fresh app password (scoped `imap`, `smtp`, `dav`) and hands back
 an Apple configuration profile carrying Mail (com.apple.mail.managed), Calendar
 (com.apple.caldav.account) and Contacts (com.apple.carddav.account) for the signed-in account, in
 one file. `POST /api/mobileconfig` is behind a session, a fresh step-up and CSRF, exactly like
@@ -49,7 +49,7 @@ on the device, which defeats the point for anyone but the person who made it.
 
 ## Installing on iOS
 
-1. Open `/account/device-setup` in Safari on the phone (or AirDrop/email the downloaded
+1. Open `/settings/security/device-setup` in Safari on the phone (or AirDrop/email the downloaded
    `.mobileconfig` to it — Mail and Files both offer to install a profile they recognize).
 2. Tap the downloaded file. iOS shows **Settings → Profile Downloaded** was configured; tap it.
 3. **Settings → General → VPN & Device Management → \<profile name\> → Install.** Enter the device

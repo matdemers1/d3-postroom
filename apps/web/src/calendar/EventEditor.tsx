@@ -303,7 +303,7 @@ export function EventEditor({
               </FormField>
             ) : null}
             <FormField label="Title">
-              <Input
+              <Input appearance="filled"
                 value={form.summary}
                 placeholder="New event"
                 onChange={(e) => {
@@ -313,7 +313,7 @@ export function EventEditor({
             </FormField>
             {target?.kind === 'new' && eventCalendars.length > 1 ? (
               <FormField label="Calendar" width="md">
-                <Select options={eventCalendars.map((c) => ({ value: c.id, label: c.displayName }))} value={calendarId} onValueChange={setCalendarId} />
+                <Select appearance="filled" options={eventCalendars.map((c) => ({ value: c.id, label: c.displayName }))} value={calendarId} onValueChange={setCalendarId} />
               </FormField>
             ) : null}
             <Checkbox
@@ -327,7 +327,7 @@ export function EventEditor({
                 "10:00 AM" — at xs the AM/PM was clipped under the picker icon ("10:00 AI"). */}
             <Cluster gap="12">
               <FormField label="Start date" width="sm">
-                <Input
+                <Input appearance="filled"
                   type="date"
                   value={form.startDay}
                   onChange={(e) => {
@@ -340,7 +340,7 @@ export function EventEditor({
               </FormField>
               {form.allDay ? null : (
                 <FormField label="Start time" width="sm">
-                  <Input
+                  <Input appearance="filled"
                     type="time"
                     value={form.startTime}
                     onChange={(e) => {
@@ -352,7 +352,7 @@ export function EventEditor({
             </Cluster>
             <Cluster gap="12">
               <FormField label="End date" width="sm">
-                <Input
+                <Input appearance="filled"
                   type="date"
                   value={form.endDay}
                   onChange={(e) => {
@@ -362,7 +362,7 @@ export function EventEditor({
               </FormField>
               {form.allDay ? null : (
                 <FormField label="End time" width="sm">
-                  <Input
+                  <Input appearance="filled"
                     type="time"
                     value={form.endTime}
                     onChange={(e) => {
@@ -383,7 +383,7 @@ export function EventEditor({
               <p className="pr-cal-note">Changes apply to this event only; the rest of the series is unchanged.</p>
             )}
             <FormField label="Location" optional>
-              <Input
+              <Input appearance="filled"
                 value={form.location}
                 onChange={(e) => {
                   set({ location: e.target.value });
@@ -391,7 +391,7 @@ export function EventEditor({
               />
             </FormField>
             <FormField label="Notes" optional>
-              <Textarea
+              <Textarea appearance="filled"
                 rows={3}
                 value={form.description}
                 onChange={(e) => {
@@ -413,7 +413,7 @@ function RecurrenceFields({ form, onChange }: { form: RecurrenceForm; onChange: 
   return (
     <Stack gap="12">
       <FormField label="Repeat" width="md" help={describeRecurrence(form)}>
-        <Select
+        <Select appearance="filled"
           options={REPEAT_OPTIONS}
           value={form.repeat}
           onValueChange={(v) => {
@@ -424,7 +424,7 @@ function RecurrenceFields({ form, onChange }: { form: RecurrenceForm; onChange: 
       {form.repeat === 'none' ? null : (
         <>
           <FormField label={`Every how many ${UNITS[form.repeat]}`} width="xs">
-            <Input
+            <Input appearance="filled"
               type="number"
               min={1}
               max={999}
@@ -454,7 +454,7 @@ function RecurrenceFields({ form, onChange }: { form: RecurrenceForm; onChange: 
           ) : null}
           <Cluster gap="12">
             <FormField label="Series ends" width="md">
-              <Select
+              <Select appearance="filled"
                 options={END_OPTIONS}
                 value={form.end}
                 onValueChange={(v) => {
@@ -464,7 +464,7 @@ function RecurrenceFields({ form, onChange }: { form: RecurrenceForm; onChange: 
             </FormField>
             {form.end === 'count' ? (
               <FormField label="Times" width="xs">
-                <Input
+                <Input appearance="filled"
                   type="number"
                   min={1}
                   max={5000}
@@ -478,7 +478,7 @@ function RecurrenceFields({ form, onChange }: { form: RecurrenceForm; onChange: 
             ) : null}
             {form.end === 'until' ? (
               <FormField label="Last day" width="sm">
-                <Input
+                <Input appearance="filled"
                   type="date"
                   value={form.until}
                   onChange={(e) => {

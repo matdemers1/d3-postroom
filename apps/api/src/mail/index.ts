@@ -408,7 +408,7 @@ export function mailRoutes(deps: ApiDeps): Router {
         ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
       });
       const page = rows.slice(0, query.limit);
-      const hits = await db.message.findMany({ where: { id: { in: page.map((r) => r.messageId) } }, include: { verdict: { select: { bucket: true, scores: true } } } });
+      const hits = await db.message.findMany({ where: { id: { in: page.map((r) => r.messageId) } }, include: { verdict: { select: { bucket: true, scores: true } }, search: { select: { hasAttachment: true } } } });
       const hitById = new Map(hits.map((m) => [m.id, m]));
       const fromById = new Map(hits.map((m) => [m.id, m.fromAddress]));
       const days = await trashRetentionDays(db, [...new Set(hits.map((m) => m.mailboxId))]);

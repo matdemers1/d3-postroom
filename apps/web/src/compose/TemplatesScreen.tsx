@@ -127,6 +127,7 @@ export function TemplatesScreen() {
           <Stack gap="16">
             <FormField label="Shortcut" help="What ; matches on, e.g. sig (without the ;).">
               <Input
+                appearance="filled"
                 maxLength={64}
                 required
                 value={form.shortcut}
@@ -137,6 +138,7 @@ export function TemplatesScreen() {
             </FormField>
             <FormField label="Name">
               <Input
+                appearance="filled"
                 maxLength={200}
                 required
                 value={form.name}
@@ -147,6 +149,7 @@ export function TemplatesScreen() {
             </FormField>
             <FormField label="Subject" optional>
               <Input
+                appearance="filled"
                 value={form.subject}
                 onChange={(e) => {
                   setForm((f) => ({ ...f, subject: e.target.value }));
@@ -155,6 +158,7 @@ export function TemplatesScreen() {
             </FormField>
             <FormField label="Body" help="Markdown. Use {{name}}, {{first_name}} or {{date}}." {...(formError === null ? {} : { error: formError })}>
               <Textarea
+                appearance="filled"
                 rows={8}
                 required
                 value={form.body}

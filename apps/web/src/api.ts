@@ -498,6 +498,8 @@ export interface MessageSummary {
   size: number;
   flags: string[];
   bucket: string | null;
+  /** PST-T-14.5: the list's paperclip; from the search index, false until indexed. */
+  hasAttachments?: boolean;
 }
 
 export interface MailboxSplit {

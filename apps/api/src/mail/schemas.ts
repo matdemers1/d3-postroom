@@ -113,6 +113,8 @@ export const MessageSummary = z.object({
   expiresAt: Iso.nullable().describe('When the retention sweep expunges it from Trash; null outside Trash or when Trash keeps mail forever.'),
   /** A first-time human sender's message (PST-T-5.4, PST-REQ-106): the new-sender badge, Allow/Block. */
   newSender: z.boolean(),
+  /** Whether the message has an attachment (from the search index; false until it is indexed). */
+  hasAttachments: z.boolean(),
 });
 export const MessageList = z.object({
   messages: z.array(MessageSummary),
