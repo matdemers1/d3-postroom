@@ -28,9 +28,22 @@ export type ListAction =
 
 export const initialList: ListState = { mailboxId: null, messages: [], nextCursor: null, status: 'idle', cursor: -1 };
 
-/** Newest first: the API's order (by UID, descending). */
-function byUidDesc(a: MessageSummary, b: MessageSummary): number {
-  return b.uid - a.uid;
+/**
+ * Newest first: the API's order (PST-T-14.10) — by internal date (arrival) descending, ties by UID
+ * descending. Not by UID alone: a move gives a message a new UID but keeps its internal date, so a
+ * message archived and brought back by Undo returns to its place rather than to the top.
+ */
+export function newestFirst(a: Pick<MessageSummary, 'internalDate' | 'uid' | 'id'>, b: Pick<MessageSummary, 'internalDate' | 'uid' | 'id'>): number {
+  const at = Date.parse(a.internalDate);
+  const bt = Date.parse(b.internalDate);
+  if (at !== bt) return bt - at;
+  if (a.uid !== b.uid) return b.uid - a.uid;
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+}
+
+/** True when `m` would sort above every listed row, pushing them all down (never for an empty list). */
+export function sortsAboveTop(m: Pick<MessageSummary, 'internalDate' | 'uid' | 'id'>, listed: readonly Pick<MessageSummary, 'internalDate' | 'uid' | 'id'>[]): boolean {
+  return listed.length > 0 && listed.every((x) => x.id !== m.id && newestFirst(m, x) < 0);
 }
 
 function clampCursor(cursor: number, length: number): number {
@@ -46,7 +59,7 @@ export function listReducer(state: ListState, action: ListAction): ListState {
       if (action.mailboxId !== state.mailboxId) return state;
       const cursorId = state.messages[state.cursor]?.id;
       const merged = action.append ? dedupe([...state.messages, ...action.messages]) : dedupe(action.messages);
-      merged.sort(byUidDesc);
+      merged.sort(newestFirst);
       const kept = cursorId === undefined ? -1 : merged.findIndex((m) => m.id === cursorId);
       return {
         ...state,
@@ -62,7 +75,7 @@ export function listReducer(state: ListState, action: ListAction): ListState {
       if (action.message.mailboxId !== state.mailboxId) return state;
       const cursorId = state.messages[state.cursor]?.id;
       const others = state.messages.filter((m) => m.id !== action.message.id);
-      const messages = [...others, action.message].sort(byUidDesc);
+      const messages = [...others, action.message].sort(newestFirst);
       const kept = cursorId === undefined ? 0 : messages.findIndex((m) => m.id === cursorId);
       return { ...state, messages, cursor: clampCursor(kept, messages.length) };
     }

@@ -10680,7 +10680,7 @@
         "tags": [
           "Mailboxes"
         ],
-        "summary": "One page of a mailbox, newest UID first.",
+        "summary": "One page of a mailbox, newest first by internal date (ties by UID).",
         "parameters": [
           {
             "name": "id",
@@ -10696,11 +10696,11 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "The nextCursor of the previous page.",
+            "description": "The nextCursor of the previous page: opaque. Pages run newest first by internal date, ties by UID (a bare UID from an older page is still accepted).",
             "schema": {
-              "description": "The nextCursor of the previous page.",
+              "description": "The nextCursor of the previous page: opaque. Pages run newest first by internal date, ties by UID (a bare UID from an older page is still accepted).",
               "type": "string",
-              "pattern": "^\\d{1,10}$"
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
             }
           },
           {

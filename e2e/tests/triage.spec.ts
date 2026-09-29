@@ -117,6 +117,40 @@ test('mouse: the row action archives, the next message opens, the toast\'s Undo 
   await expect.poll(async () => (await subjectsIn(b.mailboxId)).includes(b.subject)).toBe(true);
 });
 
+test('after archive → z, the message is back at its original position, not at the top (PST-T-14.10)', async ({ page }) => {
+  const t = tag();
+  // One seed call each, so the three internal dates are strictly ordered (the list sorts by date).
+  const seeded: SeededMessage[] = [];
+  for (const [label, who] of [['Oldest', 'ada'], ['Middle', 'grace'], ['Newest', 'alan']] as const) {
+    const [m] = await seedMail(api, [{ subject: `${label} ${t}`, from: `${who} <${who}.${t}@example.org>`, text: `${label} ${t}.` }]);
+    if (m === undefined) throw new Error('seed returned nothing');
+    seeded.push(m);
+  }
+  const [a, b, c] = seeded as [SeededMessage, SeededMessage, SeededMessage];
+  const expected = [c.subject, b.subject, a.subject];
+  const listed = async (): Promise<string[]> => {
+    const names = await page.getByRole('listbox', { name: 'Messages in Inbox' }).getByRole('option').allTextContents();
+    return names.flatMap((n) => expected.filter((s) => n.includes(s)));
+  };
+  await page.goto('/');
+  await row(page, b.subject).click();
+  await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+  await expect.poll(listed).toEqual(expected);
+
+  await page.keyboard.press('e');
+  await expect(row(page, b.subject)).toHaveCount(0);
+  await expect.poll(listed).toEqual([c.subject, a.subject]);
+  await page.keyboard.press('z');
+  await expect(toasts(page)).toContainText('Moved back to Inbox.');
+  await expect(row(page, b.subject)).toHaveCount(1);
+  // Between the two it was between — it has a new (higher) UID, but the same internal date.
+  await expect.poll(listed).toEqual(expected);
+  await expect.poll(async () => (await subjectsIn(b.mailboxId)).filter((s) => expected.includes(s))).toEqual(expected);
+  // And after a reload, from the server's first page.
+  await page.reload();
+  await expect.poll(listed).toEqual(expected);
+});
+
 test('delete (#) from the list with nothing open moves the cursor row to Trash, and z brings it back', async ({ page }) => {
   const t = tag();
   const [, , c] = await seedThree(t);

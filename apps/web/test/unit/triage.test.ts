@@ -273,6 +273,13 @@ describe('live arrivals behind the "N new" pill', () => {
     expect(ids(keep)).toEqual(['m5', 'm4', 'm3']);
   });
 
+  it('never hold back a message moved in with an older date: it goes to its date position (PST-T-14.10)', () => {
+    const restored = msg('m9', { internalDate: '2026-09-19T10:00:00.000Z' });
+    const { keep, held } = holdBackArrivals([msg('m7', { internalDate: '2026-09-21T10:00:00.000Z' }), restored, ...listed], listed, false);
+    expect(ids(held)).toEqual(['m7']);
+    expect(ids(keep)).toEqual(['m9', 'm5', 'm4']);
+  });
+
   it('never hold anything back from an empty list', () => {
     expect(holdBackArrivals([msg('m1')], [], false).held).toEqual([]);
   });

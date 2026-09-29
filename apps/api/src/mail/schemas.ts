@@ -40,7 +40,11 @@ export const IdParams = z.object({ id: Uuid });
 export const AttachmentParams = z.object({ id: Uuid, partId: z.string().regex(/^1(?:\.\d{1,4}){0,32}$/).describe('MIME part id, e.g. 1.2 or 1.3.1.') });
 
 export const MessageListQuery = z.object({
-  cursor: z.string().regex(/^\d{1,10}$/).optional().describe('The nextCursor of the previous page.'),
+  cursor: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/)
+    .optional()
+    .describe('The nextCursor of the previous page: opaque. Pages run newest first by internal date, ties by UID (a bare UID from an older page is still accepted).'),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   keyword: z
     .enum(['$Priority', '$People'])

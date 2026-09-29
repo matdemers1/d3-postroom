@@ -104,7 +104,7 @@ describe.skipIf(!baseUrl)('mail API (PST-T-3.9)', () => {
    * What the worker's file + notify stages do: store the blob, take uid = uidnext and
    * modseq = highestModseq + 1 under the mailbox row lock, then pg_notify the mailbox.
    */
-  const file = async (mailboxId: string, raw: Buffer, fields: { subject: string; from?: string; flags?: string[]; threadId?: string }) => {
+  const file = async (mailboxId: string, raw: Buffer, fields: { subject: string; from?: string; flags?: string[]; threadId?: string; internalDate?: Date }) => {
     const put = await blobs.put(raw);
     const message = await db.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ uidnext: number; highest_modseq: bigint }[]>`
@@ -119,7 +119,7 @@ describe.skipIf(!baseUrl)('mail API (PST-T-3.9)', () => {
           modseq,
           blobSha256: put.sha256,
           size: put.size,
-          internalDate: new Date(),
+          internalDate: fields.internalDate ?? new Date(),
           flags: fields.flags ?? [],
           subject: fields.subject,
           fromAddress: fields.from ?? 'sender@example.org',
@@ -186,6 +186,75 @@ describe.skipIf(!baseUrl)('mail API (PST-T-3.9)', () => {
     expect(seen).toEqual([5, 4, 3, 2, 1]);
     expect((await request(app).get(`/api/mailboxes/${me.inbox}/messages?limit=0`).set('cookie', me.cookie)).status).toBe(400);
     expect((await request(app).get(`/api/mailboxes/${me.inbox}/messages?cursor=abc`).set('cookie', me.cookie)).status).toBe(400);
+  });
+
+  it('orders by internal date with a UID tie-break, and a message archived then moved back returns to its place (PST-T-14.10)', async () => {
+    const me = await person();
+    const day = (d: number) => new Date(`2026-09-${String(d)}T10:00:00.000Z`);
+    const list = async (query = '') => MessageList.parse((await request(app).get(`/api/mailboxes/${me.inbox}/messages${query}`).set('cookie', me.cookie)).body);
+    // Filed out of date order: UID order would be sep29, sep26, sep27, sep28a, sep28b.
+    await file(me.inbox, rfc5322({ subject: 'sep29' }), { subject: 'sep29', internalDate: day(29), flags: ['$Priority'] });
+    await file(me.inbox, rfc5322({ subject: 'sep26' }), { subject: 'sep26', internalDate: day(26), flags: ['$Priority'] });
+    const sep27 = await file(me.inbox, rfc5322({ subject: 'sep27' }), { subject: 'sep27', internalDate: day(27), flags: ['$Priority'] });
+    await file(me.inbox, rfc5322({ subject: 'sep28a' }), { subject: 'sep28a', internalDate: day(28) });
+    await file(me.inbox, rfc5322({ subject: 'sep28b' }), { subject: 'sep28b', internalDate: day(28) });
+    const order = ['sep29', 'sep28b', 'sep28a', 'sep27', 'sep26'];
+    expect((await list()).messages.map((m) => m.subject)).toEqual(order);
+
+    // Archive, then Undo (move back): a new UID in the Inbox, the same internal date, the same place.
+    const archived = await request(app).patch(`/api/messages/${sep27.id}`).set(CSRF).set('cookie', me.cookie).set('if-match', '*').send({ mailboxId: me.archive });
+    expect(archived.status).toBe(200);
+    const inArchive = MessageDetail.parse(archived.body);
+    expect(inArchive.internalDate).toBe(day(27).toISOString());
+    const back = await request(app).patch(`/api/messages/${inArchive.id}`).set(CSRF).set('cookie', me.cookie).set('if-match', '*').send({ mailboxId: me.inbox });
+    expect(back.status).toBe(200);
+    const restored = MessageDetail.parse(back.body);
+    expect(restored.uid).toBe(6);
+    expect(restored.internalDate).toBe(day(27).toISOString());
+    expect((await list()).messages.map((m) => m.subject)).toEqual(order);
+
+    // Paging walks the same order, one row at a time, across the equal-date pair.
+    const paged: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: { messages: { subject: string | null }[]; nextCursor: string | null } = await list(`?limit=1${cursor === null ? '' : `&cursor=${cursor}`}`);
+      paged.push(...page.messages.map((m) => m.subject ?? ''));
+      cursor = page.nextCursor;
+      expect(cursor === null || /^[A-Za-z0-9_-]+$/.test(cursor)).toBe(true);
+    } while (cursor !== null);
+    expect(paged).toEqual(order);
+
+    // The Priority page: the same order, keyword-filtered, and it pages too.
+    expect((await list('?keyword=%24Priority')).messages.map((m) => m.subject)).toEqual(['sep29', 'sep27', 'sep26']);
+    const first = await list('?keyword=%24Priority&limit=2');
+    expect(first.messages.map((m) => m.subject)).toEqual(['sep29', 'sep27']);
+    expect((await list(`?keyword=%24Priority&limit=2&cursor=${first.nextCursor ?? ''}`)).messages.map((m) => m.subject)).toEqual(['sep26']);
+
+    // A bare UID (an older page's cursor) still pages from that row; a UID that is gone does not.
+    const sep28b = (await list()).messages[1];
+    expect((await list(`?cursor=${String(sep28b?.uid ?? 0)}`)).messages.map((m) => m.subject)).toEqual(['sep28a', 'sep27', 'sep26']);
+    expect((await request(app).get(`/api/mailboxes/${me.inbox}/messages?cursor=999`).set('cookie', me.cookie)).status).toBe(400);
+  });
+
+  it('pages across rows whose internal dates differ below a millisecond (PST-T-14.10)', async () => {
+    const me = await person();
+    const a = await file(me.inbox, rfc5322({ subject: 'a' }), { subject: 'a' });
+    const b = await file(me.inbox, rfc5322({ subject: 'b' }), { subject: 'b' });
+    const c = await file(me.inbox, rfc5322({ subject: 'c' }), { subject: 'c' });
+    // Same millisecond, different microseconds: b is newest, then c, then a — against UID order.
+    await db.$executeRaw`UPDATE message SET internal_date = '2026-09-27T10:00:00.000300Z' WHERE id = ${a.id}::uuid`;
+    await db.$executeRaw`UPDATE message SET internal_date = '2026-09-27T10:00:00.000900Z' WHERE id = ${b.id}::uuid`;
+    await db.$executeRaw`UPDATE message SET internal_date = '2026-09-27T10:00:00.000600Z' WHERE id = ${c.id}::uuid`;
+    const paged: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const res = await request(app).get(`/api/mailboxes/${me.inbox}/messages?limit=1${cursor === null ? '' : `&cursor=${cursor}`}`).set('cookie', me.cookie);
+      expect(res.status).toBe(200);
+      const page = MessageList.parse(res.body);
+      paged.push(...page.messages.map((m) => m.subject ?? ''));
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+    expect(paged).toEqual(['b', 'c', 'a']);
   });
 
   it('serves the message, its parsed body, the raw source and an attachment download', async () => {

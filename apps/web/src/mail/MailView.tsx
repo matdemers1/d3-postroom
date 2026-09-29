@@ -27,7 +27,7 @@ import { Feed } from './Feed';
 import { findSpecial, mailboxLabel } from './format';
 import { ComposeIcon, mailboxIcon, SearchIcon } from './icons';
 import { describeTarget, resolveKey, type MailAction } from './keys';
-import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEEN } from './list';
+import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEEN, sortsAboveTop } from './list';
 import { useMail } from './MailContext';
 import { SelectionToolbar } from './list/SelectionToolbar';
 import { TriageList, type RowAction, type TriageListHandle } from './list/TriageList';
@@ -311,7 +311,9 @@ function MailPanes({ route }: { route: MailRoute }) {
             if (!inSegment(detail.flags, latest.current.activeSegment)) return;
             const summary = summaryOf(detail);
             // PST-T-14.5: never shift rows under the pointer — held behind the "N new" pill instead.
-            if (listRef.current?.isCalm() ?? true) dispatch({ type: 'upsert', message: summary });
+            // PST-T-14.10: only what would land at the very top waits; a message moved in with an
+            // older date goes straight to its date position.
+            if ((listRef.current?.isCalm() ?? true) || !sortsAboveTop(summary, latest.current.list.messages)) dispatch({ type: 'upsert', message: summary });
             else setPending((p) => (p.some((x) => x.id === summary.id) ? p : [...p, summary]));
           })
           .catch(() => undefined);

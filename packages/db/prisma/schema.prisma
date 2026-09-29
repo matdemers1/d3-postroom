@@ -493,6 +493,8 @@ model Message {
   @@index([blobSha256])
   @@index([mailboxId, receivedAt])
   @@index([mailboxId, trashedAt])
+  /// PST-T-14.10: the webmail list's order — newest first by INTERNALDATE, ties by UID.
+  @@index([mailboxId, internalDate(sort: Desc), uid(sort: Desc)])
   @@map("message")
 }
 

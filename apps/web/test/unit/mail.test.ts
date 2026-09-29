@@ -5,7 +5,7 @@ import type { MessageBody, MessageDetail, MessageSummary } from '../../src/api';
 import { draftFor, forwardSubject, replySubject } from '../../src/mail/compose';
 import { addressOf, backoffMs, displayName, mailboxLabel, splitAddresses } from '../../src/mail/format';
 import { describeTarget, resolveKey, SHORTCUTS, type KeyInput } from '../../src/mail/keys';
-import { initialList, listReducer, scrollToReveal, visibleRange, type ListState } from '../../src/mail/list';
+import { initialList, listReducer, scrollToReveal, sortsAboveTop, visibleRange, type ListState } from '../../src/mail/list';
 import { isComposeToAddress, mailPath, narrowView, parseMailRoute } from '../../src/mail/route';
 
 const MB = '11111111-1111-4111-8111-111111111111';
@@ -130,6 +130,25 @@ describe('listReducer', () => {
     expect(s.messages.map((m) => m.uid)).toEqual([3, 2, 1]);
     expect(s.messages[s.cursor]?.uid).toBe(1);
     expect(listReducer(s, { type: 'upsert', message: msg(9, { mailboxId: 'other' }) })).toBe(s);
+  });
+  it('orders by internal date, not UID: a message moved back (new UID, same date) returns to its place (PST-T-14.10)', () => {
+    const at = (day: number) => `2026-09-${String(day)}T10:00:00.000Z`;
+    let s = loaded([msg(30, { internalDate: at(29) }), msg(20, { internalDate: at(28) }), msg(10, { internalDate: at(26) })]);
+    s = listReducer(s, { type: 'cursor', index: 2 });
+    // Archived Sep 27, then Undo: the Inbox gives it UID 31, the highest there is.
+    s = listReducer(s, { type: 'upsert', message: msg(31, { id: 'restored', internalDate: at(27) }) });
+    expect(s.messages.map((m) => m.id)).toEqual(['m30', 'm20', 'restored', 'm10']);
+    expect(s.messages[s.cursor]?.id).toBe('m10');
+    // Same instant: the higher UID first, as the API sends it.
+    s = loaded([msg(4, { internalDate: at(27) }), msg(5, { internalDate: at(27) })]);
+    expect(s.messages.map((m) => m.uid)).toEqual([5, 4]);
+  });
+  it('sortsAboveTop: only what would land at the very top of a non-empty list', () => {
+    const listed = [msg(2, { internalDate: '2026-09-28T00:00:00.000Z' }), msg(1, { internalDate: '2026-09-20T00:00:00.000Z' })];
+    expect(sortsAboveTop(msg(9, { internalDate: '2026-09-29T00:00:00.000Z' }), listed)).toBe(true);
+    expect(sortsAboveTop(msg(9, { internalDate: '2026-09-25T00:00:00.000Z' }), listed)).toBe(false);
+    expect(sortsAboveTop(msg(2, { internalDate: '2026-09-29T00:00:00.000Z' }), listed)).toBe(false);
+    expect(sortsAboveTop(msg(9), [])).toBe(false);
   });
   it('archiving the row under the cursor leaves the cursor on the next one, never off the end', () => {
     let s = loaded([msg(3), msg(2), msg(1)]);
