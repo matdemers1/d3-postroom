@@ -220,4 +220,46 @@ describe.skipIf(!baseUrl)('assignThread (PST-T-3.8)', () => {
     const memberCount = await db.message.count({ where: { threadId: root.threadId } });
     expect(memberCount).toBe(11);
   }, 30_000);
+
+  // PST-T-11.20: SES replaces the Message-ID of what it relays; the delivery worker records SES's id
+  // as an alias of ours, and a reply citing only SES's id joins the thread of our Sent copy.
+  it('a reply whose In-Reply-To/References name an SES alias joins the original thread', async () => {
+    const sesId = '010001a0eab97b0f-57a466ee-cc1e-4c51-8f57-c98cafc9aab9-000000@email.amazonses.com';
+    const ours = `${randomUUID()}@d3cloud.io`;
+    const sent = await fileMessage({ subject: 'lunch?', from: 'me@d3cloud.io', to: 'friend@outlook.test', date: new Date(2026, 8, 1), messageIdHeader: `<${ours}>`, references: [] });
+    await db.messageIdAlias.create({ data: { alias: sesId, messageId: ours, source: 'ses' } });
+
+    const reply = await fileMessage({
+      subject: 'RE: lunch?',
+      from: 'friend@outlook.test',
+      to: 'me@d3cloud.io',
+      date: new Date(2026, 8, 2),
+      messageIdHeader: `<${randomUUID()}@outlook.test>`,
+      inReplyTo: `<${sesId}>`,
+      references: [`<${sesId}>`],
+    });
+    expect(reply.threadId).toBe(sent.threadId);
+    expect((await db.thread.findUniqueOrThrow({ where: { id: sent.threadId } })).messageCount).toBe(2);
+
+    // References alone (no In-Reply-To) resolve too.
+    const second = await fileMessage({ subject: 'RE: lunch?', from: 'friend@outlook.test', to: 'me@d3cloud.io', date: new Date(2026, 8, 3), messageIdHeader: `<${randomUUID()}@outlook.test>`, references: [`<${sesId}>`] });
+    expect(second.threadId).toBe(sent.threadId);
+
+    // An id nobody aliased still starts its own thread (the subject fallback never applies here).
+    const stranger = await fileMessage({ subject: 'RE: lunch?', from: 'friend@outlook.test', to: 'me@d3cloud.io', date: new Date(2026, 8, 4), messageIdHeader: `<${randomUUID()}@outlook.test>`, inReplyTo: '<010001a0ffffffff-00000000-0000-0000-0000-000000000000-000000@email.amazonses.com>', references: [] });
+    expect(stranger.threadId).not.toBe(sent.threadId);
+  });
+
+  it("an alias resolves only within the replying account: another account's mail never joins", async () => {
+    const sesId = `010001a0e8a1951e-${randomUUID()}-000000@email.amazonses.com`;
+    const ours = `${randomUUID()}@d3cloud.io`;
+    const sent = await fileMessage({ subject: 'hi', from: 'me@d3cloud.io', to: 'x@y.test', date: new Date(2026, 8, 1), messageIdHeader: `<${ours}>`, references: [] });
+    await db.messageIdAlias.create({ data: { alias: sesId, messageId: ours, source: 'ses' } });
+
+    const otherAccount = await makeAccount(db, 'other');
+    const otherMailbox = await makeMailbox(db, otherAccount);
+    const dbId = await makeMessage(db, otherMailbox);
+    const threadId = await assignThread(db, { accountId: otherAccount, messageId: dbId, subject: 'Re: hi', from: 'x@y.test', to: 'other@d3cloud.io', date: new Date(2026, 8, 2), messageIdHeader: `<${randomUUID()}@y.test>`, inReplyTo: `<${sesId}>`, references: [] });
+    expect(threadId).not.toBe(sent.threadId);
+  });
 });

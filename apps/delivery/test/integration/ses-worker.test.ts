@@ -80,7 +80,7 @@ describe.skipIf(baseUrl === undefined || sesTls === undefined)('outbound queue w
     };
   }
 
-  async function run(sesDomains: string, clock: Date, transportOverride?: Record<string, Transport>): Promise<string> {
+  async function run(sesDomains: string, clock: Date, transportOverride?: Record<string, Transport>, headerMessageId?: string): Promise<string> {
     const delivery = createDeliveryWorker({
       db: t.db,
       transports: transportOverride ?? transports(sesDomains),
@@ -98,6 +98,7 @@ describe.skipIf(baseUrl === undefined || sesTls === undefined)('outbound queue w
         blobSha256: 'c'.repeat(64),
         size: signed.length,
         submittedVia: 'test',
+        ...(headerMessageId === undefined ? {} : { messageId: headerMessageId }),
         recipients: [{ address: 'a@example.test' }, { address: 'b@other.test' }],
       }, { now: clock }));
       expect(await worker.drain()).toBe(2);
@@ -157,6 +158,45 @@ describe.skipIf(baseUrl === undefined || sesTls === undefined)('outbound queue w
       const byAddress = await attemptsByAddress(id);
       expect(byAddress['a@example.test']).toMatchObject({ state: 'deferred', transport: 'ses', outcome: 'deferred' });
       expect(byAddress['b@other.test']).toMatchObject({ state: 'bounced', transport: 'ses' });
+    } finally {
+      await strict.close();
+    }
+  });
+
+  // PST-T-11.20: SES replaces the Message-ID; its 250 names the new one, recorded as an alias of ours.
+  // Clocks before the tests above, so their deferred retries are not yet due and drain() sees only ours.
+  const SES_ID = '010001a0eab97b0f-57a466ee-cc1e-4c51-8f57-c98cafc9aab9-000000';
+  const ALIAS = `${SES_ID}@email.amazonses.com`;
+
+  it("records SES's Message-ID from the 250 as an alias of ours, once for a multi-recipient transaction, audited", async () => {
+    const relay = await startFakeMx({ auth: { user: USER, password: PASSWORD }, final: () => `250 Ok ${SES_ID}` }, sesTls);
+    try {
+      const sesT = createSesTransport({ host: SES_HOST, port: relay.port, user: USER, password: PASSWORD, resolver, domains: ['*'], tlsOptions: { ca: sesTls?.cert ?? '' }, messageIdDomain: 'email.amazonses.com', log: () => undefined });
+      const id = await run('*', new Date('2026-09-26T11:00:00Z'), { direct: createDirectTransport({ resolver, port: mx.port, log: () => undefined }), ses: sesT }, '<ac56a031-3b90-4637-b19c-2c65963e6997@d3cloud.io>');
+      const byAddress = await attemptsByAddress(id);
+      expect(byAddress['a@example.test']).toMatchObject({ state: 'delivered', transport: 'ses' });
+      expect(byAddress['b@other.test']).toMatchObject({ state: 'delivered', transport: 'ses' });
+      // Two domain groups, two SES transactions, one id here (the fake answers the same): one row.
+      const rows = await t.db.messageIdAlias.findMany({ where: { outboundMessageId: id } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ alias: ALIAS, messageId: 'ac56a031-3b90-4637-b19c-2c65963e6997@d3cloud.io', source: 'ses' });
+      const audits = await t.db.auditEvent.findMany({ where: { action: 'message_id_alias.add', entityId: ALIAS } });
+      expect(audits).toHaveLength(1);
+      expect(audits[0]?.after).toMatchObject({ alias: ALIAS, messageId: 'ac56a031-3b90-4637-b19c-2c65963e6997@d3cloud.io', outboundMessageId: id });
+    } finally {
+      await relay.close();
+    }
+  });
+
+  it('records no alias when SES refuses the message', async () => {
+    const other = '010001a0e8a1951e-11111111-2222-3333-4444-555555555555-000000';
+    const strict = await startFakeMx({ auth: { user: USER, password: PASSWORD }, final: () => `554 5.7.1 Message rejected ${other}` }, sesTls);
+    try {
+      const sesT = createSesTransport({ host: SES_HOST, port: strict.port, user: USER, password: PASSWORD, resolver, domains: ['*'], tlsOptions: { ca: sesTls?.cert ?? '' }, messageIdDomain: 'email.amazonses.com', log: () => undefined });
+      const id = await run('*', new Date('2026-09-26T11:30:00Z'), { direct: createDirectTransport({ resolver, port: mx.port, log: () => undefined }), ses: sesT }, '<refused@d3cloud.io>');
+      expect((await attemptsByAddress(id))['a@example.test']).toMatchObject({ state: 'bounced', transport: 'ses' });
+      expect(await t.db.messageIdAlias.count({ where: { outboundMessageId: id } })).toBe(0);
+      expect(await t.db.messageIdAlias.count({ where: { alias: `${other}@email.amazonses.com` } })).toBe(0);
     } finally {
       await strict.close();
     }

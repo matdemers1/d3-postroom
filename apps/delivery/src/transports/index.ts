@@ -12,7 +12,7 @@ import type { DeliveryRequest, DeliveryResult, Transport } from './types.js';
 export type { AttemptDetails, DeliveryRecipient, DeliveryRequest, DeliveryResult, Transport } from './types.js';
 export { createFcrdnsGuard, DEFAULT_STALE_VALID_MS, DEFAULT_TTL_MS } from './fcrdns.js';
 export type { FcrdnsGuard, FcrdnsGuardOptions, FcrdnsLog, FcrdnsVerdict } from './fcrdns.js';
-export { createSesTransport, parseSesDomains, sesClaims, sesConfigFromEnv, sesTransportFromEnv, SES_DEFAULT_PORT, SES_TRANSPORT } from './ses.js';
+export { createSesTransport, parseSesDomains, sesClaims, sesConfigFromEnv, sesMessageIdDomain, sesMessageIdFromReply, sesTransportFromEnv, SES_DEFAULT_PORT, SES_TRANSPORT } from './ses.js';
 export type { SesConfig, SesTransport, SesTransportOptions } from './ses.js';
 
 export const NOT_BUILT = 'direct delivery not built yet (PST-T-1.6)';

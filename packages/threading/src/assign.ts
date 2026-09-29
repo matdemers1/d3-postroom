@@ -55,6 +55,13 @@ export async function assignThread(db: Db, input: AssignThreadInput): Promise<st
     if (normalizedInReplyTo !== undefined && normalizedInReplyTo !== '') refKeys.add(normalizedInReplyTo);
     const hasThreadingHeaders = input.references.length > 0 || input.inReplyTo !== undefined;
 
+    // PST-T-11.20: a reference may name the Message-ID a relay (SES) gave one of our messages in
+    // place of ours. The alias table maps it back to our id, which is what the Sent copy carries.
+    if (refKeys.size > 0) {
+      const aliases = await tx.messageIdAlias.findMany({ where: { alias: { in: [...refKeys] } }, select: { messageId: true } });
+      for (const a of aliases) refKeys.add(a.messageId);
+    }
+
     const orClauses: Prisma.MessageWhereInput[] = [];
     if (refKeys.size > 0) orClauses.push({ messageIdHeader: { in: [...refKeys] } });
     if (ownKey !== undefined && ownKey !== '') {

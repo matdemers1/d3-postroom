@@ -52,6 +52,12 @@ export interface DeliveryResult {
    * (the FCrDNS guard hands a `direct` attempt to SES). DeliveryAttempt.transport records this.
    */
   transport?: string;
+  /**
+   * PST-T-11.20: the Message-ID the relay gave this message in place of ours, normalized (no angle
+   * brackets). SES replaces the Message-ID of everything it relays and names its own in the 250 to
+   * DATA; the worker records it as an alias of our Message-ID so a reply citing it threads.
+   */
+  messageIdAlias?: string;
 }
 
 /**

@@ -41,6 +41,11 @@ export interface SesTransportOptions {
   maxAddresses?: number;
   connect?: Connector;
   log?: Log;
+  /**
+   * PST-T-11.20: the domain of the Message-IDs SES assigns (the right-hand side of `<id@…>`).
+   * Default: derived from `host` by sesMessageIdDomain; unset and underivable = none recorded.
+   */
+  messageIdDomain?: string;
 }
 
 export interface SesTransport extends Transport {
@@ -64,6 +69,32 @@ export function sesClaims(domains: readonly string[], domain: string): boolean {
   return domains.includes(domain.toLowerCase().replace(/\.$/, ''));
 }
 
+/**
+ * The domain SES puts on the Message-IDs it assigns, from the SMTP endpoint's region (PST-T-11.20).
+ * SES documents it as `email.amazonses.com` in us-east-1 and `<region>.amazonses.com` elsewhere.
+ * Undefined for a host that names no SES region (a test name), so nothing wrong is ever recorded.
+ */
+export function sesMessageIdDomain(host: string): string | undefined {
+  const match = /(?:^|\.)email-smtp(?:-fips)?\.([a-z]{2}(?:-[a-z]+)+-\d{1,2})\./.exec(host.trim().toLowerCase());
+  const region = match?.[1];
+  if (region === undefined) return undefined;
+  return region === 'us-east-1' ? 'email.amazonses.com' : `${region}.amazonses.com`;
+}
+
+/** SES's message id: 16 hex, a UUID, and a six-digit sequence (010001a0…-…-000000). */
+const SES_ID = /^[0-9a-f]{16}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[0-9]{6}$/;
+
+/**
+ * The Message-ID SES assigned, from the text of its 250 to DATA (`Ok 010001a0…-000000`), as
+ * `id@domain` without brackets (PST-T-11.20). Bounded: a reply that is long, or carries no token of
+ * exactly SES's shape, gives undefined rather than a guess.
+ */
+export function sesMessageIdFromReply(text: string | undefined, domain: string | undefined): string | undefined {
+  if (text === undefined || domain === undefined || domain === '' || text.length > 512) return undefined;
+  const token = text.trim().split(/\s+/).map((t) => t.toLowerCase()).find((t) => SES_ID.test(t));
+  return token === undefined ? undefined : `${token}@${domain.toLowerCase()}`;
+}
+
 function everyone(request: DeliveryRequest, outcome: AttemptOutcome): Record<string, AttemptOutcome> {
   return Object.fromEntries(request.recipients.map((r) => [r.id, outcome]));
 }
@@ -76,6 +107,7 @@ export function createSesTransport(options: SesTransportOptions): SesTransport {
   const maxAddresses = options.maxAddresses ?? 3;
   const log = options.log ?? stderrLog;
   const domains = [...(options.domains ?? [])];
+  const messageIdDomain = options.messageIdDomain ?? sesMessageIdDomain(host);
   const cfg: SessionConfig = {
     heloName: options.heloName ?? DEFAULT_HELO_NAME,
     timeouts: { ...RFC5321_TIMEOUTS, ...options.timeouts },
@@ -130,7 +162,14 @@ export function createSesTransport(options: SesTransportOptions): SesTransport {
       const session = await runSession(conn, target, relayed, cfg, details);
       quitInBackground(conn, cfg, { domain: request.domain, host, ip, transport: SES_TRANSPORT });
       if (session.kind === 'definitive') {
-        return { details, results: { ...everyone(request, { kind: 'error', error: 'no outcome recorded' }), ...session.results } };
+        // One transaction, one final reply: every accepted recipient shares it, and so the SES id.
+        const delivered = Object.values(session.results).find((o) => o.kind === 'delivered');
+        const alias = delivered?.kind === 'delivered' ? sesMessageIdFromReply(delivered.text, messageIdDomain) : undefined;
+        return {
+          details,
+          results: { ...everyone(request, { kind: 'error', error: 'no outcome recorded' }), ...session.results },
+          ...(alias === undefined ? {} : { messageIdAlias: alias }),
+        };
       }
       last = session.outcome;
       log('ses-attempt-failed', { domain: request.domain, host, ip, outcome: last });

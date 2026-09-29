@@ -11,7 +11,7 @@ import { generateDkimKeys, signMessage, verifyLocal } from '@postroom/auth-check
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fakeResolver, startFakeMx, type FakeMx, type FakeMxScript, type FakeMxTls } from '../../src/client/fake-mx.js';
 import { transportsFromEnv } from '../../src/transports/index.js';
-import { createSesTransport, parseSesDomains, sesClaims, sesConfigFromEnv, type SesTransportOptions } from '../../src/transports/ses.js';
+import { createSesTransport, parseSesDomains, sesClaims, sesConfigFromEnv, sesMessageIdDomain, sesMessageIdFromReply, type SesTransportOptions } from '../../src/transports/ses.js';
 import { dropEd25519DkimFields } from '../../src/transports/ses-dkim.js';
 import type { DeliveryRequest, Transport } from '../../src/transports/types.js';
 import { routeByClaims } from '../../src/worker.js';
@@ -257,5 +257,54 @@ describe.skipIf(tlsConfig === undefined)('SES smarthost session', () => {
     expect((await ses(rejected).deliver(request())).results['r1']).toMatchObject({ kind: 'permanent', code: 554 });
     const throttled = await smarthost({ final: () => '454 4.7.0 Throttling failure: Maximum sending rate exceeded' });
     expect((await ses(throttled).deliver(request())).results['r1']).toMatchObject({ kind: 'temporary', code: 454 });
+  });
+});
+
+// PST-T-11.20: SES replaces the Message-ID and names its own in the 250 to DATA.
+const SES_ID = '010001a0eab97b0f-57a466ee-cc1e-4c51-8f57-c98cafc9aab9-000000';
+
+describe('the Message-ID SES assigns (PST-T-11.20)', () => {
+  it('derives the id domain from the endpoint region: us-east-1 is email.amazonses.com, others <region>.amazonses.com', () => {
+    expect(sesMessageIdDomain('email-smtp.us-east-1.amazonaws.com')).toBe('email.amazonses.com');
+    expect(sesMessageIdDomain('EMAIL-SMTP.eu-west-1.amazonaws.com.')).toBe('eu-west-1.amazonses.com');
+    expect(sesMessageIdDomain('email-smtp-fips.us-gov-west-1.amazonaws.com')).toBe('us-gov-west-1.amazonses.com');
+    expect(sesMessageIdDomain('email-smtp.ap-southeast-2.amazonaws.com')).toBe('ap-southeast-2.amazonses.com');
+    expect(sesMessageIdDomain(HOST)).toBeUndefined();
+    expect(sesMessageIdDomain('smtp.example.test')).toBeUndefined();
+  });
+
+  it("parses the id out of SES's 250 text, and ignores anything not of SES's shape", () => {
+    expect(sesMessageIdFromReply(`Ok ${SES_ID}`, 'email.amazonses.com')).toBe(`${SES_ID}@email.amazonses.com`);
+    expect(sesMessageIdFromReply(`Ok ${SES_ID.toUpperCase()}`, 'eu-west-1.amazonses.com')).toBe(`${SES_ID}@eu-west-1.amazonses.com`);
+    expect(sesMessageIdFromReply('2.0.0 queued as FAKE', 'email.amazonses.com')).toBeUndefined();
+    expect(sesMessageIdFromReply('Ok 010001a0e8a1951e', 'email.amazonses.com')).toBeUndefined();
+    expect(sesMessageIdFromReply(`Ok ${SES_ID}x`, 'email.amazonses.com')).toBeUndefined();
+    expect(sesMessageIdFromReply(`Ok <${SES_ID}@evil.test>`, 'email.amazonses.com')).toBeUndefined();
+    expect(sesMessageIdFromReply(`Ok ${SES_ID}`, undefined)).toBeUndefined();
+    expect(sesMessageIdFromReply(undefined, 'email.amazonses.com')).toBeUndefined();
+    expect(sesMessageIdFromReply(`${'x '.repeat(300)}${SES_ID}`, 'email.amazonses.com')).toBeUndefined();
+  });
+
+  describe.skipIf(tlsConfig === undefined)('through the transport', () => {
+    it("a delivered attempt reports SES's id as the message's alias; the domain comes from the host or the option", async () => {
+      const m = await smarthost({ final: () => `250 Ok ${SES_ID}` });
+      const result = await ses(m, { messageIdDomain: 'email.amazonses.com' }).deliver(request({ recipients: [{ id: 'r1', address: 'you@example.test', notify: null }, { id: 'r2', address: 'two@example.test', notify: null }] }));
+      expect(result.results['r1']).toMatchObject({ kind: 'delivered', code: 250 });
+      expect(result.results['r2']).toMatchObject({ kind: 'delivered', code: 250 });
+      expect(result.messageIdAlias).toBe(`${SES_ID}@email.amazonses.com`);
+      // A test host names no SES region: no domain, so nothing is guessed.
+      expect((await ses(m).deliver(request())).messageIdAlias).toBeUndefined();
+    });
+
+    it('a refused or deferred message has no alias, and neither does a 250 without an SES id', async () => {
+      const rejected = await smarthost({ final: () => `554 5.7.1 Message rejected ${SES_ID}` });
+      expect((await ses(rejected, { messageIdDomain: 'email.amazonses.com' }).deliver(request())).messageIdAlias).toBeUndefined();
+      const throttled = await smarthost({ final: () => `454 4.7.0 Throttling ${SES_ID}` });
+      expect((await ses(throttled, { messageIdDomain: 'email.amazonses.com' }).deliver(request())).messageIdAlias).toBeUndefined();
+      const plain = await smarthost();
+      const ok = await ses(plain, { messageIdDomain: 'email.amazonses.com' }).deliver(request());
+      expect(ok.results['r1']).toMatchObject({ kind: 'delivered' });
+      expect(ok.messageIdAlias).toBeUndefined();
+    });
   });
 });
