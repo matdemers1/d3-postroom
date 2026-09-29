@@ -84,7 +84,8 @@
   translate: -50% 0;
   z-index: 60;
   padding: var(--space-6) var(--space-8);
-  border: var(--border-width) solid var(--color-border-float);
+  border: var(--border-width) solid transparent;
+  box-shadow: var(--shadow-float);
   border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
   color: var(--color-fg);
@@ -97,6 +98,15 @@
   transition:
     opacity var(--dur-2) var(--ease-out),
     visibility 0s linear var(--dur-2);
+}
+
+/* D-075: a floating layer is surface-raised on the float shadow; the 3:1 edge returns when the
+   shadow cannot carry it (forced colours, more contrast). */
+@media (forced-colors: active), (prefers-contrast: more) {
+  .pr-hint__tip {
+    border-color: var(--color-border-float);
+    box-shadow: none;
+  }
 }
 
 .pr-hint:hover .pr-hint__tip {

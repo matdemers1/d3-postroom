@@ -227,9 +227,19 @@
   display: flex;
   gap: var(--space-2);
   padding: var(--space-2);
-  border: var(--border-width) solid var(--color-border-float);
+  border: var(--border-width) solid transparent;
+  box-shadow: var(--shadow-float);
   border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
+}
+
+/* D-075: a floating layer is surface-raised on the float shadow; the 3:1 edge returns when the
+   shadow cannot carry it (forced colours, more contrast). */
+@media (forced-colors: active), (prefers-contrast: more) {
+  .pr-rowacts {
+    border-color: var(--color-border-float);
+    box-shadow: none;
+  }
 }
 
 .pr-rowacts[data-visible='false'] {

@@ -1,5 +1,5 @@
 /* PST-T-14.9: the bucket chip, "Why it's here", the Person card and the sheet they become on a phone.
-   Tokens only: floating layers are surface-raised + border-float with no shadow; motion is
+   Tokens only: floating layers are surface-raised on the float shadow (D-075); motion is
    --motion-popover-enter / --motion-drawer / --motion-hover, and prefers-reduced-motion leaves an
    opacity fade (the library zeroes durations globally as well). */
 
@@ -106,11 +106,21 @@
   flex-direction: column;
   gap: var(--space-12);
   padding: var(--space-16);
-  border: var(--border-width) solid var(--color-border-float);
+  border: var(--border-width) solid transparent;
+  box-shadow: var(--shadow-float);
   background: var(--color-surface-raised);
   color: var(--color-fg);
   font-size: var(--text-13);
   line-height: var(--leading-20);
+}
+
+/* D-075: a floating layer is surface-raised on the float shadow; the 3:1 edge returns when the
+   shadow cannot carry it (forced colours, more contrast). */
+@media (forced-colors: active), (prefers-contrast: more) {
+  .pr-float {
+    border-color: var(--color-border-float);
+    box-shadow: none;
+  }
 }
 
 .pr-float:focus {
