@@ -11,15 +11,18 @@
 // it (./rfc-links.ts). They are plain links the reader opens; the app never fetches them. The toggle
 // is remembered per account in localStorage — a viewer's convenience, not a setting.
 //
-// Opening: the "Inspect" button in the message actions, the `i` key, or the palette's "Inspect the
-// open message" (both via keys.ts's requestInspect). It is a @d3cloud/ui Modal restyled as a side
-// sheet (mail.css), so focus trap, Escape, aria-modal and focus return are the library's.
+// Opening: the ⋯ menu's "Inspect message", a chip's Details, the `i` key, or the palette's "Inspect
+// the open message" — all via keys.ts's requestInspect. It is a @d3cloud/ui Modal restyled as a side
+// sheet (mail.css), so focus trap, Escape and aria-modal are the library's. It has no trigger of its
+// own (PST-T-14.6): the open state is held here, and on close focus goes back explicitly to what
+// opened it — the ⋯ or Details button, else whatever the reader was on (./focusReturn.ts).
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Badge, Button, Checkbox, Cluster, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
 import { api, serverUnreachable, type DeliveryRecipient, type InspectAlignment, type InspectScore, type MessageInspect, type ReceivedHop } from '../api';
 import { DeliveryEvidence } from './DeliveryRows';
 import { byteSize, fullDate } from './format';
 import { cryptoView, type CryptoPartView } from './inspect-crypto';
+import { useFocusReturn } from './focusReturn';
 import { describeTarget, onInspectRequest, resolveKey } from './keys';
 import {
   headerRef,
@@ -612,9 +615,27 @@ export function InspectSections({ data, learn }: { data: MessageInspect; learn: 
 
 type LoadState = { status: 'loading' } | { status: 'ready'; data: MessageInspect } | { status: 'error' };
 
-/** The Inspect button (for the message actions) and the drawer it opens. `trigger` replaces the
- *  button — the reading pane (PST-T-14.6) opens the drawer from its ⋯ menu and chips instead. */
-export function InspectDrawer({ messageId, trigger }: { messageId: string; trigger?: ReactNode }) {
+/** The last element the reader focused outside any dialog or menu: where focus returns when the
+ *  drawer was opened by the palette (whose own dialog is gone by then). */
+function useLastOutsideFocus() {
+  const last = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target;
+      if (!(el instanceof HTMLElement)) return;
+      if (el.closest('[role="dialog"], [role="alertdialog"], [role="menu"]') !== null) return;
+      last.current = el;
+    };
+    document.addEventListener('focusin', onFocusIn);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+    };
+  }, []);
+  return last;
+}
+
+/** The open message's Inspect drawer: a controlled, trigger-less modal side sheet. */
+export function InspectDrawer({ messageId }: { messageId: string }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -623,9 +644,22 @@ export function InspectDrawer({ messageId, trigger }: { messageId: string; trigg
   // PST-T-14.1 (CPY-01): a sent message's attempt log and raw replies live here, not in the reading view.
   const [delivery, setDelivery] = useState<DeliveryRecipient[] | null>(null);
   const pending = useRef<'g' | null>(null);
+  const lastOutside = useLastOutsideFocus();
+  const returnTo = useFocusReturn(open, () => {
+    const last = lastOutside.current;
+    if (last?.isConnected === true) return last;
+    return document.getElementById('pr-reader-subject');
+  });
 
-  // The palette's command and the `i` key both arrive here.
-  useEffect(() => onInspectRequest(() => { setOpen(true); }), []);
+  // The ⋯ item, a chip's Details and the palette's command all arrive here.
+  useEffect(
+    () =>
+      onInspectRequest((from) => {
+        returnTo.current = from;
+        setOpen(true);
+      }),
+    [returnTo],
+  );
   useEffect(() => {
     // MailView resolves `i` too, but has nothing to do with it; the drawer of the open message does.
     // Mirrors MailView's rules: its own g-sequence state, nothing while typing, nothing behind a dialog.
@@ -637,13 +671,14 @@ export function InspectDrawer({ messageId, trigger }: { messageId: string; trigg
       const el = e.target instanceof Element ? e.target : null;
       if ((el?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]') ?? null) !== null) return;
       e.preventDefault();
+      returnTo.current = el instanceof HTMLElement && el !== document.body ? el : null;
       setOpen(true);
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
     };
-  }, []);
+  }, [returnTo]);
 
   // A different message closes the drawer and forgets the last one's evidence.
   useEffect(() => {
@@ -710,13 +745,6 @@ export function InspectDrawer({ messageId, trigger }: { messageId: string; trigg
     <Modal
       open={open}
       onOpenChange={setOpen}
-      trigger={
-        trigger ?? (
-          <Button size="sm" variant="ghost" aria-keyshortcuts="i">
-            Inspect
-          </Button>
-        )
-      }
       title="Inspect message"
       description="Everything Postroom knows about this message, and why it decided what it did."
       size="lg"

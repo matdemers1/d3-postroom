@@ -67,7 +67,7 @@ import { snippetOf } from './thread';
 import { SessionEnded } from '../screens/states';
 import { PhishChip } from './thread/ExceptionChip';
 import { MessageHeader } from './thread/MessageHeader';
-import { FocusStandIn, ThreadToolbar } from './thread/ThreadToolbar';
+import { ThreadToolbar } from './thread/ThreadToolbar';
 import { absoluteDate } from './thread/view';
 import './thread/thread.css';
 
@@ -165,7 +165,7 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
         </h2>
         <ThreadToolbar detail={detail} canArchive={canArchive} canTrash={canTrash} onAction={onAction} onMoveTo={onMoveTo} onEditDraft={onEditDraft} snooze={snooze} />
       </div>
-      <InspectHost messageId={detail.id} />
+      <InspectDrawer messageId={detail.id} />
       {/* One scroller. Keyed by message so j/k gives a short (--dur-1) opacity fade and nothing more. */}
       <div key={detail.id} className="pr-reader__scroll" data-testid="reader-scroll">
         {children}
@@ -182,40 +182,6 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
     </article>
   );
 });
-
-/**
- * The Inspect drawer of the open message, with no visible trigger of its own: it opens from ⋯
- * "Inspect message", a chip's Details, the palette and the `i` key (all via keys.ts). A modal hands
- * focus back to its trigger on close, so the trigger here is an invisible, untabbable stand-in that
- * passes focus straight on to whatever the reader was on when the drawer opened — the ⋯ button,
- * the Details button — rather than dropping it on <body>.
- */
-function InspectHost({ messageId }: { messageId: string }) {
-  const last = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    const onFocusIn = (e: FocusEvent) => {
-      const el = e.target;
-      if (!(el instanceof HTMLElement)) return;
-      if (el.closest('[role="dialog"], [role="alertdialog"], [role="menu"]') !== null || el.dataset.inspectReturn !== undefined) return;
-      last.current = el;
-    };
-    document.addEventListener('focusin', onFocusIn);
-    return () => {
-      document.removeEventListener('focusin', onFocusIn);
-    };
-  }, []);
-  const stand = (
-    <FocusStandIn
-      label="Inspect message"
-      onFocus={() => {
-        const to = last.current;
-        if (to?.isConnected === true) to.focus();
-        else document.getElementById('pr-reader-subject')?.focus();
-      }}
-    />
-  );
-  return <InspectDrawer messageId={messageId} trigger={stand} />;
-}
 
 // --- The thread (PST-T-3.15, PST-REQ-079) ------------------------------------------------------
 
@@ -513,7 +479,7 @@ function MessageContent({
         phish={detail.phish}
         inJunk={use === 'junk'}
         onMoveToJunk={onMoveToJunk === undefined ? undefined : () => { onMoveToJunk(detail); }}
-        onDetails={isOpen ? requestInspect : undefined}
+        onDetails={isOpen ? (from) => { requestInspect(from); } : undefined}
         from={detail.from}
       />
       {wantsReceipt(detail, body, ownMailbox) ? <ReceiptPrompt key={detail.id} messageId={detail.id} /> : null}

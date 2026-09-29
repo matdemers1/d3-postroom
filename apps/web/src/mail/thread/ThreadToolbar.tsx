@@ -6,17 +6,22 @@
 //
 // Inspect stays the modal drawer it always was (InspectDrawer: focus trap, Escape, `i`); only its
 // trigger moved. The ⋯ item and a chip's "Details" call keys.ts's requestInspect(), which the open
-// message's drawer listens for.
+// message's drawer listens for, naming the button that focus goes back to when it closes.
+//
+// A dialog opened from a menu item (Inspect, Move to…) is opened only once the menu has closed: the
+// menu hands focus back to ⋯ as it goes, and a dialog already open would be fighting it for focus.
+// Move to… is a controlled Modal with no trigger; focus returns to ⋯ explicitly (../focusReturn.ts).
 //
 // Two library components cannot nest: Tooltip and MenuTrigger both wrap their one child with a
 // Radix Slot and neither forwards props, so an icon button that opens a menu (⋯, Snooze) gets
 // HintTip — the same look as the library tooltip, shown by CSS on :hover and :focus-visible, and
 // aria-hidden because the button's own label already names it.
-import { forwardRef, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Modal, ModalClose, Tooltip } from '@d3cloud/ui';
 import { api, rawMessageUrl, type Mailbox, type MessageDetail } from '../../api';
 import { snoozeChoices } from '../compose';
 import { mailboxLabel } from '../format';
+import { useFocusReturn } from '../focusReturn';
 import { requestInspect } from '../keys';
 import { isStarred } from '../list';
 import { useMail } from '../MailContext';
@@ -61,6 +66,7 @@ export function ThreadToolbar({ detail, canArchive, canTrash, onAction, onMoveTo
   const starred = isStarred(detail);
   const [moveOpen, setMoveOpen] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
+  const moveReturn = useFocusReturn(moveOpen, () => moreRef.current);
 
   let lead: ReactNode = null;
   if (model.lead === 'reply') {
@@ -119,7 +125,10 @@ export function ThreadToolbar({ detail, canArchive, canTrash, onAction, onMoveTo
             {onMoveTo !== undefined && targets.length > 0 ? (
               <MenuItem
                 onSelect={() => {
-                  setMoveOpen(true);
+                  afterMenu(() => {
+                    moveReturn.current = moreRef.current;
+                    setMoveOpen(true);
+                  });
                 }}
               >
                 Move to…
@@ -134,7 +143,9 @@ export function ThreadToolbar({ detail, canArchive, canTrash, onAction, onMoveTo
             <MenuSeparator />
             <MenuItem
               onSelect={() => {
-                requestInspect();
+                afterMenu(() => {
+                  requestInspect(moreRef.current);
+                });
               }}
             >
               <MenuRow label="Inspect message" hint={ACTION_KEY.inspect} />
@@ -158,7 +169,6 @@ export function ThreadToolbar({ detail, canArchive, canTrash, onAction, onMoveTo
         <Modal
           open={moveOpen}
           onOpenChange={setMoveOpen}
-          trigger={<FocusStandIn onFocus={() => moreRef.current?.focus()} />}
           title="Move to"
           description="Choose where this message goes."
           size="sm"
@@ -191,21 +201,10 @@ export function ThreadToolbar({ detail, canArchive, canTrash, onAction, onMoveTo
   );
 }
 
-/**
- * A modal hands focus back to its trigger when it closes. A dialog opened from a menu item has no
- * trigger of its own (the item is gone), so this invisible, untabbable stand-in takes that focus and
- * passes it straight on — to the ⋯ button — instead of letting it fall to <body>.
- */
-export const FocusStandIn = forwardRef<HTMLButtonElement, { onFocus: () => void; label?: string } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onFocus'>>(
-  function FocusStandIn({ onFocus, label = 'Return focus', ...rest }, ref) {
-    // `rest` carries what the dialog's trigger slot adds (its ref, aria-expanded, aria-controls).
-    return (
-      <button {...rest} ref={ref} type="button" className="pr-vh" tabIndex={-1} aria-hidden="true" data-inspect-return="" onFocus={onFocus}>
-        {label}
-      </button>
-    );
-  },
-);
+/** Runs `open` once the menu that chose it has closed and handed focus back to its trigger. */
+export function afterMenu(open: () => void): void {
+  window.setTimeout(open, 0);
+}
 
 /** A menu row: the action's words, then its key — hidden from the accessible name, which is the action. */
 function MenuRow({ label, hint }: { label: string; hint: string | undefined }) {

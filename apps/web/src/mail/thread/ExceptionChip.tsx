@@ -38,7 +38,8 @@ export function PhishChip({
   inJunk: boolean;
   onMoveToJunk: (() => void) | undefined;
   /** Opens Inspect for this message; absent when this message is not the one the drawer belongs to. */
-  onDetails: (() => void) | undefined;
+  /** Opens Inspect; `from` (the Details button) gets focus back when it closes. */
+  onDetails: ((from: HTMLElement) => void) | undefined;
 }) {
   if (phish === null || phish.warnings.length === 0) return null;
   const sorted = sortPhishWarnings(phish.warnings);
@@ -65,7 +66,7 @@ export function PhishChip({
       </div>
       <div className="pr-exception__actions">
         {onDetails !== undefined ? (
-          <Button size="sm" variant="ghost" aria-label="Details: inspect this message" onClick={onDetails}>
+          <Button size="sm" variant="ghost" aria-label="Details: inspect this message" onClick={(e) => { onDetails(e.currentTarget); }}>
             Details
           </Button>
         ) : null}

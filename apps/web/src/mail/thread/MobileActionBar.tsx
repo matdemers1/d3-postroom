@@ -8,7 +8,7 @@
 // path as the keys, the palette and the desktop toolbar — so Archive and Delete run the triage loop
 // (thread scope, next message, Undo toast), Move and Snooze open its picker, and Inspect is
 // keys.ts's requestInspect(). Which buttons a mailbox gets is ThreadToolbar's own toolbarModel().
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@d3cloud/ui';
 import type { Mailbox, MessageDetail } from '../../api';
 import { ArchiveIcon, FolderIcon, TrashIcon } from '../icons';
@@ -16,6 +16,7 @@ import { requestInspect, type MailAction } from '../keys';
 import { isStarred } from '../list';
 import { useMail } from '../MailContext';
 import { MoreIcon, ReplyIcon } from './icons';
+import { afterMenu } from './ThreadToolbar';
 import { ACTION_LABEL, toolbarModel } from './view';
 
 export interface MobileActionBarProps {
@@ -46,6 +47,7 @@ export function MobileActionBar({ detail, canArchive, canTrash, onAction, onMove
   const model = toolbarModel(current?.specialUse);
   const starred = isStarred(detail);
   const canReply = model.lead === 'reply' || model.icons.includes('reply');
+  const moreRef = useRef<HTMLButtonElement>(null);
   const rescue = (model.lead === 'notJunk' || model.lead === 'rescue') && onMoveTo !== undefined && inbox !== null ? model.lead : null;
 
   return (
@@ -60,7 +62,7 @@ export function MobileActionBar({ detail, canArchive, canTrash, onAction, onMove
       ) : null}
       <Menu>
         <MenuTrigger>
-          <button type="button" className="pr-abar__btn" aria-label="More actions">
+          <button ref={moreRef} type="button" className="pr-abar__btn" aria-label="More actions">
             <span className="pr-abar__icon" aria-hidden="true">
               <MoreIcon />
             </span>
@@ -80,7 +82,7 @@ export function MobileActionBar({ detail, canArchive, canTrash, onAction, onMove
           <MenuItem onSelect={() => { onAction('markUnread'); }}>Mark unread</MenuItem>
           <MenuItem onSelect={() => { onAction('star'); }}>{starred ? 'Unstar' : 'Star'}</MenuItem>
           <MenuSeparator />
-          <MenuItem onSelect={() => { requestInspect(); }}>Inspect message</MenuItem>
+          <MenuItem onSelect={() => { afterMenu(() => { requestInspect(moreRef.current); }); }}>Inspect message</MenuItem>
         </MenuContent>
       </Menu>
     </div>

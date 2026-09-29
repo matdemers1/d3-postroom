@@ -131,11 +131,14 @@ export function describeTarget(target: EventTarget | null): { editable: boolean;
 // `i` and the palette's "Inspect the open message" call requestInspect(); the drawer of the message
 // that is open subscribes. Nothing open → nobody listening → nothing happens.
 
-type InspectListener = () => void;
+// `returnTo` is where focus goes when the drawer closes: the ⋯ button or the chip's Details button
+// that asked for it. The key and the palette pass nothing, and the drawer falls back to what the
+// reader was on before.
+type InspectListener = (returnTo: HTMLElement | null) => void;
 const inspectListeners = new Set<InspectListener>();
 
-export function requestInspect(): void {
-  for (const listener of [...inspectListeners]) listener();
+export function requestInspect(returnTo: HTMLElement | null = null): void {
+  for (const listener of [...inspectListeners]) listener(returnTo);
 }
 
 /** Subscribes; returns the unsubscribe. */
