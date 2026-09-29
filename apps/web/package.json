@@ -12,7 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@d3cloud/ui": "file:/private/tmp/claude-501/-Users-matthewdemers-workspace-d3cloud/ef90cda1-2c8d-4fa2-ac16-71865c0af269/scratchpad/fleet/PST-P-15/d3cloud-ui-1.4.0.tgz",
+    "@d3cloud/ui": "file:../../.d3ui/d3cloud-ui-1.4.0.tgz",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.9.1"
