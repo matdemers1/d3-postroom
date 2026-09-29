@@ -8,7 +8,7 @@ const SRC = join(__dirname, '..');
 
 // Fields owned by other work in flight: the list search becomes a SearchField, the composer is
 // being reworked, and the palette's input is the palette's own. Drop an entry once it is filled.
-const PENDING = new Set(['mail/MailView.tsx', 'mail/Composer.tsx', 'mail/CommandPalette.tsx', 'compose/TemplatesScreen.tsx']);
+const PENDING = new Set(['mail/Composer.tsx']);
 
 function tsxFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

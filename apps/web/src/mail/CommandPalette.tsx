@@ -110,6 +110,7 @@ export function CommandPalette({ open, onOpenChange, mailboxes, target, onAction
     >
       <Stack gap="8">
         <Input
+          appearance="filled"
           ref={inputRef}
           role="combobox"
           aria-expanded="true"

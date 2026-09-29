@@ -17,14 +17,14 @@
 //    server gave it in the destination — back where it came from, on the server.
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type SyntheticEvent } from 'react';
 import { Link as RouterLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Alert, Button, EmptyState, Input, Link, SegmentedControl, Skeleton, Stack, useToast } from '@d3cloud/ui';
+import { Alert, Button, EmptyState, Link, SearchField, SegmentedControl, Skeleton, Stack, useToast } from '@d3cloud/ui';
 import { api, ApiError, serverUnreachable, type Mailbox, type MailboxSplit, type MessageDetail, type MessageSummary } from '../api';
 import { CommandPalette } from './CommandPalette';
 import { Composer } from './Composer';
 import { draftFor } from './compose';
 import { Feed } from './Feed';
 import { findSpecial, mailboxLabel } from './format';
-import { ComposeIcon, mailboxIcon, SearchIcon } from './icons';
+import { ComposeIcon, mailboxIcon } from './icons';
 import { describeTarget, resolveKey, type MailAction } from './keys';
 import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEEN } from './list';
 import { useMail } from './MailContext';
@@ -832,13 +832,12 @@ function MailPanes({ route }: { route: MailRoute }) {
         <form role="search" className="pr-search" onSubmit={submitSearch}>
           {/* PST-T-11.4: a glyph and the / key say what this field is; the accessible name stays
               "Search mail" (a placeholder is never a label in @d3cloud/ui). */}
-          <Input
+          {/* PST-T-14.4: the filled SearchField draws its own glyph and the / hint. */}
+          <SearchField
             ref={searchInput}
-            type="search"
-            size="sm"
             aria-label="Search mail"
-            leading={<SearchIcon />}
-            trailing={split ? <kbd className="pr-search__key">/</kbd> : undefined}
+            placeholder="Search mail"
+            {...(split ? { shortcut: '/' } : {})}
             value={searchText}
             onChange={(e) => {
               setSearchText(e.target.value);

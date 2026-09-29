@@ -115,17 +115,6 @@
   display: none;
 }
 
-/* The search field's "/" key hint (PST-T-11.4). */
-.pr-search__key {
-  padding: 0 var(--space-4);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: var(--text-11);
-  line-height: var(--leading-14);
-  color: var(--color-fg-faint);
-}
-
 /* The Priority / People split fills the list's width, so its three segments share it evenly. */
 .pr-split {
   align-self: stretch;
