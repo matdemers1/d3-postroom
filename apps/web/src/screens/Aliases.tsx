@@ -1,5 +1,6 @@
+import '../settings/settings.css';
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
-import { Alert, Badge, Button, EmptyState, FormActions, FormField, Input, Page, PageHeader, Section, Stack, Table, type TableColumn } from '@d3cloud/ui';
+import { Alert, Badge, Button, DataList, DataListRow, EmptyState, FormActions, FormField, Input, Page, PageHeader, Section, Stack } from '@d3cloud/ui';
 import { api, describeError, type Alias } from '../api';
 import { Loading, LoadFailed } from './states';
 
@@ -94,44 +95,9 @@ export function Aliases() {
       });
   };
 
-  const columns: TableColumn<Alias>[] = [
-    {
-      key: 'address',
-      header: 'Address',
-      cell: (a) => (
-        <Button variant="ghost" size="sm" aria-label={`Copy ${a.address}`} onClick={() => { copy(a); }}>
-          {copiedId === a.id ? 'Copied' : a.address}
-        </Button>
-      ),
-    },
-    { key: 'site', header: 'Site', cell: (a) => a.site },
-    {
-      key: 'status',
-      header: 'Status',
-      cell: (a) => (a.killedAt === null ? <Badge tone="neutral">Live</Badge> : <Badge tone="danger">Off</Badge>),
-    },
-    { key: 'createdAt', header: 'Created', cell: (a) => when(a.createdAt) },
-    { key: 'lastUsedAt', header: 'Last used', cell: (a) => when(a.lastUsedAt) },
-    { key: 'receivedCount', header: 'Received', cell: (a) => a.receivedCount },
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'end',
-      cell: (a) =>
-        a.killedAt === null ? (
-          <Button variant="danger-ghost" size="sm" aria-label={`Turn off ${a.address}`} onClick={() => { turnOff(a); }}>
-            Turn off
-          </Button>
-        ) : (
-          <Button variant="ghost" size="sm" aria-label={`Turn on ${a.address}`} onClick={() => { turnOn(a); }}>
-            Turn on
-          </Button>
-        ),
-    },
-  ];
-
   return (
-    <Page>
+    // PST-T-15.6: the settings grid — a 680px column of Section cards; each alias is a row.
+    <Page width="narrow">
       <PageHeader
         title="Masked aliases"
         description="Give every site its own random address. If it leaks, turn off the alias — mail to it is refused, no warning sent."
@@ -146,7 +112,7 @@ export function Aliases() {
       <Section title="Create an alias">
         <form onSubmit={create}>
           <Stack gap="16">
-            <FormField label="Site" help="What you're handing this address to, e.g. shop.example." {...(formError === null ? {} : { error: formError })}>
+            <FormField label="Site" width="lg" help="What you're handing this address to, e.g. shop.example." {...(formError === null ? {} : { error: formError })}>
               <Input appearance="filled"
                 name="site"
                 maxLength={200}
@@ -171,13 +137,34 @@ export function Aliases() {
       ) : rows === null ? (
         <Loading label="Loading aliases" />
       ) : (
-        <Table
-          caption="Your masked aliases"
-          columns={columns}
-          rows={rows}
-          rowKey={(a) => a.id}
-          empty={<EmptyState kind="empty" heading="No masked aliases yet" size="row" />}
-        />
+        <Section title="Your masked aliases" description="Turning one off refuses mail to it from then on. Mail already delivered stays.">
+          <DataList aria-label="Your masked aliases" empty={<EmptyState kind="empty" heading="No masked aliases yet" headingLevel={3} size="inline" />}>
+            {rows.map((a) => (
+              <DataListRow
+                key={a.id}
+                title={<span className="pr-set-mono">{a.address}</span>}
+                description={`For ${a.site} · ${String(a.receivedCount)} received · ${a.lastUsedAt === null ? 'never used' : `last used ${when(a.lastUsedAt)}`}`}
+                meta={a.killedAt === null ? <Badge tone="neutral">Live</Badge> : <Badge tone="danger">Off</Badge>}
+                actions={
+                  <>
+                    <Button variant="ghost" size="sm" aria-label={`${copiedId === a.id ? 'Copied' : 'Copy'} ${a.address}`} onClick={() => { copy(a); }}>
+                      {copiedId === a.id ? 'Copied' : 'Copy'}
+                    </Button>
+                    {a.killedAt === null ? (
+                      <Button variant="danger-ghost" size="sm" aria-label={`Turn off ${a.address}`} onClick={() => { turnOff(a); }}>
+                        Turn off
+                      </Button>
+                    ) : (
+                      <Button variant="ghost" size="sm" aria-label={`Turn on ${a.address}`} onClick={() => { turnOn(a); }}>
+                        Turn on
+                      </Button>
+                    )}
+                  </>
+                }
+              />
+            ))}
+          </DataList>
+        </Section>
       )}
     </Page>
   );

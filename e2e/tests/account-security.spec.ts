@@ -1,5 +1,5 @@
 // PST-T-4.9's exit demo, as a suite: a common password on first-run Setup names which rule failed,
-// a signed-in user changes their password over Change password (ending other sessions), and
+// a signed-in user changes their password from Settings › Account (ending other sessions), and
 // Devices (the caller's own /api/auth/sessions) lists and revokes a session after step-up. Axe on
 // both new screens. Since PST-T-14.3 both live in Settings (reached from the account menu): the
 // caller's own web sessions are "Browser sessions", never "Sessions", so nothing collides with the
@@ -80,14 +80,22 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   await expect(page).toHaveURL(/\/settings\/account$/);
   await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
 
+  // PST-T-15.6: the Password row's "Change…" opens the form in place, inside the Sign-in card.
+  await expect(page.getByLabel('Current password', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Change password' }).click();
+  await expect(page.getByLabel('Current password', { exact: true })).toBeFocused();
   await page.getByLabel('Current password', { exact: true }).fill(operator.password);
   await page.getByLabel('New password', { exact: true }).fill(STRONG_PASSWORD);
   await page.getByLabel('Confirm new password', { exact: true }).fill(STRONG_PASSWORD);
-  await expect(page.getByRole('checkbox', { name: 'Sign out every other session' })).toBeChecked();
+  await expect(page.getByText(/^Strong · \d+ characters$/)).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Sign out other sessions' })).toBeChecked();
   await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
-  await page.getByRole('button', { name: 'Change password' }).click();
+  await page.getByRole('button', { name: 'Update password' }).click();
 
   await expect(page.getByText(/^Password changed\. Signed out \d+ other session/)).toBeVisible();
+  // The form folds away once it has done its job, and focus is back on the button that opened it.
+  await expect(page.getByLabel('Current password', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Change password' })).toBeFocused();
 
   operator.password = STRONG_PASSWORD;
   saveOperator(operator);
@@ -150,6 +158,9 @@ test('Account and Browser sessions have no axe violations', async ({ page }) => 
 
   await page.goto('/settings/account');
   await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
+  // Axe over the open change-password form too (strength meter, CodeInput, the footer).
+  await page.getByRole('button', { name: 'Change password' }).click();
+  await expect(page.getByRole('form', { name: 'Change password' })).toBeVisible();
   const passwordResults = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(passwordResults.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 

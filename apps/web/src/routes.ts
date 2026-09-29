@@ -110,7 +110,7 @@ export const ROUTES: readonly AppRoute[] = [
     hint: 'Download a configuration profile',
   }),
   r({ id: 'settingsAddresses', path: '/settings/addresses', title: 'Addresses', place: 'settings', navGroup: 'Addresses', keywords: 'aliases masked aliases', hint: 'Aliases, masked aliases' }),
-  r({ id: 'settingsRules', path: '/settings/rules', title: 'Rules', place: 'settings', navGroup: 'Rules', keywords: 'filters sieve' }),
+  r({ id: 'settingsRules', path: '/settings/rules', title: 'Rules', place: 'settings', navGroup: 'Rules & sorting', keywords: 'filters sieve sorting corrections' }),
   r({ id: 'settingsTemplates', path: '/settings/templates', title: 'Templates', place: 'settings', navGroup: 'Templates', keywords: 'compose templates canned replies' }),
   r({ id: 'settingsImport', path: '/settings/import', title: 'Import & export', place: 'settings', navGroup: 'Import & export', keywords: 'import mail imap migrate' }),
   r({ id: 'settingsKeys', path: '/settings/keys', title: 'Encryption keys', place: 'settings', navGroup: 'Encryption keys', keywords: 'keys openpgp pgp s/mime smime certificates' }),

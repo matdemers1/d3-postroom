@@ -80,7 +80,8 @@ export function DeviceSetup() {
   };
 
   return (
-    <Page>
+    // PST-T-15.6: the settings grid — a 680px column of Section cards.
+    <Page width="narrow">
       <PageHeader title="Set up iPhone / Mac" description="One profile configures Mail, Calendar and Contacts together, with their own app password." />
       <SubNav />
 

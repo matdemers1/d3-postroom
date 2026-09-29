@@ -31,7 +31,7 @@ describe('the route table', () => {
       'Account',
       'Security & devices',
       'Addresses',
-      'Rules',
+      'Rules & sorting',
       'Templates',
       'Import & export',
       'Encryption keys',

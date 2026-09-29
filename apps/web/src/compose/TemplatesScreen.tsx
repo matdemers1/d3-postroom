@@ -1,7 +1,8 @@
 // The template manager (PST-T-9.2, PST-REQ-144): create, edit and delete the saved templates the
 // composer's `;` shortcut offers. CRUD over /api/templates, every mutation audited server-side.
+import '../settings/settings.css';
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
-import { Alert, Button, EmptyState, FormActions, FormField, Input, Modal, ModalClose, Page, PageHeader, Section, Stack, Table, Textarea, type TableColumn } from '@d3cloud/ui';
+import { Alert, Button, DataList, DataListRow, EmptyState, FormActions, FormField, Input, Modal, ModalClose, Page, PageHeader, Section, Stack, Textarea } from '@d3cloud/ui';
 import { describeError } from '../api';
 import { templatesApi, type TemplateJson } from './api';
 import { Loading, LoadFailed } from '../screens/states';
@@ -88,29 +89,9 @@ export function TemplatesScreen() {
       });
   };
 
-  const columns: TableColumn<TemplateJson>[] = [
-    { key: 'shortcut', header: 'Shortcut', cell: (t) => `;${t.shortcut}` },
-    { key: 'name', header: 'Name', cell: (t) => t.name },
-    { key: 'subject', header: 'Subject', cell: (t) => t.subject ?? '—' },
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'end',
-      cell: (t) => (
-        <>
-          <Button variant="ghost" size="sm" aria-label={`Edit ${t.name}`} onClick={() => { edit(t); }}>
-            Edit
-          </Button>
-          <Button variant="danger-ghost" size="sm" aria-label={`Delete ${t.name}`} onClick={() => { setConfirming(t); }}>
-            Delete
-          </Button>
-        </>
-      ),
-    },
-  ];
-
   return (
-    <Page>
+    // PST-T-15.6: the settings grid — a 680px column of Section cards; each template is a row.
+    <Page width="narrow">
       <PageHeader
         title="Compose templates"
         description="Type ; in the composer to insert one. {{name}}, {{first_name}} and {{date}} are filled in when it's inserted."
@@ -125,7 +106,7 @@ export function TemplatesScreen() {
       <Section title={form.id === null ? 'New template' : `Editing ;${form.shortcut}`}>
         <form onSubmit={save}>
           <Stack gap="16">
-            <FormField label="Shortcut" help="What ; matches on, e.g. sig (without the ;).">
+            <FormField label="Shortcut" width="sm" help="What ; matches on, e.g. sig (without the ;).">
               <Input
                 appearance="filled"
                 maxLength={64}
@@ -136,7 +117,7 @@ export function TemplatesScreen() {
                 }}
               />
             </FormField>
-            <FormField label="Name">
+            <FormField label="Name" width="lg">
               <Input
                 appearance="filled"
                 maxLength={200}
@@ -147,7 +128,7 @@ export function TemplatesScreen() {
                 }}
               />
             </FormField>
-            <FormField label="Subject" optional>
+            <FormField label="Subject" width="lg" optional>
               <Input
                 appearance="filled"
                 value={form.subject}
@@ -186,7 +167,28 @@ export function TemplatesScreen() {
       ) : rows === null ? (
         <Loading label="Loading templates" />
       ) : (
-        <Table caption="Your compose templates" columns={columns} rows={rows} rowKey={(t) => t.id} empty={<EmptyState kind="empty" heading="No templates yet" size="row" />} />
+        <Section title="Your templates">
+          <DataList aria-label="Your compose templates" empty={<EmptyState kind="empty" heading="No templates yet" headingLevel={3} size="inline" />}>
+            {rows.map((t) => (
+              <DataListRow
+                key={t.id}
+                title={t.name}
+                description={t.subject === null || t.subject === '' ? 'No subject' : `Subject: ${t.subject}`}
+                meta={<span className="pr-set-mono">;{t.shortcut}</span>}
+                actions={
+                  <>
+                    <Button variant="ghost" size="sm" aria-label={`Edit ${t.name}`} onClick={() => { edit(t); }}>
+                      Edit
+                    </Button>
+                    <Button variant="danger-ghost" size="sm" aria-label={`Delete ${t.name}`} onClick={() => { setConfirming(t); }}>
+                      Delete
+                    </Button>
+                  </>
+                }
+              />
+            ))}
+          </DataList>
+        </Section>
       )}
 
       <Modal

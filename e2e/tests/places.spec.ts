@@ -85,7 +85,7 @@ test('the account menu opens Settings and the Admin console; each has its own na
   const settings = page.getByRole('navigation', { name: 'Settings' });
   await expect(mainNav(page)).toHaveCount(0);
   const settingsLinks = settings.getByRole('group', { name: 'Settings' }).getByRole('link');
-  await expect(settingsLinks).toHaveText(['Account', 'Security & devices', 'Addresses', 'Rules', 'Templates', 'Import & export', 'Encryption keys']);
+  await expect(settingsLinks).toHaveText(['Account', 'Security & devices', 'Addresses', 'Rules & sorting', 'Templates', 'Import & export', 'Encryption keys']);
   await settings.getByRole('link', { name: 'Security & devices' }).click();
   await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
   // One vocabulary: the section's own links name Browser sessions and Devices.
