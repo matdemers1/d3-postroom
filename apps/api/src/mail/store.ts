@@ -248,26 +248,100 @@ export async function ownMailbox(db: Db | Tx, accountId: string, id: string): Pr
   return db.mailbox.findFirst({ where: { id, accountId }, select: { id: true } });
 }
 
-/** One page of a mailbox, newest UID first. The cursor is the last UID of the previous page. */
+/**
+ * The list cursor (PST-T-14.10): the (internal_date, uid) of the last row of the previous page, as
+ * an opaque base64url string. The column is millisecond precision (timestamptz(3)), the same value
+ * a summary's internalDate carries, so the web list's comparator and this order agree exactly; the
+ * cursor's fixed-width six-digit fraction is just the column printed in full.
+ */
+export interface ListCursor {
+  /** ISO-8601 in UTC with microseconds, e.g. 2026-09-27T14:03:11.123456Z. */
+  internalDate: string;
+  uid: number;
+}
+
+const CURSOR_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
+
+export function encodeListCursor(c: ListCursor): string {
+  return Buffer.from(`${c.internalDate}|${String(c.uid)}`, 'utf8').toString('base64url');
+}
+
+/** The cursor a string names, or null when it is not one this server issued. */
+export function decodeListCursor(raw: string): ListCursor | null {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(raw)) return null;
+  const text = Buffer.from(raw, 'base64url').toString('utf8');
+  const bar = text.indexOf('|');
+  if (bar < 0) return null;
+  const internalDate = text.slice(0, bar);
+  const uidText = text.slice(bar + 1);
+  if (!CURSOR_TIME.test(internalDate) || Number.isNaN(Date.parse(internalDate)) || !/^\d{1,10}$/.test(uidText)) return null;
+  const uid = Number(uidText);
+  if (uid > 2_147_483_647) return null;
+  return { internalDate, uid };
+}
+
+/**
+ * A legacy cursor (a bare UID, before PST-T-14.10) resolved to the date cursor of that row, or null
+ * when the row has gone. Kept so a page loaded before an upgrade can still load its next page.
+ */
+export async function legacyListCursor(db: Db, mailboxId: string, uid: number): Promise<ListCursor | null> {
+  const rows = await db.$queryRaw<{ t: string; uid: number }[]>`
+    SELECT to_char(internal_date AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS t, uid
+    FROM message WHERE mailbox_id = ${mailboxId}::uuid AND uid = ${uid}`;
+  const row = rows[0];
+  return row === undefined ? null : { internalDate: row.t, uid: row.uid };
+}
+
+/**
+ * One page of a mailbox, newest first by INTERNALDATE (arrival), ties broken by UID descending.
+ * Mail clients sort by date, and a move keeps INTERNALDATE (RFC 9051 §6.4.7/§6.4.8) but takes a new
+ * UID in the target — so ordering by UID sent an archived-then-restored message to the top of the
+ * Inbox. The ids come from one index-ordered query on message(mailbox_id, internal_date DESC,
+ * uid DESC); the summaries from a second, by id. UIDs themselves are unchanged (IMAP's business).
+ */
 export async function listMessages(
   db: Db,
   mailboxId: string,
-  opts: { cursor: number | undefined; limit: number; keyword?: SplitKeyword | undefined },
+  opts: { cursor: ListCursor | undefined; limit: number; keyword?: SplitKeyword | undefined },
 ): Promise<{ messages: MessageSummaryJson[]; nextCursor: string | null }> {
-  const rows = await db.message.findMany({
-    where: {
-      mailboxId,
-      ...(opts.cursor !== undefined ? { uid: { lt: opts.cursor } } : {}),
-      ...(opts.keyword !== undefined ? { flags: { has: opts.keyword } } : {}),
-    },
-    orderBy: { uid: 'desc' },
-    take: opts.limit + 1,
-    include: { verdict: { select: { bucket: true, scores: true } }, search: { select: { hasAttachment: true } } },
+  // The first page is "before (infinity, max uid)": one query shape, one index path.
+  const afterTime = opts.cursor?.internalDate ?? 'infinity';
+  const afterUid = opts.cursor?.uid ?? 2_147_483_647;
+  const take = opts.limit + 1;
+  type Key = { id: string; uid: number; t: string };
+  const keys =
+    opts.keyword === undefined
+      ? await db.$queryRaw<Key[]>`
+          SELECT id::text AS id, uid, to_char(internal_date AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS t
+          FROM message
+          WHERE mailbox_id = ${mailboxId}::uuid AND (internal_date, uid) < (${afterTime}::timestamptz, ${afterUid}::int)
+          ORDER BY internal_date DESC, uid DESC
+          LIMIT ${take}`
+      : await db.$queryRaw<Key[]>`
+          SELECT id::text AS id, uid, to_char(internal_date AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS t
+          FROM message
+          WHERE mailbox_id = ${mailboxId}::uuid AND (internal_date, uid) < (${afterTime}::timestamptz, ${afterUid}::int)
+            AND ${opts.keyword}::text = ANY(flags)
+          ORDER BY internal_date DESC, uid DESC
+          LIMIT ${take}`;
+  const pageKeys = keys.slice(0, opts.limit);
+  const rows = pageKeys.length === 0
+    ? []
+    : await db.message.findMany({
+        where: { id: { in: pageKeys.map((k) => k.id) } },
+        include: { verdict: { select: { bucket: true, scores: true } }, search: { select: { hasAttachment: true } } },
+      });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const page = pageKeys.flatMap((k) => {
+    const row = byId.get(k.id);
+    return row === undefined ? [] : [row];
   });
-  const page = rows.slice(0, opts.limit);
-  const last = page[page.length - 1];
+  const last = pageKeys[pageKeys.length - 1];
   const days = await trashRetentionDays(db, [mailboxId]);
-  return { messages: page.map((m) => summaryJson(m, days.get(m.mailboxId) ?? null)), nextCursor: rows.length > opts.limit && last !== undefined ? String(last.uid) : null };
+  return {
+    messages: page.map((m) => summaryJson(m, days.get(m.mailboxId) ?? null)),
+    nextCursor: keys.length > opts.limit && last !== undefined ? encodeListCursor({ internalDate: last.t, uid: last.uid }) : null,
+  };
 }
 
 /** The keywords the worker files INBOX mail with (apps/worker/src/stages/file.ts). */

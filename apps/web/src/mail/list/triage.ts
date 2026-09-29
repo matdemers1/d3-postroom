@@ -8,6 +8,7 @@
 // that message's thread in the same mailbox with it, so a three-message conversation is archived
 // with one e, not three.
 import type { MessageSummary } from '../../api';
+import { sortsAboveTop } from '../list';
 
 /** Fields the API sends on a summary that the web type does not name yet. */
 export type RowSummary = MessageSummary & {
@@ -174,15 +175,20 @@ export function selectedMessages<T extends Pick<MessageSummary, 'id'>>(listed: r
 
 /**
  * Splits a fresh first page into what may go straight into the list and what must wait behind the
- * pill: anything newer than the newest row on screen, when the reader is not at rest at the top
- * (scrolled down, or the pointer is over the list) — inserting it would shift the rows under them.
+ * pill: anything new that would sort above the newest row on screen (by date, PST-T-14.10), when the
+ * reader is not at rest at the top (scrolled down, or the pointer is over the list) — inserting it
+ * would shift the rows under them. A new row that sorts lower (a message moved back in keeps its
+ * date) goes in at its place.
  */
-export function holdBackArrivals<T extends Pick<MessageSummary, 'id' | 'uid'>>(page: readonly T[], listed: readonly Pick<MessageSummary, 'id' | 'uid'>[], calm: boolean): { keep: T[]; held: T[] } {
+export function holdBackArrivals<T extends Pick<MessageSummary, 'id' | 'uid' | 'internalDate'>>(
+  page: readonly T[],
+  listed: readonly Pick<MessageSummary, 'id' | 'uid' | 'internalDate'>[],
+  calm: boolean,
+): { keep: T[]; held: T[] } {
   if (calm || listed.length === 0) return { keep: [...page], held: [] };
   const ids = new Set(listed.map((m) => m.id));
-  const top = listed.reduce((max, m) => Math.max(max, m.uid), -Infinity);
   const keep: T[] = [];
   const held: T[] = [];
-  for (const m of page) (m.uid > top && !ids.has(m.id) ? held : keep).push(m);
+  for (const m of page) (!ids.has(m.id) && sortsAboveTop(m, listed) ? held : keep).push(m);
   return { keep, held };
 }
