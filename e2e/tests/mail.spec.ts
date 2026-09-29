@@ -49,6 +49,9 @@ async function mailboxIds(): Promise<Record<string, string>> {
 }
 
 test('document.title names the screen, not just "Postroom", on navigation (PST-DA-043)', async ({ page }) => {
+  // An empty Inbox renders its empty state, not the list: file one message rather than rely on an
+  // earlier spec having done so on this stack.
+  await seedMail(api, [{ subject: `Title check ${tag()}` }]);
   await inboxList(page);
   await expect(page).toHaveTitle('Mail — Postroom');
   await page.goto('/calendar');
