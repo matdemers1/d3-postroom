@@ -130,6 +130,12 @@ describe.skipIf(!baseUrl)('GET /api/search (PST-T-3.13)', () => {
     const hit = parsed.results.find((r) => r.messageId === m.id);
     expect(hit).toMatchObject({ mailboxId: alice.inbox, subject: 'quarterly numbers', from: 'finance@example.org' });
     expect(hit?.snippet.toLowerCase()).toContain('platypus');
+    // The list renders full summaries (the webmail once read {messages} from a body without them).
+    expect(parsed.messages.map((x) => x.id)).toEqual(parsed.results.map((r) => r.messageId));
+    const summary = parsed.messages.find((x) => x.id === m.id);
+    expect(summary).toMatchObject({ mailboxId: alice.inbox, subject: 'quarterly numbers', from: 'finance@example.org' });
+    expect(Array.isArray(summary?.flags)).toBe(true);
+    expect(typeof summary?.modseq).toBe('string');
 
     const asBob = await request(app).get('/api/search?q=platypus').set('cookie', bob.cookie);
     expect(asBob.status).toBe(200);

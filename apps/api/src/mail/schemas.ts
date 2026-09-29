@@ -95,6 +95,13 @@ export const MessageSummary = z.object({
   threadId: Uuid.nullable(),
   subject: z.string().nullable(),
   from: z.string().nullable(),
+  /** PST-T-14.2: what a message row shows beside the subject, both stored at filing time. */
+  fromName: z.string().nullable().describe("The From header's display name, RFC 2047 decoded; null when it has none (show `from`)."),
+  snippet: z
+    .string()
+    .max(140)
+    .nullable()
+    .describe('A one-line preview of the body: at most 140 characters, whitespace collapsed, quoted history dropped. Empty when there is no text; null until the message is summarised.'),
   /** The Date header when there was one, else the arrival time. */
   date: Iso,
   internalDate: Iso,
@@ -182,6 +189,9 @@ export const SearchResult = z.object({
 });
 export const SearchResponse = z.object({
   results: z.array(SearchResult),
+  /** The same hits as full list summaries, in hit order — what the webmail's list renders (flags,
+   *  thread, bucket), so a search result behaves like any other row. */
+  messages: z.array(MessageSummary),
   nextCursor: z.string().nullable(),
   warnings: z.array(z.string()),
 });

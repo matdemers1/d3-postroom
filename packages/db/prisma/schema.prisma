@@ -416,6 +416,11 @@ model Message {
   messageIdHeader  String?   @map("message_id_header")
   subject          String?
   fromAddress      String?   @map("from_address")
+  /// PST-T-14.2: the From display name (RFC 2047 decoded), null when there is none, and a one-line
+  /// preview of the body (at most 140 chars, whitespace collapsed, quoted history dropped). Written
+  /// at filing time; snippet NULL means "not summarised yet" — the worker's summary sweep fills it.
+  fromName         String?   @map("from_name")
+  snippet          String?
   sentAt           DateTime? @map("sent_at") @db.Timestamptz(6)
   /// Threading headers (PST-T-3.8): In-Reply-To's first msg-id and the References chain.
   inReplyTo        String?   @map("in_reply_to")

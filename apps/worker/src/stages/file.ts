@@ -449,6 +449,7 @@ export async function fileStage(
           ...(prior.parse.fromAddress === null ? {} : { from: prior.parse.fromAddress }),
           ...(prior.parse.toAddress === null ? {} : { to: prior.parse.toAddress }),
           bodyText: prior.parse.bodyText,
+          fromName: prior.parse.fromName ?? null,
           attachmentNames: prior.parse.attachments.map((a) => a.filename).filter((f): f is string => f !== null),
           hasAttachment: prior.parse.attachments.length > 0,
         });

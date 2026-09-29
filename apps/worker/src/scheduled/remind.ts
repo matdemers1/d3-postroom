@@ -85,6 +85,7 @@ export async function checkOne(deps: RemindDeps, id: string): Promise<RemindOutc
         inReplyTo: sent.inReplyTo,
         references: sent.references,
         bodyText: search?.bodyText ?? '',
+        fromName: sent.fromName,
       },
       now,
       takeReference: true,

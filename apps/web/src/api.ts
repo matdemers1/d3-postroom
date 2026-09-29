@@ -168,7 +168,10 @@ export const api = {
     const params = new URLSearchParams({ q });
     if (opts.mailboxId !== undefined) params.set('mailboxId', opts.mailboxId);
     if (opts.cursor !== undefined && opts.cursor !== null) params.set('cursor', opts.cursor);
-    return call<MessagePage>('GET', `/api/search?${params.toString()}`);
+    // The API answers {results, messages, nextCursor, warnings}; the list renders `messages`, the
+    // same summaries a mailbox page carries. (It once read {messages} from a body that had only
+    // {results}, which threw inside the list and blanked the app.)
+    return call<MessagePage & { warnings?: string[] }>('GET', `/api/search?${params.toString()}`);
   },
 
   // --- Senders (PST-T-5.6, PST-REQ-113/110) ---------------------------------------------------
@@ -486,6 +489,10 @@ export interface MessageSummary {
   subject: string | null;
   /** The sender's address (denormalised at filing); the display name is in the body's headers. */
   from: string | null;
+  /** PST-T-14.2: the From display name, decoded; null when it has none (show `from`). */
+  fromName?: string | null;
+  /** PST-T-14.2: a one-line body preview (≤ 140 chars); null until the message is summarised. */
+  snippet?: string | null;
   date: string;
   internalDate: string;
   size: number;

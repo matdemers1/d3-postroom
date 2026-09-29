@@ -213,6 +213,9 @@ describe.skipIf(baseUrl === undefined)('smtp-in durable acceptance', () => {
       expect(m.mailbox.name).toBe('Rejects');
       expect(m.mailbox.specialUse).toBe('rejects');
       expect(m).toMatchObject({ blobSha256: row.blobSha256, subject: 'Spoofed invoice', fromAddress: 'alice@reject.example', messageIdHeader: 'Spoofedinvoice@example' });
+      // PST-T-14.2: the display name is filed with the copy; the snippet needs the body, which the
+      // worker's summary sweep reads later (NULL marks the row for it).
+      expect(m).toMatchObject({ fromName: 'Alice', snippet: null });
       expect(m.verdict?.bucket).toBe('rejects');
       expect(m.verdict?.reasons.some((x) => x.includes('dmarc=fail'))).toBe(true);
       expect(m.verdict?.reasons.some((x) => x.startsWith('rejected with 550 5.7.1'))).toBe(true);
