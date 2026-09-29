@@ -512,6 +512,8 @@ test.describe('signed in', () => {
     const t = tag();
     const [m] = await seedMail(api, [{ subject: `Push ${t}`, text: 'Slide.' }]);
     if (m === undefined) throw new Error('seed returned nothing');
+    // The suite runs with reduced motion (playwright.config.ts); this test is about the motion.
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
     const animationOf = (selector: string) =>
       page.locator(selector).first().evaluate((el) => {
         const w = globalThis as unknown as { getComputedStyle(e: unknown): { animationName: string; animationDuration: string } };

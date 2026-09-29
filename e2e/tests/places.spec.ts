@@ -173,6 +173,8 @@ test('the palette lists every place from the route table, grouped, with keycaps'
 });
 
 test('moving between places cross-fades within --dur-2 and never slides; a page load does not fade', async ({ page }) => {
+  // The suite runs with reduced motion (playwright.config.ts); this test is about the motion.
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   const animation = (selector: string) =>
     page.locator(selector).evaluate((el) => {
       const style = (globalThis as unknown as { getComputedStyle: (e: unknown) => { animationName: string; animationDuration: string } }).getComputedStyle(el);

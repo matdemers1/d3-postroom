@@ -319,6 +319,8 @@ test('a new message opens with To, Subject and the body only; Cc and Bcc reveal 
   await expect(fresh.getByRole('list', { name: 'To recipients' })).toContainText(`Erin Okafor ${t}`);
 
   // Cc reveals its row, focused, opening height + opacity (PST-REQ-192); Bcc stays a link until used.
+  // The suite runs with reduced motion (playwright.config.ts); this part is about the motion.
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   await fresh.getByRole('button', { name: 'Cc', exact: true }).click();
   const cc = fresh.getByRole('combobox', { name: 'Cc' });
   await expect(cc).toBeFocused();
@@ -332,7 +334,6 @@ test('a new message opens with To, Subject and the body only; Cc and Bcc reveal 
   await expect(fresh.getByRole('combobox', { name: 'Bcc' })).toBeFocused();
   await expect(fresh.locator('[data-row="bcc"]')).toHaveCSS('animation-name', 'none');
   await expect(fresh).toHaveCSS('animation-name', 'none');
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
 
   // The rare options live behind ⋯; Send later behind Send's ▾.
   await fresh.getByRole('button', { name: 'More options' }).click();
