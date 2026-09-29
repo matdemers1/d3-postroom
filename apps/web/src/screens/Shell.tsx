@@ -30,7 +30,10 @@ import { resolveKey } from '../mail/keys';
 import { useOptionalMail } from '../mail/MailContext';
 import { mailPath, parseMailRoute } from '../mail/route';
 import { LAST_VISIT_KEY, mailSidebar, newSinceVisit, parseVisits, type LastVisits } from '../mail/sidebar';
-import { WIDE_QUERY, useMediaQuery } from '../mail/useMedia';
+import { SPLIT_QUERY, WIDE_QUERY, useMediaQuery } from '../mail/useMedia';
+import { ContextBar, PushFrame, usePushDirection } from '../mobile/ContextBar';
+import { PhoneAccountMenu, PlaceIndex } from '../mobile/PlaceIndex';
+import { contextParent, contextTitle, placeIndexFor, pushDepth } from '../mobile/push';
 import { navEntries, PLACE_HOME, PLACE_NAME, routeForPath, type Place } from '../routes';
 import { PaneBoundary } from './PaneBoundary';
 import { NoAccess } from './states';
@@ -234,6 +237,7 @@ function PersonIcon() {
 /** Each left-nav entry's mark, by its label in the route table. */
 const NAV_ICONS: Readonly<Record<string, () => ReactNode>> = {
   Calendar: CalendarIcon,
+  'Admin console': HeartbeatIcon,
   Contacts: ContactsIcon,
   Account: PersonIcon,
   'Security & devices': LockIcon,
@@ -284,6 +288,10 @@ function useSetupStepsLeft(isAdmin: boolean, pathname: string): number {
 /** Where "Back to Mail" returns: the last mail URL this tab showed (a mailbox, an open message). */
 let lastMailPath = '/';
 
+/** PST-T-14.8: the last URL of the mail view itself (not Calendar or Contacts) — where a phone's
+ * sender profile goes Back to. */
+let lastMailViewPath = '/';
+
 /** The place on screen before this render — so arriving in a place from another one cross-fades,
  * while a page load (nothing was on screen) simply appears. */
 let shownPlace: Place | null = null;
@@ -297,8 +305,9 @@ function usePlaceFade(place: Place): boolean {
   return fade;
 }
 
-function PlaceFrame({ place, children }: { place: Place; children: ReactNode }) {
-  const fade = usePlaceFade(place);
+function PlaceFrame({ place, phone, children }: { place: Place; phone: boolean; children: ReactNode }) {
+  // On a phone a move between places is a push like any other (PST-T-14.8), not a cross-fade.
+  const fade = usePlaceFade(place) && !phone;
   return (
     <div className={fade ? 'pr-place pr-place--fade' : 'pr-place'} data-place={place}>
       {children}
@@ -564,14 +573,27 @@ function PlacePalette({ enabled }: { enabled: boolean }) {
 export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: () => Promise<void> }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const mail = useOptionalMail();
   const account = state.account;
   const isAdmin = account?.isAdmin === true;
-  const place: Place = routeForPath(location.pathname)?.place ?? 'mail';
+  // PST-T-14.8: below 768 px the app is one push stack — no drawer; '/settings' and '/admin' are
+  // the places' own index screens (on a wider screen they redirect to the place's first screen).
+  const phone = !useMediaQuery(SPLIT_QUERY);
+  const phoneIndex = phone ? placeIndexFor(location.pathname) : null;
+  const route = routeForPath(location.pathname);
+  const place: Place = phoneIndex ?? route?.place ?? 'mail';
+  const isMailView = phoneIndex === null && (route === null || route.id === 'mail' || route.id === 'mailFolder');
   // A non-admin in /admin/* sees the no-access state beside Mail's nav, never the admin nav.
   const navPlace = place === 'admin' && !isAdmin ? 'mail' : place;
   const setupLeft = useSetupStepsLeft(isAdmin, place === 'admin' ? location.pathname : '/');
+  // One push screen per nav entry, not per URL: the screens under one entry (Contacts' list, new
+  // and card; Security & devices' three) are one component that carries state across its own URLs
+  // (a "Contact added." notice), so a move between them must not remount it.
+  const pushScreen = isMailView ? 'mail' : phoneIndex !== null ? `index:${phoneIndex}` : route?.navGroup !== undefined ? `${route.place}:${route.navGroup}` : location.pathname;
+  const direction = usePushDirection(pushScreen, pushDepth(location.pathname, location.search));
 
-  if (place === 'mail') lastMailPath = location.pathname + location.search;
+  if (place === 'mail' && phoneIndex === null) lastMailPath = location.pathname + location.search;
+  if (isMailView) lastMailViewPath = location.pathname + location.search;
 
   const signOut = () => {
     api
@@ -582,7 +604,77 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
       });
   };
 
+  // On a phone the account menu lives on the root screens (Mailboxes, Settings), and its places
+  // open at their index screens, since there is no left nav to choose from.
+  const accountMenu = (
+    <AccountMenu name={account?.displayName ?? 'Account'} {...(account?.address ? { detail: account.address } : {})}>
+      <MenuItem asChild>
+        <RouterLink to={phone ? '/settings' : PLACE_HOME.settings}>Settings</RouterLink>
+      </MenuItem>
+      {isAdmin ? (
+        <MenuItem asChild>
+          <RouterLink to={phone ? '/admin' : PLACE_HOME.admin}>{setupLeft > 0 ? `Admin console (${String(setupLeft)} setup ${setupLeft === 1 ? 'step' : 'steps'} left)` : 'Admin console'}</RouterLink>
+        </MenuItem>
+      ) : null}
+      <MenuSeparator />
+      <ThemeSwitch label="Theme" />
+      <MenuSeparator />
+      <MenuItem tone="danger" onSelect={signOut}>
+        Sign out
+      </MenuItem>
+    </AccountMenu>
+  );
+
+  let page: ReactNode;
+  if (phoneIndex !== null) {
+    page = phoneIndex === 'admin' && !isAdmin ? (
+      <Page>
+        <PageHeader title="Admin" />
+        <NoAccess />
+      </Page>
+    ) : (
+      <PlaceIndex place={phoneIndex} isAdmin={isAdmin} setupLeft={setupLeft} iconFor={navIcon} account={accountMenu} />
+    );
+  } else if (place === 'admin' && !isAdmin) {
+    // PST-T-11.1: the server refuses every /api/admin call to a non-admin (403); the screen says so
+    // itself rather than leaving each admin page to fail its own way.
+    page = (
+      <Page>
+        <PageHeader title="Admin" />
+        <NoAccess />
+      </Page>
+    );
+  } else {
+    page = <Outlet />;
+  }
+
+  let frame: ReactNode = (
+    <>
+      <SubNav place={navPlace} isAdmin={isAdmin} />
+      <PaneBoundary name="This page" resetKey={location.pathname}>
+        {page}
+      </PaneBoundary>
+    </>
+  );
+  if (phone) {
+    // The mail view draws its own bars (it knows the mailbox and has Search and Compose to offer);
+    // every other screen gets Back with its parent's name, and its title.
+    const lastMail = parseMailRoute(lastMailViewPath.split('?')[0] ?? '/', '');
+    const lastBox = lastMail?.mailboxId === null || lastMail === null ? null : (mail?.mailboxes?.find((m) => m.id === lastMail.mailboxId) ?? null);
+    const lastMailName = lastMail?.mailboxIndex === true ? 'Mailboxes' : lastBox === null ? 'Inbox' : mailboxLabel(lastBox);
+    frame = (
+      <PushFrame key={pushScreen} direction={direction} className={isMailView ? 'pr-push--mail' : undefined}>
+        {isMailView ? null : <ContextBar back={contextParent(location.pathname, lastMailViewPath, lastMailName)} title={contextTitle(location.pathname)} />}
+        {frame}
+        {/* With no drawer, a Settings or Admin screen keeps the account menu (theme, Sign out) at its
+            foot, so signing out never means leaving the page first. */}
+        {phoneIndex === null && (place === 'settings' || place === 'admin') ? <div className="pr-place-account">{accountMenu}</div> : null}
+      </PushFrame>
+    );
+  }
+
   return (
+    <PhoneAccountMenu.Provider value={phone ? accountMenu : null}>
     <PaletteRoleContext.Provider value={isAdmin}>
       <AppShell
         navTone="recessed"
@@ -601,42 +693,14 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
             )}
           </PaneBoundary>
         }
-        footer={
-          <AccountMenu name={account?.displayName ?? 'Account'} {...(account?.address ? { detail: account.address } : {})}>
-            <MenuItem asChild>
-              <RouterLink to={PLACE_HOME.settings}>Settings</RouterLink>
-            </MenuItem>
-            {isAdmin ? (
-              <MenuItem asChild>
-                <RouterLink to={PLACE_HOME.admin}>{setupLeft > 0 ? `Admin console (${String(setupLeft)} setup ${setupLeft === 1 ? 'step' : 'steps'} left)` : 'Admin console'}</RouterLink>
-              </MenuItem>
-            ) : null}
-            <MenuSeparator />
-            <ThemeSwitch label="Theme" />
-            <MenuSeparator />
-            <MenuItem tone="danger" onSelect={signOut}>
-              Sign out
-            </MenuItem>
-          </AccountMenu>
-        }
+        footer={accountMenu}
       >
-        <PlaceFrame key={place} place={place}>
-          <SubNav place={navPlace} isAdmin={isAdmin} />
-          <PaneBoundary name="This page" resetKey={location.pathname}>
-            {/* PST-T-11.1: the server refuses every /api/admin call to a non-admin (403); the screen
-                says so itself rather than leaving each admin page to fail its own way. */}
-            {place === 'admin' && !isAdmin ? (
-              <Page>
-                <PageHeader title="Admin" />
-                <NoAccess />
-              </Page>
-            ) : (
-              <Outlet />
-            )}
-          </PaneBoundary>
+        <PlaceFrame key={place} place={place} phone={phone}>
+          {frame}
         </PlaceFrame>
         <PlacePalette enabled={place !== 'mail'} />
       </AppShell>
     </PaletteRoleContext.Provider>
+    </PhoneAccountMenu.Provider>
   );
 }

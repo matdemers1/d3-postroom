@@ -18,6 +18,7 @@ import type { Express } from 'express';
 import { request } from '../loopback.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
+import { NARROW_FIT_STYLE } from '../../src/usercontent/index.js';
 import { RenderTicket } from '../../src/mail/schemas.js';
 import { PROXY_USER_AGENT } from '../../src/usercontent/proxy.js';
 import { KEK_BASE64, TestClock, WEB_ORIGIN, baseConfig, cookieHeader, cookiesOf, createAccount, randomLogin, totpCode } from './helpers.js';
@@ -182,6 +183,10 @@ describe.skipIf(!baseUrl)('usercontent origin (PST-T-3.12)', () => {
     const html = res.text;
     expect(html).toContain('<p id="hello">Hello</p>');
     expect(html).not.toMatch(/<script|on\w+=|javascript:|url\(|<svg|@import/i);
+    // PST-T-14.8: the served render carries the narrow-frame fit rule, inside the one <style> the
+    // CSP's style-src 'unsafe-inline' allows.
+    expect(csp).toContain("style-src 'unsafe-inline'");
+    expect(html).toContain(NARROW_FIT_STYLE);
     expect(html).not.toMatch(/[^-]src="https?:\/\/127\.0\.0\.1/);
     expect(html).toContain(`data-src="http://127.0.0.1:${String(senderPort)}/pixel.png"`);
     expect(html).toContain('<a href="https://example.com/" target="_blank" rel="noopener noreferrer">ok link</a>');

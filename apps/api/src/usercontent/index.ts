@@ -133,10 +133,24 @@ function baseHeaders(_req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
+/**
+ * PST-T-14.8 (PST-REQ-155, design audit RSP-03): a sender's fixed 600 px layout fitted to a narrow
+ * frame. The media query is the FRAME's viewport (a phone's reading pane, a tablet's narrow one), so
+ * a wide pane shows the sender's layout untouched. Below 600 px every element is capped at its
+ * container's width and layout tables are linearised — cells stack — which is what `width="600"`
+ * tables and fixed-width blocks need; `!important` is what outranks a sender's inline `width`.
+ * CSS only: nothing runs in the frame (PST-REQ-081), and the served CSP's style-src 'unsafe-inline'
+ * already covers this <style>.
+ */
+export const NARROW_FIT_STYLE =
+  '@media (max-width:599px){body *{max-width:100%!important;min-width:0!important;box-sizing:border-box}' +
+  'table,tbody,tr,td,th{display:block;width:auto!important}}';
+
 /** Mail's defaults, before the sender's own styles: readable, contained, light (senders assume white). */
 const BASE_STYLE =
   ':root{color-scheme:light}html{background:#fff;color:#111}body{margin:0;padding:12px;font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow-wrap:anywhere}' +
-  'img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}blockquote{margin:0 0 0 8px;padding-left:8px;border-left:2px solid #ccc}';
+  'img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}blockquote{margin:0 0 0 8px;padding-left:8px;border-left:2px solid #ccc}' +
+  NARROW_FIT_STYLE;
 
 export function renderDocument(body: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_STYLE}</style></head><body>${body}</body></html>`;

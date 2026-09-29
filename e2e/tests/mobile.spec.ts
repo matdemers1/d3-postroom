@@ -15,7 +15,7 @@
 // is the other specs' 1280 px assertions.
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 
-import { ensureOperator, openNav, seedMail, signInCookies, tag, type Operator } from './support.js';
+import { ensureOperator, seedMail, signInCookies, tag, type Operator } from './support.js';
 
 test.describe.configure({ mode: 'serial', timeout: 300_000 });
 test.skip(({ isMobile }) => !isMobile, 'this is the mobile project’s own pass');
@@ -272,22 +272,52 @@ test.describe('signed in', () => {
     await page.goto('/');
     await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
     await assertMobileFriendly(page, '/ (inbox list)');
-
-    // The sidebar is a drawer below tablet width (Shell.tsx) — open it once to check its own
-    // mailbox and place links, then close it before the rest of this test's navigation.
-    await openNav(page);
-    await assertMobileFriendly(page, '/ (navigation drawer open)');
-    await page.keyboard.press('Escape');
-    await page.getByRole('dialog', { name: 'Navigation' }).waitFor({ state: 'detached' });
+    // PST-T-14.8: one push stack — no hamburger drawer competing with it; the context bar says
+    // where Back goes and offers Search and Compose, and the Inbox's segments are 44 px.
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden();
+    const listBar = page.getByTestId('context-bar');
+    await expect(listBar.getByRole('link', { name: 'Mailboxes', exact: true })).toBeVisible();
+    await expect(listBar.getByRole('button')).toHaveCount(2);
+    await expect(listBar.getByRole('button', { name: 'Search' })).toBeVisible();
+    await expect(listBar.getByRole('button', { name: 'Compose' })).toBeVisible();
+    for (const box of await page.getByRole('radiogroup', { name: 'Show in Inbox' }).getByRole('radio').all()) {
+      expect((await box.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    // assertMobileFriendly scrolls every row into view to probe it; start the list from its top
+    // again, so the newest message (the one seeded above) is a rendered row, however long the Inbox.
+    await page.goto('/');
 
     await page.getByRole('option', { name: new RegExp(msg.subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
     await expect(page.getByRole('heading', { name: msg.subject, level: 2 })).toBeVisible();
+    // Body first: the actions are a bottom bar, not rows of links above the body.
+    const actionBar = page.getByRole('toolbar', { name: 'Message actions' });
+    await expect(actionBar).toHaveCount(1);
+    await expect(actionBar.getByRole('button')).toHaveText(['Archive', 'Delete', 'Move', 'Reply', 'More']);
+    const bar = await actionBar.boundingBox();
+    expect((bar?.y ?? 0) + (bar?.height ?? 0)).toBeGreaterThan(844 - 2);
     await assertMobileFriendly(page, `/mail/${msg.mailboxId}/${msg.id} (open message)`);
+    // The context bar stays put while the thread scrolls under it.
+    await page.getByTestId('reader-scroll').evaluate((el) => {
+      (el as unknown as { scrollTop: number }).scrollTop = 10_000;
+    });
+    expect((await page.getByTestId('context-bar').boundingBox())?.y).toBe(0);
+    await expect(page.getByTestId('context-bar').getByRole('link', { name: 'Inbox', exact: true })).toBeInViewport();
 
-    // The bare /mail route (App.tsx's /mail/*): the phone-width mailbox list the reading pane's
-    // Back returns to.
-    await page.goto('/mail');
-    await expect(page.locator('main')).toBeVisible();
+    // ⋯ holds the rest, each row a 44 px target.
+    await actionBar.getByRole('button', { name: 'More actions' }).click();
+    const more = page.getByRole('menu');
+    await expect(more.getByRole('menuitem')).toHaveText(['Reply all', 'Forward', 'Snooze…', 'Mark unread', 'Star', 'Inspect message']);
+    await assertMobileFriendly(page, `/mail/${msg.mailboxId}/${msg.id} (⋯ open)`);
+    await page.keyboard.press('Escape');
+    await expect(more).toBeHidden();
+
+    // The root of the stack (App.tsx's /mail/*): the mailboxes, Calendar, Contacts and the account
+    // menu — where the list's Back goes.
+    await page.getByTestId('context-bar').getByRole('link', { name: 'Inbox', exact: true }).click();
+    await page.getByTestId('context-bar').getByRole('link', { name: 'Mailboxes', exact: true }).click();
+    await expect(page).toHaveURL(/\/mail$/);
+    await expect(page.getByRole('navigation', { name: 'Mailboxes' }).getByRole('link', { name: /^Inbox/ })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Places' }).getByRole('link')).toHaveText(['Calendar', 'Contacts']);
     await assertMobileFriendly(page, '/mail (mailbox list)');
 
     await page.goto('/?compose=new');
@@ -394,12 +424,14 @@ test.describe('signed in', () => {
     await expect(page.getByRole('heading', { name: 'Set up iPhone / Mac', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/security/device-setup');
 
-    // The Settings nav is the drawer below tablet width, with its way back to Mail.
-    await openNav(page);
-    await expect(page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Back to Mail' })).toBeVisible();
-    await assertMobileFriendly(page, '/settings (navigation drawer open)');
-    await page.keyboard.press('Escape');
-    await page.getByRole('dialog', { name: 'Navigation' }).waitFor({ state: 'detached' });
+    // PST-T-14.8: Settings pushes like the mailboxes — '/settings' is its index on a phone, each
+    // screen's context bar goes Back to it, and the index goes Back to Mailboxes.
+    await expect(page.getByTestId('context-bar').getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
+    await page.getByTestId('context-bar').getByRole('link', { name: 'Settings', exact: true }).click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Security & devices' })).toBeVisible();
+    await expect(page.getByTestId('context-bar').getByRole('link', { name: 'Mailboxes', exact: true })).toBeVisible();
+    await assertMobileFriendly(page, '/settings (index)');
 
     await page.goto('/settings/rules');
     await expect(page.getByRole('heading', { name: 'Rules', level: 1 })).toBeVisible();
@@ -430,8 +462,15 @@ test.describe('signed in', () => {
   test('Admin console: sign-in sessions, health, jobs, queue, suppressions, deliverability, live SMTP', async ({ page }) => {
     const t = tag();
 
+    // The Admin console's index on a phone, pushed from Settings.
+    await page.goto('/admin');
+    await expect(page.getByRole('navigation', { name: 'Admin console' }).getByRole('link', { name: 'Health' })).toBeVisible();
+    await expect(page.getByTestId('context-bar').getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
+    await assertMobileFriendly(page, '/admin (index)');
+
     await page.goto('/admin/sessions');
     await expect(page.getByRole('heading', { name: 'Sign-in sessions', level: 1 })).toBeVisible();
+    await expect(page.getByTestId('context-bar').getByRole('link', { name: 'Admin', exact: true })).toBeVisible();
     await assertMobileFriendly(page, '/admin/sessions');
 
     await page.goto('/admin/health');
@@ -468,5 +507,68 @@ test.describe('signed in', () => {
     await page.goto('/admin/smtp');
     await expect(page.getByRole('heading', { name: 'Live SMTP', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/admin/smtp');
+  });
+  test('push navigation slides in from the right, reverses on Back, and does not move under reduced motion', async ({ page }) => {
+    const t = tag();
+    const [m] = await seedMail(api, [{ subject: `Push ${t}`, text: 'Slide.' }]);
+    if (m === undefined) throw new Error('seed returned nothing');
+    const animationOf = (selector: string) =>
+      page.locator(selector).first().evaluate((el) => {
+        const w = globalThis as unknown as { getComputedStyle(e: unknown): { animationName: string; animationDuration: string } };
+        const style = w.getComputedStyle(el);
+        return `${style.animationName} ${style.animationDuration}`;
+      });
+
+    await page.goto(`/mail/${m.mailboxId}`);
+    await page.getByRole('option', { name: new RegExp(`Push ${t}`) }).click();
+    await expect(page.getByRole('heading', { name: `Push ${t}`, level: 2 })).toBeVisible();
+    await expect(page.locator('.pr-push--level')).toHaveAttribute('data-push', 'forward');
+    expect(await animationOf('.pr-push--level')).toBe('pr-push-in 0.28s');
+
+    await page.getByTestId('context-bar').getByRole('link', { name: 'Inbox', exact: true }).click();
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
+    await expect(page.locator('.pr-push--level')).toHaveAttribute('data-push', 'back');
+    expect(await animationOf('.pr-push--level')).toBe('pr-pop-in 0.28s');
+
+    // Settings pushes too, from the root.
+    await page.getByTestId('context-bar').getByRole('link', { name: 'Mailboxes', exact: true }).click();
+    await page.locator('button.d3-acct').click();
+    await page.getByRole('menuitem', { name: 'Settings' }).click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.locator('.pr-push').first()).toHaveAttribute('data-push', 'forward');
+
+    // Reduced motion: no slide at all, and the screens still arrive (nothing waits on animationend).
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`/mail/${m.mailboxId}`);
+    await page.getByRole('option', { name: new RegExp(`Push ${t}`) }).click();
+    await expect(page.getByRole('heading', { name: `Push ${t}`, level: 2 })).toBeVisible();
+    expect((await animationOf('.pr-push--level')).split(' ')[0]).toBe('none');
+    await page.getByTestId('context-bar').getByRole('link', { name: 'Inbox', exact: true }).click();
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
+  });
+
+  test('HTML mail is fitted to the width: no clipping inside the frame, no sideways page scroll', async ({ page }) => {
+    // PST-T-14.8: the frame spans the pane, and the usercontent document's narrow-frame rule
+    // (apps/api/src/usercontent/index.ts's NARROW_FIT_STYLE) fits the sender's 600 px layout inside it.
+    const t = tag();
+    // A sender's fixed 600 px newsletter layout: a table, a banner cell and a fixed-width block.
+    const html =
+      `<table width="600" cellpadding="0" cellspacing="0"><tr><td width="600" style="background:#5b3fd6;color:#fff;font-size:28px;padding:16px">Self-Hosted Weekly ${t}: Immich 2.0, Caddy vs Traefik, and a $90 NAS</td></tr>` +
+      `<tr><td style="padding:16px"><div style="width:560px">Stable at last: the mobile apps got a rework, sync is fast, and there is finally an official backup guide.</div></td></tr></table>`;
+    const [m] = await seedMail(api, [{ subject: `Newsletter ${t}`, text: null, html }]);
+    if (m === undefined) throw new Error('seed returned nothing');
+    await page.goto(`/mail/${m.mailboxId}/${m.id}`);
+    const frame = page.getByTestId('message-html');
+    await expect(frame).toBeVisible();
+    const box = await frame.boundingBox();
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
+    await assertMobileFriendly(page, `/mail/${m.mailboxId}/${m.id} (HTML newsletter)`);
+    const inner = page.frameLocator('[data-testid="message-html"]');
+    await expect(inner.getByText(`Self-Hosted Weekly ${t}`)).toBeVisible();
+    const widths = await inner.locator('html').evaluate((el) => {
+      const root = el as unknown as { scrollWidth: number; clientWidth: number };
+      return { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth };
+    });
+    expect(widths.scrollWidth, 'the message is wider than its frame: its right edge is clipped').toBeLessThanOrEqual(widths.clientWidth);
   });
 });
