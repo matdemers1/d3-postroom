@@ -16,7 +16,8 @@
 // sheet (mail.css), so focus trap, Escape, aria-modal and focus return are the library's.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Badge, Button, Checkbox, Cluster, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
-import { api, serverUnreachable, type InspectAlignment, type InspectScore, type MessageInspect, type ReceivedHop } from '../api';
+import { api, serverUnreachable, type DeliveryRecipient, type InspectAlignment, type InspectScore, type MessageInspect, type ReceivedHop } from '../api';
+import { DeliveryEvidence } from './DeliveryRows';
 import { byteSize, fullDate } from './format';
 import { cryptoView, type CryptoPartView } from './inspect-crypto';
 import { describeTarget, onInspectRequest, resolveKey } from './keys';
@@ -618,6 +619,8 @@ export function InspectDrawer({ messageId }: { messageId: string }) {
   const [attempt, setAttempt] = useState(0);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [learn, setLearn] = useState(false);
+  // PST-T-14.1 (CPY-01): a sent message's attempt log and raw replies live here, not in the reading view.
+  const [delivery, setDelivery] = useState<DeliveryRecipient[] | null>(null);
   const pending = useRef<'g' | null>(null);
 
   // The palette's command and the `i` key both arrive here.
@@ -659,6 +662,24 @@ export function InspectDrawer({ messageId }: { messageId: string }) {
         if (live) setState({ status: 'error' });
       },
     );
+    return () => {
+      live = false;
+    };
+  }, [open, messageId, attempt]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let live = true;
+    setDelivery(null);
+    api
+      .messageOutbound(messageId)
+      .then(({ outboundId }) => (outboundId === null ? null : api.messageDelivery(outboundId)))
+      .then(
+        (d) => {
+          if (live) setDelivery(d === null ? null : d.recipients);
+        },
+        () => undefined,
+      );
     return () => {
       live = false;
     };
@@ -723,6 +744,7 @@ export function InspectDrawer({ messageId }: { messageId: string }) {
         ) : (
           <InspectSections data={state.data} learn={learn} />
         )}
+        {delivery !== null && delivery.length > 0 ? <DeliveryEvidence recipients={delivery} /> : null}
       </Stack>
     </Modal>
   );

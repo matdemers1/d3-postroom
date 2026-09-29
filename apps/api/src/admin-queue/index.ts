@@ -16,6 +16,7 @@ import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { OUTBOUND_QUEUE, outboundJobKey, transportsFromEnv } from '@postroom/delivery';
 import type { OutboundRecipient, Prisma } from '@postroom/db';
 import { buildDsn, fileLocalMessage, type DsnRecipientReport } from '@postroom/dsn';
+import { decodeEncodedWords } from '@postroom/mime';
 import { enqueue } from '@postroom/queue';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
@@ -31,6 +32,15 @@ const MAX_LIST_LIMIT = 500;
 const HEADER_CAP_BYTES = 64 * 1024;
 
 const ACTIVE: OutboundRecipient['state'][] = ['queued', 'deferred'];
+
+/**
+ * The Subject column as a person reads it (PST-T-14.1, design audit CPY-03): OutboundMessage.subject
+ * holds the header as sent, so a non-ASCII subject is still RFC 2047 encoded-words
+ * ("=?UTF-8?Q?Your_old_tent_=E2=80=94?="). Decoded with the shared decoder, as the mailbox lists are.
+ */
+export function queueSubject(raw: string | null): string | null {
+  return raw === null ? null : decodeEncodedWords(raw);
+}
 
 const ListQuery = z.object({
   domain: z.string().trim().min(1).max(253).optional(),
@@ -211,7 +221,7 @@ export function adminQueueRoutes(deps: ApiDeps): Router {
       res.json({
         messages: [...byMessage.values()].map((e) => ({
           id: e.message.id,
-          subject: e.message.subject,
+          subject: queueSubject(e.message.subject),
           headerFrom: e.message.headerFrom,
           envelopeFrom: e.message.envelopeFrom,
           createdAt: e.message.createdAt.toISOString(),

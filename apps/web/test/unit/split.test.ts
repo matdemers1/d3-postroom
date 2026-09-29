@@ -20,9 +20,17 @@ describe('the Inbox split', () => {
   it('lists Everything first, and counts only unread mail', () => {
     const items = segmentItems({ priority: { total: 4, unseen: 2 }, people: { total: 9, unseen: 0 } }, 7);
     expect(items.map((i) => i.value)).toEqual(['all', 'priority', 'people']);
-    expect(items[0]).toMatchObject({ label: 'Everything', count: 7, countLabel: 'unread' });
-    expect(items[1]).toMatchObject({ label: 'Priority', count: 2 });
+    expect(items[0]).toMatchObject({ label: 'Everything', count: 7, countLabel: 'Everything, 7 unread' });
+    expect(items[1]).toMatchObject({ label: 'Priority', count: 2, countLabel: 'Priority, 2 unread' });
     expect(items[2]).toEqual({ value: 'people', label: 'People' });
+  });
+
+  it('names every counted segment by its visible label plus the count, never a bare "unread" (A11Y-01)', () => {
+    const items = segmentItems({ priority: { total: 4, unseen: 3 }, people: { total: 9, unseen: 5 } }, 8);
+    for (const i of items) {
+      expect(i.countLabel).toBe(`${i.label}, ${String(i.count)} unread`);
+      expect(i.countLabel?.startsWith(i.label)).toBe(true);
+    }
   });
 
   it('has no counts before the split has loaded', () => {

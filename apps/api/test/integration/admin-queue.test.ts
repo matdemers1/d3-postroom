@@ -58,13 +58,13 @@ describe.skipIf(!baseUrl)('outbound queue admin: retry, bounce, delete, force-SE
     expect(res.status).toBe(200);
   };
 
-  const seedDeferred = async (accountId: string, domain = 'example.test'): Promise<{ messageId: string; recipientId: string }> => {
+  const seedDeferred = async (accountId: string, domain = 'example.test', subject = 'Queued'): Promise<{ messageId: string; recipientId: string }> => {
     const message = await db.outboundMessage.create({
       data: {
         accountId,
         envelopeFrom: `${accountId}@d3cloud.io`,
         headerFrom: 'Someone <someone@d3cloud.io>',
-        subject: 'Queued',
+        subject,
         blobSha256: 'a'.repeat(64),
         size: 42,
         submittedVia: 'test',
@@ -142,6 +142,16 @@ describe.skipIf(!baseUrl)('outbound queue admin: retry, bounce, delete, force-SE
 
     const noMatch = await request(app).get('/api/admin/queue?state=pending&domain=listed.test').set('cookie', admin.cookie);
     expect((noMatch.body as { messages: unknown[] }).messages).toHaveLength(0);
+  });
+
+  it('answers the Subject decoded from its RFC 2047 encoded-words (PST-T-14.1, CPY-03)', async () => {
+    const user = await person(false);
+    const { messageId } = await seedDeferred(user.id, 'subject.test', '=?UTF-8?Q?Your_old_tent_=E2=80=94_still_for_sale=3F?=');
+    const admin = await person(true);
+    const res = await request(app).get('/api/admin/queue?domain=subject.test').set('cookie', admin.cookie);
+    expect(res.status).toBe(200);
+    const found = (res.body as { messages: { id: string; subject: string | null }[] }).messages.find((m) => m.id === messageId);
+    expect(found?.subject).toBe('Your old tent — still for sale?');
   });
 
   it('retry-now sets nextAttemptAt to now and gives the worker a due job, audited', async () => {

@@ -156,7 +156,7 @@ test('doneWhen: r, type, Send — the reply is in the thread and in Sent, withou
   expect(await subjectsIn(ids['sent'] ?? '')).toContain(`Re: ${subject}`);
 });
 
-test('a draft saved and closed comes back with its text; Discard throws it away', async ({ page }) => {
+test('a draft saved and closed comes back with its text; Discard moves it to Trash', async ({ page }) => {
   const t = tag();
   const subject = `Budget review ${t}`;
   const [original] = await seedMail(api, [{ subject, from: 'Carol <carol@example.org>', text: 'Numbers inside.' }]);
@@ -182,10 +182,13 @@ test('a draft saved and closed comes back with its text; Discard throws it away'
   await expect(again.getByRole('textbox', { name: 'Message' })).toHaveValue(new RegExp(`^Half-written thoughts ${t}`));
   await expect(again.getByRole('status')).toContainText('Picked up your saved draft.');
 
-  // Discard removes it from Drafts.
+  // Discard moves it out of Drafts and into Trash — never a hard delete (PST-T-14.1, PST-REQ-129) —
+  // and says so in the polite status line.
   await again.getByRole('button', { name: 'Discard' }).click();
   await expect(again).toBeHidden();
+  await expect(page.getByRole('status').filter({ hasText: 'Draft moved to Trash.' })).toBeVisible();
   await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).not.toContain(`Re: ${subject}`);
+  await expect.poll(() => subjectsIn(ids['trash'] ?? '')).toContain(`Re: ${subject}`);
 });
 
 test('a forward carries the original, attached whole', async ({ page }) => {

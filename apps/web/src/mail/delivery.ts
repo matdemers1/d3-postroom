@@ -84,3 +84,72 @@ export type DeliveryPhase = 'no-record' | 'lookup';
 export function deliveryPhase(outboundId: string | null): DeliveryPhase {
   return outboundId === null ? 'no-record' : 'lookup';
 }
+
+// --- The calm view (PST-T-14.1, design audit CPY-01) ----------------------------------------------
+//
+// The reading view says what happened to each recipient in plain words — "Delivered", "Retrying at
+// 3:40 PM", "Bounced — address doesn't exist" — and never the remote server's raw reply. The SMTP
+// text, the attempt log and the reply codes are evidence: they live in the Inspect drawer only.
+
+/** Why a bounce happened, in words a person uses. Keyed off the enhanced status code (RFC 3463) first,
+ *  then the reply text, then the basic code; never echoes the remote's own text. */
+export function bounceReason(r: Pick<DeliveryRecipient, 'lastCode' | 'lastEnhanced' | 'lastText'>): string {
+  const enhanced = r.lastEnhanced?.trim() ?? '';
+  const text = r.lastText ?? '';
+  const byCode: Readonly<Record<string, string>> = {
+    '5.1.1': 'address doesn’t exist',
+    '5.1.2': 'that domain doesn’t exist',
+    '5.1.3': 'the address isn’t valid',
+    '5.1.6': 'the address has moved',
+    '5.1.10': 'that domain doesn’t accept mail',
+    '5.2.1': 'the mailbox is disabled',
+    '5.2.2': 'the mailbox is full',
+    '5.2.3': 'the message is too large',
+    '5.3.4': 'the message is too large',
+    '5.4.4': 'that domain has no mail server',
+    '4.4.7': 'no server accepted it in time',
+    '5.4.7': 'no server accepted it in time',
+  };
+  const known = byCode[enhanced];
+  if (known !== undefined) return known;
+  if (/null mx/i.test(text)) return 'that domain doesn’t accept mail';
+  if (/(user unknown|unknown user|no such (user|mailbox|recipient)|does ?n[o’']t exist|mailbox unavailable)/i.test(text)) return 'address doesn’t exist';
+  if (/(mailbox full|over quota|quota exceeded)/i.test(text)) return 'the mailbox is full';
+  if (enhanced.startsWith('5.7.')) return 'the receiving server refused it';
+  if (enhanced.startsWith('5.4.')) return 'the receiving server couldn’t be reached';
+  if (r.lastCode !== null && r.lastCode >= 500) return 'the receiving server refused it';
+  return 'it couldn’t be delivered';
+}
+
+/** "3:40 PM" today, "Tue 3:40 PM" within the week, a date after that. */
+export function retryTime(iso: string, now: Date = new Date(), locale?: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return 'soon';
+  const time: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
+  if (at.toDateString() === now.toDateString()) return at.toLocaleTimeString(locale, time);
+  const days = (at.getTime() - now.getTime()) / 86_400_000;
+  if (days > 0 && days < 6) return at.toLocaleString(locale, { weekday: 'short', ...time });
+  return at.toLocaleString(locale, { month: 'short', day: 'numeric', ...time });
+}
+
+/** One recipient's state, as one plain sentence fragment. */
+export function deliveryLine(
+  r: Pick<DeliveryRecipient, 'state' | 'nextAttemptAt' | 'lastCode' | 'lastEnhanced' | 'lastText'>,
+  now: Date = new Date(),
+  locale?: string,
+): string {
+  switch (r.state) {
+    case 'delivered':
+      return 'Delivered';
+    case 'deferred':
+      return `Retrying at ${retryTime(r.nextAttemptAt, now, locale)}`;
+    case 'queued':
+      return 'Waiting to send';
+    case 'attempting':
+      return 'Sending now';
+    case 'bounced':
+      return `Bounced — ${bounceReason(r)}`;
+    case 'cancelled':
+      return 'Canceled — not sent';
+  }
+}

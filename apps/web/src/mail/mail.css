@@ -413,6 +413,21 @@
   row-gap: var(--space-8);
 }
 
+/* A failed snooze says so beside the control and the message stays open (PST-T-14.1). */
+.pr-snooze {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.pr-snooze__error {
+  font-size: var(--text-13);
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+
 /* --- The phishing verdict above the warnings (PST-T-11.4) ----------------------------------------- */
 
 .pr-phish__verdict {
@@ -529,6 +544,31 @@
   display: flex;
   align-items: center;
   gap: var(--space-8);
+}
+
+.pr-delivery__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+/* The calm line (PST-T-14.1): words, not reply codes. A bounce reads in the danger colour, but the
+   word "Bounced" carries it too — never colour alone. */
+.pr-delivery__state {
+  margin: 0;
+  font-size: var(--text-14);
+  color: var(--color-fg);
+  overflow-wrap: anywhere;
+}
+
+.pr-delivery__state[data-tone='danger'] {
+  color: var(--color-danger);
+}
+
+.pr-delivery__when {
+  color: var(--color-fg-muted);
 }
 
 .pr-delivery__address {

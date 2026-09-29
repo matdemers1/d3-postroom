@@ -21,6 +21,14 @@ export function adminDevEnabled(env: NodeJS.ProcessEnv): boolean {
   return env['POSTROOM_E2E_SEED'] === '1';
 }
 
+/**
+ * What the fake delivery records as the remote's reply: an ordinary 250 text, as a real MX answers.
+ * It used to say "e2e stub: no real MX was contacted", and audit screenshots carried that string into
+ * the reading view (PST-T-14.1, CPY-01). That this was a stub is recorded where it belongs — the
+ * attempt's transport ('e2e-stub') and the audit row — never in text a screen might show.
+ */
+export const FAKE_DELIVERY_REPLY = 'Ok: queued';
+
 const Header = z.string().max(998).regex(/^[^\r\n]*$/, 'no line breaks in a header');
 
 const SeedMessage = z.object({
@@ -197,7 +205,7 @@ export function adminDevRoutes(deps: ApiDeps): Router {
           for (const r of recipients) {
             const moved = await tx.outboundRecipient.updateMany({
               where: { id: r.id, state: { in: ['queued', 'deferred'] } },
-              data: { state: 'delivered', attempts: { increment: 1 }, deliveredAt: now, lastCode: 250, lastEnhanced: '2.0.0', lastText: 'OK (e2e stub: no real MX was contacted)' },
+              data: { state: 'delivered', attempts: { increment: 1 }, deliveredAt: now, lastCode: 250, lastEnhanced: '2.0.0', lastText: FAKE_DELIVERY_REPLY },
             });
             if (moved.count === 0) continue;
             await tx.deliveryAttempt.create({
@@ -210,7 +218,7 @@ export function adminDevRoutes(deps: ApiDeps): Router {
                 mxIp: '127.0.0.1',
                 remoteCode: 250,
                 remoteEnhanced: '2.0.0',
-                remoteText: 'OK (e2e stub: no real MX was contacted)',
+                remoteText: FAKE_DELIVERY_REPLY,
                 outcome: 'delivered',
               },
             });

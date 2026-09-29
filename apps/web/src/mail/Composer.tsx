@@ -2,7 +2,7 @@
 // compose.ts; sent through the server's submission path (POST /api/compose/send), which files it in
 // Sent and threads it; and kept as a draft in the Drafts mailbox while it is being written —
 // autosaved a few seconds after the last keystroke, saved at once with "Save draft", and kept when
-// the composer is closed with Escape. "Discard" throws the draft away.
+// the composer is closed with Escape. "Discard" moves the draft to Trash (PST-T-14.1) — never a hard delete.
 //
 // A draft is picked up again when the same composer reopens: a reply, reply-all or forward finds the
 // draft it left for the same message; pressing c (compose) with a draft open in Drafts resumes that
@@ -16,6 +16,7 @@ import { useLocation } from 'react-router-dom';
 import { Alert, Button, Checkbox, FormActions, FormField, Input, Select, Stack, Textarea } from '@d3cloud/ui';
 import { api, ApiError, type DraftInput } from '../api';
 import { templatesApi, type TemplateJson } from '../compose/api';
+import { discardDraft, trashOf, type DiscardOutcome } from './discard';
 import { keysApi, type CryptoKeyJson, type KeyKind } from '../keys/api';
 import { cryptoAvailability, cryptoRequest, KIND_LABEL, recipientAddresses } from '../keys/format';
 import {
@@ -67,8 +68,19 @@ export const AUTOSAVE_MS = 3000;
 
 type SaveStatus = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'failed' };
 
-export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDiscard: () => void; back?: ReactNode }) {
-  const { me, refreshMailboxes } = useMail();
+export function Composer({
+  draft,
+  onDiscard,
+  onDiscarded,
+  back,
+}: {
+  draft: ComposeDraft;
+  onDiscard: () => void;
+  /** Where the draft went after Discard, said by the view that outlives the composer. */
+  onDiscarded?: (outcome: DiscardOutcome) => void;
+  back?: ReactNode;
+}) {
+  const { me, mailboxes, refreshMailboxes } = useMail();
   const location = useLocation();
   const [state, setState] = useState<ComposeState>(() => initialState(draft));
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: 'idle' });
@@ -312,11 +324,13 @@ export function Composer({ draft, onDiscard, back }: { draft: ComposeDraft; onDi
     finished.current = true;
     cancelTimer();
     const id = draftId.current;
-    // Behind any save in flight, so a draft it is creating is the one removed.
+    const trash = trashOf(mailboxes);
+    // Behind any save in flight, so a draft it is creating is the one moved. To Trash, never
+    // deleted (PST-REQ-129): it waits there with its clock and can be moved back.
     void chain.current.then(async () => {
-      const current = draftId.current ?? id;
-      if (current !== null) await api.deleteDraft(current).catch(() => undefined);
+      const outcome = await discardDraft(api, draftId.current ?? id, trash);
       void refreshMailboxes();
+      onDiscarded?.(outcome);
     });
     onDiscard();
   };

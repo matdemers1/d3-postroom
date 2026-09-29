@@ -27,10 +27,14 @@ export interface SegmentItem {
   countLabel?: string;
 }
 
-/** The segmented control's items; a segment's count is its unread mail, shown only when there is some. */
+/**
+ * The segmented control's items; a segment's count is its unread mail, shown only when there is some.
+ * @d3cloud/ui's `countLabel` REPLACES the button's whole accessible name, so it carries the visible
+ * label too — "Everything, 7 unread", never a bare "unread" (PST-T-14.1, audit A11Y-01).
+ */
 export function segmentItems(split: MailboxSplit | null, inboxUnseen: number): SegmentItem[] {
   const withCount = (value: InboxSegment, label: string, unseen: number | undefined): SegmentItem =>
-    unseen === undefined || unseen <= 0 ? { value, label } : { value, label, count: unseen, countLabel: 'unread' };
+    unseen === undefined || unseen <= 0 ? { value, label } : { value, label, count: unseen, countLabel: `${label}, ${String(unseen)} unread` };
   return [
     withCount('all', 'Everything', inboxUnseen),
     withCount('priority', 'Priority', split?.priority.unseen),
