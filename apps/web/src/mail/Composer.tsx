@@ -77,7 +77,7 @@ import {
 } from './compose';
 import { applyFormat, FORMAT_LABELS, initialReveal, joinQuote, optionsSummary, reveal as revealRow, splitQuote, type FormatAction, type Reveal } from './compose/fields';
 import { contactSuggestions, fromChoices, fromRecipients, hasFromChoice, toRecipients } from './compose/recipients';
-import { linkSavedDraft } from './compose/session';
+import { composerKey, forgetDrafts, linkSavedDraft } from './compose/session';
 import { FormatIcon, TrashIcon } from './compose/icons';
 import { SecurityModal } from './compose/SecurityModal';
 import { CaretIcon, MoreIcon } from './thread/icons';
@@ -188,6 +188,9 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
   const chain = useRef<Promise<void>>(Promise.resolve());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finished = useRef(false);
+  const mounted = useRef(true);
+  // The key MailView mounted this composer under; every id it saves maps back to it (compose/session).
+  const [ownKey] = useState(() => composerKey(draft));
 
   const sender = from ?? me;
   const senderRef = useRef(sender);
@@ -337,8 +340,9 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
         draftId.current = saved.id;
         savedVersion.current = at;
         setSaveStatus({ kind: 'saved', at: saved.savedAt });
-        if (draft.resumeId !== undefined && draft.resumeId !== null && !finished.current) {
-          linkSavedDraft(draft.resumeId, saved.id);
+        // The URL moves on to the draft's new id (a reload resumes it), and this composer stays.
+        if (mounted.current && !finished.current) {
+          linkSavedDraft(ownKey, saved.id);
           onDraftSavedRef.current?.(saved.id);
         }
       } catch {
@@ -368,13 +372,15 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
   }, [state, from, save]);
 
   // Closing the composer any way but Discard or Send keeps what was typed.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      forgetDrafts(ownKey);
       cancelTimer();
       if (!finished.current && version.current !== savedVersion.current) void save();
-    },
-    [save],
-  );
+    };
+  }, [save, ownKey]);
 
   // Pick up a draft this composer left before, or the one it was opened for.
   useEffect(() => {
@@ -656,8 +662,8 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
                 From
               </label>
               <Select
-                id={fromId}
                 appearance="filled"
+                id={fromId}
                 className="pr-compose__from"
                 options={choices.map((address) => ({ value: address, label: address }))}
                 value={sender ?? ''}
@@ -672,7 +678,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
             <label className="pr-compose__label" htmlFor={subjectId}>
               Subject
             </label>
-            <Input id={subjectId} appearance="filled" className="pr-compose__subject" value={state.subject} onChange={(e) => { edit({ subject: e.target.value }); }} />
+            <Input appearance="filled" id={subjectId} className="pr-compose__subject" value={state.subject} onChange={(e) => { edit({ subject: e.target.value }); }} />
           </div>
         </div>
         {formatBar ? (
@@ -686,9 +692,9 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
           </div>
         ) : null}
         <Textarea
+          appearance="filled"
           ref={bodyRef}
           aria-label="Message"
-          appearance="filled"
           className="pr-compose__body"
           rows={placement === 'inline' ? 6 : 12}
           value={shownBody}
@@ -721,8 +727,8 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
               Send at
             </label>
             <Input
-              id={`${uid}-at`}
               appearance="filled"
+              id={`${uid}-at`}
               type="datetime-local"
               value={timing.local}
               min={toLocalInput(new Date())}
@@ -737,8 +743,8 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
               Remind me
             </label>
             <Select
-              id={`${uid}-remind`}
               appearance="filled"
+              id={`${uid}-remind`}
               options={REMIND_CHOICES.map((c) => ({ value: c.seconds === null ? 'none' : String(c.seconds), label: c.label }))}
               value={remind === null ? 'none' : String(remind)}
               onValueChange={(v) => { setRemind(v === 'none' ? null : Number(v)); }}
@@ -752,8 +758,8 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
               Undo send
             </label>
             <Select
-              id={`${uid}-undo`}
               appearance="filled"
+              id={`${uid}-undo`}
               options={UNDO_CHOICES.map((seconds) => ({ value: String(seconds), label: seconds === 0 ? 'Off — send at once' : `${String(seconds)} seconds` }))}
               value={String(undo)}
               onValueChange={(v) => {

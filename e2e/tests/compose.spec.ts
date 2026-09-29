@@ -360,3 +360,27 @@ test('a new message opens with To, Subject and the body only; Cc and Bcc reveal 
   const ids = await mailboxIds();
   await expect.poll(() => subjectsIn(ids['sent'] ?? '')).toContain(subject);
 });
+
+test('a new message names its draft in the URL once it autosaves, so a reload resumes it', async ({ page }) => {
+  const t = tag();
+  const subject = `Reload me ${t}`;
+  await page.goto('/?compose=new');
+  const fresh = page.getByRole('region', { name: 'New message' });
+  await expect(fresh).toBeVisible();
+  await fresh.getByRole('textbox', { name: 'Subject' }).fill(subject);
+  await fresh.getByRole('textbox', { name: 'Message' }).fill(`Half a thought ${t}`);
+  await expect(fresh.getByTestId('compose-status')).toContainText('Saved', { timeout: 15_000 });
+  await expect(page).toHaveURL(/\?compose=draft&id=[0-9a-f-]{36}$/);
+  // The same composer carries on (it was not rebuilt): what was typed is still there, focus too.
+  await expect(fresh.getByRole('textbox', { name: 'Message' })).toBeFocused();
+
+  await page.reload();
+  const resumed = page.getByRole('region', { name: 'New message' });
+  await expect(resumed.getByRole('textbox', { name: 'Subject' })).toHaveValue(subject);
+  await expect(resumed.getByRole('textbox', { name: 'Message' })).toHaveValue(`Half a thought ${t}`);
+
+  // Tidy up: to Trash.
+  await resumed.getByRole('button', { name: 'Discard' }).click();
+  const ids = await mailboxIds();
+  await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).not.toContain(subject);
+});

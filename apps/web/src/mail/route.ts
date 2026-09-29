@@ -7,7 +7,9 @@
 //   /mail/:mailboxId/:messageId  one message, open in the reading pane
 //   …?compose=new|reply|replyall|forward   the composer (PST-T-3.11 completes it)
 //   /mail/:mailboxId/:draftId?compose=draft  PST-T-14.7: a saved draft, resumed in the composer
-//                                 (the reading pane's place) — needs the draft's id in the path
+//                                 (the reading pane's place) — opened from Drafts
+//   …?compose=draft&id=<draftId>  PST-T-14.7: the same, for a new message once it has autosaved —
+//                                 the path keeps whatever was open behind it, and a reload resumes it
 //   …?compose=new&to=<address>   PST-DA-025: Contacts opens a prefilled composer instead of a
 //                                 mailto: link that would leave Postroom; `to` is honoured only
 //                                 alongside compose=new, and only when it looks like an address.
@@ -23,6 +25,8 @@ export interface MailRoute {
   mailboxId: string | null;
   messageId: string | null;
   compose: ComposeRouteMode | null;
+  /** compose=draft's draft: `id` from the query, else the path's message (PST-T-14.7). Absent otherwise. */
+  composeDraftId?: string | null;
   /** compose=new's prefilled To, or null (PST-DA-025). Never trusted past isComposeToAddress. */
   composeTo: string | null;
 }
@@ -45,15 +49,28 @@ export function parseMailRoute(pathname: string, search = ''): MailRoute | null 
   const rawTo = params.get('to');
   const composeTo = compose === 'new' && rawTo !== null && isComposeToAddress(rawTo) ? rawTo : null;
   const parts = pathname.split('/').filter((p) => p !== '');
-  if (parts.length === 0) return { mailboxIndex: false, mailboxId: null, messageId: null, compose, composeTo };
+  const rawId = params.get('id');
+  const queryDraftId = compose === 'draft' && rawId !== null && UUID.test(rawId) ? rawId : null;
+  if (parts.length === 0) {
+    const home = compose === 'draft' && queryDraftId === null ? null : compose;
+    return { mailboxIndex: false, mailboxId: null, messageId: null, compose: home, composeTo, ...(home === 'draft' ? { composeDraftId: queryDraftId } : {}) };
+  }
   if (parts[0] !== 'mail' || parts.length > 3) return null;
   const mailboxId = parts[1] ?? null;
   const messageId = parts[2] ?? null;
   if (mailboxId !== null && !UUID.test(mailboxId)) return null;
   if (messageId !== null && !UUID.test(messageId)) return null;
   // A reply needs a message to reply to; resuming a draft needs the draft.
-  const effective = compose !== null && compose !== 'new' && messageId === null ? null : compose;
-  return { mailboxIndex: parts.length === 1, mailboxId, messageId, compose: effective, composeTo: effective === 'new' ? composeTo : null };
+  const draftId = compose === 'draft' ? (queryDraftId ?? messageId) : null;
+  const effective = compose === 'draft' ? (draftId === null ? null : 'draft') : compose !== null && compose !== 'new' && messageId === null ? null : compose;
+  return {
+    mailboxIndex: parts.length === 1,
+    mailboxId,
+    messageId,
+    compose: effective,
+    composeTo: effective === 'new' ? composeTo : null,
+    ...(effective === 'draft' ? { composeDraftId: draftId } : {}),
+  };
 }
 
 export function mailPath(mailboxId: string | null, messageId: string | null = null, compose: ComposeRouteMode | null = null): string {
@@ -61,6 +78,17 @@ export function mailPath(mailboxId: string | null, messageId: string | null = nu
   if (mailboxId !== null && messageId !== null) path += `/${messageId}`;
   if (compose !== null) path += `?compose=${compose}`;
   return path;
+}
+
+/**
+ * Where a draft being written lives, as a URL (PST-T-14.7). Opened from Drafts, the draft is the
+ * path's message; otherwise (a new message that has autosaved) the path keeps what was open behind
+ * the composer and the draft rides in `id`.
+ */
+export function draftPath(route: Pick<MailRoute, 'mailboxId' | 'messageId' | 'composeDraftId'>, draftId: string): string {
+  const inPath = route.messageId !== null && route.messageId === (route.composeDraftId ?? null);
+  if (inPath) return mailPath(route.mailboxId, draftId, 'draft');
+  return `${mailPath(route.mailboxId, route.messageId)}?compose=draft&id=${draftId}`;
 }
 
 /** The single pane shown below tablet width (push navigation). */

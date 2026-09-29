@@ -41,6 +41,7 @@ export function SecurityModal({ open, onOpenChange, loaded, kind, onKind, sign, 
       <FormField label="Keys" as="group" help={help}>
         <Stack gap="8">
           <Select
+            appearance="filled"
             aria-label="Key kind"
             options={[
               { value: 'pgp', label: 'OpenPGP (PGP/MIME)' },

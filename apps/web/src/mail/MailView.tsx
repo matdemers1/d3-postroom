@@ -49,7 +49,7 @@ import './list/list.css';
 import { ReadingPane, type OpenMessage } from './ReadingPane';
 import { ScheduledSends, UndoSendToast } from './Scheduled';
 import { SnoozeIconControl } from './thread/ThreadToolbar';
-import { composesInPane, mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
+import { composesInPane, draftPath, mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { emptyMailboxCopy, inSegment, isInboxSegment, segmentItems, segmentKeyword, type InboxSegment } from './split';
 import { SPLIT_QUERY, useMediaQuery } from './useMedia';
@@ -967,15 +967,17 @@ function MailPanes({ route }: { route: MailRoute }) {
       : route.compose === 'new'
         ? { ...draftFor('new', null, me), to: route.composeTo ?? '' }
         : route.compose === 'draft'
-          ? route.messageId === null
+          ? (route.composeDraftId ?? null) === null
             ? null
-            : draftToResume(route.messageId)
+            : draftToResume(route.composeDraftId ?? '')
           : open?.status === 'ready' && open.detail !== null && open.bodyStatus !== 'loading'
             ? draftFor(route.compose, { detail: open.detail, body: open.body }, me)
             : null;
   const closeComposer = () => {
-    // A resumed draft's own message is replaced as it saves: close back to its mailbox's list.
-    void navigate(route.compose === 'draft' ? mailPath(route.mailboxId) : mailPath(route.mailboxId, route.messageId));
+    // A draft opened from Drafts is replaced as it saves: close back to its mailbox's list. A new
+    // message's draft rides in ?id=, so closing goes back to whatever was open behind it.
+    const draftInPath = route.compose === 'draft' && route.messageId !== null && route.messageId === route.composeDraftId;
+    void navigate(draftInPath ? mailPath(route.mailboxId) : mailPath(route.mailboxId, route.messageId));
   };
   // PST-T-14.7: new and resumed drafts take the reading pane's place; replies and forwards open
   // inline under the thread (ReadingPane's composer slot).
@@ -995,10 +997,11 @@ function MailPanes({ route }: { route: MailRoute }) {
           if (outcome.kind === 'kept' || outcome.kind === 'unrestored') say('danger', outcome.text);
           reloadList();
         }}
-        {...(route.compose === 'draft'
+        {...(composesInPane(route.compose)
           ? {
+              // Each save names the draft in the URL, so a reload resumes it (PST-T-14.7).
               onDraftSaved: (id: string) => {
-                void navigate(mailPath(route.mailboxId, id, 'draft'), { replace: true });
+                void navigate(draftPath(route, id), { replace: true });
               },
             }
           : {})}

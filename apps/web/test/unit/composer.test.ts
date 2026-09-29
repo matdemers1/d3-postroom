@@ -8,8 +8,8 @@ import type { ContactSummary } from '../../src/api';
 import { draftFor, draftToResume, fieldsOf, initialState } from '../../src/mail/compose';
 import { applyFormat, initialReveal, joinQuote, optionsSummary, reveal, splitQuote } from '../../src/mail/compose/fields';
 import { contactSuggestions, entryOf, fromChoices, fromRecipients, hasFromChoice, recipientOf, toRecipients } from '../../src/mail/compose/recipients';
-import { composerKey, linkSavedDraft } from '../../src/mail/compose/session';
-import { composesInPane, mailPath, narrowView, parseMailRoute } from '../../src/mail/route';
+import { composerKey, forgetDrafts, linkSavedDraft } from '../../src/mail/compose/session';
+import { composesInPane, draftPath, mailPath, narrowView, parseMailRoute } from '../../src/mail/route';
 
 const MB = '11111111-1111-4111-8111-111111111111';
 const MSG = '22222222-2222-4222-8222-222222222222';
@@ -167,14 +167,43 @@ describe('resuming a draft in place', () => {
     expect(d.sourceId).toBeNull();
   });
 
-  it('keeps one composer across a resumed draft’s saves, each of which answers with a new id', () => {
+  it('keeps one composer across a draft’s saves, each of which answers with a new id', () => {
     const opened = '33333333-3333-4333-8333-333333333333';
     const key = composerKey(draftToResume(opened));
-    linkSavedDraft(opened, 'saved-1');
-    linkSavedDraft('saved-1', 'saved-2');
+    expect(key).toBe(`draft:${opened}`);
+    linkSavedDraft(key, 'saved-1');
+    linkSavedDraft(key, 'saved-2');
     expect(composerKey(draftToResume('saved-1'))).toBe(key);
     expect(composerKey(draftToResume('saved-2'))).toBe(key);
     expect(composerKey(draftToResume('some-other-draft'))).not.toBe(key);
-    expect(composerKey(draftFor('new', null, null))).toBe('new:');
+    // A new message keeps its composer when its first save moves the URL to ?compose=draft&id=.
+    const fresh = composerKey(draftFor('new', null, null));
+    expect(fresh).toBe('new:');
+    linkSavedDraft(fresh, 'saved-new');
+    expect(composerKey(draftToResume('saved-new'))).toBe('new:');
+    // Once that composer closes, the draft opened again later gets a composer of its own.
+    forgetDrafts('new:');
+    expect(composerKey(draftToResume('saved-new'))).toBe('draft:saved-new');
+    expect(composerKey(draftToResume('saved-1'))).toBe(key);
+  });
+
+  it('names a new message’s draft in the query, keeping what is open behind it, so a reload resumes it', () => {
+    const DRAFT = '44444444-4444-4444-8444-444444444444';
+    const behind = parseMailRoute(`/mail/${MB}/${MSG}`, '?compose=new');
+    if (behind === null) throw new Error('route');
+    const url = draftPath(behind, DRAFT);
+    expect(url).toBe(`/mail/${MB}/${MSG}?compose=draft&id=${DRAFT}`);
+    const [path, query] = url.split('?');
+    const reloaded = parseMailRoute(path ?? '', `?${query ?? ''}`);
+    expect(reloaded).toMatchObject({ mailboxId: MB, messageId: MSG, compose: 'draft', composeDraftId: DRAFT });
+    expect(draftPath({ mailboxId: null, messageId: null, composeDraftId: null }, DRAFT)).toBe(`/?compose=draft&id=${DRAFT}`);
+    expect(parseMailRoute('/', `?compose=draft&id=${DRAFT}`)).toMatchObject({ compose: 'draft', composeDraftId: DRAFT });
+    expect(parseMailRoute('/', '?compose=draft')?.compose).toBeNull();
+    expect(parseMailRoute('/', '?compose=draft&id=nope')?.compose).toBeNull();
+    // Opened from Drafts the draft is the path's message, and its next id replaces it there.
+    const fromDrafts = parseMailRoute(`/mail/${MB}/${MSG}`, '?compose=draft');
+    if (fromDrafts === null) throw new Error('route');
+    expect(fromDrafts.composeDraftId).toBe(MSG);
+    expect(draftPath(fromDrafts, DRAFT)).toBe(`/mail/${MB}/${DRAFT}?compose=draft`);
   });
 });
