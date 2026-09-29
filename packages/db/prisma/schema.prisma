@@ -448,7 +448,9 @@ model Message {
   modseq           BigInt
   blobSha256       String    @map("blob_sha256")
   size             Int
-  internalDate     DateTime  @map("internal_date") @db.Timestamptz(6)
+  /// Millisecond precision (PST-T-14.10): the list orders by (internal_date, uid) and every client
+  /// holds it as a JS Date, so the stored value is exactly the one every surface sorts on.
+  internalDate     DateTime  @map("internal_date") @db.Timestamptz(3)
   receivedAt       DateTime  @default(now()) @map("received_at") @db.Timestamptz(6)
   /// System flags (\Seen, \Answered, ...) and keywords, as IMAP spells them.
   flags            String[]  @default([])

@@ -250,8 +250,9 @@ export async function ownMailbox(db: Db | Tx, accountId: string, id: string): Pr
 
 /**
  * The list cursor (PST-T-14.10): the (internal_date, uid) of the last row of the previous page, as
- * an opaque base64url string. internal_date is carried at microsecond precision (the column's), so
- * a page boundary never skips or repeats a row whose timestamp a JS Date would round.
+ * an opaque base64url string. The column is millisecond precision (timestamptz(3)), the same value
+ * a summary's internalDate carries, so the web list's comparator and this order agree exactly; the
+ * cursor's fixed-width six-digit fraction is just the column printed in full.
  */
 export interface ListCursor {
   /** ISO-8601 in UTC with microseconds, e.g. 2026-09-27T14:03:11.123456Z. */

@@ -5,7 +5,7 @@ import type { MessageBody, MessageDetail, MessageSummary } from '../../src/api';
 import { draftFor, forwardSubject, replySubject } from '../../src/mail/compose';
 import { addressOf, backoffMs, displayName, mailboxLabel, splitAddresses } from '../../src/mail/format';
 import { describeTarget, resolveKey, SHORTCUTS, type KeyInput } from '../../src/mail/keys';
-import { initialList, listReducer, scrollToReveal, sortsAboveTop, visibleRange, type ListState } from '../../src/mail/list';
+import { initialList, listReducer, newestFirst, scrollToReveal, sortsAboveTop, visibleRange, type ListState } from '../../src/mail/list';
 import { isComposeToAddress, mailPath, narrowView, parseMailRoute } from '../../src/mail/route';
 
 const MB = '11111111-1111-4111-8111-111111111111';
@@ -142,6 +142,18 @@ describe('listReducer', () => {
     // Same instant: the higher UID first, as the API sends it.
     s = loaded([msg(4, { internalDate: at(27) }), msg(5, { internalDate: at(27) })]);
     expect(s.messages.map((m) => m.uid)).toEqual([5, 4]);
+  });
+  it('two rows in the same millisecond order by UID, as the server does — the millisecond is the whole value (PST-T-14.10)', () => {
+    // The API stores internal_date at millisecond precision (timestamptz(3)) and sends it in full, so
+    // "the same millisecond" is "the same instant" on both sides: UID decides, in both places, and
+    // appending a page never reorders what is already listed.
+    const same = '2026-09-27T10:00:00.123Z';
+    let s = loaded([msg(7, { internalDate: same }), msg(4, { internalDate: '2026-09-27T10:00:00.124Z' })]);
+    s = listReducer(s, { type: 'loaded', mailboxId: MB, messages: [msg(9, { internalDate: same }), msg(8, { internalDate: same })], nextCursor: null, append: true });
+    expect(s.messages.map((m) => m.uid)).toEqual([4, 9, 8, 7]);
+    // The server page order for the same rows is (date DESC, uid DESC): identical.
+    const server = [msg(4, { internalDate: '2026-09-27T10:00:00.124Z' }), msg(9, { internalDate: same }), msg(8, { internalDate: same }), msg(7, { internalDate: same })];
+    expect([...server].reverse().sort(newestFirst).map((m) => m.uid)).toEqual(server.map((m) => m.uid));
   });
   it('sortsAboveTop: only what would land at the very top of a non-empty list', () => {
     const listed = [msg(2, { internalDate: '2026-09-28T00:00:00.000Z' }), msg(1, { internalDate: '2026-09-20T00:00:00.000Z' })];

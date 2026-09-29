@@ -17,6 +17,8 @@ import type { Express } from 'express';
 import { request } from '../loopback.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
+// The web list's comparator itself (dependency-free on purpose): client and server order must agree.
+import { newestFirst } from '../../../web/src/mail/order.js';
 import { MailboxList, MailboxSplit, MessageBody, MessageDetail, MessageList, ThreadDetail, MailboxChangedEvent, MessageNewEvent } from '../../src/mail/schemas.js';
 import { KEK_BASE64, TestClock, baseConfig, cookieHeader, cookiesOf, createAccount, randomLogin, totpCode } from './helpers.js';
 
@@ -236,25 +238,36 @@ describe.skipIf(!baseUrl)('mail API (PST-T-3.9)', () => {
     expect((await request(app).get(`/api/mailboxes/${me.inbox}/messages?cursor=999`).set('cookie', me.cookie)).status).toBe(400);
   });
 
-  it('pages across rows whose internal dates differ below a millisecond (PST-T-14.10)', async () => {
+  it('stores internal dates at millisecond precision, so the web list comparator sorts a page exactly as the server does (PST-T-14.10)', async () => {
     const me = await person();
-    const a = await file(me.inbox, rfc5322({ subject: 'a' }), { subject: 'a' });
-    const b = await file(me.inbox, rfc5322({ subject: 'b' }), { subject: 'b' });
-    const c = await file(me.inbox, rfc5322({ subject: 'c' }), { subject: 'c' });
-    // Same millisecond, different microseconds: b is newest, then c, then a — against UID order.
+    const made = [];
+    for (const subject of ['a', 'b', 'c', 'd', 'e']) made.push(await file(me.inbox, rfc5322({ subject }), { subject }));
+    const [a, b, c, d, e] = made;
+    if (a === undefined || b === undefined || c === undefined || d === undefined || e === undefined) throw new Error('filed too few');
+    // Written with microseconds by hand: the column keeps milliseconds, so a, b and c — all inside
+    // 10:00:00.000 — are one instant, and UID decides among them (c, b, a), against their µs order.
     await db.$executeRaw`UPDATE message SET internal_date = '2026-09-27T10:00:00.000300Z' WHERE id = ${a.id}::uuid`;
-    await db.$executeRaw`UPDATE message SET internal_date = '2026-09-27T10:00:00.000900Z' WHERE id = ${b.id}::uuid`;
-    await db.$executeRaw`UPDATE message SET internal_date = '2026-09-27T10:00:00.000600Z' WHERE id = ${c.id}::uuid`;
-    const paged: string[] = [];
+    await db.$executeRaw`UPDATE message SET internal_date = '2026-09-27T10:00:00.000100Z' WHERE id = ${b.id}::uuid`;
+    await db.$executeRaw`UPDATE message SET internal_date = '2026-09-27T10:00:00.000200Z' WHERE id = ${c.id}::uuid`;
+    await db.$executeRaw`UPDATE message SET internal_date = '2026-09-27T10:00:00.001400Z' WHERE id = ${d.id}::uuid`;
+    await db.$executeRaw`UPDATE message SET internal_date = '2026-09-27T09:59:59.998400Z' WHERE id = ${e.id}::uuid`;
+    const stored = await db.$queryRaw<{ t: string }[]>`
+      SELECT to_char(internal_date AT TIME ZONE 'UTC', 'US') AS t FROM message WHERE mailbox_id = ${me.inbox}::uuid`;
+    expect(stored.every((r) => r.t.endsWith('000'))).toBe(true);
+
+    const paged: { id: string; uid: number; internalDate: string; subject: string | null }[] = [];
     let cursor: string | null = null;
     do {
-      const res = await request(app).get(`/api/mailboxes/${me.inbox}/messages?limit=1${cursor === null ? '' : `&cursor=${cursor}`}`).set('cookie', me.cookie);
+      const res = await request(app).get(`/api/mailboxes/${me.inbox}/messages?limit=2${cursor === null ? '' : `&cursor=${cursor}`}`).set('cookie', me.cookie);
       expect(res.status).toBe(200);
       const page = MessageList.parse(res.body);
-      paged.push(...page.messages.map((m) => m.subject ?? ''));
+      paged.push(...page.messages);
       cursor = page.nextCursor;
     } while (cursor !== null);
-    expect(paged).toEqual(['b', 'c', 'a']);
+    expect(paged.map((m) => m.subject)).toEqual(['d', 'c', 'b', 'a', 'e']);
+    // The web reducer's own comparator, over the rows as the API sent them, gives the same order.
+    expect([...paged].sort(newestFirst).map((m) => m.id)).toEqual(paged.map((m) => m.id));
+    expect([...paged].reverse().sort(newestFirst).map((m) => m.id)).toEqual(paged.map((m) => m.id));
   });
 
   it('serves the message, its parsed body, the raw source and an attachment download', async () => {
