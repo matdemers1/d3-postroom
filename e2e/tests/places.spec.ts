@@ -5,7 +5,7 @@
 // places swap with a cross-fade no longer than --dur-2 — never a slide.
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
-import { ensureOperator, signInCookies } from './support.js';
+import { ensureOperator, seedMail, signInCookies, tag } from './support.js';
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 });
 // The mobile project covers the drawer in mobile.spec.ts; the places and their navs are the same.
@@ -139,6 +139,8 @@ test('the old URLs redirect to their new homes', async ({ page }) => {
 });
 
 test('the palette lists every place from the route table, grouped, with keycaps', async ({ page }) => {
+  // The list only renders over a non-empty Inbox; this spec may be the first on its stack.
+  await seedMail(api, [{ subject: `Palette check ${tag()}` }]);
   await page.goto('/');
   await expect(page.getByRole('listbox', { name: /^Messages in/ })).toBeVisible();
   await page.keyboard.press('Control+k');

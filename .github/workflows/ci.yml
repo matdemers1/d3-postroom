@@ -1,9 +1,11 @@
 name: CI
 
-# The ecosystem gate, cheapest first (PST-REQ-002): lint → unit → integration (PostgreSQL 16) →
-# e2e against the composed stack → fuzz-smoke → images. Every job needs the one before it, and only
-# a push to main that passed all of them publishes `sha-` images to GHCR. GitHub-hosted runners only:
-# this repo is public, and a self-hosted runner would execute any fork's pull request.
+# The ecosystem gate (PST-REQ-002): lint, unit, integration (PostgreSQL 16), e2e against the
+# composed stack, and fuzz-smoke run side by side; images needs every one of them, so only a push to
+# main that passed all of them publishes `sha-` images to GHCR. They ran as a chain until PST-T-0.18:
+# that put 13 minutes in front of e2e, the longest stage, for no gain on a free public runner.
+# GitHub-hosted runners only: this repo is public, and a self-hosted runner would execute any fork's
+# pull request.
 #
 # Every action is pinned to a commit SHA, never a tag: a tag is a mutable pointer.
 
@@ -42,7 +44,6 @@ jobs:
       - run: pnpm check:corpus
 
   unit:
-    needs: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -56,7 +57,6 @@ jobs:
       - run: pnpm build
 
   integration:
-    needs: unit
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -93,9 +93,17 @@ jobs:
 
   # Compose is what runs on the host, so the image is built the way it will be built there and the
   # e2e suite drives the stack rather than a dev server.
+  #
+  # Sharded, each shard on its own stack and fresh database: one worker spends most of its time
+  # waiting out 30-second TOTP steps (the server burns every accepted step), and those waits divide
+  # across shards. The specs already run in any order against a set-up stack — the mobile project
+  # always has.
   e2e:
-    needs: integration
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
       POSTGRES_PASSWORD: ci-postgres-password
       COMPOSE_FILE: docker-compose.yml:docker-compose.e2e.yml
@@ -138,12 +146,12 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm --filter @postroom/e2e exec playwright install --with-deps chromium
-          pnpm --filter @postroom/e2e test
+          pnpm --filter @postroom/e2e test --shard=${{ matrix.shard }}/8
       - name: Keep the report when e2e failed
         if: failure() && hashFiles('e2e/package.json') != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: e2e-report
+          name: e2e-report-${{ matrix.shard }}
           path: e2e/playwright-report
           retention-days: 7
       - name: Show the logs when something failed
@@ -155,7 +163,6 @@ jobs:
 
   # Every parser's fuzz harness, briefly, with a fixed seed (PST-T-4.2 runs them for real nightly).
   fuzz-smoke:
-    needs: e2e
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -171,7 +178,7 @@ jobs:
   # The only job that publishes, and only from main once everything above is green. Tagged by long
   # SHA, labelled with the revision and schema Shipyard verifies before and after a swap.
   images:
-    needs: fuzz-smoke
+    needs: [lint, unit, integration, e2e, fuzz-smoke]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
