@@ -30,6 +30,8 @@ export const SenderScreenResult = z.object({
 
 export const SenderProfileMessage = z.object({
   id: z.string(),
+  /** PST-T-14.9: the mailbox it is in, so the Person card's recent messages open in the reading pane. */
+  mailboxId: z.string(),
   subject: z.string().nullable(),
   date: z.string(),
   bucket: FilingBucket.nullable(),

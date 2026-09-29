@@ -29,6 +29,7 @@ export type {
   MessageSearch,
   ExpungedMessage,
   SenderPin,
+  SortingCorrection,
   SuppressedRecipient,
 } from './generated/prisma/client.js';
 export { normalizeDomain, normalizeLocalPart, parseAddress, randomUidValidity, type ParsedAddress } from './normalize.js';

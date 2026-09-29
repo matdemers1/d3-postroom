@@ -42,9 +42,12 @@ export interface MessageRowProps {
   /** A phishing warning is known for this message (the open one's detail says so). */
   warned: boolean;
   now: Date;
+  /** PST-T-14.9: the bucket chip's label, where the list does not imply the bucket; null for none.
+   *  Part of the option (it holds nothing focusable): a click on it opens "Why it's here". */
+  chip?: string | null;
 }
 
-export const MessageRow = memo(function MessageRow({ message: m, index, count, cursor, open, checked, leaving, warned, now }: MessageRowProps) {
+export const MessageRow = memo(function MessageRow({ message: m, index, count, cursor, open, checked, leaving, warned, now, chip = null }: MessageRowProps) {
   const unread = isUnread(m);
   const starred = isStarred(m);
   const sender = senderLine(m, warned);
@@ -121,6 +124,12 @@ export const MessageRow = memo(function MessageRow({ message: m, index, count, c
             </span>
           </span>
           <span className="pr-mrow__subject">
+            {chip === null ? null : (
+              <span className="pr-chip pr-mrow__chip" data-chip="true" data-bucket={m.bucket ?? undefined} title="Why it's here">
+                <span className="pr-vh">, </span>
+                {chip}
+              </span>
+            )}
             <span className="pr-vh">, </span>
             {m.subject === null || m.subject === '' ? '(no subject)' : m.subject}
           </span>

@@ -20,7 +20,7 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(
+export async function call<T>(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
   path: string,
   body?: unknown,
@@ -559,6 +559,8 @@ export interface MessageBody {
 
 export interface SenderProfileMessage {
   id: string;
+  /** PST-T-14.9: where it is, so the Person card's recent messages open in the reading pane. */
+  mailboxId?: string;
   subject: string | null;
   date: string;
   bucket: string | null;
