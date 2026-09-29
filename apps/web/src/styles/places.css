@@ -30,6 +30,11 @@
   cursor: pointer;
 }
 
+/* The library's list is display:flex, which would otherwise beat the hidden attribute. */
+.pr-nav-more__list[hidden] {
+  display: none;
+}
+
 .pr-nav-more__chevron {
   display: inline-flex;
   transition: transform var(--dur-3) var(--ease-out);
@@ -93,6 +98,19 @@
 .pr-subnav a:focus-visible {
   outline: var(--focus-width) solid var(--color-focus);
   outline-offset: calc(var(--focus-width) * -1);
+}
+
+/* At phone width every tap target is 44×44 of its own (PST-T-11.2, mobile-targets.css): grown for
+ * real, since the chips wrap into rows where an invisible extension would reach the next one. */
+@media (max-width: 599px) {
+  .pr-subnav {
+    gap: var(--space-8);
+  }
+
+  .pr-subnav a {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 
 /* --- The command palette ------------------------------------------------------------------------ */

@@ -38,6 +38,7 @@ async function openAccountMenu(page: Page): Promise<void> {
 }
 
 test('the Mail sidebar is mailboxes and the Calendar and Contacts places — nothing else', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   const nav = mainNav(page);
   await expect(nav.getByRole('button', { name: 'Compose' })).toBeVisible();
@@ -63,6 +64,8 @@ test('the Mail sidebar is mailboxes and the Calendar and Contacts places — not
 });
 
 test('the account menu opens Settings and the Admin console; each has its own nav and Back to Mail', async ({ page }) => {
+  // Axe runs right after moving between places; a cross-fade mid-frame reads as low contrast.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   await expect(mainNav(page)).toBeVisible();
   // Leave a mailbox open, so Back to Mail has somewhere to return to.

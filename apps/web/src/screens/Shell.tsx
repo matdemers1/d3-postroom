@@ -361,7 +361,7 @@ function MoreFolders({ mailboxes, currentMailbox }: { mailboxes: readonly Mailbo
           <span className={collapsed ? 'd3-snav__label d3-snav__vh' : 'd3-snav__label'}>More</span>
           {collapsed ? null : <span className="pr-nav-more__detail">{unseen > 0 ? `${String(unseen)} unread` : 'Trash, folders'}</span>}
         </button>
-        <ul id="pr-nav-more-list" role="list" className="d3-snav__list" hidden={!open}>
+        <ul id="pr-nav-more-list" role="list" className="d3-snav__list pr-nav-more__list" hidden={!open}>
           {mailboxes.map((m) => (
             <MailboxItem key={m.id} mailbox={m} current={currentMailbox === m.id} count={m.specialUse === 'trash' ? 0 : m.unseen} countNoun="unread" />
           ))}

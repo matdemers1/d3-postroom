@@ -526,6 +526,10 @@ for (const theme of THEMES) {
 
   test(`an expired session shows a designed signed-out state, axe-clean — ${theme}`, async ({ page, context }) => {
     await useTheme(context, theme);
+    // Each step moves in-app from Settings to another place, which cross-fades (PST-T-14.3); axe
+    // reads a half-opaque frame as low contrast (a false positive on the transition). Reduced motion
+    // makes the swap instant, as it is for anyone who asked for less motion.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     for (const screen of SCREENS.filter((s) => fetchesOnArrival(s, page)).map((s) => atWidth(s, page))) {
       if (screen.data === undefined) continue;
       await context.addCookies(cookies);
