@@ -52,7 +52,7 @@ interface Seeded {
 
 function message(folder: string, i: number, opts: { big?: boolean; noMessageId?: boolean } = {}): Buffer {
   const lines = [
-    `From: sender${String(i)}@example.org`,
+    `From: Sender ${String(i)} <sender${String(i)}@example.org>`,
     'To: someone@example.net',
     `Subject: ${folder} message ${String(i)}`,
     `Date: Tue, 22 Sep 2026 10:0${String(i % 10)}:00 +0000`,
@@ -257,6 +257,16 @@ describe.skipIf(baseUrl === undefined)('IMAP import (PST-T-10.2, PST-REQ-152)', 
     expect(nested).toMatchObject({ target: NESTED, imported: N, total: N, done: true });
     expect(done?.progress.find((x) => x.source === 'Sent')?.target).toBe('Sent Items');
     await expectExactCopy(accountId);
+    // PST-T-14.2: every imported message is filed with its list summary.
+    const inboxRows = await mailboxMessages(accountId, 'INBOX');
+    expect(inboxRows.length).toBe(N);
+    for (const r of inboxRows) {
+      const i = /message (\d+)$/.exec(r.subject ?? '')?.[1] ?? '';
+      expect(r.fromName).toBe(`Sender ${i}`);
+      // (one of them is the ~300 KB message: its snippet is the same start, cut at 140 characters)
+      expect(r.snippet?.startsWith(`Body of INBOX ${i}.`)).toBe(true);
+      expect(r.snippet?.length).toBeLessThanOrEqual(140);
+    }
 
     const audit = await db.auditEvent.findMany({ where: { entityId: id } });
     expect(audit.map((a) => a.action)).toEqual(['import.done']);

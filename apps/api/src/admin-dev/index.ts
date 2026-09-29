@@ -9,6 +9,8 @@ import { randomUUID } from 'node:crypto';
 import { audited, getAuditContext } from '@postroom/audit';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import type { Prisma } from '@postroom/db';
+import { displayNameOf } from '@postroom/mime';
+import { htmlToText, snippetOf } from '@postroom/search';
 import { Router } from 'express';
 import { z } from 'zod';
 import { currentSession, handle } from '../auth/middleware.js';
@@ -142,6 +144,8 @@ export function adminDevRoutes(deps: ApiDeps): Router {
                 flags: seed.flags,
                 subject: seed.subject,
                 fromAddress: bareAddress(seed.from),
+                fromName: displayNameOf(seed.from),
+                snippet: snippetOf(seed.text ?? (seed.html === undefined ? '' : htmlToText(seed.html))),
                 sentAt: date,
                 messageIdHeader,
               },

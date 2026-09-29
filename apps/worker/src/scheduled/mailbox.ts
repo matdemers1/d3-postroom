@@ -62,6 +62,8 @@ export interface Denorm {
   readonly inReplyTo: string | null;
   readonly references: readonly string[];
   readonly bodyText: string;
+  /** The From display name for the list (PST-T-14.2); null or absent when there is none. */
+  readonly fromName?: string | null;
 }
 
 /**
@@ -93,7 +95,7 @@ export async function fileCopy(
       ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
     },
   });
-  await indexMessage(tx, { messageId: filed.id, accountId: input.accountId, subject: d.subject, from: d.fromAddress, to: d.to, bodyText: d.bodyText });
+  await indexMessage(tx, { messageId: filed.id, accountId: input.accountId, subject: d.subject, from: d.fromAddress, to: d.to, bodyText: d.bodyText, fromName: d.fromName ?? null });
   await notifyMailbox(tx, filed.mailboxId);
   return { id: filed.id, mailboxId: filed.mailboxId, uid: filed.uid };
 }

@@ -197,3 +197,18 @@ export function parseMailboxes(value: string): Mailbox[] {
   }
   return out;
 }
+
+/** The longest display name a list row keeps (PST-T-14.2); a longer one is cut, not rejected. */
+const MAX_DISPLAY_NAME = 200;
+
+/**
+ * The display name of a From (or any address-list) header's first mailbox, RFC 2047 decoded and
+ * whitespace-collapsed — what a message list shows instead of the bare address (PST-T-14.2). Null
+ * when the header is absent or its first mailbox has no name.
+ */
+export function displayNameOf(value: string | null): string | null {
+  if (value === null) return null;
+  const name = (parseMailboxes(value)[0]?.name ?? '').replace(/\s+/g, ' ').trim();
+  if (name === '') return null;
+  return Array.from(name).slice(0, MAX_DISPLAY_NAME).join('');
+}

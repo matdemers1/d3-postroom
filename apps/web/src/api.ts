@@ -489,6 +489,10 @@ export interface MessageSummary {
   subject: string | null;
   /** The sender's address (denormalised at filing); the display name is in the body's headers. */
   from: string | null;
+  /** PST-T-14.2: the From display name, decoded; null when it has none (show `from`). */
+  fromName?: string | null;
+  /** PST-T-14.2: a one-line body preview (≤ 140 chars); null until the message is summarised. */
+  snippet?: string | null;
   date: string;
   internalDate: string;
   size: number;

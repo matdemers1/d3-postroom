@@ -34,7 +34,7 @@ import { recordAudit } from '@postroom/audit';
 import { tmpDir, type BlobStore } from '@postroom/blobstore';
 import { ActorKind, InboundState, SpecialUse, type Db, type Prisma } from '@postroom/db';
 import { fileLocalMessage } from '@postroom/dsn';
-import { parseDate, parseHeaderBlock, parseMailboxes, parseMessageId, type HeaderList } from '@postroom/mime';
+import { displayNameOf, parseDate, parseHeaderBlock, parseMailboxes, parseMessageId, type HeaderList } from '@postroom/mime';
 import { enqueue } from '@postroom/queue';
 import { reply, type SmtpReply } from '@postroom/smtp-proto';
 import { decide, type Decision, type DnsblVerdict } from './decide.js';
@@ -171,11 +171,14 @@ interface Denormalised {
   readonly messageIdHeader: string | null;
   readonly subject: string | null;
   readonly fromAddress: string | null;
+  /** The From display name (PST-T-14.2). The snippet needs the body, which is not parsed here: the
+   * worker's summary sweep fills it for a Rejects copy. */
+  readonly fromName: string | null;
   readonly sentAt: Date | null;
 }
 
 function denormalise(headers: HeaderList | null): Denormalised {
-  if (headers === null) return { messageIdHeader: null, subject: null, fromAddress: null, sentAt: null };
+  if (headers === null) return { messageIdHeader: null, subject: null, fromAddress: null, fromName: null, sentAt: null };
   const mid = headers.get('message-id');
   const subject = headers.getDecoded('subject');
   const from = headers.get('from');
@@ -184,6 +187,7 @@ function denormalise(headers: HeaderList | null): Denormalised {
     messageIdHeader: mid === null ? null : parseMessageId(mid),
     subject: subject === null ? null : subject.slice(0, 998),
     fromAddress: from === null ? null : (parseMailboxes(from)[0]?.address ?? null),
+    fromName: displayNameOf(from),
     sentAt: date === null ? null : parseDate(date),
   };
 }

@@ -1952,6 +1952,25 @@
               "null"
             ]
           },
+          "fromName": {
+            "description": "The From header's display name, RFC 2047 decoded; null when it has none (show `from`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 140
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A one-line preview of the body: at most 140 characters, whitespace collapsed, quoted history dropped. Empty when there is no text; null until the message is summarised."
+          },
           "date": {
             "type": "string",
             "format": "date-time",
@@ -2118,6 +2137,8 @@
           "threadId",
           "subject",
           "from",
+          "fromName",
+          "snippet",
           "date",
           "internalDate",
           "size",
@@ -3532,6 +3553,25 @@
               "null"
             ]
           },
+          "fromName": {
+            "description": "The From header's display name, RFC 2047 decoded; null when it has none (show `from`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 140
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A one-line preview of the body: at most 140 characters, whitespace collapsed, quoted history dropped. Empty when there is no text; null until the message is summarised."
+          },
           "date": {
             "type": "string",
             "format": "date-time",
@@ -3597,6 +3637,8 @@
           "threadId",
           "subject",
           "from",
+          "fromName",
+          "snippet",
           "date",
           "internalDate",
           "size",

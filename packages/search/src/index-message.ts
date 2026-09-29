@@ -1,6 +1,7 @@
 // Writes the message_search row a message's tsvector and trigram indexes are generated from
 // (PST-T-3.7). Called by the worker's file stage (PST-T-3.13) after a message is filed.
 import type { Db, Prisma } from '@postroom/db';
+import { snippetOf } from './snippet.js';
 
 const MAX_BODY_BYTES = 256 * 1024;
 
@@ -65,11 +66,14 @@ export interface IndexMessageInput {
   bodyHtml?: string;
   attachmentNames?: string[];
   hasAttachment?: boolean;
+  /** The From display name for the message row (PST-T-14.2); left as it is when undefined. */
+  fromName?: string | null;
 }
 
 /** Upsert the `message_search` row for one message. Body is truncated at 256 KiB on a UTF-8
  * boundary; an HTML-only body is converted to text first. Idempotent: safe to call again for the
- * same message (e.g. a replayed job). */
+ * same message (e.g. a replayed job). The message row's list summary (PST-T-14.2) is written from
+ * the same text: its snippet, and its from_name when `fromName` is given. */
 export async function indexMessage(tx: Db | Prisma.TransactionClient, input: IndexMessageInput): Promise<void> {
   const bodySource = input.bodyText !== undefined && input.bodyText.length > 0 ? input.bodyText : input.bodyHtml !== undefined ? htmlToText(input.bodyHtml) : '';
   const bodyText = truncateUtf8(bodySource, MAX_BODY_BYTES);
@@ -98,5 +102,9 @@ export async function indexMessage(tx: Db | Prisma.TransactionClient, input: Ind
       hasAttachment,
       attachmentNames,
     },
+  });
+  await tx.message.updateMany({
+    where: { id: input.messageId },
+    data: { snippet: snippetOf(bodyText), ...(input.fromName === undefined ? {} : { fromName: input.fromName }) },
   });
 }

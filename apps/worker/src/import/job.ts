@@ -620,6 +620,7 @@ class ImportRun {
         ...(parsed.fromAddress === null ? {} : { from: parsed.fromAddress }),
         ...(parsed.toAddress === null ? {} : { to: parsed.toAddress }),
         bodyText: parsed.bodyText,
+        fromName: parsed.fromName ?? null,
         attachmentNames: parsed.attachments.map((a) => a.filename).filter((f): f is string => f !== null),
         hasAttachment: parsed.attachments.length > 0,
       });
@@ -654,6 +655,7 @@ function emptyParse(): ParseResult {
     messageId: null,
     subject: null,
     fromAddress: null,
+    fromName: null,
     toAddress: null,
     sentAt: null,
     inReplyTo: [],

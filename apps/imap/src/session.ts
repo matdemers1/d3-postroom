@@ -60,7 +60,8 @@ import { listMailboxes, listStatusItems, lsubMailboxes } from './list.js';
 import { canonicalName, invalidNameReason, specialUseFromAttribute, stripTrailingDelimiter } from './names.js';
 import { search } from './search.js';
 import { StructureScanner } from './structure.js';
-import { denormalise, MailboxGoneError, type ActorMeta, type MailboxInfo, type MailStore } from './store.js';
+import { appendSnippet } from './summary.js';
+import { denormalise, MailboxGoneError, type ActorMeta, type Denormalised, type MailboxInfo, type MailStore } from './store.js';
 import { MailboxView } from './view.js';
 
 export type Log = (event: string, fields?: Record<string, unknown>) => void;
@@ -877,7 +878,7 @@ export class ImapSession {
         size: put.size,
         flags,
         internalDate: prefix.date === null ? new Date() : dateTimeToDate(prefix.date),
-        denorm: denormalise(structure.root.headers),
+        denorm: withSnippet(denormalise(structure.root.headers), await appendSnippet(this.o.blobs, put.sha256, put.size)),
       });
     } catch (err) {
       await this.o.blobs.release(put.sha256);
@@ -1083,4 +1084,9 @@ export class ImapSession {
       await this.write(resp);
     return ok('MOVE completed');
   }
+}
+
+/** The APPEND's denormalised columns with the snippet, when one was read (PST-T-14.2). */
+function withSnippet(denorm: Denormalised, snippet: string | undefined): Denormalised {
+  return snippet === undefined ? denorm : { ...denorm, snippet };
 }

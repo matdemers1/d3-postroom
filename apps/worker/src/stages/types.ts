@@ -87,6 +87,9 @@ export interface ParseResult {
   readonly messageId: string | null;
   readonly subject: string | null;
   readonly fromAddress: string | null;
+  /** The From display name, decoded (PST-T-14.2); null when there is none. Absent from a parse
+   * marker written before it existed. */
+  readonly fromName?: string | null;
   /** Every address in the To header, comma-joined; null when the header was missing or empty. */
   readonly toAddress: string | null;
   /** ISO, or null when the Date header was missing or unparseable. */
