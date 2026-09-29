@@ -60,7 +60,7 @@ describe('surfaces', () => {
     const shell = read('screens/Shell.tsx');
     // The primary group passes a count for the Inbox alone; every other mailbox group is quiet.
     expect(shell).toContain('count={m.id === inbox?.id ? m.unseen : 0}');
-    expect(shell.match(/<SideNavGroup title="(Sorted for you|Junk and rejects|More)"[^>]*className="pr-nav-quiet"/g)).toHaveLength(3);
+    expect(shell.match(/<SideNavGroup title="(Sorted for you|Filtered out|More)"[^>]*className="pr-nav-quiet"/g)).toHaveLength(3);
     expect(read('styles/places.css')).toMatch(/\.pr-nav-quiet \.d3-snav__item\[aria-current='page'\] \.d3-bdg--count \{\s*background: var\(--color-bg\);/);
   });
 });

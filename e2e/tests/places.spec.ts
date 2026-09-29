@@ -41,7 +41,7 @@ test('the Mail sidebar is mailboxes and the Calendar and Contacts places — not
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   const nav = mainNav(page);
-  await expect(nav.getByRole('button', { name: 'Compose' })).toBeVisible();
+  await expect(nav.getByRole('button', { name: 'New message' })).toBeVisible();
   for (const name of [/^Inbox/, /^Sent/, /^Drafts/, /^Archive/, /^Junk/, /^Rejects/, /^Calendar$/, /^Contacts$/]) {
     await expect(nav.getByRole('link', { name })).toBeVisible();
   }
