@@ -113,6 +113,9 @@ test.describe('at 1280 px', () => {
     await row(page, msg.subject).click();
     await expect(page.getByRole('heading', { name: msg.subject, level: 2 })).toBeVisible();
 
+    // PST-T-14.6: the header is one line; the address block (and this link) opens from "to …".
+    await expect(page.getByRole('link', { name: 'Sender profile' })).toHaveCount(0);
+    await page.getByTestId('message-header').getByRole('button', { expanded: false }).click();
     const link = page.getByRole('link', { name: 'Sender profile' });
     await expect(link).toBeVisible();
     await link.click();

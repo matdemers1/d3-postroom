@@ -612,8 +612,9 @@ export function InspectSections({ data, learn }: { data: MessageInspect; learn: 
 
 type LoadState = { status: 'loading' } | { status: 'ready'; data: MessageInspect } | { status: 'error' };
 
-/** The Inspect button (for the message actions) and the drawer it opens. */
-export function InspectDrawer({ messageId }: { messageId: string }) {
+/** The Inspect button (for the message actions) and the drawer it opens. `trigger` replaces the
+ *  button — the reading pane (PST-T-14.6) opens the drawer from its ⋯ menu and chips instead. */
+export function InspectDrawer({ messageId, trigger }: { messageId: string; trigger?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -710,9 +711,11 @@ export function InspectDrawer({ messageId }: { messageId: string }) {
       open={open}
       onOpenChange={setOpen}
       trigger={
-        <Button size="sm" variant="ghost" aria-keyshortcuts="i">
-          Inspect
-        </Button>
+        trigger ?? (
+          <Button size="sm" variant="ghost" aria-keyshortcuts="i">
+            Inspect
+          </Button>
+        )
       }
       title="Inspect message"
       description="Everything Postroom knows about this message, and why it decided what it did."

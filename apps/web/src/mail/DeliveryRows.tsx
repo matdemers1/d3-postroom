@@ -10,18 +10,39 @@ import { Badge } from '@d3cloud/ui';
 import type { DeliveryRecipient } from '../api';
 import { attemptRemoteText, attemptSummary, deferralReason, deliveryLine, dsnFiledAt, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
 import { fullDate } from './format';
+import { DangerIcon, WarningIcon } from './icons';
+import { deliveryChipTone, deliverySentence } from './thread/view';
 
-/** One recipient in the reading view: who, and what happened, in words. */
+/** One recipient in the reading view: who, and what happened, in words. A deferral or a bounce is an
+ *  exception, so it reads as a chip (PST-T-14.6) followed by one plain sentence; anything else is a
+ *  quiet line. */
 export function DeliveryRecipientRow({ recipient: r, now }: { recipient: DeliveryRecipient; now?: Date }) {
   const dsnAt = dsnFiledAt(r);
   const at = now ?? new Date();
+  const chip = deliveryChipTone(r.state);
+  const sentence = deliverySentence(r);
+  const line = (
+    <>
+      {deliveryLine(r, at)}
+      {r.state === 'deferred' ? <span className="pr-delivery__when"> ({relativeMinutes(r.nextAttemptAt, at)})</span> : null}
+    </>
+  );
   return (
-    <li className="pr-delivery__recipient" data-testid="delivery-recipient" data-state={r.state}>
+    <li className="pr-delivery__recipient" data-testid="delivery-recipient" data-state={r.state} data-exception={chip !== null}>
       <span className="pr-delivery__address">{r.address}</span>
       <p className="pr-delivery__state" data-testid="delivery-state" data-tone={STATE_TONE[r.state]}>
-        {deliveryLine(r, at)}
-        {r.state === 'deferred' ? <span className="pr-delivery__when"> ({relativeMinutes(r.nextAttemptAt, at)})</span> : null}
+        {chip === null ? (
+          line
+        ) : (
+          <span className="pr-chip pr-chip--line" data-tone={chip}>
+            <span className="pr-chip__icon" aria-hidden="true">
+              {chip === 'danger' ? <DangerIcon /> : <WarningIcon />}
+            </span>
+            {line}
+          </span>
+        )}
       </p>
+      {sentence !== null ? <p className="pr-exception__sentence">{sentence}</p> : null}
       {r.state === 'bounced' && dsnAt !== null ? (
         <p className="pr-reader__note" data-testid="dsn-note">
           A delivery failure notice was filed to your Inbox at {fullDate(dsnAt)}.
