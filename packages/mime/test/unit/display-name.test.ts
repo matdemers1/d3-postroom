@@ -22,6 +22,13 @@ describe('displayNameOf (PST-T-14.2)', () => {
     expect(displayNameOf('"  " <x@example.com>')).toBeNull();
   });
 
+  it('strips control characters an encoded-word decodes to', () => {
+    // =00 NUL, =07 BEL, =1B ESC, =C2=9B CSI (a C1 control)
+    expect(displayNameOf('=?UTF-8?Q?Li=00nda=07_D=1B=5B31m=C2=9Bemers?= <l@example.com>')).toBe('Linda D[31memers');
+    expect(displayNameOf('=?UTF-8?B?'+Buffer.from('A\x00\x07\x1bB').toString('base64')+'?= <x@example.com>')).toBe('AB');
+    expect(displayNameOf('=?UTF-8?Q?=00=07=1B?= <x@example.com>')).toBeNull();
+  });
+
   it('collapses folded whitespace and caps the length', () => {
     expect(displayNameOf('Linda\r\n   Demers <l@example.com>')).toBe('Linda Demers');
     expect(displayNameOf(`${'a'.repeat(500)} <a@example.com>`)?.length).toBe(200);

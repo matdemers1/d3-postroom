@@ -1,7 +1,7 @@
 // PST-T-14.2: a Message row carries its list summary — the From display name (RFC 2047 decoded)
 // and a one-line snippet — written by the file stage at filing time, and filled by the summary
 // sweep (the backfill) for rows filed before the columns existed or by a path that left it.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -130,6 +130,41 @@ describe.skipIf(baseUrl === undefined)('message list summaries (PST-T-14.2)', ()
     const after = await sweepUnsummarised(deps(), { graceMs: 0 });
     expect(after.scanned).toBe(0);
     expect(await db.message.findUniqueOrThrow({ where: { id } })).toMatchObject({ snippet: 'written live', fromName: 'Live' });
+  });
+
+  it('a row whose blob is gone is tried once, given the empty snippet, audited, and never read again', async () => {
+    const id = await fileUnsummarised({ from: 'Gone <gone@example.com>', subject: 'Gone', body: 'Lost.' });
+    const row = await db.message.findUniqueOrThrow({ where: { id } });
+    unlinkSync(join(blobRoot, row.blobSha256.slice(0, 2), row.blobSha256.slice(2, 4), row.blobSha256));
+    const reads: string[] = [];
+    const counting: BlobStore = { ...blobs, get: (sha) => (reads.push(sha), blobs.get(sha)) };
+    const d = { ...deps(), blobs: counting };
+
+    const first = await sweepUnsummarised(d, { graceMs: 0 });
+    expect(first).toMatchObject({ scanned: 1, summarised: 0, failed: 0, unavailable: 1 });
+    expect(await db.message.findUniqueOrThrow({ where: { id } })).toMatchObject({ snippet: '', fromName: null });
+    const audit = await db.auditEvent.findFirstOrThrow({ where: { action: 'message.summary-unavailable' } });
+    expect(audit.after).toEqual({ count: 1, messages: [{ messageId: id, reason: 'ENOENT' }] });
+
+    const second = await sweepUnsummarised(d, { graceMs: 0 });
+    expect(second.scanned).toBe(0);
+    expect(reads).toEqual([row.blobSha256]);
+  });
+
+  it('a transient failure leaves the row for the next pass, which summarises it', async () => {
+    const id = await fileUnsummarised({ from: 'Flaky <flaky@example.com>', subject: 'Flaky', body: 'Second time lucky.' });
+    let calls = 0;
+    const flaky: BlobStore = {
+      ...blobs,
+      get: (sha) => (++calls === 1 ? Promise.reject(Object.assign(new Error('connection reset'), { code: 'ECONNRESET' })) : blobs.get(sha)),
+    };
+    const d = { ...deps(), blobs: flaky };
+    const first = await sweepUnsummarised(d, { graceMs: 0 });
+    expect(first).toMatchObject({ scanned: 1, failed: 1, unavailable: 0 });
+    expect((await db.message.findUniqueOrThrow({ where: { id } })).snippet).toBeNull();
+    const second = await sweepUnsummarised(d, { graceMs: 0 });
+    expect(second).toMatchObject({ scanned: 1, summarised: 1, failed: 0 });
+    expect(await db.message.findUniqueOrThrow({ where: { id } })).toMatchObject({ fromName: 'Flaky', snippet: 'Second time lucky.' });
   });
 
   it('drains a backlog larger than one batch', async () => {

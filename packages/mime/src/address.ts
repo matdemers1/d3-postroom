@@ -201,6 +201,10 @@ export function parseMailboxes(value: string): Mailbox[] {
 /** The longest display name a list row keeps (PST-T-14.2); a longer one is cut, not rejected. */
 const MAX_DISPLAY_NAME = 200;
 
+/** C0 and C1 controls (and DEL): an encoded-word can smuggle them into a decoded name. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
+
 /**
  * The display name of a From (or any address-list) header's first mailbox, RFC 2047 decoded and
  * whitespace-collapsed — what a message list shows instead of the bare address (PST-T-14.2). Null
@@ -208,7 +212,11 @@ const MAX_DISPLAY_NAME = 200;
  */
 export function displayNameOf(value: string | null): string | null {
   if (value === null) return null;
-  const name = (parseMailboxes(value)[0]?.name ?? '').replace(/\s+/g, ' ').trim();
+  const name = (parseMailboxes(value)[0]?.name ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(CONTROL_CHARS, '')
+    .replace(/ {2,}/g, ' ')
+    .trim();
   if (name === '') return null;
   return Array.from(name).slice(0, MAX_DISPLAY_NAME).join('');
 }
