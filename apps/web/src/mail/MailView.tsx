@@ -1061,6 +1061,7 @@ function MailPanes({ route }: { route: MailRoute }) {
           onChip={(m, el) => {
             setWhy({ message: m, anchor: el.getBoundingClientRect() });
           }}
+          showPriority={activeSegment !== 'priority'}
         />
       </ListBody>
     </section>

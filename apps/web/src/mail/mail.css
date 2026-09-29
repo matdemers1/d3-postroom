@@ -31,11 +31,12 @@
 
 /* --- The list pane ---------------------------------------------------------------------------- */
 
+/* PST-T-15.2: the canvas's 392 px list column (24.5rem), narrower only when the window is. */
 .pr-mail__list {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  width: clamp(18rem, 38%, 30rem);
+  width: clamp(18rem, 38%, 24.5rem);
   min-height: 0;
   border-right: var(--border-width) solid var(--color-border);
   background: var(--color-surface);
@@ -46,12 +47,13 @@
   border-right: 0;
 }
 
+/* The head of the column: title and unread count, the search field, the segments — no rule under
+   it; the first day group's heading starts the list (the canvas's .pr-listhead). */
 .pr-listhead {
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
-  padding: var(--space-12) var(--space-16) var(--space-8);
-  border-bottom: var(--border-width) solid var(--color-border);
+  gap: var(--space-12);
+  padding: var(--space-16) var(--space-16) var(--space-8);
 }
 
 .pr-listhead__row {
@@ -66,8 +68,11 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-8);
+  min-width: 0;
   font-size: var(--text-20);
+  line-height: var(--leading-20);
   font-weight: var(--weight-title);
+  letter-spacing: -0.02em;
 }
 
 .pr-listhead__title:focus {
@@ -84,7 +89,9 @@
 .pr-listhead__count {
   font-size: var(--text-13);
   font-weight: var(--weight-regular);
-  color: var(--color-fg-muted);
+  letter-spacing: normal;
+  color: var(--color-fg-faint);
+  white-space: nowrap;
 }
 
 /* On a wide screen the sidebar has Compose; below lg the sidebar is a drawer, so the list does. */
@@ -115,9 +122,10 @@
   display: none;
 }
 
-/* The Priority / People split fills the list's width, so its three segments share it evenly. */
+/* Everything / Priority / People: a compact control at the start of the row, as the canvas draws
+   it (the phone spans it across the width — mobile.css). */
 .pr-split {
-  align-self: stretch;
+  align-self: flex-start;
 }
 
 .pr-notice {
@@ -143,80 +151,6 @@
 
 .pr-list--state {
   padding: var(--space-16);
-}
-
-/* One row: sender and date, then subject and marks. The height is fixed (MessageList's ROW_HEIGHT)
-   so the list can be virtualised. */
-.pr-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
-  column-gap: var(--space-8);
-  row-gap: var(--space-2);
-  align-content: center;
-  box-sizing: border-box;
-  height: 64px;
-  padding: var(--space-8) var(--space-16);
-  border-bottom: var(--border-width) solid var(--color-border);
-  cursor: pointer;
-  font-size: var(--text-14);
-  color: var(--color-fg-muted);
-}
-
-.pr-row:hover {
-  background: var(--color-surface-hover);
-}
-
-.pr-row[aria-current='true'] {
-  /* The open message: a leading accent bar, not just a 1.08:1 tint (PST-T-11.4). A border, since
-     shadows are not part of the system; the padding gives the bar's width back. */
-  background: var(--color-accent-muted);
-  color: var(--color-fg);
-  border-left: calc(var(--focus-width) * 2) solid var(--color-accent);
-  padding-left: calc(var(--space-16) - var(--focus-width) * 2);
-}
-
-.pr-row[aria-selected='true'] {
-  outline: var(--focus-width) solid var(--color-border-field);
-  outline-offset: calc(var(--focus-width) * -1);
-}
-
-.pr-list:focus-visible .pr-row[aria-selected='true'] {
-  outline-color: var(--color-focus);
-}
-
-.pr-row__from,
-.pr-row__subject {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pr-row__from {
-  color: var(--color-fg);
-}
-
-.pr-row__date {
-  font-size: var(--text-12);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.pr-row__marks {
-  display: flex;
-  justify-content: flex-end;
-  color: var(--color-accent);
-}
-
-.pr-row--unread .pr-row__from,
-.pr-row--unread .pr-row__subject {
-  font-weight: var(--weight-semibold);
-  color: var(--color-fg);
-}
-
-.pr-row--unread .pr-row__date {
-  color: var(--color-fg);
-  font-weight: var(--weight-semibold);
 }
 
 /* --- The reading pane --------------------------------------------------------------------------- */
