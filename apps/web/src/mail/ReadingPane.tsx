@@ -1,16 +1,21 @@
 // One message, or the whole thread it belongs to (PST-T-3.15, PST-REQ-079): its headers, its text
-// body, its attachments, its delivery timeline when it went out, and what you can do with it. The
+// body, its attachments, its delivery state when it went out, and what you can do with it. The
 // main view stays calm — who, when, what it says — and the evidence (authentication, routing, raw
-// headers) waits for the Inspect drawer (PST-P-6).
+// headers, the attempt log) waits for the Inspect drawer (PST-P-6).
+//
+// PST-T-14.6 (PST-ADR-011, calm webmail; design audit VIS-06, VIS-07, CPY-01, CPY-02, MOD-I4,
+// INT-I7, INT-I8) reshaped the pane:
+//   - the toolbar (./thread/ThreadToolbar.tsx) has one lead, two labelled triage buttons, icon
+//     buttons with tooltips, and a ⋯ menu — Inspect's trigger moved there and into chips' Details;
+//   - each message header is one line (./thread/MessageHeader.tsx); the address block opens in place;
+//   - earlier messages are one-line cards that open with height + opacity over --dur-2
+//     (PST-REQ-192; none under reduced motion, PST-REQ-193);
+//   - chips appear only for exceptions (./thread/ExceptionChip.tsx) — never a "Verified" one.
 //
 // A message with replies shows the whole conversation (GET /api/threads/:id): older messages
-// collapsed to a sender/date row, the newest expanded, and whichever message was opened expanded
-// too. It follows the server live over SSE (PST-REQ-083) — a reply filed anywhere joins the open
-// thread without a reload. Pure ordering/collapse logic lives in ./thread.ts, unit tested there.
-//
-// A sent message's per-recipient delivery state and attempt log (PST-T-6.4, PST-REQ-119) sits below
-// its body: a state badge, a deferral's reason and next retry, and every attempt's transport, MX and
-// remote response. Pure formatting lives in ./delivery.ts, unit tested there.
+// collapsed, the newest expanded, and whichever message was opened expanded too. It follows the
+// server live over SSE (PST-REQ-083) — a reply filed anywhere joins the open thread without a
+// reload. Pure ordering/collapse logic lives in ./thread.ts, unit tested there.
 //
 // HTML is never put into this document (PST-REQ-159/175). It is sanitised on the server and shown
 // from the separate usercontent origin in a sandboxed frame (PST-T-3.12, PST-REQ-081): no
@@ -18,15 +23,22 @@
 // presses "Load images", which asks for a new render that routes them through the image proxy
 // (PST-REQ-082) — the browser itself never contacts a sender's host.
 //
-// Height: nothing runs inside the frame, so it cannot report its content height (no postMessage).
-// The frame has a fixed height (MAIL_FRAME_HEIGHT) and scrolls inside itself — chosen over a
-// server-computed guess, which would be wrong for any message whose layout depends on width.
+// Height (decided in PST-T-14.6): nothing runs inside the frame, so it cannot report its content
+// height (no postMessage), and a content-sized frame is not possible. Instead the pane is a flex
+// column — subject and toolbar fixed at the top, one scroller below — and the frame's height is
+// layout, not measurement:
+//   - a lone HTML message, and the NEWEST message of a thread when it is HTML, fill: the frame is flex: 1 of whatever
+//     height is left under its header (min 20rem, so a tall stack of notes still leaves it usable).
+//     With the earlier messages collapsed to 44px cards — the default — the pane itself does not
+//     scroll; a long message scrolls inside the frame and only there.
+//   - an EARLIER message a reader expands by hand gets a fixed clamp(16rem, 50vh, 36rem) frame, so
+//     opening an old newsletter in a thread never pushes the latest reply a whole screen away.
+// The Newsletters feed (Feed.tsx) still uses the fixed MAIL_FRAME_HEIGHT, one frame per issue.
 //
 // When the server has no usercontent origin configured (503), the text/plain part is shown instead
 // and an HTML-only message says so.
-import { forwardRef, useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
-import { Alert, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, IconButton, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Alert, Avatar, Button, EmptyState, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
 import { deliveryPhase, isPending, NO_DELIVERY_RECORD_TEXT } from './delivery';
 import { DeliveryEvidence, DeliveryRecipientRow } from './DeliveryRows';
 import { InspectDrawer } from './InspectDrawer';
@@ -40,22 +52,24 @@ import {
   api,
   ApiError,
   attachmentUrl,
-  contactPath,
-  contactsApi,
   type DeliveryDetail,
+  type Mailbox,
   type MessageBody,
   type MessageDetail,
   type MessageSummary,
-  type Phish,
   type RenderTicket,
   serverUnreachable,
 } from '../api';
-import { byteSize, displayName, fullDate, header } from './format';
-import { ChevronIcon, DangerIcon, InfoIcon, PaperclipIcon, StarIcon, WarningIcon } from './icons';
-import { isStarred } from './list';
-import { PHISH_TONE_OF, phishVerdict, phishWarningTitle, sortPhishWarnings } from './phish';
+import { byteSize, displayName, header, listDate } from './format';
+import { PaperclipIcon } from './icons';
+import { requestInspect } from './keys';
 import { snippetOf } from './thread';
 import { SessionEnded } from '../screens/states';
+import { PhishChip } from './thread/ExceptionChip';
+import { MessageHeader } from './thread/MessageHeader';
+import { FocusStandIn, ThreadToolbar } from './thread/ThreadToolbar';
+import { absoluteDate } from './thread/view';
+import './thread/thread.css';
 
 export interface OpenMessage {
   id: string;
@@ -72,15 +86,19 @@ export interface ReadingPaneProps {
   canTrash: boolean;
   onAction: (action: 'reply' | 'replyAll' | 'forward' | 'archive' | 'delete' | 'markUnread' | 'star') => void;
   onRetry: () => void;
-  /** Snooze/Unsnooze, placed inside the action toolbar beside Archive and Delete (PST-T-11.4). */
+  /** Snooze/Unsnooze, placed in the toolbar's icon group (PST-T-11.4, PST-T-14.6). */
   snooze?: ReactNode;
   /** Moves a message a phishing warning is about to Junk; absent when there is no Junk mailbox. */
   onMoveToJunk?: ((message: MessageDetail) => void) | undefined;
+  /** Moves the open message: Not junk and Rescue (to Inbox) and ⋯ Move to… (PST-T-14.6). */
+  onMoveTo?: ((message: MessageDetail, to: Mailbox) => void) | undefined;
+  /** Opens a draft in the composer; Drafts' toolbar leads with Edit draft only when this is given. */
+  onEditDraft?: ((message: MessageDetail) => void) | undefined;
   children?: ReactNode;
 }
 
 export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(function ReadingPane(
-  { open, back, canArchive, canTrash, onAction, onRetry, snooze, onMoveToJunk, children },
+  { open, back, canArchive, canTrash, onAction, onRetry, snooze, onMoveToJunk, onMoveTo, onEditDraft, children },
   headingRef,
 ) {
   if (open === null) {
@@ -135,35 +153,19 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
 
   const { detail, body, bodyStatus } = open;
   const subject = detail.subject === null || detail.subject === '' ? '(no subject)' : detail.subject;
-  const starred = isStarred(detail);
 
   return (
-    <article className="pr-reader" aria-labelledby="pr-reader-subject" data-message-id={detail.id}>
+    <article className="pr-reader pr-reader--open" aria-labelledby="pr-reader-subject" data-message-id={detail.id}>
       {back}
-      <Stack gap="16">
+      <div className="pr-reader__top">
         <h2 id="pr-reader-subject" className="pr-reader__subject" tabIndex={-1} ref={headingRef}>
           {subject}
         </h2>
-        {/* PST-T-11.4: one toolbar in three groups — triage (Archive, Delete, Snooze) first, then the
-            replies, then the rest — with Snooze inside it rather than on a line of its own, and Star as
-            an icon so the row fits beside the list at 1280px. */}
-        <div role="group" aria-label="Message actions" className="pr-reader__actions">
-          <Cluster gap="4">
-            <Button size="sm" variant="ghost" disabled={!canArchive} onClick={() => { onAction('archive'); }}>Archive</Button>
-            <Button size="sm" variant="ghost" disabled={!canTrash} onClick={() => { onAction('delete'); }}>Delete</Button>
-            {snooze}
-          </Cluster>
-          <Cluster gap="4">
-            <Button size="sm" variant="secondary" onClick={() => { onAction('reply'); }}>Reply</Button>
-            <Button size="sm" variant="ghost" onClick={() => { onAction('replyAll'); }}>Reply all</Button>
-            <Button size="sm" variant="ghost" onClick={() => { onAction('forward'); }}>Forward</Button>
-          </Cluster>
-          <Cluster gap="4">
-            <Button size="sm" variant="ghost" onClick={() => { onAction('markUnread'); }}>Mark unread</Button>
-            <IconButton size="sm" variant="ghost" label={starred ? 'Unstar' : 'Star'} pressed={starred} icon={<StarIcon filled={starred} />} onClick={() => { onAction('star'); }} />
-            <InspectDrawer messageId={detail.id} />
-          </Cluster>
-        </div>
+        <ThreadToolbar detail={detail} canArchive={canArchive} canTrash={canTrash} onAction={onAction} onMoveTo={onMoveTo} onEditDraft={onEditDraft} snooze={snooze} />
+      </div>
+      <InspectHost messageId={detail.id} />
+      {/* One scroller. Keyed by message so j/k gives a short (--dur-1) opacity fade and nothing more. */}
+      <div key={detail.id} className="pr-reader__scroll" data-testid="reader-scroll">
         {children}
         <ThreadConversation
           detail={detail}
@@ -171,12 +173,46 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
           bodyStatus={bodyStatus}
           onRetry={onRetry}
           onMoveToJunk={onMoveToJunk}
-          fallback={<MessageContent detail={detail} body={body} bodyStatus={bodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} />}
+          fallback={<MessageContent detail={detail} body={body} bodyStatus={bodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} isOpen fill={body !== null && body.html !== null} />}
         />
-      </Stack>
+      </div>
     </article>
   );
 });
+
+/**
+ * The Inspect drawer of the open message, with no visible trigger of its own: it opens from ⋯
+ * "Inspect message", a chip's Details, the palette and the `i` key (all via keys.ts). A modal hands
+ * focus back to its trigger on close, so the trigger here is an invisible, untabbable stand-in that
+ * passes focus straight on to whatever the reader was on when the drawer opened — the ⋯ button,
+ * the Details button — rather than dropping it on <body>.
+ */
+function InspectHost({ messageId }: { messageId: string }) {
+  const last = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target;
+      if (!(el instanceof HTMLElement)) return;
+      if (el.closest('[role="dialog"], [role="alertdialog"], [role="menu"]') !== null || el.dataset.inspectReturn !== undefined) return;
+      last.current = el;
+    };
+    document.addEventListener('focusin', onFocusIn);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+    };
+  }, []);
+  const stand = (
+    <FocusStandIn
+      label="Inspect message"
+      onFocus={() => {
+        const to = last.current;
+        if (to?.isConnected === true) to.focus();
+        else document.getElementById('pr-reader-subject')?.focus();
+      }}
+    />
+  );
+  return <InspectDrawer messageId={messageId} trigger={stand} />;
+}
 
 // --- The thread (PST-T-3.15, PST-REQ-079) ------------------------------------------------------
 
@@ -327,22 +363,30 @@ function ThreadConversation({
   if (thread === null || !isConversation(thread)) return fallback;
 
   const threadSubject = thread[thread.length - 1]?.subject ?? null;
+  const newestId = thread[thread.length - 1]?.id ?? null;
 
   return (
-    <Stack as="ol" gap="12" aria-label="Conversation" className="pr-thread">
+    <ol aria-label="Conversation" className="pr-thread">
       {rows.map(({ message, expanded }) => {
         const isOpen = message.id === detail.id;
         const rowDetail = isOpen ? detail : (extra.get(message.id)?.detail ?? null);
         const rowBody = isOpen ? body : (extra.get(message.id)?.body ?? null);
         const rowBodyStatus = isOpen ? bodyStatus : (extra.get(message.id)?.bodyStatus ?? 'loading');
+        // Only an HTML message fills: a text one is as tall as its words (see the header comment).
+        const fill = message.id === newestId && rowBody !== null && rowBody.html !== null;
+        // Only a row the reader opened by hand animates in; the rows that start open do not, so
+        // moving with j/k never plays an entrance (PST-REQ-192's calm).
+        const byHand = toggled.has(message.id);
         return (
-          <li key={message.id} className="pr-thread__item" data-message-id={message.id} data-expanded={expanded}>
+          <li key={message.id} className="pr-thread__item" data-message-id={message.id} data-expanded={expanded} data-fill={fill}>
             {expanded ? (
-              rowDetail === null ? (
-                <Skeleton variant="text" lines={3} />
-              ) : (
-                <MessageContent detail={rowDetail} body={rowBody} bodyStatus={rowBodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} />
-              )
+              <Reveal animate={byHand}>
+                {rowDetail === null ? (
+                  <Skeleton variant="text" lines={3} />
+                ) : (
+                  <MessageContent detail={rowDetail} body={rowBody} bodyStatus={rowBodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} isOpen={isOpen} fill={fill} />
+                )}
+              </Reveal>
             ) : (
               <button
                 type="button"
@@ -356,84 +400,72 @@ function ThreadConversation({
           </li>
         );
       })}
-    </Stack>
+    </ol>
   );
 }
 
-/** A collapsed thread row: chevron, sender name, date, and the first line of what they wrote. */
+/**
+ * Opens its content with height + opacity over --dur-2 (PST-REQ-192) — a grid-rows transition from
+ * 0fr to 1fr, so no script measures a height — and takes focus, so the reader lands on the message
+ * they opened. `animate` false renders it open at once. Reduced motion: the library's global rule
+ * zeroes the duration (PST-REQ-193).
+ */
+function Reveal({ animate, children }: { animate: boolean; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(!animate);
+  const [settled, setSettled] = useState(!animate);
+  useLayoutEffect(() => {
+    if (!animate) return undefined;
+    ref.current?.focus({ preventScroll: true });
+    const frame = requestAnimationFrame(() => {
+      setOpen(true);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [animate]);
+  return (
+    <div
+      ref={ref}
+      className="pr-reveal pr-thread__message"
+      data-open={open}
+      data-settled={settled}
+      tabIndex={animate ? -1 : undefined}
+      onTransitionEnd={(e) => {
+        if (e.target === e.currentTarget) setSettled(true);
+      }}
+    >
+      <div className="pr-reveal__inner">{children}</div>
+    </div>
+  );
+}
+
+/** A collapsed thread row, one line: avatar, sender name, the first words they wrote, the date. */
 function CollapsedRow({ message, threadSubject, preview }: { message: MessageSummary; threadSubject: string | null; preview: MessageBody | null }) {
   const from = header(preview, 'From');
   const name = from === null ? collapsedSummary(message, threadSubject) : collapsedSummary({ from: displayName(from), subject: message.subject }, threadSubject);
   const snippet = snippetOf(preview?.text);
   return (
     <>
-      <span className="pr-thread__chevron" aria-hidden="true">
-        <ChevronIcon />
-      </span>
+      <Avatar name={from === null ? (message.from ?? '?') : displayName(from)} size="sm" />
       <span className="pr-thread__collapsed-main">
         <span className="pr-thread__collapsed-summary">{name}</span>
         {snippet === null ? null : <span className="pr-thread__snippet">{snippet}</span>}
       </span>
-      <span className="pr-reader__note">{fullDate(message.date)}</span>
+      <time className="pr-thread__date" dateTime={message.date} title={absoluteDate(message.date)}>
+        {listDate(message.date)}
+      </time>
     </>
   );
 }
 
-// --- One message's content: meta, phishing banner, body, attachments, delivery -----------------
-
-function MessageMeta({ detail, body }: { detail: MessageDetail; body: MessageBody | null }) {
-  const from = header(body, 'From') ?? detail.from ?? '';
-  const to = header(body, 'To');
-  const cc = header(body, 'Cc');
-  // PST-REQ-137: a sender who is in the address book links to their card.
-  const [contact, setContact] = useState<{ addressBookId: string; name: string; displayName: string } | null>(null);
-  useEffect(() => {
-    setContact(null);
-    const address = detail.from;
-    if (address === null || address === '') return undefined;
-    let live = true;
-    contactsApi
-      .lookup(address)
-      .then((r) => {
-        if (live) setContact(r.contact);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [detail.from]);
-  return (
-    <DescriptionList className="pr-reader__meta">
-      <DescriptionItem term="From">
-        {from === '' ? '(unknown sender)' : from}
-        {detail.from === null || detail.from === '' ? null : (
-          <>
-            {' · '}
-            <RouterLink to={`/senders/${encodeURIComponent(detail.from)}`}>Sender profile</RouterLink>
-          </>
-        )}
-        {contact === null ? null : (
-          <>
-            {' · '}
-            <RouterLink to={contactPath(contact.addressBookId, contact.name)}>In contacts as {contact.displayName}</RouterLink>
-          </>
-        )}
-      </DescriptionItem>
-      {to !== null ? <DescriptionItem term="To">{to}</DescriptionItem> : null}
-      {cc !== null ? <DescriptionItem term="Cc">{cc}</DescriptionItem> : null}
-      <DescriptionItem term="Date" numeric>
-        <time dateTime={detail.date}>{fullDate(detail.date)}</time>
-      </DescriptionItem>
-    </DescriptionList>
-  );
-}
+// --- One message's content: header, exception chips, body, attachments, delivery -----------------
 
 function Attachments({ messageId, body }: { messageId: string; body: MessageBody | null }) {
   const attachments = body?.attachments.filter((a) => a.disposition === 'attachment' || a.filename !== null) ?? [];
   if (attachments.length === 0) return null;
   return (
     <section aria-label="Attachments" className="pr-reader__attachments">
-      <h3 className="pr-reader__h3">{attachments.length === 1 ? '1 attachment' : `${String(attachments.length)} attachments`}</h3>
       <ul className="pr-attachments">
         {attachments.map((a) => (
           <li key={a.partId}>
@@ -455,26 +487,40 @@ function MessageContent({
   bodyStatus,
   onRetry,
   onMoveToJunk,
+  isOpen,
+  fill,
 }: {
   detail: MessageDetail;
   body: MessageBody | null;
   bodyStatus: OpenMessage['bodyStatus'];
   onRetry: () => void;
   onMoveToJunk?: ((message: MessageDetail) => void) | undefined;
+  /** The open message: the one the Inspect drawer belongs to, so its chips' Details can open it. */
+  isOpen: boolean;
+  /** This message's HTML frame fills the rest of the pane (a lone message, or a thread's newest). */
+  fill: boolean;
 }) {
   const { mailboxes } = useMail();
   const use = mailboxes?.find((m) => m.id === detail.mailboxId)?.specialUse;
   const ownMailbox = use === 'sent' || use === 'drafts';
   return (
-    <Stack gap="16">
-      <MessageMeta detail={detail} body={body} />
-      <PhishBanner phish={detail.phish} inJunk={use === 'junk'} onMoveToJunk={onMoveToJunk === undefined ? undefined : () => { onMoveToJunk(detail); }} />
+    <div className="pr-msg" data-fill={fill}>
+      <MessageHeader detail={detail} body={body} />
+      <PhishChip
+        phish={detail.phish}
+        inJunk={use === 'junk'}
+        onMoveToJunk={onMoveToJunk === undefined ? undefined : () => { onMoveToJunk(detail); }}
+        onDetails={isOpen ? requestInspect : undefined}
+        from={detail.from}
+      />
       {wantsReceipt(detail, body, ownMailbox) ? <ReceiptPrompt key={detail.id} messageId={detail.id} /> : null}
       <InviteSection messageId={detail.id} />
-      <MessageText body={body} status={bodyStatus} onRetry={onRetry} />
+      <div className="pr-msg__body">
+        <MessageText body={body} status={bodyStatus} onRetry={onRetry} fill={fill} />
+      </div>
       <Attachments messageId={detail.id} body={body} />
       <DeliverySection messageId={detail.id} mailboxId={detail.mailboxId} />
-    </Stack>
+    </div>
   );
 }
 
@@ -588,57 +634,10 @@ function DeliverySection({ messageId, mailboxId }: { messageId: string; mailboxI
   );
 }
 
-// --- Phishing/lookalike warnings (PST-T-6.5, PST-REQ-120) ---------------------------------------
-//
-// One warning per detection, worst first, each with its full reason (never just the kind label —
-// the label is a heading, the reason is the sentence that says why). A `high`-severity warning is
-// what actually happened to *this* message just now, so it interrupts like any other dynamic error
-// (role="alert"); `medium`/`low` sit quietly in the same named region, discoverable by landmark
-// navigation without a screen reader announcing over whatever the reader was doing. Sorting and
-// labelling live in ./phish.ts, unit tested there.
-
-const TONE_ICON = { danger: <DangerIcon />, warning: <WarningIcon />, info: <InfoIcon /> } as const;
-
-function PhishBanner({ phish, inJunk, onMoveToJunk }: { phish: Phish | null; inJunk: boolean; onMoveToJunk: (() => void) | undefined }) {
-  if (phish === null || phish.warnings.length === 0) return null;
-  const sorted = sortPhishWarnings(phish.warnings);
-  // PST-T-11.4: a one-line verdict and the one action that answers it, above the evidence; each
-  // warning keeps its own alert, now with a tone icon (severity never rests on colour alone) and a
-  // title that names the check that failed.
-  const verdict = phishVerdict(sorted);
-  return (
-    <section aria-label="Phishing and authentication warnings" className="pr-reader__phish" data-testid="phish-warnings">
-      <Stack gap="8">
-        <div className="pr-phish__verdict">
-          <p className="pr-phish__verdict-text">{verdict}</p>
-          {onMoveToJunk !== undefined && !inJunk ? (
-            <Button size="sm" variant="secondary" onClick={onMoveToJunk}>
-              Move to Junk
-            </Button>
-          ) : null}
-        </div>
-        {sorted.map((w, index) => (
-          <Alert
-            key={`${w.kind}-${String(index)}`}
-            tone={PHISH_TONE_OF[w.severity]}
-            icon={TONE_ICON[PHISH_TONE_OF[w.severity]]}
-            title={phishWarningTitle(w.kind, w.reason)}
-            dynamic={w.severity === 'high'}
-            data-testid="phish-warning"
-            data-phish-kind={w.kind}
-            data-phish-severity={w.severity}
-          >
-            {w.reason}
-          </Alert>
-        ))}
-      </Stack>
-    </section>
-  );
-}
-
 /** The frame's sandbox: popups only, so a link (target=_blank, noopener) opens in a normal tab. No scripts, no same-origin. */
 export const MAIL_FRAME_SANDBOX = 'allow-popups allow-popups-to-escape-sandbox';
-/** Fixed, because no script in the frame can report its content height; the frame scrolls inside. */
+/** The Newsletters feed's fixed frame height (Feed.tsx): no script in the frame can report its
+ *  content height. The reading pane lays its frames out instead (see the header comment). */
 export const MAIL_FRAME_HEIGHT = '70vh';
 
 /** What the reader is told about blocked remote images; null when there is nothing to say. */
@@ -650,7 +649,7 @@ export function blockedImagesNote(ticket: Pick<RenderTicket, 'images' | 'remoteI
 
 type FrameState = { status: 'loading' } | { status: 'ready'; ticket: RenderTicket } | { status: 'unavailable' } | { status: 'error' };
 
-function HtmlFrame({ messageId, fallback, note: lead }: { messageId: string; fallback: ReactNode; note: ReactNode }) {
+function HtmlFrame({ messageId, fallback, note: lead, fill }: { messageId: string; fallback: ReactNode; note: ReactNode; fill: boolean }) {
   const [images, setImages] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<FrameState>({ status: 'loading' });
@@ -683,12 +682,12 @@ function HtmlFrame({ messageId, fallback, note: lead }: { messageId: string; fal
   const note = blockedImagesNote(state.ticket);
   const trackers = trackersBlockedNote(state.ticket);
   return (
-    <Stack gap="8">
+    <div className="pr-frame" data-fill={fill}>
       {lead}
       {trackers !== null ? (
-        <Alert tone="info" title="Tracking removed" data-testid="trackers-blocked">
+        <p className="pr-reader__note" data-testid="trackers-blocked">
           {trackers}. Postroom stripped these before showing the message, so the sender cannot see that you opened it.
-        </Alert>
+        </p>
       ) : null}
       {note !== null ? (
         <Alert
@@ -704,23 +703,16 @@ function HtmlFrame({ messageId, fallback, note: lead }: { messageId: string; fal
         key={state.ticket.url}
         title="Message content"
         data-testid="message-html"
+        className="pr-frame__frame"
         src={state.ticket.url}
         sandbox={MAIL_FRAME_SANDBOX}
         referrerPolicy="no-referrer"
-        style={{
-          display: 'block',
-          width: '100%',
-          height: MAIL_FRAME_HEIGHT,
-          boxSizing: 'border-box',
-          border: 'var(--border-width) solid var(--color-border)',
-          borderRadius: 'var(--radius-md)',
-        }}
       />
-    </Stack>
+    </div>
   );
 }
 
-function MessageText({ body, status, onRetry }: { body: MessageBody | null; status: OpenMessage['bodyStatus']; onRetry: () => void }) {
+function MessageText({ body, status, onRetry, fill }: { body: MessageBody | null; status: OpenMessage['bodyStatus']; onRetry: () => void; fill: boolean }) {
   if (status === 'loading') return <Skeleton variant="text" lines={6} />;
   if (status === 'error' || body === null) {
     return (
@@ -761,7 +753,7 @@ function MessageText({ body, status, onRetry }: { body: MessageBody | null; stat
     ) : null;
   return (
     <>
-      <HtmlFrame key={body.id} messageId={body.id} fallback={fallback} note={lead} />
+      <HtmlFrame key={body.id} messageId={body.id} fallback={fallback} note={lead} fill={fill} />
       {body.htmlTruncated ? <p className="pr-reader__note">This message was cut short. The full message is in its raw form.</p> : null}
     </>
   );

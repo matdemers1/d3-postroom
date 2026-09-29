@@ -177,11 +177,41 @@ test('doneWhen: opening a message with replies shows the conversation in order, 
   await expect(collapsedButton).toHaveAttribute('aria-expanded', 'false');
   await expectNoAxeViolations(page, 'thread (collapsed)');
 
+  // PST-T-14.6: the toolbar leads with Reply, labels Archive and Delete, draws the rest as icon
+  // buttons with names and tooltips, and keeps the rare actions in ⋯.
+  const toolbar = page.getByRole('toolbar', { name: 'Message actions' });
+  for (const name of ['Reply', 'Archive', 'Delete', 'Reply all', 'Forward', 'More actions']) {
+    await expect(toolbar.getByRole('button', { name, exact: true })).toBeVisible();
+  }
+  await expect(toolbar.getByRole('button', { name: 'Mark unread' })).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Inspect', exact: true })).toHaveCount(0);
+  await toolbar.getByRole('button', { name: 'Reply all', exact: true }).focus();
+  await expect(page.getByRole('tooltip')).toContainText('Reply all');
+  await toolbar.getByRole('button', { name: 'More actions' }).click();
+  const menu = page.getByRole('menu');
+  for (const name of ['Move to…', 'Mark unread', 'Star', 'Inspect message', 'Show original', 'Print']) {
+    await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
+  }
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  // Each message header is one line — no From/To/Cc/Date table until "to …" opens it — and a
+  // normal message carries no status chip, positive or otherwise.
+  const newestHeader = items.nth(2).getByTestId('message-header');
+  await expect(newestHeader.getByRole('button', { name: /^to / })).toHaveAttribute('aria-expanded', 'false');
+  await expect(newestHeader.getByText('From', { exact: true })).toBeHidden();
+  await newestHeader.getByRole('button', { name: /^to / }).click();
+  await expect(newestHeader.getByText('From', { exact: true })).toBeVisible();
+  await expect(page.getByText('Verified', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('phish-warnings')).toHaveCount(0);
+
   // Expanding a collapsed row by keyboard.
   await collapsedButton.focus();
   await page.keyboard.press('Enter');
   await expect(items.nth(1)).toHaveAttribute('data-expanded', 'true');
   await expect(items.nth(1)).toContainText(`Thursday works ${t}`);
+  // It opened with height + opacity (PST-REQ-192) and settles fully open.
+  await expect(items.nth(1).locator('.pr-thread__message')).toHaveAttribute('data-open', 'true');
+  await expect(items.nth(1).locator('.pr-thread__message')).toHaveCSS('opacity', '1');
 
   // r on the open thread replies to the message that was opened (the root); Send closes the composer
   // back to it, and the new reply shows up in the SAME open thread — no navigation, no reload.
@@ -257,6 +287,9 @@ test('doneWhen: a deferred outbound recipient reads in plain words, with its rea
   await expect(delivery).toBeVisible();
   const recipientRow = delivery.getByTestId('delivery-recipient');
   await expect(recipientRow).toHaveAttribute('data-state', 'deferred');
+  // An exception: drawn as a chip, then one plain sentence (PST-T-14.6).
+  await expect(recipientRow).toHaveAttribute('data-exception', 'true');
+  await expect(recipientRow).toContainText('Postroom keeps trying');
   // PST-T-14.1 (CPY-01): the calm view says it in words — "Retrying at 3:40 PM (in 42 min)" — and
   // never the remote server's raw reply.
   await expect(recipientRow.getByTestId('delivery-state')).toContainText(/^Retrying at /);

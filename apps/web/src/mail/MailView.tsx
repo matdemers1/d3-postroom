@@ -19,7 +19,8 @@ import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEE
 import { useMail } from './MailContext';
 import { MessageList, type MessageListHandle } from './MessageList';
 import { ReadingPane, type OpenMessage } from './ReadingPane';
-import { ScheduledSends, SnoozeControl, UndoSendToast } from './Scheduled';
+import { ScheduledSends, UndoSendToast } from './Scheduled';
+import { SnoozeIconControl } from './thread/ThreadToolbar';
 import { mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { emptyMailboxCopy, inSegment, isInboxSegment, segmentItems, segmentKeyword, type InboxSegment } from './split';
@@ -705,10 +706,13 @@ function MailPanes({ route }: { route: MailRoute }) {
                 move(summaryOf(d), junk);
               }
         }
+        onMoveTo={(d, to) => {
+          move(summaryOf(d), to);
+        }}
         snooze={
           /* PST-T-9.1 (PST-REQ-142): snooze the open conversation, or bring it back — inside the
-             toolbar since PST-T-11.4. */
-          <SnoozeControl
+             toolbar since PST-T-11.4, an icon button since PST-T-14.6. */
+          <SnoozeIconControl
             threadId={open?.detail?.threadId ?? null}
             inInbox={open?.detail?.mailboxId !== undefined && open.detail.mailboxId === inbox?.id}
             snoozed={open?.detail?.mailboxId !== undefined && mailboxes?.find((m) => m.id === open.detail?.mailboxId)?.name === 'Snoozed'}
