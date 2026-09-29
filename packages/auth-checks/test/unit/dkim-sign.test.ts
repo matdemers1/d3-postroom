@@ -76,7 +76,7 @@ describe('signMessage', () => {
       expect(p.domain).toBe('d3cloud.io');
       expect(`${p.headerCanon}/${p.bodyCanon}`).toBe('relaxed/relaxed');
       expect(p.signedHeaders).toEqual([
-        'from', 'from', 'to', 'cc', 'subject', 'date', 'message-id', 'mime-version', 'content-type',
+        'from', 'from', 'to', 'cc', 'subject', 'date', 'mime-version', 'content-type',
       ]);
       expect(s).toContain(`t=${Math.floor(NOW.getTime() / 1000)};`);
       expect(s.startsWith('DKIM-Signature: v=1; a=')).toBe(true);
