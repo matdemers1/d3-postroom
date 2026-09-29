@@ -94,11 +94,13 @@ export interface ReadingPaneProps {
   onMoveTo?: ((message: MessageDetail, to: Mailbox) => void) | undefined;
   /** Opens a draft in the composer; Drafts' toolbar leads with Edit draft only when this is given. */
   onEditDraft?: ((message: MessageDetail) => void) | undefined;
+  /** PST-T-14.7: a reply or forward, composed inline under the thread it answers (TF-08). */
+  composer?: ReactNode;
   children?: ReactNode;
 }
 
 export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(function ReadingPane(
-  { open, back, canArchive, canTrash, onAction, onRetry, snooze, onMoveToJunk, onMoveTo, onEditDraft, children },
+  { open, back, canArchive, canTrash, onAction, onRetry, snooze, onMoveToJunk, onMoveTo, onEditDraft, composer, children },
   headingRef,
 ) {
   if (open === null) {
@@ -175,6 +177,7 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
           onMoveToJunk={onMoveToJunk}
           fallback={<MessageContent detail={detail} body={body} bodyStatus={bodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} isOpen fill={body !== null && body.html !== null} />}
         />
+        {composer}
       </div>
     </article>
   );

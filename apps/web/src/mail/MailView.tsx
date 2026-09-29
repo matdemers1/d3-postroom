@@ -21,7 +21,8 @@ import { Alert, Button, EmptyState, Link, SearchField, SegmentedControl, Skeleto
 import { api, ApiError, serverUnreachable, type Mailbox, type MailboxSplit, type MessageDetail, type MessageSummary } from '../api';
 import { CommandPalette } from './CommandPalette';
 import { Composer } from './Composer';
-import { draftFor } from './compose';
+import { draftFor, draftToResume } from './compose';
+import { composerKey } from './compose/session';
 import { Feed } from './Feed';
 import { findSpecial, mailboxLabel } from './format';
 import { ComposeIcon, mailboxIcon } from './icons';
@@ -48,7 +49,7 @@ import './list/list.css';
 import { ReadingPane, type OpenMessage } from './ReadingPane';
 import { ScheduledSends, UndoSendToast } from './Scheduled';
 import { SnoozeIconControl } from './thread/ThreadToolbar';
-import { mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
+import { composesInPane, draftPath, mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { emptyMailboxCopy, inSegment, isInboxSegment, segmentItems, segmentKeyword, type InboxSegment } from './split';
 import { SPLIT_QUERY, useMediaQuery } from './useMedia';
@@ -112,6 +113,8 @@ function MailPanes({ route }: { route: MailRoute }) {
   const [list, dispatch] = useReducer(listReducer, initialList);
   const [open, setOpen] = useState<OpenMessage | null>(null);
   const [openReload, setOpenReload] = useState(0);
+  // PST-T-14.7: bumped when an inline reply is sent, so the open thread is asked for again.
+  const [replyEpoch, setReplyEpoch] = useState(0);
   const [overlay, setOverlay] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -610,7 +613,9 @@ function MailPanes({ route }: { route: MailRoute }) {
   };
 
   const openMessage = (m: MessageSummary) => {
-    void navigate(mailPath(latest.current.searchQuery === null ? (latest.current.route.mailboxId ?? m.mailboxId) : m.mailboxId, m.id));
+    // PST-T-14.7: a draft opens in the composer, editable, never read-only (TF-09).
+    const isDraft = mailboxes?.find((b) => b.id === m.mailboxId)?.specialUse === 'drafts';
+    void navigate(mailPath(latest.current.searchQuery === null ? (latest.current.route.mailboxId ?? m.mailboxId) : m.mailboxId, m.id, isDraft ? 'draft' : null));
   };
 
   const compose = (mode: ComposeMode, m: MessageSummary | null) => {
@@ -961,35 +966,61 @@ function MailPanes({ route }: { route: MailRoute }) {
       ? null
       : route.compose === 'new'
         ? { ...draftFor('new', null, me), to: route.composeTo ?? '' }
-        : open?.status === 'ready' && open.detail !== null && open.bodyStatus !== 'loading'
-          ? draftFor(route.compose, { detail: open.detail, body: open.body }, me)
-          : null;
+        : route.compose === 'draft'
+          ? (route.composeDraftId ?? null) === null
+            ? null
+            : draftToResume(route.composeDraftId ?? '')
+          : open?.status === 'ready' && open.detail !== null && open.bodyStatus !== 'loading'
+            ? draftFor(route.compose, { detail: open.detail, body: open.body }, me)
+            : null;
   const closeComposer = () => {
-    void navigate(mailPath(route.mailboxId, route.messageId));
+    // A draft opened from Drafts is replaced as it saves: close back to its mailbox's list. A new
+    // message's draft rides in ?id=, so closing goes back to whatever was open behind it.
+    const draftInPath = route.compose === 'draft' && route.messageId !== null && route.messageId === route.composeDraftId;
+    void navigate(draftInPath ? mailPath(route.mailboxId) : mailPath(route.mailboxId, route.messageId));
   };
+  // PST-T-14.7: new and resumed drafts take the reading pane's place; replies and forwards open
+  // inline under the thread (ReadingPane's composer slot).
+  const composer =
+    draft === null ? null : (
+      <Composer
+        key={composerKey(draft)}
+        draft={draft}
+        placement={composesInPane(route.compose) ? 'pane' : 'inline'}
+        onDiscard={closeComposer}
+        onSent={() => {
+          setReplyEpoch((n) => n + 1);
+        }}
+        onDiscarded={(outcome) => {
+          // The toast says where the draft went (and offers Undo); the list follows it.
+          if (outcome.kind === 'nothing') return;
+          if (outcome.kind === 'kept' || outcome.kind === 'unrestored') say('danger', outcome.text);
+          reloadList();
+        }}
+        {...(composesInPane(route.compose)
+          ? {
+              // Each save names the draft in the URL, so a reload resumes it (PST-T-14.7).
+              onDraftSaved: (id: string) => {
+                void navigate(draftPath(route, id), { replace: true });
+              },
+            }
+          : {})}
+        {...(split || !composesInPane(route.compose) ? {} : { back: backToList })}
+      />
+    );
 
   const readerPane =
-    route.compose !== null ? (
-      draft === null ? (
+    composesInPane(route.compose) ? (
+      composer ?? (
         <section className="pr-reader" aria-label="Composer" aria-busy="true">
           <Skeleton variant="text" lines={4} />
         </section>
-      ) : (
-        <Composer
-          key={`${draft.mode}:${draft.sourceId ?? ''}`}
-          draft={draft}
-          onDiscard={closeComposer}
-          onDiscarded={(outcome) => {
-            // PST-T-14.1: say where the draft went — "Draft moved to Trash." in the polite status line.
-            if (outcome.kind === 'nothing') return;
-            say(outcome.kind === 'trashed' ? 'info' : 'danger', outcome.text);
-            reloadList();
-          }}
-          {...(split ? {} : { back: backToList })}
-        />
       )
     ) : (
       <ReadingPane
+        // An inline reply leaves the thread mounted; after a send it is remounted, which re-asks the
+        // server for the thread the reply just joined (the same moment a closing composer used to be).
+        key={`reader:${String(replyEpoch)}`}
         ref={readerHeading}
         open={open}
         {...(split ? {} : { back: backToList })}
@@ -1013,6 +1044,10 @@ function MailPanes({ route }: { route: MailRoute }) {
           // the next message opens, and the Undo toast offers the way back.
           triage(to, summaryOf(d));
         }}
+        onEditDraft={(d) => {
+          void navigate(mailPath(route.mailboxId ?? d.mailboxId, d.id, 'draft'));
+        }}
+        composer={route.compose === null ? undefined : composer}
         snooze={
           /* PST-T-9.1 (PST-REQ-142): snooze the open conversation, or bring it back — inside the
              toolbar since PST-T-11.4, an icon button since PST-T-14.6. */

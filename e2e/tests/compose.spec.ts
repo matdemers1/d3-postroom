@@ -3,6 +3,12 @@
 // Sent, without a reload; a draft saved and closed comes back with its text when the reply is
 // reopened; a forward carries the original.
 //
+// PST-T-14.7 (PST-REQ-191/192/193): replies and forwards open INLINE under the thread, which stays
+// on screen, with the quote folded behind "···"; a new message opens in the reading pane with only
+// To (chips, contact autocomplete), Subject and the body — Cc and Bcc revealed on demand; Discard
+// moves the draft to Trash with an Undo toast that moves it back; a draft opened from Drafts (or
+// its Edit draft button) resumes in the composer.
+//
 // Sending needs DKIM keys (submission never sends unsigned), and the e2e stack has no operator step
 // that makes them, so the suite asks for them through the e2e-only POST /api/compose/dev/dkim-keys
 // (mounted only with POSTROOM_E2E_SEED=1, like the seed route). Every message this suite sends is
@@ -86,6 +92,9 @@ async function openFromInbox(page: Page, subject: string): Promise<void> {
 }
 
 async function expectNoAxeViolations(page: Page, label: string): Promise<void> {
+  // The composer rises and fades in (--dur-3), rows open (--dur-2), menus drop in: axe measures
+  // colour, so it measures once everything has arrived — never a half-faded frame.
+  await page.waitForFunction(() => (globalThis as unknown as { document: { getAnimations: () => { playState: string }[] } }).document.getAnimations().every((a) => a.playState !== 'running'));
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(results.violations.map((v) => `${label} ${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(' ')).join(', ')})`)).toEqual([]);
 }
@@ -113,7 +122,7 @@ async function remember(subject: string): Promise<void> {
   }
 }
 
-test('doneWhen: r, type, Send — the reply is in the thread and in Sent, without a reload', async ({ page }) => {
+test('doneWhen: r, type, Send — inline under the thread; the reply is in the thread and in Sent, without a reload', async ({ page }) => {
   const t = tag();
   const subject = `Lunch on Friday ${t}`;
   const [original] = await seedMail(api, [{ subject, from: 'Alice Example <alice@example.org>', text: 'Are you free for lunch?' }]);
@@ -123,9 +132,18 @@ test('doneWhen: r, type, Send — the reply is in the thread and in Sent, withou
   await page.keyboard.press('r');
   const reply = page.getByRole('region', { name: 'Reply', exact: true });
   await expect(reply).toBeVisible();
+  await expect(page).toHaveURL(/compose=reply$/);
+  // Inline: the thread it answers is still on screen, above it.
+  await expect(page.getByRole('heading', { name: subject, level: 2 })).toBeVisible();
+  await expect(reply).toHaveAttribute('data-placement', 'inline');
+  await expect(page.getByTestId('reader-scroll').getByRole('region', { name: 'Reply', exact: true })).toBeVisible();
+  // To is a chip; the quote is folded behind "···"; the caret is in the text.
+  await expect(reply.getByRole('list', { name: 'To recipients' })).toContainText('Alice Example');
+  await expect(reply.getByRole('button', { name: 'Show quoted text' })).toBeVisible();
+  await expect(reply.getByRole('textbox', { name: 'Message' })).toHaveValue('');
   await expect(reply.getByRole('textbox', { name: 'Message' })).toBeFocused();
   await page.keyboard.type(`Friday works for me ${t}.`);
-  await expectNoAxeViolations(page, 'composer');
+  await expectNoAxeViolations(page, 'inline reply');
   await reply.getByRole('button', { name: 'Send', exact: true }).click();
 
   // The composer closes back to the message it answered (PST-T-3.15), which is still open — and the
@@ -139,7 +157,7 @@ test('doneWhen: r, type, Send — the reply is in the thread and in Sent, withou
   await remember(`Re: ${subject}`);
   await expectNoAxeViolations(page, 'thread');
 
-  // The thread, from the API: the seeded original and the Sent copy.
+  // The thread, from the API: the seeded original and the Sent copy — with the folded quote sent.
   const detail = (await (await api.get(`/api/messages/${original.id}`)).json()) as { threadId: string | null };
   expect(detail.threadId).toMatch(/^[0-9a-f-]{36}$/);
   const thread = (await (await api.get(`/api/threads/${detail.threadId ?? ''}`)).json()) as { messages: { id: string; subject: string }[] };
@@ -152,11 +170,12 @@ test('doneWhen: r, type, Send — the reply is in the thread and in Sent, withou
   await row(page, `Re: ${subject}`).click();
   await expect(page.getByRole('heading', { name: `Re: ${subject}`, level: 2 })).toBeVisible();
   await expect(page.getByTestId('message-text')).toContainText(`Friday works for me ${t}.`);
+  await expect(page.getByTestId('message-text')).toContainText('> Are you free for lunch?');
   const ids = await mailboxIds();
   expect(await subjectsIn(ids['sent'] ?? '')).toContain(`Re: ${subject}`);
 });
 
-test('a draft saved and closed comes back with its text; Discard moves it to Trash', async ({ page }) => {
+test('a draft autosaves and comes back; Discard moves it to Trash and Undo brings it back; Drafts resumes it in the composer', async ({ page }) => {
   const t = tag();
   const subject = `Budget review ${t}`;
   const [original] = await seedMail(api, [{ subject, from: 'Carol <carol@example.org>', text: 'Numbers inside.' }]);
@@ -167,8 +186,9 @@ test('a draft saved and closed comes back with its text; Discard moves it to Tra
   const reply = page.getByRole('region', { name: 'Reply', exact: true });
   await expect(reply).toBeVisible();
   await page.keyboard.type(`Half-written thoughts ${t}`);
-  await reply.getByRole('button', { name: 'Save draft' }).click();
-  await expect(reply.getByRole('status')).toContainText('Draft saved');
+  // No Save draft button: saving is automatic, and the footer says so.
+  await expect(reply.getByRole('button', { name: 'Save draft' })).toHaveCount(0);
+  await expect(reply.getByTestId('compose-status')).toContainText('Saved', { timeout: 15_000 });
 
   const ids = await mailboxIds();
   await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).toContain(`Re: ${subject}`);
@@ -180,18 +200,51 @@ test('a draft saved and closed comes back with its text; Discard moves it to Tra
   await page.keyboard.press('r');
   const again = page.getByRole('region', { name: 'Reply', exact: true });
   await expect(again.getByRole('textbox', { name: 'Message' })).toHaveValue(new RegExp(`^Half-written thoughts ${t}`));
-  await expect(again.getByRole('status')).toContainText('Picked up your saved draft.');
+  await expect(again.getByTestId('compose-status')).toContainText('Picked up your saved draft.');
 
   // Discard moves it out of Drafts and into Trash — never a hard delete (PST-T-14.1, PST-REQ-129) —
-  // and says so in the polite status line.
+  // and a toast says so, with Undo.
   await again.getByRole('button', { name: 'Discard' }).click();
   await expect(again).toBeHidden();
-  await expect(page.getByRole('status').filter({ hasText: 'Draft moved to Trash.' })).toBeVisible();
+  const toasts = page.getByRole('region', { name: 'Notifications' });
+  await expect(toasts).toContainText('Draft moved to Trash.');
   await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).not.toContain(`Re: ${subject}`);
   await expect.poll(() => subjectsIn(ids['trash'] ?? '')).toContain(`Re: ${subject}`);
+
+  // Undo moves it back to Drafts.
+  await toasts.getByRole('button', { name: /Undo/ }).click();
+  await expect(toasts).toContainText('Draft moved back to Drafts.');
+  await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).toContain(`Re: ${subject}`);
+  await expect.poll(() => subjectsIn(ids['trash'] ?? '')).not.toContain(`Re: ${subject}`);
+
+  // Opened from Drafts, it resumes in the composer — editable, in the reading pane, still a reply.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Drafts/ }).click();
+  await expect(page.getByRole('listbox', { name: 'Messages in Drafts' })).toBeVisible();
+  await row(page, `Re: ${subject}`).click();
+  await expect(page).toHaveURL(/compose=draft$/);
+  const resumed = page.getByRole('region', { name: 'Reply', exact: true });
+  await expect(resumed).toHaveAttribute('data-placement', 'pane');
+  await expect(resumed.getByRole('textbox', { name: 'Message' })).toHaveValue(new RegExp(`^Half-written thoughts ${t}`));
+  await expect(resumed.getByRole('list', { name: 'To recipients' })).toContainText('Carol');
+  await expect(resumed).toHaveAttribute('data-source-id', original.id);
+  await expectNoAxeViolations(page, 'resumed draft');
+  await page.keyboard.press('Escape');
+  await expect(resumed).toBeHidden();
+
+  // Read-only, its toolbar leads with Edit draft, which resumes it the same way.
+  const draftsList = (await (await api.get(`/api/mailboxes/${ids['drafts'] ?? ''}/messages?limit=200`)).json()) as { messages: { id: string; subject: string | null }[] };
+  const draftId = draftsList.messages.find((m) => m.subject === `Re: ${subject}`)?.id ?? '';
+  await page.goto(`/mail/${ids['drafts'] ?? ''}/${draftId}`);
+  await expect(page.getByRole('heading', { name: `Re: ${subject}`, level: 2 })).toBeVisible();
+  await page.getByRole('toolbar', { name: 'Message actions' }).getByRole('button', { name: 'Edit draft' }).click();
+  await expect(page.getByRole('region', { name: 'Reply', exact: true }).getByRole('textbox', { name: 'Message' })).toHaveValue(new RegExp(`^Half-written thoughts ${t}`));
+
+  // Tidy up: discard it for good (to Trash).
+  await page.getByRole('region', { name: 'Reply', exact: true }).getByRole('button', { name: 'Discard' }).click();
+  await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).not.toContain(`Re: ${subject}`);
 });
 
-test('a forward carries the original, attached whole', async ({ page }) => {
+test('a forward opens inline and carries the original, attached whole', async ({ page }) => {
   const t = tag();
   const subject = `Site photos ${t}`;
   const [original] = await seedMail(api, [
@@ -203,8 +256,15 @@ test('a forward carries the original, attached whole', async ({ page }) => {
   await page.keyboard.press('f');
   const forward = page.getByRole('region', { name: 'Forward' });
   await expect(forward).toBeVisible();
+  await expect(forward).toHaveAttribute('data-placement', 'inline');
+  await expect(page.getByRole('heading', { name: subject, level: 2 })).toBeVisible();
   await expect(forward.getByText('The original message is attached in full.')).toBeVisible();
-  await forward.getByRole('textbox', { name: 'To' }).fill('Erin <erin@example.org>');
+  // The forwarded text is folded; "···" opens it for editing.
+  await forward.getByRole('button', { name: 'Show quoted text' }).click();
+  await expect(forward.getByRole('textbox', { name: 'Message' })).toHaveValue(/Forwarded message/);
+  await forward.getByRole('combobox', { name: 'To' }).fill('erin@example.org');
+  await forward.getByRole('combobox', { name: 'To' }).press('Enter');
+  await expect(forward.getByRole('list', { name: 'To recipients' })).toContainText('erin@example.org');
   await forward.getByRole('button', { name: 'Send', exact: true }).click();
 
   // The composer closes back to the forwarded message itself (the one it was opened from).
@@ -221,4 +281,106 @@ test('a forward carries the original, attached whole', async ({ page }) => {
   expect(raw).toContain('Content-Type: message/rfc822');
   expect(raw).toContain(`Message-ID: ${original.messageIdHeader}`);
   expect(raw).toContain('filename="notes.txt"');
+});
+
+test('a new message opens with To, Subject and the body only; Cc and Bcc reveal on demand; contacts autocomplete; Send', async ({ page }) => {
+  const t = tag();
+  const subject = `Gear list ${t}`;
+  // A contact to find by typing (erin@example.org is one of the addresses the suite un-suppresses).
+  const books = (await (await api.get('/api/contacts/address-books')).json()) as { addressBooks: { id: string }[] };
+  const book = books.addressBooks[0];
+  if (book === undefined) throw new Error('no address book');
+  const card = await api.post(`/api/contacts/address-books/${book.id}/cards`, {
+    headers: CSRF,
+    data: { fn: `Erin Okafor ${t}`, given: 'Erin', family: `Okafor ${t}`, emails: [{ address: 'erin@example.org', type: 'home' }], tels: [], org: '', note: '' },
+  });
+  expect(card.ok()).toBe(true);
+
+  await page.goto('/?compose=new');
+  const fresh = page.getByRole('region', { name: 'New message' });
+  await expect(fresh).toBeVisible();
+  await expect(fresh).toHaveAttribute('data-placement', 'pane');
+  // Only To, Subject and the body — no Cc, Bcc or From rows, and none of the old always-on options.
+  await expect(fresh.getByRole('combobox', { name: 'To' })).toBeFocused();
+  await expect(fresh.getByRole('textbox', { name: 'Subject' })).toBeVisible();
+  await expect(fresh.getByRole('textbox', { name: 'Message' })).toBeVisible();
+  await expect(fresh.getByRole('combobox', { name: 'Cc' })).toHaveCount(0);
+  await expect(fresh.getByRole('combobox', { name: 'Bcc' })).toHaveCount(0);
+  await expect(fresh.getByText('Request read receipt')).toHaveCount(0);
+  await expect(fresh.getByText('Remind me')).toHaveCount(0);
+  await expectNoAxeViolations(page, 'new message');
+
+  // Contact autocomplete: type part of the name, the contact is offered, Enter adds it as a chip.
+  await page.keyboard.type(`Okafor ${t}`);
+  const suggestion = fresh.getByRole('option', { name: /erin@example\.org/ });
+  await expect(suggestion).toBeVisible();
+  await expectNoAxeViolations(page, 'autocomplete open');
+  await page.keyboard.press('Enter');
+  await expect(fresh.getByRole('list', { name: 'To recipients' })).toContainText(`Erin Okafor ${t}`);
+
+  // Cc reveals its row, focused, opening height + opacity (PST-REQ-192); Bcc stays a link until used.
+  await fresh.getByRole('button', { name: 'Cc', exact: true }).click();
+  const cc = fresh.getByRole('combobox', { name: 'Cc' });
+  await expect(cc).toBeFocused();
+  await expect(fresh.getByRole('button', { name: 'Cc', exact: true })).toHaveCount(0);
+  await expect(fresh.getByRole('button', { name: 'Bcc', exact: true })).toBeVisible();
+  await expect(fresh.locator('[data-row="cc"]')).toHaveCSS('opacity', '1');
+  await expect(fresh.locator('[data-row="cc"]')).toHaveCSS('animation-name', 'pr-compose-row-in');
+  // Under reduced motion nothing moves (PST-REQ-193).
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await fresh.getByRole('button', { name: 'Bcc', exact: true }).click();
+  await expect(fresh.getByRole('combobox', { name: 'Bcc' })).toBeFocused();
+  await expect(fresh.locator('[data-row="bcc"]')).toHaveCSS('animation-name', 'none');
+  await expect(fresh).toHaveCSS('animation-name', 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  // The rare options live behind ⋯; Send later behind Send's ▾.
+  await fresh.getByRole('button', { name: 'More options' }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu.getByRole('menuitem', { name: 'Write in Markdown' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Request read receipt' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Insert template…' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Sign or encrypt…' })).toBeVisible();
+  // Measured once the menu has finished fading in (--motion-menu-enter), not mid-animation.
+  await expect(menu).toHaveCSS('opacity', '1');
+  await expectNoAxeViolations(page, 'overflow menu');
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(fresh).toBeVisible();
+  await fresh.getByRole('button', { name: 'More ways to send' }).click();
+  await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Send later…' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await fresh.getByRole('textbox', { name: 'Subject' }).fill(subject);
+  await fresh.getByRole('textbox', { name: 'Message' }).fill(`Tent, stove, lantern ${t}.`);
+  await expectNoAxeViolations(page, 'new message, Cc and Bcc open');
+  await fresh.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(fresh).toBeHidden();
+  await remember(subject);
+  const ids = await mailboxIds();
+  await expect.poll(() => subjectsIn(ids['sent'] ?? '')).toContain(subject);
+});
+
+test('a new message names its draft in the URL once it autosaves, so a reload resumes it', async ({ page }) => {
+  const t = tag();
+  const subject = `Reload me ${t}`;
+  await page.goto('/?compose=new');
+  const fresh = page.getByRole('region', { name: 'New message' });
+  await expect(fresh).toBeVisible();
+  await fresh.getByRole('textbox', { name: 'Subject' }).fill(subject);
+  await fresh.getByRole('textbox', { name: 'Message' }).fill(`Half a thought ${t}`);
+  await expect(fresh.getByTestId('compose-status')).toContainText('Saved', { timeout: 15_000 });
+  await expect(page).toHaveURL(/\?compose=draft&id=[0-9a-f-]{36}$/);
+  // The same composer carries on (it was not rebuilt): what was typed is still there, focus too.
+  await expect(fresh.getByRole('textbox', { name: 'Message' })).toBeFocused();
+
+  await page.reload();
+  const resumed = page.getByRole('region', { name: 'New message' });
+  await expect(resumed.getByRole('textbox', { name: 'Subject' })).toHaveValue(subject);
+  await expect(resumed.getByRole('textbox', { name: 'Message' })).toHaveValue(`Half a thought ${t}`);
+
+  // Tidy up: to Trash.
+  await resumed.getByRole('button', { name: 'Discard' }).click();
+  const ids = await mailboxIds();
+  await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).not.toContain(subject);
 });
