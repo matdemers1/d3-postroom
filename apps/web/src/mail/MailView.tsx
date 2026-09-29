@@ -676,6 +676,12 @@ function MailPanes({ route }: { route: MailRoute }) {
           key={`${draft.mode}:${draft.sourceId ?? ''}`}
           draft={draft}
           onDiscard={closeComposer}
+          onDiscarded={(outcome) => {
+            // PST-T-14.1: say where the draft went — "Draft moved to Trash." in the polite status line.
+            if (outcome.kind === 'nothing') return;
+            say(outcome.kind === 'trashed' ? 'info' : 'danger', outcome.text);
+            reloadList();
+          }}
           {...(split ? {} : { back: backToList })}
         />
       )

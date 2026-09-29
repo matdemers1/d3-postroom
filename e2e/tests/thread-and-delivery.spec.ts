@@ -230,7 +230,7 @@ async function remember(subject: string): Promise<void> {
   }
 }
 
-test('doneWhen: a deferred outbound recipient shows its reason and next retry', async ({ page }) => {
+test('doneWhen: a deferred outbound recipient reads in plain words, with its reason and next retry behind Details', async ({ page }) => {
   // dev-seed-deferred (PST-T-6.6, apps/api/src/admin-queue) files an OutboundMessage and a deferred
   // OutboundRecipient straight into the queue, with no corresponding Sent-mailbox Message — it was
   // built for e2e/tests/admin-queue.spec.ts, which drives the admin queue screen directly. PST-T-6.7
@@ -257,10 +257,22 @@ test('doneWhen: a deferred outbound recipient shows its reason and next retry', 
   await expect(delivery).toBeVisible();
   const recipientRow = delivery.getByTestId('delivery-recipient');
   await expect(recipientRow).toHaveAttribute('data-state', 'deferred');
-  await expect(recipientRow.getByTestId('delivery-state')).toHaveText('Deferred');
-  await expect(recipientRow.getByTestId('deferral-reason')).toContainText('greylisted (seeded for e2e)');
-  await expect(recipientRow.getByTestId('next-retry')).toContainText('Next retry at');
-  await expect(recipientRow.getByTestId('next-retry')).toContainText(/in \d+ (min|hr)/);
+  // PST-T-14.1 (CPY-01): the calm view says it in words — "Retrying at 3:40 PM (in 42 min)" — and
+  // never the remote server's raw reply.
+  await expect(recipientRow.getByTestId('delivery-state')).toContainText(/^Retrying at /);
+  await expect(recipientRow.getByTestId('delivery-state')).toContainText(/in \d+ (min|hr)/);
+  await expect(delivery).not.toContainText('greylisted');
+
+  // The reason and the attempt log are evidence: behind Details.
+  await delivery.getByRole('button', { name: 'Delivery details' }).click();
+  const details = page.getByRole('dialog', { name: 'Delivery details' });
+  await expect(details).toBeVisible();
+  const evidence = details.getByTestId('inspect-delivery-recipient');
+  await expect(evidence.getByTestId('deferral-reason')).toContainText('greylisted (seeded for e2e)');
+  await expect(evidence.getByTestId('next-retry')).toContainText('Next retry at');
+  await expectNoAxeViolations(page, 'delivery details');
+  await details.getByRole('button', { name: 'Close' }).click();
+  await expect(details).toBeHidden();
   await expectNoAxeViolations(page, 'delivery');
 
   // Clean up: cancel it so it never lingers on the shared queue.

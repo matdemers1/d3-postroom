@@ -5,12 +5,15 @@ import type { DeliveryAttemptView, DeliveryRecipient } from '../../src/api';
 import {
   attemptRemoteText,
   attemptSummary,
+  bounceReason,
   deferralReason,
+  deliveryLine,
   deliveryPhase,
   dsnFiledAt,
   isPending,
   NO_DELIVERY_RECORD_TEXT,
   relativeMinutes,
+  retryTime,
   STATE_LABEL,
   STATE_TONE,
 } from '../../src/mail/delivery';
@@ -171,5 +174,63 @@ describe('dsnFiledAt', () => {
   it('falls back to the delay DSN when there is no failure', () => {
     const at = dsnFiledAt(recipient({ dsn: { delaySentAt: '2026-09-26T10:00:00Z', failureSentAt: null } }));
     expect(at).toBe('2026-09-26T10:00:00Z');
+  });
+});
+
+// PST-T-14.1 (design audit CPY-01): the calm reading view's one line per recipient.
+describe('deliveryLine (plain language, never the raw reply)', () => {
+  const now = new Date(2026, 8, 26, 12, 0, 0);
+
+  it('says Delivered, and nothing the remote server wrote', () => {
+    const line = deliveryLine(recipient({ state: 'delivered', lastCode: 250, lastEnhanced: '2.0.0', lastText: 'OK (e2e stub: no real MX was contacted)' }), now);
+    expect(line).toBe('Delivered');
+  });
+
+  it('says when a deferred recipient is retried, as a time', () => {
+    const at = new Date(2026, 8, 26, 15, 40, 0).toISOString();
+    expect(deliveryLine(recipient({ state: 'deferred', nextAttemptAt: at, lastCode: 451, lastText: 'greylisted' }), now, 'en-US')).toBe('Retrying at 3:40 PM');
+  });
+
+  it('names a bounce by its reason in words', () => {
+    expect(deliveryLine(recipient({ state: 'bounced', lastCode: 550, lastEnhanced: '5.1.1', lastText: 'No such user' }), now)).toBe('Bounced — address doesn’t exist');
+    expect(deliveryLine(recipient({ state: 'bounced', lastCode: 550, lastEnhanced: '5.1.10', lastText: 'Recipient address rejected: example.org publishes a null MX (RFC 7505)' }), now)).toBe(
+      'Bounced — that domain doesn’t accept mail',
+    );
+  });
+
+  it('never contains a reply code, an enhanced status or the remote text, in any state', () => {
+    const raw = { lastCode: 550, lastEnhanced: '5.7.1', lastText: 'e2e stub: rejected by policy xyzzy' };
+    for (const state of Object.keys(STATE_LABEL) as DeliveryRecipient['state'][]) {
+      const line = deliveryLine(recipient({ state, ...raw }), now, 'en-US');
+      expect(line).not.toMatch(/550|5\.7\.1|xyzzy|e2e stub/);
+    }
+  });
+
+  it('has a line for every state', () => {
+    expect(deliveryLine(recipient({ state: 'queued' }), now)).toBe('Waiting to send');
+    expect(deliveryLine(recipient({ state: 'attempting' }), now)).toBe('Sending now');
+    expect(deliveryLine(recipient({ state: 'cancelled' }), now)).toBe('Canceled — not sent');
+  });
+});
+
+describe('bounceReason', () => {
+  it('reads the enhanced status code first', () => {
+    expect(bounceReason({ lastCode: 552, lastEnhanced: '5.2.2', lastText: 'over quota' })).toBe('the mailbox is full');
+    expect(bounceReason({ lastCode: 550, lastEnhanced: '5.1.2', lastText: 'host not found' })).toBe('that domain doesn’t exist');
+  });
+
+  it('falls back to the reply text, then the code', () => {
+    expect(bounceReason({ lastCode: 550, lastEnhanced: null, lastText: 'User unknown in virtual mailbox table' })).toBe('address doesn’t exist');
+    expect(bounceReason({ lastCode: 554, lastEnhanced: null, lastText: 'go away' })).toBe('the receiving server refused it');
+    expect(bounceReason({ lastCode: null, lastEnhanced: null, lastText: 'FCrDNS not yet valid: EDGE_PUBLIC_IP is not set' })).toBe('it couldn’t be delivered');
+  });
+});
+
+describe('retryTime', () => {
+  const now = new Date(2026, 8, 26, 12, 0, 0);
+  it('is a bare time today, a weekday and time this week, a date later', () => {
+    expect(retryTime(new Date(2026, 8, 26, 15, 40).toISOString(), now, 'en-US')).toBe('3:40 PM');
+    expect(retryTime(new Date(2026, 8, 28, 9, 5).toISOString(), now, 'en-US')).toBe('Mon 9:05 AM');
+    expect(retryTime(new Date(2026, 9, 20, 9, 5).toISOString(), now, 'en-US')).toMatch(/^Oct 20/);
   });
 });

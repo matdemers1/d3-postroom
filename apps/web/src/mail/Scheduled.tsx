@@ -176,51 +176,82 @@ export function ScheduledSends({ drafts }: { drafts: Mailbox }) {
 
 // --- Snooze, in the reading pane -------------------------------------------------------------------
 
+/**
+ * Runs a snooze or unsnooze and says how it went. A failure is never reported like a success
+ * (PST-T-14.1, audit INT): the caller keeps the message open and shows the error inline.
+ */
+export async function attemptSnooze(f: () => Promise<unknown>, done: string): Promise<{ ok: true; text: string } | { ok: false; text: string }> {
+  try {
+    await f();
+    return { ok: true, text: done };
+  } catch (e) {
+    if (e instanceof ApiError) {
+      return { ok: false, text: e.status === 404 ? 'That conversation is gone, so it was not snoozed.' : 'Postroom couldn’t snooze it. Nothing changed.' };
+    }
+    return { ok: false, text: serverUnreachable('Nothing changed.') };
+  }
+}
+
 /** Snooze the open conversation (from INBOX), or bring a snoozed one back. */
 export function SnoozeControl({ threadId, snoozed, inInbox, onDone }: { threadId: string | null; snoozed: boolean; inInbox: boolean; onDone: (text: string) => void }) {
   const { refreshMailboxes } = useMail();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   if (threadId === null || (!snoozed && !inInbox)) return null;
 
   const run = async (f: () => Promise<unknown>, done: string) => {
     setBusy(true);
-    try {
-      await f();
+    setError(null);
+    const outcome = await attemptSnooze(f, done);
+    setBusy(false);
+    if (outcome.ok) {
       void refreshMailboxes();
-      onDone(done);
-    } catch {
-      onDone(serverUnreachable('Nothing changed.'));
-    } finally {
-      setBusy(false);
+      onDone(outcome.text);
+    } else {
+      // The message stays open; the error sits beside the control that failed.
+      setError(outcome.text);
     }
   };
 
+  const failure =
+    error === null ? null : (
+      <span className="pr-snooze__error" role="alert">
+        {error}
+      </span>
+    );
+
   if (snoozed) {
     return (
-      <Button size="sm" variant="ghost" loading={busy} onClick={() => void run(() => api.unsnoozeThread(threadId), 'Back in Inbox.')}>
-        Unsnooze
-      </Button>
+      <span className="pr-snooze">
+        <Button size="sm" variant="ghost" loading={busy} onClick={() => void run(() => api.unsnoozeThread(threadId), 'Back in Inbox.')}>
+          Unsnooze
+        </Button>
+        {failure}
+      </span>
     );
   }
   return (
-    <Menu>
-      <MenuTrigger>
-        <Button size="sm" variant="ghost" loading={busy}>
-          Snooze
-        </Button>
-      </MenuTrigger>
-      <MenuContent aria-label="Snooze until">
-        {snoozeChoices(new Date()).map((c) => (
-          <MenuItem
-            key={c.label}
-            onSelect={() => {
-              void run(() => api.snoozeThread(threadId, c.until.toISOString()), `Snoozed until ${c.until.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.`);
-            }}
-          >
-            {c.label}
-          </MenuItem>
-        ))}
-      </MenuContent>
-    </Menu>
+    <span className="pr-snooze">
+      <Menu>
+        <MenuTrigger>
+          <Button size="sm" variant="ghost" loading={busy}>
+            Snooze
+          </Button>
+        </MenuTrigger>
+        <MenuContent aria-label="Snooze until">
+          {snoozeChoices(new Date()).map((c) => (
+            <MenuItem
+              key={c.label}
+              onSelect={() => {
+                void run(() => api.snoozeThread(threadId, c.until.toISOString()), `Snoozed until ${c.until.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.`);
+              }}
+            >
+              {c.label}
+            </MenuItem>
+          ))}
+        </MenuContent>
+      </Menu>
+      {failure}
+    </span>
   );
 }

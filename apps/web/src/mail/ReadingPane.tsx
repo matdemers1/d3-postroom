@@ -26,8 +26,9 @@
 // and an HTML-only message says so.
 import { forwardRef, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Alert, Badge, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, IconButton, Skeleton, Stack } from '@d3cloud/ui';
-import { attemptRemoteText, attemptSummary, deferralReason, deliveryPhase, dsnFiledAt, isPending, NO_DELIVERY_RECORD_TEXT, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
+import { Alert, Button, Cluster, DescriptionItem, DescriptionList, EmptyState, IconButton, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
+import { deliveryPhase, isPending, NO_DELIVERY_RECORD_TEXT } from './delivery';
+import { DeliveryEvidence, DeliveryRecipientRow } from './DeliveryRows';
 import { InspectDrawer } from './InspectDrawer';
 import { InviteSection } from '../invites/InviteSection';
 import { ReceiptPrompt } from './ReceiptPrompt';
@@ -42,7 +43,6 @@ import {
   contactPath,
   contactsApi,
   type DeliveryDetail,
-  type DeliveryRecipient,
   type MessageBody,
   type MessageDetail,
   type MessageSummary,
@@ -556,58 +556,35 @@ function DeliverySection({ messageId, mailboxId }: { messageId: string; mailboxI
   }
   return (
     <section aria-label="Delivery" className="pr-delivery" data-testid="delivery">
-      <h3 className="pr-reader__h3">Delivery</h3>
+      <div className="pr-delivery__top">
+        <h3 className="pr-reader__h3">Delivery</h3>
+        {/* PST-T-14.1 (CPY-01): the raw replies and the attempt log are evidence, shown in the same
+            side sheet as Inspect — for THIS message, which in a thread need not be the open one. */}
+        <Modal
+          trigger={
+            <Button size="sm" variant="ghost" aria-label="Delivery details">
+              Details
+            </Button>
+          }
+          title="Delivery details"
+          description="Every attempt, with the receiving server's own replies."
+          size="lg"
+          className="pr-inspect"
+          footer={
+            <ModalClose>
+              <Button type="button">Close</Button>
+            </ModalClose>
+          }
+        >
+          <DeliveryEvidence recipients={state.data.recipients} />
+        </Modal>
+      </div>
       <ul className="pr-delivery__list">
         {state.data.recipients.map((r) => (
           <DeliveryRecipientRow key={r.id} recipient={r} />
         ))}
       </ul>
     </section>
-  );
-}
-
-function DeliveryRecipientRow({ recipient: r }: { recipient: DeliveryRecipient }) {
-  const reason = deferralReason(r);
-  const dsnAt = dsnFiledAt(r);
-  return (
-    <li className="pr-delivery__recipient" data-testid="delivery-recipient" data-state={r.state}>
-      <div className="pr-delivery__head">
-        <Badge tone={STATE_TONE[r.state]} data-testid="delivery-state">
-          {STATE_LABEL[r.state]}
-        </Badge>
-        <span className="pr-delivery__address">{r.address}</span>
-      </div>
-      {reason !== null ? (
-        <p className="pr-reader__note" data-testid="deferral-reason">
-          {reason}
-        </p>
-      ) : null}
-      {r.state === 'deferred' ? (
-        <p className="pr-reader__note" data-testid="next-retry">
-          Next retry at {fullDate(r.nextAttemptAt)} ({relativeMinutes(r.nextAttemptAt)}).
-        </p>
-      ) : null}
-      {r.state === 'bounced' && dsnAt !== null ? (
-        <p className="pr-reader__note" data-testid="dsn-note">
-          A delivery failure notice was filed to your Inbox at {fullDate(dsnAt)}.
-        </p>
-      ) : null}
-      {r.attemptsLog.length > 0 ? (
-        <ol className="pr-delivery__attempts" aria-label={`Attempts for ${r.address}`}>
-          {r.attemptsLog.map((a) => {
-            const remote = attemptRemoteText(a);
-            return (
-              <li key={a.startedAt}>
-                <span>
-                  {fullDate(a.startedAt)} · {attemptSummary(a)}
-                </span>
-                {remote !== null ? <span className="pr-reader__note"> — {remote}</span> : null}
-              </li>
-            );
-          })}
-        </ol>
-      ) : null}
-    </li>
   );
 }
 
