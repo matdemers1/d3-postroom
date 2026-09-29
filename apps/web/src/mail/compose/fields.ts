@@ -116,3 +116,56 @@ export function optionsSummary(o: { markdown: boolean; receipt: boolean; sign: b
   if (o.remind) parts.push('Reminder');
   return parts.join(' · ');
 }
+
+// --- The action bar's status and the header's view (PST-T-15.4, PST-REQ-194) ----------------------
+
+/** Where the draft's autosave is. */
+export type SaveStatus = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'failed' };
+
+/**
+ * The quiet line beside Discard: "Draft saved" (with the time once it is more than a minute old),
+ * "Saving…", a failed save, a picked-up draft — or nothing, before anything has happened.
+ */
+export function saveStatusText(status: SaveStatus, context: { loadingDraft: boolean; resumed: boolean }, now = new Date()): string {
+  if (context.loadingDraft) return 'Opening your draft…';
+  switch (status.kind) {
+    case 'saving':
+      return 'Saving…';
+    case 'saved': {
+      const d = new Date(status.at);
+      if (Number.isNaN(d.getTime()) || now.getTime() - d.getTime() < 60_000) return 'Draft saved';
+      return `Draft saved at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+    }
+    case 'failed':
+      return 'Not saved — retrying as you type';
+    case 'idle':
+      return context.resumed ? 'Picked up your saved draft.' : '';
+  }
+}
+
+/** The header's view of the composer: minimised to its header, or opened over the whole window. */
+export interface ComposerView {
+  minimised: boolean;
+  expanded: boolean;
+}
+
+/** The composer's classes for where it sits and how it is viewed. */
+export function composerClass(placement: 'pane' | 'inline', view: ComposerView): string {
+  return [
+    placement === 'inline' ? 'pr-compose pr-compose--inline' : 'pr-reader pr-compose pr-compose--pane',
+    view.expanded ? 'pr-compose--expanded' : '',
+    view.minimised ? 'pr-compose--minimised' : '',
+  ]
+    .filter((c) => c !== '')
+    .join(' ');
+}
+
+/** The header's labels: each names what pressing it does next. */
+export function viewLabels(view: ComposerView): { minimise: string; expand: string } {
+  return { minimise: view.minimised ? 'Restore' : 'Minimise', expand: view.expanded ? 'Exit full screen' : 'Open full screen' };
+}
+
+/** Minimise and full screen are one or the other: turning one on turns the other off. */
+export function toggleView(view: ComposerView, which: 'minimise' | 'expand'): ComposerView {
+  return which === 'minimise' ? { minimised: !view.minimised, expanded: false } : { minimised: false, expanded: !view.expanded };
+}

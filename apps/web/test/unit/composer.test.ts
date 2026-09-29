@@ -3,10 +3,12 @@
 // row, which rows start open, the folded quote, the formatting bar, resuming a draft in place, and
 // the key that keeps one composer across a resumed draft's saves. The browser behaviour (chips,
 // autocomplete, Cc/Bcc reveal, inline reply, Discard → Undo, axe) is e2e/tests/compose.spec.ts.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ContactSummary } from '../../src/api';
 import { draftFor, draftToResume, fieldsOf, initialState } from '../../src/mail/compose';
-import { applyFormat, initialReveal, joinQuote, optionsSummary, reveal, splitQuote } from '../../src/mail/compose/fields';
+import { applyFormat, composerClass, initialReveal, joinQuote, optionsSummary, reveal, saveStatusText, splitQuote, toggleView, viewLabels } from '../../src/mail/compose/fields';
 import { contactSuggestions, entryOf, fromChoices, fromRecipients, hasFromChoice, recipientOf, toRecipients } from '../../src/mail/compose/recipients';
 import { composerKey, forgetDrafts, linkSavedDraft } from '../../src/mail/compose/session';
 import { composesInPane, draftPath, mailPath, narrowView, parseMailRoute } from '../../src/mail/route';
@@ -205,5 +207,70 @@ describe('resuming a draft in place', () => {
     if (fromDrafts === null) throw new Error('route');
     expect(fromDrafts.composeDraftId).toBe(MSG);
     expect(draftPath(fromDrafts, DRAFT)).toBe(`/mail/${MB}/${DRAFT}?compose=draft`);
+  });
+});
+
+// PST-T-15.4 (PST-REQ-194): the composer drawn to the redesign canvas — a header with Minimise, Open
+// full screen and Close; borderless rows; a body with no box; one quiet action bar with Send as the
+// library's SplitButton and "Draft saved" + Discard on the right. The browser half (axe in both
+// themes, the menus, Send and Discard) is e2e/tests/compose.spec.ts.
+describe('the canvas composer: status, header view, action bar', () => {
+  const src = (path: string): string => readFileSync(join(__dirname, '../../src', path), 'utf8');
+
+  it('says "Draft saved" once autosave lands, with the time once it is older than a minute', () => {
+    const now = new Date('2026-09-29T14:00:00Z');
+    const ctx = { loadingDraft: false, resumed: false };
+    expect(saveStatusText({ kind: 'idle' }, ctx, now)).toBe('');
+    expect(saveStatusText({ kind: 'saving' }, ctx, now)).toBe('Saving…');
+    expect(saveStatusText({ kind: 'saved', at: '2026-09-29T13:59:30Z' }, ctx, now)).toBe('Draft saved');
+    expect(saveStatusText({ kind: 'saved', at: '2026-09-29T13:40:00Z' }, ctx, now)).toMatch(/^Draft saved at /);
+    expect(saveStatusText({ kind: 'failed' }, ctx, now)).toBe('Not saved — retrying as you type');
+    expect(saveStatusText({ kind: 'idle' }, { loadingDraft: false, resumed: true }, now)).toBe('Picked up your saved draft.');
+    expect(saveStatusText({ kind: 'saved', at: '2026-09-29T13:59:30Z' }, { loadingDraft: true, resumed: false }, now)).toBe('Opening your draft…');
+  });
+
+  it('minimises to the header or opens full screen — one or the other — as a view of the same composer', () => {
+    const rest = { minimised: false, expanded: false };
+    expect(composerClass('pane', rest)).toBe('pr-reader pr-compose pr-compose--pane');
+    expect(composerClass('inline', rest)).toBe('pr-compose pr-compose--inline');
+    const min = toggleView(rest, 'minimise');
+    expect(min).toEqual({ minimised: true, expanded: false });
+    expect(composerClass('pane', min)).toContain('pr-compose--minimised');
+    expect(viewLabels(min)).toEqual({ minimise: 'Restore', expand: 'Open full screen' });
+    const full = toggleView(min, 'expand');
+    expect(full).toEqual({ minimised: false, expanded: true });
+    expect(composerClass('inline', full)).toBe('pr-compose pr-compose--inline pr-compose--expanded');
+    expect(viewLabels(full)).toEqual({ minimise: 'Minimise', expand: 'Exit full screen' });
+    expect(toggleView(full, 'expand')).toEqual(rest);
+    expect(toggleView(full, 'minimise')).toEqual({ minimised: true, expanded: false });
+  });
+
+  it('sends from the library SplitButton, with Send later in its menu, and closes, discards and minimises from icon buttons', () => {
+    const tsx = src('mail/Composer.tsx');
+    expect(tsx).toContain('<SplitButton');
+    expect(tsx).toContain('menuLabel="More send options"');
+    expect(tsx).toContain('>Send later…</MenuItem>');
+    for (const label of ['label="Close"', 'label="Formatting"', 'label="Insert link"', 'label="More options"', 'label="Discard draft"', 'label={labels.minimise}', 'label={labels.expand}']) {
+      expect(tsx).toContain(label);
+    }
+    // The rare options moved behind More, not removed.
+    for (const item of ['Write in Markdown', 'Request read receipt', 'Insert template…', 'Sign or encrypt…', 'Remind me if no reply…', 'Undo send window…']) {
+      expect(tsx).toContain(item);
+    }
+    // The status is a polite live region.
+    expect(tsx).toMatch(/role="status" aria-live="polite" data-testid="compose-status"/);
+    // No separate caret button beside Send any more.
+    expect(tsx).not.toContain('More ways to send');
+  });
+
+  it('draws hairlines, not boxes: no shadow, the body transparent with no border at rest, focus as the library outline', () => {
+    const css = src('mail/compose/composer.css');
+    expect(css).not.toMatch(/box-shadow/);
+    const body = /\.pr-compose__body \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(body).toContain('background: transparent;');
+    expect(body).toContain('border-color: transparent;');
+    expect(css).toMatch(/\.pr-compose__row:focus-within \{\s*outline: var\(--focus-width\) solid var\(--color-focus\);/);
+    // A minimised composer really hides its sheet (a display rule would otherwise beat [hidden]).
+    expect(css).toMatch(/\.pr-compose__sheet\[hidden\] \{\s*display: none;/);
   });
 });

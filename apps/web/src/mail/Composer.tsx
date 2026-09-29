@@ -18,7 +18,15 @@
 //     ReadingPane's `composer` slot), with the quoted text folded behind "···";
 //   - it arrives sliding up 12px and fading in over --dur-3; none of this moves under reduced motion.
 //
-// There is no Attach: the compose API takes no uploads (a forward attaches the original whole).
+// PST-T-15.4 (PST-REQ-194) draws it to the redesign canvas (Compose.dc.html): a header — the title,
+// then Minimise, Open full screen and Close — over borderless To and Subject rows, a body with no
+// box, and one quiet action bar: Send as the library's SplitButton (▾ Send later…, a reminder, the
+// undo window), Formatting, Insert link, ⋯ More (Markdown, read receipt, a template, sign/encrypt),
+// then "Draft saved" and Discard on the right. Minimise and full screen are this composer's own view
+// (nothing is closed or saved differently); Close is Escape's path, which keeps an unsaved draft.
+//
+// There is no Attach: the compose API takes no uploads (a forward attaches the original whole), so
+// the canvas's paperclip is not drawn.
 //
 // A draft is picked up again when the same composer reopens: a reply, reply-all or forward finds the
 // draft it left for the same message; a draft opened from Drafts (`?compose=draft`, or Edit draft on
@@ -41,6 +49,7 @@ import {
   MenuTrigger,
   RecipientField,
   Select,
+  SplitButton,
   Textarea,
   Tooltip,
   useToast,
@@ -75,12 +84,28 @@ import {
   type ComposeState,
   type SendTiming,
 } from './compose';
-import { applyFormat, FORMAT_LABELS, initialReveal, joinQuote, optionsSummary, reveal as revealRow, splitQuote, type FormatAction, type Reveal } from './compose/fields';
+import {
+  applyFormat,
+  composerClass,
+  FORMAT_LABELS,
+  initialReveal,
+  joinQuote,
+  optionsSummary,
+  reveal as revealRow,
+  saveStatusText,
+  splitQuote,
+  toggleView,
+  viewLabels,
+  type ComposerView,
+  type FormatAction,
+  type Reveal,
+  type SaveStatus,
+} from './compose/fields';
 import { contactSuggestions, fromChoices, fromRecipients, hasFromChoice, toRecipients } from './compose/recipients';
 import { composerKey, forgetDrafts, linkSavedDraft } from './compose/session';
-import { FormatIcon, TrashIcon } from './compose/icons';
+import { CheckIcon, CloseIcon, CollapseIcon, ExpandIcon, FormatIcon, LinkIcon, MinimiseIcon, RestoreIcon, TrashIcon } from './compose/icons';
 import { SecurityModal } from './compose/SecurityModal';
-import { CaretIcon, MoreIcon } from './thread/icons';
+import { MoreIcon } from './thread/icons';
 import { useMail } from './MailContext';
 import { parseMailRoute } from './route';
 import { announceHeld } from './Scheduled';
@@ -105,8 +130,6 @@ const TITLES: Readonly<Record<ComposeKind, string>> = {
 /** How long after the last change a draft is saved on its own. */
 export const AUTOSAVE_MS = 3000;
 
-type SaveStatus = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'failed' };
-
 /** Options revealed from the Send menu, each one row above the footer. */
 interface SendRows {
   remind: boolean;
@@ -114,13 +137,6 @@ interface SendRows {
 }
 
 const FORMAT_ACTIONS: readonly FormatAction[] = ['bold', 'italic', 'link', 'list', 'quote'];
-
-/** Short, calm: "Saved just now", "Saved 2:14 PM". */
-function savedText(at: string, now = new Date()): string {
-  const d = new Date(at);
-  if (Number.isNaN(d.getTime()) || now.getTime() - d.getTime() < 60_000) return 'Saved just now';
-  return `Saved ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
-}
 
 export interface ComposerProps {
   draft: ComposeDraft;
@@ -157,6 +173,8 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
   // The quote of a reply or forward, folded until asked for (MOD-07).
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [formatBar, setFormatBar] = useState(false);
+  // PST-T-15.4: the header's Minimise / Open full screen — a view of this composer, nothing more.
+  const [view, setView] = useState<ComposerView>({ minimised: false, expanded: false });
   // PST-T-9.1: send later (PST-REQ-141) and remind if no reply (PST-REQ-143).
   const [timing, setTiming] = useState<SendTiming>({ kind: 'now' });
   const [remind, setRemind] = useState<number | null>(null);
@@ -530,23 +548,15 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
     onDiscard();
   };
 
-  const status = loadingDraft
-    ? 'Opening your draft…'
-    : saveStatus.kind === 'saving'
-      ? 'Saving…'
-      : saveStatus.kind === 'saved'
-        ? savedText(saveStatus.at)
-        : saveStatus.kind === 'failed'
-          ? 'Not saved — retrying as you type'
-          : resumed
-            ? 'Picked up your saved draft.'
-            : '';
+  const status = saveStatusText(saveStatus, { loadingDraft, resumed });
+  const labels = viewLabels(view);
   const summary = optionsSummary({ markdown: state.format === 'markdown', receipt: state.requestReceipt, sign: signOn, encrypt: encryptOn, remind: remind !== null });
 
   const title = loadingDraft ? 'Draft' : TITLES[kind];
   const titleId = `${uid}-title`;
   const subjectId = `${uid}-subject`;
   const fromId = `${uid}-from`;
+  const sheetId = `${uid}-sheet`;
   const HeadingTag = placement === 'inline' ? 'h3' : 'h2';
 
   const revealButtons = (
@@ -578,7 +588,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
   return (
     <section
       ref={rootRef}
-      className={placement === 'inline' ? 'pr-compose pr-compose--inline' : 'pr-reader pr-compose pr-compose--pane'}
+      className={composerClass(placement, view)}
       aria-labelledby={titleId}
       data-compose-mode={kind}
       data-placement={placement}
@@ -614,209 +624,248 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
           void send();
         }}
       >
-        <HeadingTag id={titleId} className={placement === 'inline' ? 'pr-compose__title pr-compose__title--inline' : 'pr-compose__title'}>
-          {title}
-        </HeadingTag>
-        {error !== null ? (
-          <Alert tone="danger" dynamic>
-            {error}
-          </Alert>
-        ) : null}
-        <div className="pr-compose__rows">
-          <RecipientField
-            ref={toRef}
-            variant="row"
-            label="To"
-            value={toRecipients(state.to)}
-            onValueChange={(next) => { edit({ to: fromRecipients(next) }); }}
-            loadSuggestions={loadSuggestions}
-            trailing={revealButtons}
+        {/* The header (PST-T-15.4): the title, then Minimise, Open full screen and Close. */}
+        <div className="pr-compose__head">
+          <HeadingTag id={titleId} className={placement === 'inline' ? 'pr-compose__title pr-compose__title--inline' : 'pr-compose__title'}>
+            {title}
+          </HeadingTag>
+          <Tooltip content={labels.minimise}>
+            <IconButton
+              variant="ghost"
+              size="sm"
+              label={labels.minimise}
+              icon={view.minimised ? <RestoreIcon /> : <MinimiseIcon />}
+              aria-expanded={!view.minimised}
+              aria-controls={sheetId}
+              className="pr-compose__view"
+              onClick={() => { setView((v) => toggleView(v, 'minimise')); }}
+            />
+          </Tooltip>
+          <Tooltip content={labels.expand}>
+            <IconButton
+              variant="ghost"
+              size="sm"
+              label={labels.expand}
+              icon={view.expanded ? <CollapseIcon /> : <ExpandIcon />}
+              className="pr-compose__view"
+              onClick={() => { setView((v) => toggleView(v, 'expand')); }}
+            />
+          </Tooltip>
+          <Tooltip content="Close">
+            <IconButton variant="ghost" size="sm" label="Close" icon={<CloseIcon />} onClick={onDiscard} />
+          </Tooltip>
+        </div>
+        <div id={sheetId} className="pr-compose__sheet" hidden={view.minimised}>
+          {error !== null ? (
+            <Alert tone="danger" dynamic className="pr-compose__alert">
+              {error}
+            </Alert>
+          ) : null}
+          <div className="pr-compose__rows">
+            <RecipientField
+              ref={toRef}
+              variant="row"
+              label="To"
+              value={toRecipients(state.to)}
+              onValueChange={(next) => { edit({ to: fromRecipients(next) }); }}
+              loadSuggestions={loadSuggestions}
+              trailing={revealButtons}
+            />
+            {rows.cc ? (
+              <div className="pr-compose__reveal" data-row="cc">
+                <RecipientField
+                  variant="row"
+                  label="Cc"
+                  autoFocus={state.cc === ''}
+                  value={toRecipients(state.cc)}
+                  onValueChange={(next) => { edit({ cc: fromRecipients(next) }); }}
+                  loadSuggestions={loadSuggestions}
+                />
+              </div>
+            ) : null}
+            {rows.bcc ? (
+              <div className="pr-compose__reveal" data-row="bcc">
+                <RecipientField
+                  variant="row"
+                  label="Bcc"
+                  autoFocus={state.bcc === ''}
+                  value={toRecipients(state.bcc)}
+                  onValueChange={(next) => { edit({ bcc: fromRecipients(next) }); }}
+                  loadSuggestions={loadSuggestions}
+                />
+              </div>
+            ) : null}
+            {rows.from && canChooseFrom ? (
+              <div className="pr-compose__reveal pr-compose__row" data-row="from">
+                <label className="pr-compose__label" htmlFor={fromId}>
+                  From
+                </label>
+                <Select
+                  appearance="filled"
+                  id={fromId}
+                  className="pr-compose__from"
+                  options={choices.map((address) => ({ value: address, label: address }))}
+                  value={sender ?? ''}
+                  onValueChange={(v) => {
+                    version.current += 1;
+                    setFrom(v === me ? null : v);
+                  }}
+                />
+              </div>
+            ) : null}
+            <div className="pr-compose__row" data-row="subject">
+              <label className="pr-compose__label" htmlFor={subjectId}>
+                Subject
+              </label>
+              <Input appearance="filled" id={subjectId} className="pr-compose__subject" value={state.subject} onChange={(e) => { edit({ subject: e.target.value }); }} />
+            </div>
+          </div>
+          {formatBar ? (
+            <div role="toolbar" aria-label="Formatting" className="pr-compose__formatbar pr-compose__reveal">
+              {FORMAT_ACTIONS.map((a) => (
+                <Button key={a} type="button" size="sm" variant="ghost" onClick={() => { format(a); }}>
+                  {FORMAT_LABELS[a]}
+                </Button>
+              ))}
+              <span className="pr-compose__hint">Written as Markdown, sent as formatted text alongside plain text.</span>
+            </div>
+          ) : null}
+          <Textarea
+            appearance="filled"
+            ref={bodyRef}
+            aria-label="Message"
+            className="pr-compose__body"
+            rows={placement === 'inline' ? 6 : 12}
+            value={shownBody}
+            onChange={(e) => { onBodyChange(e.target.value, e.target.selectionStart); }}
           />
-          {rows.cc ? (
-            <div className="pr-compose__reveal" data-row="cc">
-              <RecipientField
-                variant="row"
-                label="Cc"
-                autoFocus={state.cc === ''}
-                value={toRecipients(state.cc)}
-                onValueChange={(next) => { edit({ cc: fromRecipients(next) }); }}
-                loadSuggestions={loadSuggestions}
-              />
+          {picker !== null && templateMatches.length > 0 ? (
+            <ul className="pr-compose__templates" role="listbox" aria-label="Matching templates">
+              {templateMatches.map((t) => (
+                <li key={t.id}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { chooseTemplate(t); }}>
+                    ;{t.shortcut} — {t.name}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {folded ? (
+            <div className="pr-compose__quote">
+              <Tooltip content="Show quoted text">
+                <Button type="button" size="sm" variant="secondary" aria-expanded={false} aria-label="Show quoted text" onClick={() => { setQuoteOpen(true); }}>
+                  ···
+                </Button>
+              </Tooltip>
             </div>
           ) : null}
-          {rows.bcc ? (
-            <div className="pr-compose__reveal" data-row="bcc">
-              <RecipientField
-                variant="row"
-                label="Bcc"
-                autoFocus={state.bcc === ''}
-                value={toRecipients(state.bcc)}
-                onValueChange={(next) => { edit({ bcc: fromRecipients(next) }); }}
-                loadSuggestions={loadSuggestions}
+          {state.forwardOf !== null ? <p className="pr-compose__hint pr-compose__note">The original message is attached in full.</p> : null}
+          {timing.kind === 'later' ? (
+            <div className="pr-compose__row pr-compose__reveal" data-row="send-at">
+              <label className="pr-compose__label" htmlFor={`${uid}-at`}>
+                Send at
+              </label>
+              <Input
+                appearance="filled"
+                id={`${uid}-at`}
+                type="datetime-local"
+                value={timing.local}
+                min={toLocalInput(new Date())}
+                onChange={(e) => { setTiming({ kind: 'later', local: e.target.value }); }}
               />
+              <span className="pr-compose__hint">It waits in Drafts until then; you can cancel it there.</span>
             </div>
           ) : null}
-          {rows.from && canChooseFrom ? (
-            <div className="pr-compose__reveal pr-compose__row" data-row="from">
-              <label className="pr-compose__label" htmlFor={fromId}>
-                From
+          {sendRows.remind ? (
+            <div className="pr-compose__row pr-compose__reveal" data-row="remind">
+              <label className="pr-compose__label" htmlFor={`${uid}-remind`}>
+                Remind me
               </label>
               <Select
                 appearance="filled"
-                id={fromId}
-                className="pr-compose__from"
-                options={choices.map((address) => ({ value: address, label: address }))}
-                value={sender ?? ''}
+                id={`${uid}-remind`}
+                options={REMIND_CHOICES.map((c) => ({ value: c.seconds === null ? 'none' : String(c.seconds), label: c.label }))}
+                value={remind === null ? 'none' : String(remind)}
+                onValueChange={(v) => { setRemind(v === 'none' ? null : Number(v)); }}
+              />
+              <span className="pr-compose__hint">If nobody replies in time, the message comes back to your Inbox.</span>
+            </div>
+          ) : null}
+          {sendRows.undo && timing.kind === 'now' ? (
+            <div className="pr-compose__row pr-compose__reveal" data-row="undo">
+              <label className="pr-compose__label" htmlFor={`${uid}-undo`}>
+                Undo send
+              </label>
+              <Select
+                appearance="filled"
+                id={`${uid}-undo`}
+                options={UNDO_CHOICES.map((seconds) => ({ value: String(seconds), label: seconds === 0 ? 'Off — send at once' : `${String(seconds)} seconds` }))}
+                value={String(undo)}
                 onValueChange={(v) => {
-                  version.current += 1;
-                  setFrom(v === me ? null : v);
+                  const seconds = Number(v);
+                  setUndo(seconds);
+                  setUndoSeconds(storage(), seconds);
                 }}
               />
             </div>
           ) : null}
-          <div className="pr-compose__row" data-row="subject">
-            <label className="pr-compose__label" htmlFor={subjectId}>
-              Subject
-            </label>
-            <Input appearance="filled" id={subjectId} className="pr-compose__subject" value={state.subject} onChange={(e) => { edit({ subject: e.target.value }); }} />
-          </div>
-        </div>
-        {formatBar ? (
-          <div role="toolbar" aria-label="Formatting" className="pr-compose__formatbar pr-compose__reveal">
-            {FORMAT_ACTIONS.map((a) => (
-              <Button key={a} type="button" size="sm" variant="ghost" onClick={() => { format(a); }}>
-                {FORMAT_LABELS[a]}
-              </Button>
-            ))}
-            <span className="pr-compose__hint">Written as Markdown, sent as formatted text alongside plain text.</span>
-          </div>
-        ) : null}
-        <Textarea
-          appearance="filled"
-          ref={bodyRef}
-          aria-label="Message"
-          className="pr-compose__body"
-          rows={placement === 'inline' ? 6 : 12}
-          value={shownBody}
-          onChange={(e) => { onBodyChange(e.target.value, e.target.selectionStart); }}
-        />
-        {picker !== null && templateMatches.length > 0 ? (
-          <ul className="pr-compose__templates" role="listbox" aria-label="Matching templates">
-            {templateMatches.map((t) => (
-              <li key={t.id}>
-                <Button type="button" variant="ghost" size="sm" onClick={() => { chooseTemplate(t); }}>
-                  ;{t.shortcut} — {t.name}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {folded ? (
-          <div className="pr-compose__quote">
-            <Tooltip content="Show quoted text">
-              <Button type="button" size="sm" variant="secondary" aria-expanded={false} aria-label="Show quoted text" onClick={() => { setQuoteOpen(true); }}>
-                ···
-              </Button>
+          {/* One quiet action bar (PST-T-15.4): Send ▾ · Formatting · Insert link · More … Draft saved · Discard. */}
+          <div className="pr-compose__footer">
+            <SplitButton
+              type="submit"
+              variant="primary"
+              label={timing.kind === 'later' ? 'Schedule' : 'Send'}
+              menuLabel="More send options"
+              loading={sending}
+              disabled={loadingDraft}
+              title={`${timing.kind === 'later' ? 'Schedule' : 'Send'} (${SEND_CHORD_HINT})`}
+              className="pr-compose__send"
+            >
+              {timing.kind === 'later' ? (
+                <MenuItem onSelect={() => { setTiming({ kind: 'now' }); }}>Send now instead</MenuItem>
+              ) : (
+                <MenuItem onSelect={() => { setTiming({ kind: 'later', local: toLocalInput(new Date(Date.now() + 3_600_000)) }); }}>Send later…</MenuItem>
+              )}
+              <MenuItem onSelect={() => { setSendRows((r) => ({ ...r, remind: true })); }}>Remind me if no reply…</MenuItem>
+              {timing.kind === 'now' ? <MenuItem onSelect={() => { setSendRows((r) => ({ ...r, undo: true })); }}>Undo send window…</MenuItem> : null}
+            </SplitButton>
+            <span className="pr-compose__tools">
+              <Tooltip content="Formatting">
+                <IconButton variant="ghost" label="Formatting" icon={<FormatIcon />} pressed={formatBar} onClick={() => { setFormatBar((on) => !on); }} />
+              </Tooltip>
+              <Tooltip content="Insert link">
+                <IconButton variant="ghost" label="Insert link" icon={<LinkIcon />} onClick={() => { format('link'); }} />
+              </Tooltip>
+              <Menu>
+                <MenuTrigger>
+                  <IconButton variant="ghost" label="More options" icon={<MoreIcon />} />
+                </MenuTrigger>
+                <MenuContent align="start" side="top">
+                  <MenuItem onSelect={() => { edit({ format: state.format === 'markdown' ? 'plain' : 'markdown' }); }}>
+                    {state.format === 'markdown' ? 'Write in plain text' : 'Write in Markdown'}
+                  </MenuItem>
+                  <MenuItem onSelect={() => { edit({ requestReceipt: !state.requestReceipt }); }}>
+                    {state.requestReceipt ? 'Stop requesting a read receipt' : 'Request read receipt'}
+                  </MenuItem>
+                  <MenuItem onSelect={insertTemplate}>Insert template…</MenuItem>
+                  <MenuSeparator />
+                  <MenuItem onSelect={() => { setSecurityOpen(true); }}>Sign or encrypt…</MenuItem>
+                </MenuContent>
+              </Menu>
+            </span>
+            <p className="pr-compose__status" role="status" aria-live="polite" data-testid="compose-status">
+              {summary !== '' ? <span className="pr-compose__summary">{summary}</span> : null}
+              {status !== '' ? (
+                <span className="pr-compose__saved">
+                  {saveStatus.kind === 'saved' && !loadingDraft ? <CheckIcon /> : null}
+                  {status}
+                </span>
+              ) : null}
+            </p>
+            <Tooltip content="Discard draft">
+              <IconButton variant="ghost" label="Discard draft" icon={<TrashIcon />} onClick={discard} disabled={sending} className="pr-compose__discard" />
             </Tooltip>
           </div>
-        ) : null}
-        {state.forwardOf !== null ? <p className="pr-compose__hint">The original message is attached in full.</p> : null}
-        {timing.kind === 'later' ? (
-          <div className="pr-compose__row pr-compose__reveal" data-row="send-at">
-            <label className="pr-compose__label" htmlFor={`${uid}-at`}>
-              Send at
-            </label>
-            <Input
-              appearance="filled"
-              id={`${uid}-at`}
-              type="datetime-local"
-              value={timing.local}
-              min={toLocalInput(new Date())}
-              onChange={(e) => { setTiming({ kind: 'later', local: e.target.value }); }}
-            />
-            <span className="pr-compose__hint">It waits in Drafts until then; you can cancel it there.</span>
-          </div>
-        ) : null}
-        {sendRows.remind ? (
-          <div className="pr-compose__row pr-compose__reveal" data-row="remind">
-            <label className="pr-compose__label" htmlFor={`${uid}-remind`}>
-              Remind me
-            </label>
-            <Select
-              appearance="filled"
-              id={`${uid}-remind`}
-              options={REMIND_CHOICES.map((c) => ({ value: c.seconds === null ? 'none' : String(c.seconds), label: c.label }))}
-              value={remind === null ? 'none' : String(remind)}
-              onValueChange={(v) => { setRemind(v === 'none' ? null : Number(v)); }}
-            />
-            <span className="pr-compose__hint">If nobody replies in time, the message comes back to your Inbox.</span>
-          </div>
-        ) : null}
-        {sendRows.undo && timing.kind === 'now' ? (
-          <div className="pr-compose__row pr-compose__reveal" data-row="undo">
-            <label className="pr-compose__label" htmlFor={`${uid}-undo`}>
-              Undo send
-            </label>
-            <Select
-              appearance="filled"
-              id={`${uid}-undo`}
-              options={UNDO_CHOICES.map((seconds) => ({ value: String(seconds), label: seconds === 0 ? 'Off — send at once' : `${String(seconds)} seconds` }))}
-              value={String(undo)}
-              onValueChange={(v) => {
-                const seconds = Number(v);
-                setUndo(seconds);
-                setUndoSeconds(storage(), seconds);
-              }}
-            />
-          </div>
-        ) : null}
-        {/* One footer everywhere (TF-06): Send ▾, Aa, ⋯ … status, Discard. */}
-        <div className="pr-compose__footer">
-          <div className="pr-compose__send" role="group" aria-label="Send options">
-            <Button type="submit" variant="primary" loading={sending} disabled={loadingDraft} title={`${timing.kind === 'later' ? 'Schedule' : 'Send'} (${SEND_CHORD_HINT})`}>
-              {timing.kind === 'later' ? 'Schedule' : 'Send'}
-            </Button>
-            <Menu>
-              <MenuTrigger>
-                <IconButton variant="secondary" label="More ways to send" icon={<CaretIcon />} disabled={sending} className="pr-compose__send-more" />
-              </MenuTrigger>
-              <MenuContent align="start" side="top">
-                {timing.kind === 'later' ? (
-                  <MenuItem onSelect={() => { setTiming({ kind: 'now' }); }}>Send now instead</MenuItem>
-                ) : (
-                  <MenuItem onSelect={() => { setTiming({ kind: 'later', local: toLocalInput(new Date(Date.now() + 3_600_000)) }); }}>Send later…</MenuItem>
-                )}
-                <MenuItem onSelect={() => { setSendRows((r) => ({ ...r, remind: true })); }}>Remind me if no reply…</MenuItem>
-                {timing.kind === 'now' ? <MenuItem onSelect={() => { setSendRows((r) => ({ ...r, undo: true })); }}>Undo send window…</MenuItem> : null}
-              </MenuContent>
-            </Menu>
-          </div>
-          <Tooltip content="Formatting">
-            <IconButton variant="ghost" label="Formatting" icon={<FormatIcon />} pressed={formatBar} onClick={() => { setFormatBar((on) => !on); }} />
-          </Tooltip>
-          <Menu>
-            <MenuTrigger>
-              <IconButton variant="ghost" label="More options" icon={<MoreIcon />} />
-            </MenuTrigger>
-            <MenuContent align="start" side="top">
-              <MenuItem onSelect={() => { edit({ format: state.format === 'markdown' ? 'plain' : 'markdown' }); }}>
-                {state.format === 'markdown' ? 'Write in plain text' : 'Write in Markdown'}
-              </MenuItem>
-              <MenuItem onSelect={() => { edit({ requestReceipt: !state.requestReceipt }); }}>
-                {state.requestReceipt ? 'Stop requesting a read receipt' : 'Request read receipt'}
-              </MenuItem>
-              <MenuItem onSelect={insertTemplate}>Insert template…</MenuItem>
-              <MenuSeparator />
-              <MenuItem onSelect={() => { setSecurityOpen(true); }}>Sign or encrypt…</MenuItem>
-            </MenuContent>
-          </Menu>
-          <p className="pr-compose__status" role="status" aria-live="polite" data-testid="compose-status">
-            {summary !== '' ? <span className="pr-compose__summary">{summary}</span> : null}
-            <span>{status}</span>
-          </p>
-          <Button type="button" variant="ghost" icon={<TrashIcon />} onClick={discard} disabled={sending} className="pr-compose__discard">
-            Discard
-          </Button>
         </div>
       </form>
       <SecurityModal

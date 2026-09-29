@@ -9,6 +9,11 @@
 // moves the draft to Trash with an Undo toast that moves it back; a draft opened from Drafts (or
 // its Edit draft button) resumes in the composer.
 //
+// PST-T-15.4 (PST-REQ-194): the composer drawn to the redesign canvas — a "New message" header with
+// Minimise, Open full screen and Close; Send as the library's SplitButton (▾ More send options: Send
+// later…); Formatting, Insert link and More; "Draft saved" and Discard draft on the right — and
+// nothing else by default, axe-clean in both themes.
+//
 // Sending needs DKIM keys (submission never sends unsigned), and the e2e stack has no operator step
 // that makes them, so the suite asks for them through the e2e-only POST /api/compose/dev/dkim-keys
 // (mounted only with POSTROOM_E2E_SEED=1, like the seed route). Every message this suite sends is
@@ -188,7 +193,7 @@ test('a draft autosaves and comes back; Discard moves it to Trash and Undo bring
   await page.keyboard.type(`Half-written thoughts ${t}`);
   // No Save draft button: saving is automatic, and the footer says so.
   await expect(reply.getByRole('button', { name: 'Save draft' })).toHaveCount(0);
-  await expect(reply.getByTestId('compose-status')).toContainText('Saved', { timeout: 15_000 });
+  await expect(reply.getByTestId('compose-status')).toContainText('Draft saved', { timeout: 15_000 });
 
   const ids = await mailboxIds();
   await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).toContain(`Re: ${subject}`);
@@ -348,7 +353,7 @@ test('a new message opens with To, Subject and the body only; Cc and Bcc reveal 
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
   await expect(fresh).toBeVisible();
-  await fresh.getByRole('button', { name: 'More ways to send' }).click();
+  await fresh.getByRole('button', { name: 'More send options' }).click();
   await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Send later…' })).toBeVisible();
   await page.keyboard.press('Escape');
 
@@ -370,7 +375,7 @@ test('a new message names its draft in the URL once it autosaves, so a reload re
   await expect(fresh).toBeVisible();
   await fresh.getByRole('textbox', { name: 'Subject' }).fill(subject);
   await fresh.getByRole('textbox', { name: 'Message' }).fill(`Half a thought ${t}`);
-  await expect(fresh.getByTestId('compose-status')).toContainText('Saved', { timeout: 15_000 });
+  await expect(fresh.getByTestId('compose-status')).toContainText('Draft saved', { timeout: 15_000 });
   await expect(page).toHaveURL(/\?compose=draft&id=[0-9a-f-]{36}$/);
   // The same composer carries on (it was not rebuilt): what was typed is still there, focus too.
   await expect(fresh.getByRole('textbox', { name: 'Message' })).toBeFocused();
@@ -384,4 +389,75 @@ test('a new message names its draft in the URL once it autosaves, so a reload re
   await resumed.getByRole('button', { name: 'Discard' }).click();
   const ids = await mailboxIds();
   await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).not.toContain(subject);
+});
+
+test('the canvas composer: a header with Minimise, full screen and Close; one quiet bar; nothing else; axe-clean in both themes', async ({ page, context }) => {
+  const t = tag();
+  await page.goto('/?compose=new');
+  const fresh = page.getByRole('region', { name: 'New message' });
+  await expect(fresh).toBeVisible();
+  await expect(fresh.getByRole('heading', { name: 'New message', level: 2 })).toBeVisible();
+
+  // Exactly these controls, and no others, are on screen by default (the To field's own combobox aside).
+  const names = ['Minimise', 'Open full screen', 'Close', 'Cc', 'Bcc', 'Send', 'More send options', 'Formatting', 'Insert link', 'More options', 'Discard draft'];
+  for (const name of names) await expect(fresh.getByRole('button', { name, exact: true })).toBeVisible();
+  // The e2e project has no DOM lib: the elements are described structurally, as mobile.spec.ts does.
+  type Shown = { checkVisibility(): boolean; getAttribute(name: string): string | null; textContent: string | null };
+  const visible = await fresh.getByRole('button').evaluateAll((els: unknown[]) =>
+    (els as Shown[]).filter((el) => el.checkVisibility()).map((el) => (el.getAttribute('aria-label') ?? el.textContent ?? '').trim()),
+  );
+  // "From" is offered only when the account has aliases to send as.
+  expect(visible.filter((n) => n !== 'From').sort()).toEqual([...names].sort());
+  await expect(fresh.getByRole('textbox', { name: 'Subject' })).toBeVisible();
+  await expect(fresh.getByRole('textbox', { name: 'Message' })).toBeVisible();
+  // The body has no visible box: no border, no fill of its own.
+  const box = await fresh.locator('.pr-compose__body').evaluate((el) => {
+    const s = (globalThis as unknown as { getComputedStyle(e: unknown): { borderTopColor: string; borderLeftColor: string; backgroundColor: string } }).getComputedStyle(el);
+    return [s.borderTopColor, s.borderLeftColor, s.backgroundColor];
+  });
+  expect(box).toEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)']);
+  await expectNoAxeViolations(page, 'canvas composer (light)');
+
+  // Send ▾ holds Send later…, which opens the existing Send at row and turns Send into Schedule.
+  await fresh.getByRole('button', { name: 'More send options' }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Send later…' }).click();
+  await expect(fresh.locator('[data-row="send-at"]')).toBeVisible();
+  await expect(fresh.getByRole('button', { name: 'Schedule', exact: true })).toBeVisible();
+  await fresh.getByRole('button', { name: 'More send options' }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Send now instead' }).click();
+  await expect(fresh.locator('[data-row="send-at"]')).toHaveCount(0);
+
+  // Minimise folds the composer to its header; Restore brings back what was typed.
+  await fresh.getByRole('textbox', { name: 'Subject' }).fill(`Minimised ${t}`);
+  await fresh.getByRole('button', { name: 'Minimise', exact: true }).click();
+  await expect(fresh.getByRole('textbox', { name: 'Subject' })).toBeHidden();
+  await expect(fresh.getByRole('button', { name: 'Restore', exact: true })).toHaveAttribute('aria-expanded', 'false');
+  await fresh.getByRole('button', { name: 'Restore', exact: true }).click();
+  await expect(fresh.getByRole('textbox', { name: 'Subject' })).toHaveValue(`Minimised ${t}`);
+
+  // Open full screen covers the window; Exit full screen puts it back.
+  await fresh.getByRole('button', { name: 'Open full screen', exact: true }).click();
+  await expect(fresh).toHaveCSS('position', 'fixed');
+  await fresh.getByRole('button', { name: 'Exit full screen', exact: true }).click();
+  await expect(fresh).not.toHaveCSS('position', 'fixed');
+
+  // Close is Escape's path: the composer closes and what was typed is kept as a draft.
+  await fresh.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(fresh).toBeHidden();
+  const ids = await mailboxIds();
+  await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).toContain(`Minimised ${t}`);
+
+  // The dark theme, with the draft resumed in the composer.
+  await context.addInitScript({ content: "window.localStorage.setItem('postroom-theme', 'dark');" });
+  const draftsList = (await (await api.get(`/api/mailboxes/${ids['drafts'] ?? ''}/messages?limit=200`)).json()) as { messages: { id: string; subject: string | null }[] };
+  const draftId = draftsList.messages.find((m) => m.subject === `Minimised ${t}`)?.id ?? '';
+  await page.goto(`/?compose=draft&id=${draftId}`);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const dark = page.getByRole('region', { name: 'New message' });
+  await expect(dark.getByRole('textbox', { name: 'Subject' })).toHaveValue(`Minimised ${t}`);
+  await expectNoAxeViolations(page, 'canvas composer (dark)');
+
+  // Tidy up: to Trash.
+  await dark.getByRole('button', { name: 'Discard draft' }).click();
+  await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).not.toContain(`Minimised ${t}`);
 });

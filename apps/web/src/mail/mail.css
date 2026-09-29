@@ -929,39 +929,5 @@
 
 /* --- The composer's actions (PST-T-11.4): stuck to the bottom of the pane that scrolls ------------- */
 
-.pr-composer__actions {
-  position: sticky;
-  bottom: calc(var(--space-24) * -1);
-  z-index: 1;
-  margin-inline: calc(var(--space-24) * -1);
-  padding: var(--space-12) var(--space-24);
-  background: var(--color-surface);
-  border-top: var(--border-width) solid var(--color-border);
-}
-
-.pr-mail[data-layout='push'] .pr-composer__actions {
-  bottom: calc(var(--space-16) * -1);
-  margin-inline: calc(var(--space-16) * -1);
-  padding-inline: var(--space-16);
-}
-
-/* At phone width @d3cloud/ui stacks form actions into full-width rows — four rows would cover half
-   the screen once they stick. The composer keeps them in one wrapping row, Send last (rightmost). */
-@media (max-width: 639.98px) {
-  .pr-composer__actions .d3-fa,
-  .pr-composer__actions .d3-fa__main,
-  .pr-composer__actions .d3-fa__leading {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .pr-composer__actions .d3-fa {
-    justify-content: space-between;
-  }
-
-  .pr-composer__actions .d3-fa__main > *,
-  .pr-composer__actions .d3-fa__leading > * {
-    width: auto;
-  }
-}
+/* The composer's action bar lives with the rest of the composer, in compose/composer.css
+   (.pr-compose__footer, PST-T-15.4): these .pr-composer__actions rules had no element left. */
