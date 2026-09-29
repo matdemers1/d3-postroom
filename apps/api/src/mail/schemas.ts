@@ -182,6 +182,9 @@ export const SearchResult = z.object({
 });
 export const SearchResponse = z.object({
   results: z.array(SearchResult),
+  /** The same hits as full list summaries, in hit order — what the webmail's list renders (flags,
+   *  thread, bucket), so a search result behaves like any other row. */
+  messages: z.array(MessageSummary),
   nextCursor: z.string().nullable(),
   warnings: z.array(z.string()),
 });

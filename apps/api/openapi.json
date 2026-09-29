@@ -3841,6 +3841,12 @@
               "additionalProperties": false
             }
           },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageSummary"
+            }
+          },
           "nextCursor": {
             "type": [
               "string",
@@ -3856,6 +3862,7 @@
         },
         "required": [
           "results",
+          "messages",
           "nextCursor",
           "warnings"
         ],

@@ -408,8 +408,10 @@ export function mailRoutes(deps: ApiDeps): Router {
         ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
       });
       const page = rows.slice(0, query.limit);
-      const froms = await db.message.findMany({ where: { id: { in: page.map((r) => r.messageId) } }, select: { id: true, fromAddress: true } });
-      const fromById = new Map(froms.map((m) => [m.id, m.fromAddress]));
+      const hits = await db.message.findMany({ where: { id: { in: page.map((r) => r.messageId) } }, include: { verdict: { select: { bucket: true, scores: true } } } });
+      const hitById = new Map(hits.map((m) => [m.id, m]));
+      const fromById = new Map(hits.map((m) => [m.id, m.fromAddress]));
+      const days = await trashRetentionDays(db, [...new Set(hits.map((m) => m.mailboxId))]);
       const results: SearchResultJson[] = page.map((r) => ({
         messageId: r.messageId,
         mailboxId: r.mailboxId,
@@ -420,8 +422,13 @@ export function mailRoutes(deps: ApiDeps): Router {
         snippet: r.snippet,
       }));
       const last = page[page.length - 1];
+      const messages = page.flatMap((r) => {
+        const m = hitById.get(r.messageId);
+        return m === undefined ? [] : [summaryJson(m, days.get(m.mailboxId) ?? null)];
+      });
       const body: SearchResponseJson = {
         results,
+        messages,
         nextCursor: rows.length > query.limit && last !== undefined ? last.internalDate.toISOString() : null,
         warnings,
       };
