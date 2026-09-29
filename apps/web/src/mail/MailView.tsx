@@ -1137,6 +1137,8 @@ function MailPanes({ route }: { route: MailRoute }) {
         onAction={(a) => {
           perform(a);
         }}
+        // PST-T-15.3: "3 of 48" in the toolbar, with up/down wired to perform('prev' / 'next').
+        position={{ index: route.messageId === null ? -1 : list.messages.findIndex((m) => m.id === route.messageId), total: list.messages.length, more: list.nextCursor !== null }}
         onMoveToJunk={
           junk === undefined
             ? undefined

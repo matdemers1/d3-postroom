@@ -7,6 +7,10 @@
 // routing, replacing the block's old "Sender profile" and "In contacts as …" links), and a bucket
 // chip shows beside it where the list does not already imply the bucket.
 //
+// PST-T-15.3 (the redesign canvas): a 36px avatar tinted from the sender's name (Avatar tint="auto",
+// the same person the same colour everywhere), the name over "to me, Jonah Reyes ▾", the time, and —
+// on the open message — Star and Reply as ghost icon buttons (`actions`).
+//
 // The block opens with height + opacity over --dur-2 (PST-REQ-192) via a grid-rows transition, so
 // no script measures anything; under prefers-reduced-motion the library zeroes the duration
 // (PST-REQ-193).
@@ -20,7 +24,7 @@ import { useMail } from '../MailContext';
 import { CaretIcon } from './icons';
 import { absoluteDate, recipientSummary, relativeDate, senderName } from './view';
 
-export function MessageHeader({ detail, body, extra }: { detail: MessageDetail; body: MessageBody | null; extra?: ReactNode }) {
+export function MessageHeader({ detail, body, extra, actions }: { detail: MessageDetail; body: MessageBody | null; extra?: ReactNode; actions?: ReactNode }) {
   const { me } = useMail();
   const [open, setOpen] = useState(false);
   const blockId = useId();
@@ -36,29 +40,31 @@ export function MessageHeader({ detail, body, extra }: { detail: MessageDetail; 
   return (
     <div className="pr-mhead" data-testid="message-header">
       <div className="pr-mhead__line">
-        <Avatar name={name} size="md" />
+        <Avatar name={name} size="md" tint="auto" className="pr-mhead__avatar" />
         <span className="pr-mhead__who">
-          {address === null ? (
-            <span className="pr-mhead__name" data-testid="message-from">
-              {name}
-            </span>
-          ) : (
-            <button
-              ref={nameButton}
-              type="button"
-              className="pr-mhead__name pr-mhead__person"
-              data-testid="message-from"
-              aria-haspopup="dialog"
-              aria-expanded={card !== null}
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                setCard((c) => (c === null ? rect : null));
-              }}
-            >
-              {name}
-            </button>
-          )}
-          <HeaderBucketChip message={detail} />
+          <span className="pr-mhead__nameline">
+            {address === null ? (
+              <span className="pr-mhead__name" data-testid="message-from">
+                {name}
+              </span>
+            ) : (
+              <button
+                ref={nameButton}
+                type="button"
+                className="pr-mhead__name pr-mhead__person"
+                data-testid="message-from"
+                aria-haspopup="dialog"
+                aria-expanded={card !== null}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setCard((c) => (c === null ? rect : null));
+                }}
+              >
+                {name}
+              </button>
+            )}
+            <HeaderBucketChip message={detail} />
+          </span>
           <button type="button" className="pr-mhead__to" aria-expanded={open} aria-controls={blockId} onClick={() => { setOpen((v) => !v); }}>
             <span>{summary}</span>
             <span className="pr-mhead__caret" aria-hidden="true">
@@ -72,6 +78,7 @@ export function MessageHeader({ detail, body, extra }: { detail: MessageDetail; 
             {relativeDate(detail.date)}
           </time>
         </Tooltip>
+        {actions === undefined ? null : <span className="pr-mhead__actions">{actions}</span>}
       </div>
       {card === null || address === null ? null : (
         <PersonCard

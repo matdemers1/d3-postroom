@@ -1,0 +1,107 @@
+/* An attachment card (PST-T-15.3, the canvas's .pr-file). System tokens only (d3-check-usage): a
+   hairline instead of a box shadow, a neutral tile, the library's focus outline. */
+
+.pr-files__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.pr-files__list > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pr-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  box-sizing: border-box;
+  min-width: 16rem;
+  max-width: 100%;
+  padding: var(--space-8) var(--space-12) var(--space-8) var(--space-8);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+  text-decoration: none;
+  transition: background var(--motion-hover);
+}
+
+.pr-file:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-file:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+.pr-file__tile {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-fg-muted);
+  font-size: var(--text-11);
+  line-height: var(--leading-11);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+}
+
+.pr-file__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pr-file__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+  font-weight: var(--weight-medium);
+}
+
+.pr-file__size {
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-file__action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+}
+
+.pr-file:hover .pr-file__action {
+  color: var(--color-fg);
+}
+
+/* At phone width the card spans the column: one 52px row, a full-width tap target. */
+@media (max-width: 767px) {
+  .pr-files__list > li {
+    flex: 1 1 100%;
+  }
+
+  .pr-file {
+    min-width: 0;
+    width: 100%;
+    min-height: 44px;
+  }
+}
