@@ -76,6 +76,8 @@ function MailPanes({ route }: { route: MailRoute }) {
   const [list, dispatch] = useReducer(listReducer, initialList);
   const [open, setOpen] = useState<OpenMessage | null>(null);
   const [openReload, setOpenReload] = useState(0);
+  // PST-T-14.7: bumped when an inline reply is sent, so the open thread is asked for again.
+  const [replyEpoch, setReplyEpoch] = useState(0);
   const [overlay, setOverlay] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -682,6 +684,9 @@ function MailPanes({ route }: { route: MailRoute }) {
         draft={draft}
         placement={composesInPane(route.compose) ? 'pane' : 'inline'}
         onDiscard={closeComposer}
+        onSent={() => {
+          setReplyEpoch((n) => n + 1);
+        }}
         onDiscarded={(outcome) => {
           // The toast says where the draft went (and offers Undo); the list follows it.
           if (outcome.kind === 'nothing') return;
@@ -708,6 +713,9 @@ function MailPanes({ route }: { route: MailRoute }) {
       )
     ) : (
       <ReadingPane
+        // An inline reply leaves the thread mounted; after a send it is remounted, which re-asks the
+        // server for the thread the reply just joined (the same moment a closing composer used to be).
+        key={`reader:${String(replyEpoch)}`}
         ref={readerHeading}
         open={open}
         {...(split ? {} : { back: backToList })}

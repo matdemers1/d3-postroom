@@ -117,6 +117,8 @@ const SCREENS: Screen[] = [
     path: () => '/?compose=new',
     ready: async (page) => {
       await expect(page.getByRole('region', { name: 'New message' })).toBeVisible();
+      // PST-T-14.7: the composer rises and fades in over --dur-3; measure it once it has arrived.
+      await page.waitForFunction(() => (globalThis as unknown as { document: { getAnimations: () => { playState: string }[] } }).document.getAnimations().every((a) => a.playState !== 'running'));
     },
   },
   {

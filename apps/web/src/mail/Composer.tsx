@@ -130,12 +130,14 @@ export interface ComposerProps {
   onDiscard: () => void;
   /** Where the draft went after Discard (and after its Undo), said by the view that outlives the composer. */
   onDiscarded?: (outcome: DiscardOutcome) => void;
+  /** Sent (or held to send): an inline reply's thread asks the server again, so the reply joins it. */
+  onSent?: () => void;
   /** A resumed draft was saved under a new id (a save replaces the draft): the view moves its URL on. */
   onDraftSaved?: (id: string) => void;
   back?: ReactNode;
 }
 
-export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, onDraftSaved, back }: ComposerProps) {
+export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, onSent, onDraftSaved, back }: ComposerProps) {
   const { me, mailboxes, refreshMailboxes } = useMail();
   const toast = useToast();
   const location = useLocation();
@@ -476,6 +478,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
       void refreshMailboxes();
       // The server has already filed and threaded the reply: closing back to the message it
       // answered shows it there, in the open thread, without a reload (PST-T-3.15).
+      onSent?.();
       onDiscard();
       return;
     } catch (e) {
@@ -801,7 +804,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
               <MenuItem onSelect={() => { setSecurityOpen(true); }}>Sign or encrypt…</MenuItem>
             </MenuContent>
           </Menu>
-          <p className="pr-compose__status" role="status" aria-live="polite">
+          <p className="pr-compose__status" role="status" aria-live="polite" data-testid="compose-status">
             {summary !== '' ? <span className="pr-compose__summary">{summary}</span> : null}
             <span>{status}</span>
           </p>

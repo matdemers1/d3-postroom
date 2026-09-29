@@ -92,6 +92,9 @@ async function openFromInbox(page: Page, subject: string): Promise<void> {
 }
 
 async function expectNoAxeViolations(page: Page, label: string): Promise<void> {
+  // The composer rises and fades in (--dur-3), rows open (--dur-2), menus drop in: axe measures
+  // colour, so it measures once everything has arrived — never a half-faded frame.
+  await page.waitForFunction(() => (globalThis as unknown as { document: { getAnimations: () => { playState: string }[] } }).document.getAnimations().every((a) => a.playState !== 'running'));
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(results.violations.map((v) => `${label} ${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(' ')).join(', ')})`)).toEqual([]);
 }
@@ -185,7 +188,7 @@ test('a draft autosaves and comes back; Discard moves it to Trash and Undo bring
   await page.keyboard.type(`Half-written thoughts ${t}`);
   // No Save draft button: saving is automatic, and the footer says so.
   await expect(reply.getByRole('button', { name: 'Save draft' })).toHaveCount(0);
-  await expect(reply.getByRole('status')).toContainText('Saved', { timeout: 15_000 });
+  await expect(reply.getByTestId('compose-status')).toContainText('Saved', { timeout: 15_000 });
 
   const ids = await mailboxIds();
   await expect.poll(() => subjectsIn(ids['drafts'] ?? '')).toContain(`Re: ${subject}`);
@@ -197,7 +200,7 @@ test('a draft autosaves and comes back; Discard moves it to Trash and Undo bring
   await page.keyboard.press('r');
   const again = page.getByRole('region', { name: 'Reply', exact: true });
   await expect(again.getByRole('textbox', { name: 'Message' })).toHaveValue(new RegExp(`^Half-written thoughts ${t}`));
-  await expect(again.getByRole('status')).toContainText('Picked up your saved draft.');
+  await expect(again.getByTestId('compose-status')).toContainText('Picked up your saved draft.');
 
   // Discard moves it out of Drafts and into Trash — never a hard delete (PST-T-14.1, PST-REQ-129) —
   // and a toast says so, with Undo.
@@ -338,6 +341,8 @@ test('a new message opens with To, Subject and the body only; Cc and Bcc reveal 
   await expect(menu.getByRole('menuitem', { name: 'Request read receipt' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Insert template…' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Sign or encrypt…' })).toBeVisible();
+  // Measured once the menu has finished fading in (--motion-menu-enter), not mid-animation.
+  await expect(menu).toHaveCSS('opacity', '1');
   await expectNoAxeViolations(page, 'overflow menu');
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
