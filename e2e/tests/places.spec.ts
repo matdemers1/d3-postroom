@@ -146,7 +146,7 @@ test('the palette lists every place from the route table, grouped, with keycaps'
   await page.keyboard.press('Control+k');
   const palette = page.getByRole('dialog', { name: 'Command palette' });
   await expect(palette).toBeVisible();
-  for (const group of ['Message actions', 'Go to', 'Settings', 'Admin']) {
+  for (const group of ['Actions', 'Go to', 'Settings', 'Admin']) {
     await expect(palette.getByRole('group', { name: group })).toBeVisible();
   }
   const settings = palette.getByRole('group', { name: 'Settings' });
@@ -169,7 +169,7 @@ test('the palette lists every place from the route table, grouped, with keycaps'
   // Outside Mail, ⌘K still opens the palette — with places, not message actions.
   await page.keyboard.press('Control+k');
   await expect(palette).toBeVisible();
-  await expect(palette.getByRole('group', { name: 'Message actions' })).toHaveCount(0);
+  await expect(palette.getByRole('group', { name: 'Actions' })).toHaveCount(0);
   await expect(palette.getByRole('group', { name: 'Settings' })).toBeVisible();
   await page.keyboard.press('Escape');
 });

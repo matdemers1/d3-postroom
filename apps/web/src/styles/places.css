@@ -136,13 +136,3 @@
   background: var(--color-bg);
 }
 
-/* Admin › Health (PST-T-14.11): the tiles sit on the page's own surface, so each gets the hairline a
- * card on the same tone needs to read as one. */
-.pr-health__tile {
-  border: var(--border-width) solid var(--color-border);
-}
-
-.pr-health__since {
-  color: var(--color-fg-muted);
-  font-size: var(--text-13);
-}

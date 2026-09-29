@@ -148,7 +148,7 @@ test('the ⋯ menu and the command palette open it too, and focus comes back (PS
   if (testInfo.project.name === 'desktop') {
     await page.keyboard.press('Control+k');
     const palette = page.getByRole('dialog', { name: 'Command palette' });
-    await expect(palette.getByRole('combobox', { name: 'Type a command' })).toBeFocused();
+    await expect(palette.getByRole('combobox', { name: 'Command palette' })).toBeFocused();
     await page.keyboard.type('Inspect the open');
     await page.keyboard.press('Enter');
     await expect(drawer).toBeVisible();

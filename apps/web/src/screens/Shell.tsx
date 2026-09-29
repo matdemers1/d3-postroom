@@ -242,7 +242,7 @@ const NAV_ICONS: Readonly<Record<string, () => ReactNode>> = {
   Account: PersonIcon,
   'Security & devices': LockIcon,
   Addresses: MaskIcon,
-  Rules: FilterIcon,
+  'Rules & sorting': FilterIcon,
   Templates: TemplatesIcon,
   'Import & export': ImportIcon,
   'Encryption keys': SealIcon,

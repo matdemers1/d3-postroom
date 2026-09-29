@@ -20,6 +20,7 @@ import { Link as RouterLink, Navigate, useLocation, useNavigate } from 'react-ro
 import { Alert, Button, EmptyState, IconButton, SearchField, SegmentedControl, Skeleton, Stack, useToast } from '@d3cloud/ui';
 import { api, ApiError, serverUnreachable, type Mailbox, type MailboxSplit, type MessageDetail, type MessageSummary } from '../api';
 import { CommandPalette } from './CommandPalette';
+import { openPalette } from './palette/open';
 import { Composer } from './Composer';
 import { draftFor, draftToResume } from './compose';
 import { composerKey } from './compose/session';
@@ -796,7 +797,8 @@ function MailPanes({ route }: { route: MailRoute }) {
         return;
       }
       case 'search':
-        searchInput.current?.focus();
+        // PST-T-15.5: / opens ⌘K search, which searches as you type.
+        openPalette();
         return;
       case 'goInbox':
         setSearchQuery(null);
@@ -945,6 +947,12 @@ function MailPanes({ route }: { route: MailRoute }) {
             placeholder="Search mail"
             {...(split ? { shortcut: '/' } : {})}
             value={searchText}
+            // A pointer on the field opens the palette (PST-T-15.5). Not onFocus: the palette hands
+            // focus back to this field when it closes, which would reopen it.
+            onMouseDown={(e) => {
+              e.preventDefault();
+              openPalette(searchText === '' ? undefined : searchText);
+            }}
             onChange={(e) => {
               setSearchText(e.target.value);
             }}

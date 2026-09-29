@@ -73,5 +73,3 @@ test('empty is one caption, no table header, and Generate reaches the form', asy
   await expect(page.getByRole('table')).toHaveCount(0);
   await expect(page.getByRole('columnheader')).toHaveCount(0);
 });
-  expect(captionArea, 'the Table caption is captionHidden (visually hidden), not a second on-screen "Your keys"').toBeLessThan(4);
-});

@@ -33,12 +33,8 @@ describe('one status mapping for Health and Inspect (D-016 tones)', () => {
     expect(toneKind('danger', true)).toBe('bad');
   });
 
-  it('Health tiles and Inspect badges both go through StatusBadge, and Unknown is not attention', () => {
-    const health = read('screens/AdminHealth.tsx');
-    expect(health).toContain("unknown: { label: 'Unknown', kind: 'unknown' }");
-    expect(health).toContain("ok: { label: 'OK', kind: 'good' }");
-    expect(health).toContain('<StatusBadge kind={kind}>');
-    expect(health).not.toMatch(/<Badge\b/);
+  // Health's tones moved to StatusDot in PST-T-15.7 (D-016/D-080) and are pinned in admin-health.test.ts.
+  it('Inspect badges go through StatusBadge, and Unknown is not attention', () => {
     const inspect = read('mail/InspectDrawer.tsx');
     expect(inspect).toContain('<StatusBadge kind={verdictKind(result)}>');
     expect(inspect).not.toMatch(/<Badge tone=\{(resultTone|part\.tone)/);
