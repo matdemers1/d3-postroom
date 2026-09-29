@@ -120,7 +120,7 @@ describe('the list’s bars (PhoneInbox)', () => {
     const view = read('mail/MailView.tsx');
     expect(view).toContain("{!split ? <ContextBar back={{ to: '/mail', label: 'Mailboxes' }} flush /> : null}");
     expect(view).toContain('<div className="pr-lbar" data-testid="list-bar">');
-    expect(view).toContain("{live ? 'Updated just now' : null}");
+    expect(view).toContain("{live && searchQuery === null ? 'Updated just now' : null}");
     // Every phone compose control is called New message (the canvas's words); none is "Compose".
     expect(view).not.toMatch(/label="Compose"/);
     expect(view.match(/label="New message"/g)?.length).toBeGreaterThanOrEqual(3);
