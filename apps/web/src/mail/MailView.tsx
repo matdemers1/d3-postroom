@@ -1063,7 +1063,7 @@ function MailPanes({ route }: { route: MailRoute }) {
         <div className="pr-lbar" data-testid="list-bar">
           {/* Only a claim the app can stand behind: the list follows the server over the event
               stream, so while the stream is connected it is current; otherwise nothing is said. */}
-          <span className="pr-lbar__status">{live ? 'Updated just now' : null}</span>
+          <span className="pr-lbar__status">{live && searchQuery === null ? 'Updated just now' : null}</span>
           <IconButton
             variant="ghost"
             label="New message"
