@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Badge, Button, EmptyState, Page, PageHeader, Skeleton, Stack, Table, type TableColumn } from '@d3cloud/ui';
 import { api, DNS_STATUS, dnsSummary, serverUnreachable, type DnsCheckRow, type DnsReport } from '../api';
-
-// A DNS value is long and unbroken (a DKIM RSA key is ~400 characters): wrap it anywhere, in the
-// monospace face, so a 390 px screen never scrolls sideways because of one.
-const valueStyle = { fontFamily: 'var(--font-mono)', fontSize: 'var(--text-12)', overflowWrap: 'anywhere', wordBreak: 'break-word' } as const;
-const mutedStyle = { color: 'var(--color-fg-muted)', fontSize: 'var(--text-12)' } as const;
+import '../admin/admin.css';
 
 /** Copies one value; says so in its own label for a moment, so a screen reader hears it too. */
 export function CopyButton({ value, label }: { value: string; label: string }) {
@@ -38,8 +34,10 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
+// A DNS value is long and unbroken (a DKIM RSA key is ~400 characters): wrap it anywhere, in the
+// monospace face (admin.css), so a 390 px screen never scrolls sideways because of one.
 export function DnsValue({ children }: { children: string }) {
-  return <code style={valueStyle}>{children}</code>;
+  return <code className="pr-dns-value">{children}</code>;
 }
 
 /** Expected vs live, one row per record, with the verdict and why (PST-REQ-099). */
@@ -52,7 +50,7 @@ export function DnsTable({ report }: { report: DnsReport }) {
       cell: (r) => (
         <Stack gap="4">
           <span>
-            {r.record} <span style={mutedStyle}>{r.type}</span>
+            {r.record} <span className="pr-muted pr-small">{r.type}</span>
           </span>
           <DnsValue>{r.name}</DnsValue>
         </Stack>
@@ -74,7 +72,7 @@ export function DnsTable({ report }: { report: DnsReport }) {
       width: 'minmax(10rem, 2fr)',
       cell: (r) =>
         r.expected === null ? (
-          <span style={mutedStyle}>{r.note ?? 'Not known yet'}</span>
+          <span className="pr-muted pr-small">{r.note ?? 'Not known yet'}</span>
         ) : (
           <Stack gap="4">
             <DnsValue>{r.expected}</DnsValue>
@@ -90,7 +88,7 @@ export function DnsTable({ report }: { report: DnsReport }) {
       width: 'minmax(10rem, 2fr)',
       cell: (r) =>
         r.live.length === 0 ? (
-          <span style={mutedStyle}>Nothing published</span>
+          <span className="pr-muted pr-small">Nothing published</span>
         ) : (
           <Stack gap="4">
             {r.live.map((v, i) => (
@@ -99,10 +97,11 @@ export function DnsTable({ report }: { report: DnsReport }) {
           </Stack>
         ),
     },
-    { key: 'reason', header: 'Why', width: 'minmax(10rem, 2fr)', cell: (r) => r.reason },
+    { key: 'reason', header: 'Why', width: 'minmax(10rem, 2fr)', cell: (r) => <span className="pr-wrap">{r.reason}</span> },
   ];
   return (
     <Table
+      className="pr-admin-table pr-dns-table"
       caption={`DNS records for ${report.domain}`}
       captionHidden
       columns={columns}
@@ -152,7 +151,11 @@ export function AdminDns() {
     <Page>
       <PageHeader
         title="DNS & DKIM"
-        description={report === null ? 'Expected and live values for every record Postroom needs.' : `${report.domain} — ${dnsSummary(report.summary)}`}
+        description={
+          report === null
+            ? 'Expected and live values for every record Postroom needs.'
+            : `${report.domain} — ${dnsSummary(report.summary)} · checked ${new Date(report.checkedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })}`
+        }
         actions={
           <Button
             loading={checking}
@@ -173,7 +176,6 @@ export function AdminDns() {
       ) : (
         <Stack gap="16">
           <ResolverNote report={report} />
-          <p style={mutedStyle}>Checked {new Date(report.checkedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })}.</p>
           <DnsTable report={report} />
         </Stack>
       )}

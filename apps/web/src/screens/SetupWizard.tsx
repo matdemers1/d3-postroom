@@ -36,8 +36,8 @@ import {
   type WizardView,
 } from '../api';
 import { CopyButton, DnsTable, DnsValue, ResolverNote, useDnsReport } from './AdminDns';
+import '../admin/admin.css';
 
-const mutedStyle = { color: 'var(--color-fg-muted)' } as const;
 const POLL_MS = 2_000;
 
 /** The server's own sentence for a wizard refusal when it has one; the shared wording otherwise. */
@@ -307,7 +307,7 @@ function DkimStep({ view, busy, onGenerate, onNext }: { view: WizardView; busy: 
     >
       <Stack gap="16">
         {view.dkim.length === 0 ? (
-          <p style={mutedStyle}>No keys yet for {view.domain}.</p>
+          <p className="pr-muted">No keys yet for {view.domain}.</p>
         ) : (
           <DescriptionList>
             {view.dkim.map((k) => (
@@ -371,7 +371,7 @@ function DnsStep({ domain, busy, onNext }: { domain: string; busy: boolean; onNe
             <DnsTable report={report} />
           </>
         )}
-        <p style={mutedStyle}>
+        <p className="pr-muted">
           You can continue while records are pending and come back to <Link asChild variant="inline"><RouterLink to="/admin/dns">Admin console → DNS &amp; DKIM</RouterLink></Link> at any time.
         </p>
         <FormActions>
@@ -398,7 +398,7 @@ function MailboxStep({ view, busy, onSubmit }: { view: WizardView; busy: boolean
         }}
       >
         <Stack gap="16">
-          {view.addresses.length === 0 ? null : <p style={mutedStyle}>Your addresses at {view.domain}: {view.addresses.join(', ')}</p>}
+          {view.addresses.length === 0 ? null : <p className="pr-muted">Your addresses at {view.domain}: {view.addresses.join(', ')}</p>}
           <FormField label="Address">
             <Input appearance="filled"
               name="localPart"
@@ -540,7 +540,7 @@ function TestStep({
                         <li key={`${String(i)}:${ev.at}`}>
                           <Stack gap="2">
                             <span>
-                              <time dateTime={ev.at} style={mutedStyle}>
+                              <time dateTime={ev.at} className="pr-muted">
                                 {new Date(ev.at).toLocaleTimeString()}
                               </time>{' '}
                               {ev.title}

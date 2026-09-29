@@ -1,0 +1,125 @@
+/* PST-T-15.7 (PST-REQ-194): the Admin place on the redesign canvas. One density (D-007): every admin
+ * table row is 44px, numbers are tabular, and technical values (addresses, IPs, ids, record values)
+ * are set in the mono face. The content sheet is --color-surface, so a card on it is told apart by a
+ * hairline — never a shadow. D3 semantic tokens only. */
+
+/* Tables: 44px rows. border-box so the hairline between rows is inside the 44, not added to it. */
+.pr-admin-table .d3-tbl {
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-admin-table .d3-tbl__td {
+  box-sizing: border-box;
+  height: 44px;
+  padding-block: var(--space-4);
+}
+
+/* A cell whose value should wrap rather than widen the table (a long detail or reply line). */
+.pr-admin-table .pr-wrap {
+  display: inline-block;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+
+/* Fixed layout, so a long address ellipsizes inside its column instead of widening a narrow card. */
+.pr-admin-table--fixed .d3-tbl {
+  table-layout: fixed;
+}
+
+.pr-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+}
+
+.pr-muted {
+  color: var(--color-fg-muted);
+}
+
+.pr-small {
+  font-size: var(--text-12);
+}
+
+.pr-admin-card {
+  border: var(--border-width) solid var(--color-border);
+}
+
+/* A value and its qualifier on one line (a name and "This session"). */
+.pr-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+/* The row of actions at the end of a table row: small buttons, one line. */
+.pr-admin-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+/* Admin › Health */
+.pr-health__summary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.pr-admin-stats {
+  padding: 0;
+  overflow: hidden;
+}
+
+.pr-health__cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-20);
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .pr-health__cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 25rem);
+  }
+}
+
+.pr-health__stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+.pr-health__svc {
+  font-weight: var(--weight-medium);
+}
+
+.pr-health__state,
+.pr-health__kv {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.pr-health__kv .pr-mono {
+  overflow-wrap: anywhere;
+}
+
+/* Admin › DNS & DKIM: a record value wraps anywhere, so one DKIM key never widens the page. Its rows
+ * hold a name under the record and a Copy under the value, so they keep a little padding. */
+.pr-dns-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.pr-dns-table .d3-tbl__td {
+  padding-block: var(--space-8);
+  white-space: normal;
+}

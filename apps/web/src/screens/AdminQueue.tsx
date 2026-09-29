@@ -1,7 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Badge,
   Button,
   Cluster,
   EmptyState,
@@ -14,11 +13,14 @@ import {
   Section,
   Select,
   Stack,
+  StatusDot,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, type AdminQueueRecipient, type QueueScope, type QueueStateFilter } from '../api';
 import { Loading, LoadFailed } from './states';
+import { queueState } from '../admin/health/model';
+import '../admin/admin.css';
 
 const STATE_OPTIONS: { value: '' | QueueStateFilter; label: string }[] = [
   { value: '', label: 'All queued mail' },
@@ -27,12 +29,6 @@ const STATE_OPTIONS: { value: '' | QueueStateFilter; label: string }[] = [
   { value: 'held', label: 'Held (frozen credential)' },
   { value: 'failed', label: 'Failed' },
 ];
-
-const STATE_TONE: Record<string, 'neutral' | 'attention' | 'danger'> = {
-  queued: 'neutral',
-  deferred: 'attention',
-  bounced: 'danger',
-};
 
 type ActionKind = 'retry' | 'force-ses' | 'bounce' | 'delete';
 
@@ -137,18 +133,36 @@ export function AdminQueue() {
   };
 
   const columns: TableColumn<Row>[] = [
-    { key: 'address', header: 'Recipient', cell: (r) => r.address },
+    { key: 'address', header: 'Recipient', cell: (r) => <span className="pr-mono">{r.address}</span> },
     { key: 'subject', header: 'Subject', cell: (r) => r.subject ?? '(no subject)' },
-    { key: 'domain', header: 'Domain', cell: (r) => r.domain },
+    { key: 'domain', header: 'Domain', cell: (r) => <span className="pr-mono">{r.domain}</span> },
     {
       key: 'state',
       header: 'State',
-      cell: (r) => <Badge tone={STATE_TONE[r.state] ?? 'neutral'}>{r.state}</Badge>,
+      cell: (r) => {
+        const s = queueState(r.state);
+        return (
+          <StatusDot tone={s.tone} size="sm">
+            {s.label}
+          </StatusDot>
+        );
+      },
     },
-    { key: 'transport', header: 'Transport', cell: (r) => r.transport },
-    { key: 'attempts', header: 'Attempts', cell: (r) => String(r.attempts) },
+    { key: 'transport', header: 'Transport', cell: (r) => <span className="pr-mono">{r.transport}</span> },
+    { key: 'attempts', header: 'Attempts', numeric: true, cell: (r) => String(r.attempts) },
     { key: 'nextAttemptAt', header: 'Next attempt', cell: (r) => when(r.nextAttemptAt) },
-    { key: 'lastText', header: 'Last response', cell: (r) => r.lastText ?? '—' },
+    {
+      key: 'lastText',
+      header: 'Last response',
+      cell: (r) =>
+        r.lastText === null ? (
+          <span className="pr-muted">—</span>
+        ) : (
+          <span className="pr-mono pr-muted" title={r.lastText}>
+            {r.lastText}
+          </span>
+        ),
+    },
     {
       key: 'timeline',
       header: 'Timeline',
@@ -163,7 +177,7 @@ export function AdminQueue() {
       header: 'Actions',
       align: 'end',
       cell: (r) => (
-        <Cluster gap="4" justify="end">
+        <span className="pr-admin-actions">
           <Button size="sm" variant="secondary" onClick={() => { openConfirm({ kind: 'recipient', id: r.id }, 'retry', `Retry ${r.address}`); }}>
             Retry
           </Button>
@@ -182,7 +196,7 @@ export function AdminQueue() {
           <Button size="sm" variant="danger-ghost" onClick={() => { openConfirm({ kind: 'recipient', id: r.id }, 'delete', `Delete ${r.address}`); }}>
             Delete
           </Button>
-        </Cluster>
+        </span>
       ),
     },
   ];
@@ -227,6 +241,7 @@ export function AdminQueue() {
         <Loading label="Loading the queue" />
       ) : (
         <Table
+          className="pr-admin-table"
           caption="Outbound queue"
           captionHidden
           columns={columns}
