@@ -134,14 +134,20 @@
 
 .pr-compose__body {
   flex: 1;
+  /* The wrapper is a flex row: the textarea fills it, so the focus ring and the text area are one
+   box, with no resize grip halfway down the pane (PST-T-14.11). */
+  align-items: stretch;
+  width: 100%;
   min-height: 12rem;
-  max-width: var(--container-prose);
-  resize: none;
+  padding: var(--space-8) var(--space-12);
   background: transparent;
   border-color: transparent;
-  padding-inline: 0;
   font-size: var(--text-14);
   line-height: var(--leading-14);
+}
+
+.pr-compose__body.d3-inp--area .d3-inp__control {
+  resize: none;
 }
 
 .pr-compose--inline .pr-compose__body {
@@ -223,6 +229,32 @@
 
 .pr-compose__summary {
   color: var(--color-fg);
+}
+
+/* --- At phone width (PST-T-14.11, PST-REQ-155) -------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  /* A chipped recipient and the 44 px input share one line: the input may shrink to a short
+   * target rather than wrap under the chip, which left the chip riding above the "To" label in a
+   * row twice as tall as it needed to be. */
+  .pr-compose .d3-rcp--row .d3-rcp__input {
+    flex-basis: 40px;
+    min-width: 40px;
+  }
+
+  .pr-compose .d3-rcp--row .d3-rcp__value {
+    align-content: center;
+  }
+
+  /* Send ▾ · Aa · ⋯ · Discard fit on one line: the status gives up its reserved width. */
+  .pr-compose__status {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .pr-compose__discard {
+    margin-left: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

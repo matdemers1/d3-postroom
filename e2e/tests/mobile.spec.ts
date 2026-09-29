@@ -409,7 +409,7 @@ test.describe('signed in', () => {
     await assertMobileFriendly(page, '/settings/addresses');
 
     await page.goto('/settings/account');
-    await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/account');
 
     await page.goto('/settings/security');

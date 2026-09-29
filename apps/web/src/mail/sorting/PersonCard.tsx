@@ -6,7 +6,7 @@
 // (authentication rates, the full history), which stays one click away and never in the card.
 import { useEffect, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Avatar, Button } from '@d3cloud/ui';
+import { Avatar, Button, Select } from '@d3cloud/ui';
 import { api, contactPath, contactsApi, describeError, senderProfilePath, type SenderProfile } from '../../api';
 import { listDate } from '../format';
 import { mailPath } from '../route';
@@ -14,6 +14,9 @@ import { SPLIT_QUERY, useMediaQuery } from '../useMedia';
 import { sortingApi } from './api';
 import { Floating } from './Floating';
 import { BUCKET_LABEL, bucketLabel, FILING_BUCKETS, isFilingBucket, routingHelp, type FilingBucket } from './sorting';
+
+/** The routing Select's value for "no pin: sorted automatically". */
+const AUTO = 'auto';
 
 type ContactHit = { addressBookId: string; name: string; displayName: string } | null;
 
@@ -168,14 +171,20 @@ export function PersonCard({ address, name, bucket, anchor, returnFocus, opener 
             <label className="pr-person__label" htmlFor={selectId}>
               Their mail goes to
             </label>
-            <select id={selectId} className="pr-person__select" value={profile.pin ?? ''} disabled={busy === 'route'} onChange={(e) => void route(e.target.value)}>
-              <option value="">Sorted automatically{isFilingBucket(bucket) ? ` (${bucketLabel(bucket)})` : ''}</option>
-              {FILING_BUCKETS.map((b: FilingBucket) => (
-                <option key={b} value={b}>
-                  {BUCKET_LABEL[b]}
-                </option>
-              ))}
-            </select>
+            {/* The design-system Select (PST-T-14.11). Its items cannot carry an empty value, so
+                "sorted automatically" is the AUTO sentinel here and no pin at the API. */}
+            <Select
+              appearance="filled"
+              id={selectId}
+              className="pr-person__select"
+              value={profile.pin ?? AUTO}
+              disabled={busy === 'route'}
+              onValueChange={(v) => void route(v === AUTO ? '' : v)}
+              options={[
+                { value: AUTO, label: `Sorted automatically${isFilingBucket(bucket) ? ` (${bucketLabel(bucket)})` : ''}` },
+                ...FILING_BUCKETS.map((b: FilingBucket) => ({ value: b, label: BUCKET_LABEL[b] })),
+              ]}
+            />
             <p className="pr-person__help">{routingHelp(profile.pin, bucket, title)}</p>
           </div>
 

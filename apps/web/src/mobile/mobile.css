@@ -261,6 +261,27 @@
 
 /* --- The thread's bottom action bar ------------------------------------------------------------------ */
 
+/* The bar's height: a 52 px button, 4 px above and below, the hairline, and the home indicator. */
+:root {
+  --pr-abar-height: calc(52px + 2 * var(--space-4) + var(--border-width) + env(safe-area-inset-bottom, 0px));
+}
+
+/* PST-T-14.11: while the bar is on screen a toast (the triage Undo) rises above it rather than
+ * covering Archive / Delete / Move / Reply / More. */
+@media (max-width: 767px) {
+  :root:has(.pr-abar) .d3-toast-region {
+    bottom: calc(var(--pr-abar-height) + var(--space-8));
+  }
+}
+
+/* A touch-first device has no `z` key to press: the app omits the hint (showsKeyHints), and this
+ * catches any toast that was handed one anyway. */
+@media (pointer: coarse) {
+  .d3-toast__kbd {
+    display: none;
+  }
+}
+
 .pr-abar {
   flex: none;
   display: grid;
@@ -338,6 +359,18 @@
   white-space: nowrap;
 }
 
+/* The Newsletters feed: the context bar already names it, so its h2 (focus lands on it) is not
+ * drawn a second time under the bar (PST-T-14.11). */
+.pr-mail[data-layout='push'] .pr-mail__feed > .pr-listhead__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* Body first: the thread's actions are the bottom bar, so the top toolbar is not drawn. */
 .pr-mail[data-layout='push'] .pr-reader--open .pr-toolbar {
   display: none;
@@ -347,11 +380,16 @@
   padding: 0;
 }
 
+/* A bar inside a padded scroller (the composer, a feed) pulls out over the padding with a negative
+ * margin, and sticks at the scroller's padding edge, not its content edge: `top` is minus the same
+ * padding, so every screen's bar sits flush at y = 0 with one height (PST-T-14.11). */
 .pr-mail[data-layout='push'] .pr-reader:not(.pr-reader--open) > .pr-cbar {
+  top: calc(var(--space-16) * -1);
   margin: calc(var(--space-16) * -1) calc(var(--space-16) * -1) var(--space-16);
 }
 
 .pr-mail[data-layout='push'] .pr-mail__feed > .pr-cbar {
+  top: calc(var(--space-16) * -1);
   max-width: none;
   margin: calc(var(--space-16) * -1) calc(var(--space-16) * -1) var(--space-12);
 }

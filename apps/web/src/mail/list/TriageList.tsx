@@ -157,6 +157,8 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
   const rowTop = targetIndex * ROW_HEIGHT - scroll.top;
   const inView = rowTop > -ROW_HEIGHT / 2 && rowTop < scroll.height - ROW_HEIGHT / 2;
   const showActions = target !== undefined && !leaving.has(target.id) && selected.size === 0 && inView;
+  // PST-T-14.11: the row the cluster sits on reserves room for it, so it never covers the subject.
+  const actingId = target !== undefined && (showActions || barFocused) ? target.id : null;
 
   const act = (action: RowAction) => {
     if (target === undefined) return;
@@ -238,6 +240,7 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
               warned={m.id === warnedId}
               now={now}
               chip={chipFor === undefined ? null : chipFor(m)}
+              acting={m.id === actingId}
             />
           );
         })}
