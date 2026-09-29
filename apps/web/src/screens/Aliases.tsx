@@ -147,7 +147,7 @@ export function Aliases() {
         <form onSubmit={create}>
           <Stack gap="16">
             <FormField label="Site" help="What you're handing this address to, e.g. shop.example." {...(formError === null ? {} : { error: formError })}>
-              <Input
+              <Input appearance="filled"
                 name="site"
                 maxLength={200}
                 required

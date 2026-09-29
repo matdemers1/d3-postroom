@@ -186,7 +186,7 @@ export function AppPasswords() {
               Postroom keeps only a hash. If you lose it, revoke it and create another.
             </Alert>
             <FormField label="App password">
-              <Textarea mono readOnly rows={1} value={revealed.password} onFocus={(e) => { e.currentTarget.select(); }} />
+              <Textarea appearance="filled" mono readOnly rows={1} value={revealed.password} onFocus={(e) => { e.currentTarget.select(); }} />
             </FormField>
             <Cluster>
               <Button
@@ -213,7 +213,7 @@ export function AppPasswords() {
         <form onSubmit={create}>
           <Stack gap="16">
             <FormField label="Name" help="The device or app it is for, e.g. iPhone Mail." {...(formError === null ? {} : { error: formError })}>
-              <Input
+              <Input appearance="filled"
                 name="label"
                 maxLength={100}
                 required

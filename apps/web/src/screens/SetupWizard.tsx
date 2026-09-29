@@ -246,7 +246,7 @@ export function SetupWizard() {
       >
         <form id="wizard-step-up" onSubmit={confirmStepUp}>
           <FormField label="Authentication code" {...(codeError === null ? {} : { error: codeError })}>
-            <Input
+            <Input appearance="filled"
               name="code"
               inputMode="numeric"
               autoComplete="one-time-code"
@@ -277,7 +277,7 @@ function DomainStep({ view, busy, onSubmit }: { view: WizardView; busy: boolean;
       >
         <Stack gap="16">
           <FormField label="Domain" help="Only a domain you control. A no-reply subdomain belongs to Cloudflare Email Service and is refused.">
-            <Input
+            <Input appearance="filled"
               name="domain"
               required
               autoComplete="off"
@@ -400,7 +400,7 @@ function MailboxStep({ view, busy, onSubmit }: { view: WizardView; busy: boolean
         <Stack gap="16">
           {view.addresses.length === 0 ? null : <p style={mutedStyle}>Your addresses at {view.domain}: {view.addresses.join(', ')}</p>}
           <FormField label="Address">
-            <Input
+            <Input appearance="filled"
               name="localPart"
               required
               autoComplete="off"
@@ -501,7 +501,7 @@ function TestStep({
           <form onSubmit={send}>
             <Stack gap="16">
               <FormField label="Send a test to" help={`From ${view.mailbox}, through the same submission path as any other message.`}>
-                <Input
+                <Input appearance="filled"
                   name="to"
                   type="email"
                   required

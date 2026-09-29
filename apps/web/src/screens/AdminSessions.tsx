@@ -164,7 +164,7 @@ export function AdminSessions() {
       >
         <form id="step-up" onSubmit={confirmStepUp}>
           <FormField label="Authentication code" {...(codeError === null ? {} : { error: codeError })}>
-            <Input
+            <Input appearance="filled"
               name="code"
               inputMode="numeric"
               autoComplete="one-time-code"

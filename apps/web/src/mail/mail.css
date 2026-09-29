@@ -18,7 +18,9 @@
   height: calc(100vh - var(--pr-mail-top, 0px));
   height: calc(100dvh - var(--pr-mail-top, 0px));
   min-height: 20rem;
-  background: var(--color-bg);
+  /* One content tone (PST-T-14.4, PST-ADR-011 §2): list and reading pane both sit on
+     --color-surface, the main tone of the recessed AppShell; one hairline between them. */
+  background: var(--color-surface);
   color: var(--color-fg);
 }
 
@@ -454,7 +456,7 @@
   overflow-y: auto;
   box-sizing: border-box;
   padding: var(--space-24);
-  background: var(--color-bg);
+  background: var(--color-surface);
 }
 
 .pr-mail[data-layout='push'] .pr-mail__feed {
@@ -944,7 +946,7 @@
   z-index: 1;
   margin-inline: calc(var(--space-24) * -1);
   padding: var(--space-12) var(--space-24);
-  background: var(--color-bg);
+  background: var(--color-surface);
   border-top: var(--border-width) solid var(--color-border);
 }
 

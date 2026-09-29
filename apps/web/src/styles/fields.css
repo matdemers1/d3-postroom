@@ -1,0 +1,24 @@
+/* Filled fields everywhere (PST-T-14.4, PST-REQ-189, PST-ADR-011 §3). Input, Textarea and Select
+ * take appearance="filled" from @d3cloud/ui 1.3.0; PasswordInput has no appearance prop yet, so its
+ * box borrows the same recipe here: 36px, 14px text on a --color-bg fill, and one focus ring (the
+ * outline at -1px, no accent border under it) instead of the outlined field's double ring.
+ * Existing tokens only. Remove once PasswordInput gains `appearance`. */
+
+.d3-pw > .d3-inp {
+  height: 36px;
+  padding-left: var(--space-12);
+  font-size: var(--text-14);
+  background: var(--color-bg);
+}
+
+.d3-pw > .d3-inp:has(> .d3-inp__control:focus-visible) {
+  border-color: var(--color-border-field);
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: calc(-1 * var(--border-width));
+}
+
+.d3-pw > .d3-inp.d3-inp--invalid,
+.d3-pw > .d3-inp.d3-inp--invalid:has(> .d3-inp__control:focus-visible) {
+  border-color: var(--color-danger);
+  outline-color: var(--color-danger);
+}
