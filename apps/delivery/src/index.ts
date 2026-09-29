@@ -30,3 +30,5 @@ export { findSuppressed, recordHardBounce, shouldSuppress, suppressionKey } from
 export type { HardBounce, SuppressedMatch, SuppressionReason } from './suppression.js';
 export { COMPLAINT_ALERTS_PER_HOUR, complaintAlert, correlateOutbound, markAlerted, recordAsyncBounce, recordComplaint } from './feedback.js';
 export type { AsyncBounceInput, AsyncBounceResult, ComplaintInput, ComplaintResult, CorrelatedOutbound, Correlation, FeedbackAction, FeedbackSource } from './feedback.js';
+export { normalizeMessageId, recordMessageIdAlias } from './message-id-alias.js';
+export type { MessageIdAliasInput } from './message-id-alias.js';

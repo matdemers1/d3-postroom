@@ -580,6 +580,7 @@ model OutboundMessage {
   appPassword AppPassword?        @relation(fields: [appPasswordId], references: [id], onDelete: SetNull)
   recipients  OutboundRecipient[]
   feedback    DeliveryFeedback[]
+  aliases     MessageIdAlias[]
 
   @@index([accountId, createdAt])
   /// PST-T-6.7 (PST-REQ-119): the mailbox message → outbound lookup joins on this pair — a Sent
@@ -644,6 +645,28 @@ model DeliveryAttempt {
 
   @@index([recipientId, startedAt])
   @@map("delivery_attempt")
+}
+
+/// PST-T-11.20: a Message-ID a relay gave one of our outbound messages in place of its own. SES
+/// replaces the Message-ID of everything it relays and names the new one in its 250 to DATA; a reply
+/// cites that id, so threading (@postroom/threading assignThread) resolves it through this table to
+/// the id our Sent copy carries. Both columns are normalized (no angle brackets), like
+/// Message.messageIdHeader. Kept when the queue row is purged: a reply can come years later.
+model MessageIdAlias {
+  /// The relay-assigned id, e.g. 010001a0…-000000@email.amazonses.com.
+  alias             String   @id
+  /// Our own Message-ID for the message, as the Sent copy's Message.messageIdHeader stores it.
+  messageId         String   @map("message_id")
+  /// ses
+  source            String
+  outboundMessageId String?  @map("outbound_message_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  outboundMessage OutboundMessage? @relation(fields: [outboundMessageId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([outboundMessageId])
+  @@map("message_id_alias")
 }
 
 /// PST-T-11.15: what came back after the remote accepted a message — an asynchronous bounce (a

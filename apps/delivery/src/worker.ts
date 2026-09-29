@@ -24,6 +24,7 @@ import type { Db, Job, OutboundRecipient, Prisma } from '@postroom/db';
 import { enqueue, type Handler } from '@postroom/queue';
 import { OUTBOUND_QUEUE, outboundJobKey, type OutboundJobPayload } from './enqueue.js';
 import { holdGroup, isCredentialFrozen } from './hold.js';
+import { recordMessageIdAlias } from './message-id-alias.js';
 import { nextState, parseNotify, type AttemptOutcome, type DsnIntent } from './state.js';
 import { recordHardBounce, shouldSuppress } from './suppression.js';
 import type { DeliveryResult, Transport } from './transports/types.js';
@@ -264,6 +265,7 @@ export function createDeliveryWorker(options: DeliveryWorkerOptions): DeliveryWo
       const intents: DsnIntent[] = [];
       // Commit every recipient's outcome at once, straight after the transport returned.
       await db.$transaction(async (tx) => {
+        let deliveredRecipientId: string | undefined;
         for (const { recipient, attemptId } of batch) {
           const outcome: AttemptOutcome = result.results[recipient.id] ?? { kind: 'error', error: 'transport returned no result for this recipient' };
           const t = nextState(recipient, outcome, finishedAt, random);
@@ -284,6 +286,7 @@ export function createDeliveryWorker(options: DeliveryWorkerOptions): DeliveryWo
             // outlived the lease, which attemptTimeoutMs < leaseMs is meant to rule out.
             log('attempt-lost-race', { recipientId: recipient.id, attemptId, outcome: t.attemptOutcome });
           } else {
+            if (outcome.kind === 'delivered') deliveredRecipientId ??= recipient.id;
             intents.push(...t.dsn);
             // PST-REQ-176: a 5.1.x hard bounce suppresses the address, in this same commit.
             if (shouldSuppress(outcome, t) && outcome.kind === 'permanent') {
@@ -310,6 +313,18 @@ export function createDeliveryWorker(options: DeliveryWorkerOptions): DeliveryWo
             },
           });
           log('attempt-finished', { recipientId: recipient.id, outcome: t.attemptOutcome, state: t.state, code: t.lastCode, next: t.state === 'deferred' ? t.nextAttemptAt.toISOString() : undefined });
+        }
+        // PST-T-11.20: the relay's Message-ID for what it accepted, so a reply citing it threads.
+        if (result.messageIdAlias !== undefined && deliveredRecipientId !== undefined && message.messageId !== null) {
+          const added = await recordMessageIdAlias(tx, {
+            alias: result.messageIdAlias,
+            messageIdHeader: message.messageId,
+            outboundMessageId: message.id,
+            source: result.transport ?? options.transports[transportName]?.name ?? transportName,
+            recipientId: deliveredRecipientId,
+            at: finishedAt,
+          });
+          if (added) log('message-id-alias', { outboundMessageId: message.id, alias: result.messageIdAlias });
         }
         await scheduleNext(tx, group);
       });
