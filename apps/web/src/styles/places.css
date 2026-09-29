@@ -1,14 +1,15 @@
 /* The three places (PST-T-14.3, PST-REQ-189, PST-ADR-011): Mail, Settings and the Admin console.
  * Existing tokens only — no new colours. */
 
-/* Moving between places never slides (D-024): the incoming place cross-fades in at --dur-2. */
+/* Moving between places never slides (D-024): the incoming place cross-fades in at --dur-2. Only a
+ * move between places fades; a page load simply appears (Shell.tsx's usePlaceFade). */
 @keyframes pr-place-in {
   from {
     opacity: 0;
   }
 }
 
-.pr-place {
+.pr-place--fade {
   animation: pr-place-in var(--dur-2) var(--ease-out) backwards;
 }
 
@@ -197,7 +198,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pr-place,
+  /* Asked for less motion: places swap instantly, and the palette only fades. */
+  .pr-place--fade {
+    animation: none;
+  }
+
   .d3-modal.pr-cmdk {
     animation-name: pr-place-in;
   }

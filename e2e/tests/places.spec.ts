@@ -167,14 +167,28 @@ test('the palette lists every place from the route table, grouped, with keycaps'
   await page.keyboard.press('Escape');
 });
 
-test('places cross-fade within --dur-2 and never slide', async ({ page }) => {
+test('moving between places cross-fades within --dur-2 and never slides; a page load does not fade', async ({ page }) => {
+  const animation = (selector: string) =>
+    page.locator(selector).evaluate((el) => {
+      const style = (globalThis as unknown as { getComputedStyle: (e: unknown) => { animationName: string; animationDuration: string } }).getComputedStyle(el);
+      return { name: style.animationName, duration: Number.parseFloat(style.animationDuration) };
+    });
   await page.goto('/settings/account');
-  const place = page.locator('[data-place="settings"]');
-  await expect(place).toBeVisible();
-  const { name, duration } = await place.evaluate((el) => {
-    const style = (globalThis as unknown as { getComputedStyle: (e: unknown) => { animationName: string; animationDuration: string } }).getComputedStyle(el);
-    return { name: style.animationName, duration: style.animationDuration };
-  });
-  expect(name).toBe('pr-place-in');
-  expect(Number.parseFloat(duration)).toBeLessThanOrEqual(0.14);
+  await expect(page.locator('[data-place="settings"]')).toBeVisible();
+  expect((await animation('[data-place="settings"]')).name).toBe('none');
+
+  await page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Back to Mail' }).click();
+  await expect(page.locator('[data-place="mail"]')).toBeVisible();
+  const fade = await animation('[data-place="mail"]');
+  // pr-place-in animates opacity only (places.css): no transform, so nothing slides.
+  expect(fade.name).toBe('pr-place-in');
+  expect(fade.duration).toBeGreaterThan(0);
+  expect(fade.duration).toBeLessThanOrEqual(0.14);
+
+  // Asked for less motion: the swap is instant.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.locator('button.d3-acct').click();
+  await page.getByRole('menuitem', { name: 'Settings' }).click();
+  await expect(page.locator('[data-place="settings"]')).toBeVisible();
+  expect((await animation('[data-place="settings"]')).name).toBe('none');
 });

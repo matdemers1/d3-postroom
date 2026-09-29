@@ -283,6 +283,28 @@ function useSetupStepsLeft(isAdmin: boolean, pathname: string): number {
 /** Where "Back to Mail" returns: the last mail URL this tab showed (a mailbox, an open message). */
 let lastMailPath = '/';
 
+/** The place on screen before this render — so arriving in a place from another one cross-fades,
+ * while a page load (nothing was on screen) simply appears. */
+let shownPlace: Place | null = null;
+
+/** Whether this mount is a move between places: decided once, when the keyed nav or frame mounts. */
+function usePlaceFade(place: Place): boolean {
+  const [fade] = useState(() => shownPlace !== null && shownPlace !== place);
+  useEffect(() => {
+    shownPlace = place;
+  }, [place]);
+  return fade;
+}
+
+function PlaceFrame({ place, children }: { place: Place; children: ReactNode }) {
+  const fade = usePlaceFade(place);
+  return (
+    <div className={fade ? 'pr-place pr-place--fade' : 'pr-place'} data-place={place}>
+      {children}
+    </div>
+  );
+}
+
 function readVisits(): LastVisits {
   try {
     return parseVisits(window.localStorage.getItem(LAST_VISIT_KEY));
@@ -379,9 +401,10 @@ function MailNav({ isAdmin }: { isAdmin: boolean }) {
   const visits = useLastVisits(groups?.safetyNet ?? [], currentMailbox);
   const places = navEntries('mail', isAdmin);
   const route = routeForPath(location.pathname);
+  const fade = usePlaceFade('mail');
 
   return (
-    <SideNav aria-label="Main" className="pr-place">
+    <SideNav aria-label="Main" {...(fade ? { className: 'pr-place--fade' } : {})}>
       {wide && mail !== null ? (
         <li className="pr-nav-compose">
           <Button
@@ -449,8 +472,9 @@ function PlaceNav({ place, isAdmin, setupLeft }: { place: 'settings' | 'admin'; 
   const location = useLocation();
   const route = routeForPath(location.pathname);
   const name = PLACE_NAME[place];
+  const fade = usePlaceFade(place);
   return (
-    <SideNav aria-label={name} className={place === 'admin' ? 'pr-place pr-nav-admin' : 'pr-place'}>
+    <SideNav aria-label={name} className={[place === 'admin' ? 'pr-nav-admin' : '', fade ? 'pr-place--fade' : ''].filter((c) => c !== '').join(' ')}>
       <SideNavItem asChild icon={<BackIcon />} label="Back to Mail">
         <RouterLink to={lastMailPath} />
       </SideNavItem>
@@ -594,7 +618,7 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
           </AccountMenu>
         }
       >
-        <div key={place} className="pr-place" data-place={place}>
+        <PlaceFrame key={place} place={place}>
           <SubNav place={navPlace} isAdmin={isAdmin} />
           <PaneBoundary name="This page" resetKey={location.pathname}>
             {/* PST-T-11.1: the server refuses every /api/admin call to a non-admin (403); the screen
@@ -608,7 +632,7 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
               <Outlet />
             )}
           </PaneBoundary>
-        </div>
+        </PlaceFrame>
         <PlacePalette enabled={place !== 'mail'} />
       </AppShell>
     </PaletteRoleContext.Provider>
