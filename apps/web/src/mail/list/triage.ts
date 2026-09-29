@@ -35,6 +35,18 @@ export function initials(fromName: string | null | undefined, from: string | nul
   return pair.toLocaleUpperCase();
 }
 
+/**
+ * PST-T-15.2: the name the row's Avatar is given — it draws the initials from it and hashes it for
+ * the tint (`tint="auto"`), so one sender is one colour everywhere. The display name when there is
+ * one, else the address's local part split into words ("ada.lovelace" → "ada lovelace", so the
+ * initials are "AL"), else "?".
+ */
+export function avatarName(fromName: string | null | undefined, from: string | null): string {
+  if (fromName !== null && fromName !== undefined && fromName.trim() !== '') return fromName.trim();
+  const local = ((from ?? '').split('@')[0] ?? '').split(/[._+-]+/).filter((w) => w !== '').join(' ');
+  return local === '' ? '?' : local;
+}
+
 /** User-perceived characters, so an accented or combined letter is never cut in half. */
 function graphemes(text: string): string[] {
   return Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text), (s) => s.segment);
