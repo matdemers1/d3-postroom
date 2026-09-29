@@ -72,3 +72,32 @@ export function snippetOf(text: string | null | undefined, max = 140): string | 
   if (joined === '') return null;
   return joined.length > max ? `${joined.slice(0, max - 1).trimEnd()}…` : joined;
 }
+
+/**
+ * The line under a conversation's subject (PST-T-15.3, the redesign canvas): "3 messages · Priya
+ * Shah, Jonah Reyes, you" — how many, then who wrote, in the order they first did, with the signed-in
+ * account as "you" and last. Names come from the list's own fields (fromName, else the address);
+ * `me` is compared by address, case-insensitively. A lone message has no line: its header says who.
+ */
+export function participantsLine(messages: readonly Pick<MessageSummary, 'from' | 'fromName'>[], me: string | null, max = 3): string | null {
+  if (messages.length < 2) return null;
+  const mine = me === null ? '' : me.toLowerCase();
+  const names: string[] = [];
+  const seen = new Set<string>();
+  let includesMe = false;
+  for (const m of messages) {
+    const address = (m.from ?? '').trim().toLowerCase();
+    const given = (m.fromName ?? '').trim();
+    const name = given === '' ? (m.from ?? '').trim() : given;
+    const key = address === '' ? name : address;
+    if (key === '' || seen.has(key)) continue;
+    seen.add(key);
+    if (mine !== '' && address === mine) includesMe = true;
+    else names.push(name);
+  }
+  const shown = names.slice(0, max);
+  const rest = names.length - shown.length;
+  const who = [...shown, ...(rest > 0 ? [`${String(rest)} more`] : []), ...(includesMe ? ['you'] : [])];
+  const count = `${String(messages.length)} messages`;
+  return who.length === 0 ? count : `${count} · ${who.join(', ')}`;
+}

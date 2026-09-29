@@ -154,6 +154,9 @@
 }
 
 /* --- The reading pane --------------------------------------------------------------------------- */
+/* The open message's layout — toolbar, subject block, thread, quick reply — is thread/thread.css
+   (PST-T-14.6, drawn to the redesign canvas in PST-T-15.3). What stays here is shared with the empty
+   and loading panes, the Inspect drawer and the delivery rows. */
 
 .pr-reader {
   flex: 1;
@@ -173,10 +176,13 @@
   justify-content: center;
 }
 
+/* The subject: the canvas's 24px title (--text-24 at --weight-title). */
 .pr-reader__subject {
   margin: 0;
-  font-size: var(--text-20);
+  font-size: var(--text-24);
+  line-height: var(--leading-24);
   font-weight: var(--weight-title);
+  letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
 
@@ -189,16 +195,14 @@
   outline: none;
 }
 
-.pr-reader__meta {
-  font-size: var(--text-13);
-  overflow-wrap: anywhere;
-}
-
+/* A text body reads at 16px with a 65ch measure (the canvas's .pr-prose). */
 .pr-reader__body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: var(--text-14);
-  max-width: var(--container-prose);
+  font-size: var(--text-16);
+  line-height: 1.6;
+  color: var(--color-fg);
+  max-width: var(--measure-body);
 }
 
 .pr-reader__note {
@@ -211,131 +215,6 @@
   margin: 0 0 var(--space-8);
   font-size: var(--text-14);
   font-weight: var(--weight-semibold);
-}
-
-.pr-attachments {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-}
-
-.pr-attachment {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-8);
-  padding: var(--space-8) var(--space-12);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
-  color: var(--color-fg);
-  text-decoration: none;
-  font-size: var(--text-13);
-}
-
-.pr-attachment:hover {
-  background: var(--color-surface-hover);
-}
-
-.pr-attachment:focus-visible {
-  outline: var(--focus-width) solid var(--color-focus);
-  outline-offset: var(--focus-offset);
-}
-
-.pr-attachment__size {
-  color: var(--color-fg-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* --- The thread (PST-T-3.15) --------------------------------------------------------------------- */
-
-.pr-thread {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.pr-thread__item {
-  border-top: var(--border-width) solid var(--color-border);
-  padding-top: var(--space-12);
-}
-
-.pr-thread__item:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.pr-thread__collapsed {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-12);
-  width: 100%;
-  padding: var(--space-8) 0;
-  background: transparent;
-  border: 0;
-  color: var(--color-fg);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.pr-thread__collapsed:hover {
-  background: var(--color-surface-hover);
-}
-
-.pr-thread__collapsed:focus-visible {
-  outline: var(--focus-width) solid var(--color-focus);
-  outline-offset: var(--focus-offset);
-}
-
-.pr-thread__collapsed-summary {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-14);
-}
-
-/* PST-T-11.4: a collapsed row reads as a closed message, not a divider — chevron, the sender's
-   name, and the first line of what they wrote, muted, under it. */
-.pr-thread__collapsed {
-  align-items: flex-start;
-  padding-inline: var(--space-4);
-  border-radius: var(--radius-md);
-}
-
-.pr-thread__chevron {
-  display: flex;
-  flex: none;
-  padding-top: var(--space-2);
-  color: var(--color-fg-faint);
-}
-
-.pr-thread__collapsed-main {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  gap: var(--space-2);
-}
-
-.pr-thread__snippet {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-13);
-  color: var(--color-fg-muted);
-}
-
-/* --- The reader's toolbar (PST-T-11.4): three groups on one row, wrapping as groups ------------- */
-
-.pr-reader__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  column-gap: var(--space-16);
-  row-gap: var(--space-8);
 }
 
 /* A failed snooze says so beside the control and the message stays open (PST-T-14.1). */
@@ -351,24 +230,6 @@
   font-size: var(--text-13);
   color: var(--color-danger);
   overflow-wrap: anywhere;
-}
-
-/* --- The phishing verdict above the warnings (PST-T-11.4) ----------------------------------------- */
-
-.pr-phish__verdict {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-8) var(--space-12);
-}
-
-.pr-phish__verdict-text {
-  margin: 0;
-  flex: 1 1 16rem;
-  font-size: var(--text-14);
-  font-weight: var(--weight-semibold);
-  color: var(--color-fg);
 }
 
 /* --- The Newsletters feed (PST-T-5.6; styled in PST-T-11.4) --------------------------------------- */
