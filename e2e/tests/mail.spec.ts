@@ -173,9 +173,12 @@ test.describe('at 1280 px', () => {
     const reply = page.getByRole('region', { name: 'Reply', exact: true });
     await expect(reply).toBeVisible();
     await expect(page).toHaveURL(/compose=reply$/);
-    await expect(reply.getByRole('textbox', { name: 'To' })).toHaveValue('Alice Example <alice@example.org>');
+    // PST-T-14.7: recipients are chips; the quote is folded behind "···" until asked for.
+    await expect(reply.getByRole('list', { name: 'To recipients' }).getByRole('listitem')).toHaveCount(1);
+    await expect(reply.getByRole('list', { name: 'To recipients' })).toContainText('Alice Example');
     await expect(reply.getByRole('textbox', { name: 'Subject' })).toHaveValue(`Re: Quarterly numbers ${t}`);
     await expect(reply).toHaveAttribute('data-in-reply-to', e.messageIdHeader);
+    await reply.getByRole('button', { name: 'Show quoted text' }).click();
     await expect(reply.getByRole('textbox', { name: 'Message' })).toHaveValue(/> Numbers attached\./);
     await reply.getByRole('button', { name: 'Discard' }).click();
     await expect(reply).toBeHidden();
@@ -183,19 +186,23 @@ test.describe('at 1280 px', () => {
     await page.keyboard.press('a');
     const all = page.getByRole('region', { name: 'Reply all' });
     await expect(all).toBeVisible();
-    await expect(all.getByRole('textbox', { name: 'To' })).toHaveValue('Alice Example <alice@example.org>');
-    await expect(all.getByRole('textbox', { name: /^Cc\b/ })).toHaveValue('Bob Example <bob@example.org>');
+    await expect(all.getByRole('list', { name: 'To recipients' })).toContainText('Alice Example');
+    // A reply-all's Cc has something in it, so its row starts open.
+    await expect(all.getByRole('combobox', { name: 'Cc' })).toBeVisible();
+    await expect(all.getByRole('list', { name: 'Cc recipients' })).toContainText('Bob Example');
+    await expect(all.getByRole('list', { name: 'Cc recipients' })).not.toContainText('operator@d3cloud.io');
     await all.getByRole('button', { name: 'Discard' }).click();
 
     await page.keyboard.press('c');
     const fresh = page.getByRole('region', { name: 'New message' });
     await expect(fresh).toBeVisible();
-    await expect(fresh.getByRole('textbox', { name: 'To' })).toHaveValue('');
-    await expect(fresh.getByRole('textbox', { name: 'To' })).toBeFocused();
+    await expect(fresh.getByRole('combobox', { name: 'To' })).toHaveValue('');
+    await expect(fresh.getByRole('list', { name: 'To recipients' })).toHaveCount(0);
+    await expect(fresh.getByRole('combobox', { name: 'To' })).toBeFocused();
     await expect(fresh.getByRole('textbox', { name: 'Subject' })).toHaveValue('');
     // Typing in the composer is typing, not shortcuts.
     await page.keyboard.type('jk');
-    await expect(fresh.getByRole('textbox', { name: 'To' })).toHaveValue('jk');
+    await expect(fresh.getByRole('combobox', { name: 'To' })).toHaveValue('jk');
   });
 
   test('? shows the shortcuts overlay, and ? again hides it', async ({ page }) => {
