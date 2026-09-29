@@ -57,7 +57,7 @@ function shortcutKeys(action: MailAction): string[] | undefined {
 const PLACE_GROUP: Readonly<Record<'mail' | 'settings' | 'admin', CommandGroup>> = { mail: 'Go to', settings: 'Settings', admin: 'Admin' };
 
 /** Builds the full command list for the current context, in COMMAND_GROUPS order. */
-export function buildCommands(ctx: CommandContext, isAdmin = true): Command[] {
+export function buildCommands(ctx: CommandContext, isAdmin = false): Command[] {
   const commands: Command[] = [];
   const perform = ctx.perform;
 
