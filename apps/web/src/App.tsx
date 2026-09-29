@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Alert, AuthLayout, Button, Spinner, ThemeProvider } from '@d3cloud/ui';
+import { Alert, AuthLayout, Button, Spinner, ThemeProvider, ToastRegion } from '@d3cloud/ui';
 import { api, redirectFor, serverUnreachable, type AuthState } from './api';
 import { REDIRECTS, ROUTES, type RouteId } from './routes';
 import { titleForPath } from './title';
@@ -154,9 +154,12 @@ function Gate() {
 export function App() {
   return (
     <ThemeProvider storageKey={THEME_KEY}>
-      <BrowserRouter>
-        <Gate />
-      </BrowserRouter>
+      {/* PST-T-14.5: one polite live region for every toast (the triage Undo). */}
+      <ToastRegion>
+        <BrowserRouter>
+          <Gate />
+        </BrowserRouter>
+      </ToastRegion>
     </ThemeProvider>
   );
 }

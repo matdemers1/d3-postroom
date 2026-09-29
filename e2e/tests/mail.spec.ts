@@ -138,8 +138,9 @@ test.describe('at 1280 px', () => {
 
     await page.keyboard.press('e');
     await expect(row(page, d.subject)).toHaveCount(0);
-    await expect(page.getByRole('status').filter({ hasText: 'Moved to Archive.' })).toBeVisible();
-    await expect(page).toHaveURL(new RegExp(`/mail/${d.mailboxId}$`));
+    // PST-T-14.5: an Undo toast, and the next message opens (or the list, when none is left).
+    await expect(page.getByRole('region', { name: 'Notifications' })).toContainText(`Moved to Archive · ${d.subject}`);
+    await expect(page).not.toHaveURL(new RegExp(`/${d.id}$`));
 
     const ids = await mailboxIds();
     await expect

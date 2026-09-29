@@ -1,0 +1,372 @@
+/* PST-T-14.5: the triage list — MessageRow, its action cluster, the "N new" pill, the selection
+   header and the Move/Snooze picker. Tokens only (d3-check-usage); motion from the system's
+   --motion-* recipes, and prefers-reduced-motion turns every one of them off. */
+
+.pr-tlist {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pr-tlist__box {
+  flex: 1;
+}
+
+/* --- MessageRow --------------------------------------------------------------------------------- */
+
+/* The slot: fixed height (ROW_HEIGHT in MessageRow.tsx), and the placeholder a leaving row's
+   content slides off. */
+.pr-mrow {
+  position: relative;
+  box-sizing: border-box;
+  height: 80px;
+  border-bottom: var(--border-width) solid var(--color-border);
+  cursor: pointer;
+  font-size: var(--text-14);
+  color: var(--color-fg-muted);
+  overflow: hidden;
+}
+
+.pr-mrow__inner {
+  display: grid;
+  grid-template-columns: var(--space-12) var(--space-32) minmax(0, 1fr);
+  column-gap: var(--space-8);
+  align-items: start;
+  box-sizing: border-box;
+  height: 100%;
+  padding: var(--space-12) var(--space-16) var(--space-12) var(--space-6);
+  transition: background-color var(--motion-hover);
+}
+
+.pr-mrow:hover .pr-mrow__inner {
+  background: var(--color-surface-hover);
+}
+
+/* The open message: a leading accent bar (a border — shadows are not part of the system). */
+.pr-mrow[aria-current='true'] .pr-mrow__inner,
+.pr-mrow--checked .pr-mrow__inner {
+  background: var(--color-accent-muted);
+}
+
+.pr-mrow[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--focus-width) * 2);
+  background: var(--color-accent);
+  z-index: 1;
+}
+
+/* The keyboard cursor shows only while the list has keyboard focus — no grey box on row 1 of a
+   list nobody is driving (audit VIS-05). */
+.pr-tlist__box:focus-visible .pr-mrow[aria-selected='true'] {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+.pr-mrow__dot {
+  width: var(--space-8);
+  height: var(--space-8);
+  margin-top: var(--space-12);
+  justify-self: center;
+  border-radius: var(--radius-full);
+}
+
+.pr-mrow--unread .pr-mrow__dot {
+  background: var(--color-accent);
+}
+
+.pr-mrow__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-32);
+  height: var(--space-32);
+  margin-top: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-muted);
+  color: var(--color-accent);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  transition: background-color var(--motion-hover);
+}
+
+.pr-mrow__avatar:hover {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.pr-mrow--checked .pr-mrow__avatar {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.pr-mrow__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pr-mrow__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-6);
+  min-width: 0;
+  height: var(--space-20);
+}
+
+.pr-mrow__name,
+.pr-mrow__addr,
+.pr-mrow__subject,
+.pr-mrow__snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-mrow__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--color-fg-muted);
+}
+
+.pr-mrow__addr {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--text-12);
+  color: var(--color-fg-faint);
+}
+
+.pr-mrow__tag {
+  flex: none;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-full);
+  background: var(--color-info-muted);
+  color: var(--color-info);
+  font-size: var(--text-11);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.pr-mrow__tag--warn {
+  background: var(--color-warning-muted);
+  color: var(--color-warning);
+}
+
+.pr-mrow__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex: none;
+  margin-left: auto;
+  font-size: var(--text-12);
+  color: var(--color-fg-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pr-mrow__glyph {
+  display: inline-flex;
+}
+
+.pr-mrow__glyph--star {
+  color: var(--color-accent);
+}
+
+.pr-mrow__subject {
+  height: var(--space-20);
+  color: var(--color-fg-muted);
+}
+
+.pr-mrow__snippet {
+  height: var(--space-20);
+  font-size: var(--text-13);
+  color: var(--color-fg-faint);
+}
+
+.pr-mrow__expires {
+  color: var(--color-danger);
+}
+
+.pr-mrow--unread .pr-mrow__name,
+.pr-mrow--unread .pr-mrow__subject,
+.pr-mrow--unread .pr-mrow__date {
+  color: var(--color-fg);
+  font-weight: var(--weight-semibold);
+}
+
+/* Leaving: the content fades and slides over its fixed slot; the list removes the slot in one
+   frame when this ends (MailView's EXIT_MS matches --motion-row-exit). */
+.pr-mrow--leaving {
+  background: var(--color-bg);
+  pointer-events: none;
+}
+
+.pr-mrow--leaving .pr-mrow__inner {
+  animation: pr-row-exit var(--motion-row-exit) forwards;
+}
+
+@keyframes pr-row-exit {
+  to {
+    opacity: 0;
+    transform: translateX(calc(var(--space-24) * -1));
+  }
+}
+
+/* --- The action cluster ----------------------------------------------------------------------------- */
+
+.pr-rowacts {
+  position: absolute;
+  right: var(--space-12);
+  z-index: 3;
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: var(--border-width) solid var(--color-border-float);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.pr-rowacts[data-visible='false'] {
+  visibility: hidden;
+}
+
+/* --- The "N new" pill ------------------------------------------------------------------------------ */
+
+.pr-tlist__pill {
+  position: absolute;
+  top: var(--space-8);
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+}
+
+.pr-newpill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--space-32);
+  padding: 0 var(--space-12);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font: inherit;
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  animation: pr-fade var(--motion-hover) backwards;
+}
+
+.pr-newpill:hover {
+  background: var(--color-accent-hover);
+}
+
+.pr-newpill:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+@keyframes pr-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* --- The selection header ---------------------------------------------------------------------------- */
+
+.pr-headswap {
+  position: relative;
+}
+
+.pr-headswap > .pr-seltool {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.pr-headswap[data-selecting='true'] > .pr-headswap__head {
+  visibility: hidden;
+}
+
+.pr-seltool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  background: var(--color-surface);
+  animation: pr-fade var(--motion-hover) backwards;
+}
+
+.pr-seltool__top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.pr-seltool__count {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+.pr-seltool__clear {
+  margin-left: auto;
+}
+
+.pr-seltool__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.pr-seltool__key {
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: var(--text-11);
+  color: var(--color-fg-faint);
+}
+
+/* --- The Move / Snooze picker ------------------------------------------------------------------------- */
+
+.pr-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-picker__item {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.pr-picker__icon {
+  display: inline-flex;
+}
+
+.pr-picker__hint {
+  margin-left: auto;
+  padding-left: var(--space-16);
+  font-size: var(--text-12);
+  color: var(--color-fg-faint);
+}
+
+/* Reduced motion is a mode, not a downgrade: nothing moves, and a leaving row just goes. */
+@media (prefers-reduced-motion: reduce) {
+  .pr-mrow__inner,
+  .pr-mrow__avatar {
+    transition: none;
+  }
+
+  .pr-mrow--leaving .pr-mrow__inner,
+  .pr-newpill,
+  .pr-seltool {
+    animation: none;
+  }
+}
