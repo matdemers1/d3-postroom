@@ -548,12 +548,8 @@ test.describe('signed in', () => {
   });
 
   test('HTML mail is fitted to the width: no clipping inside the frame, no sideways page scroll', async ({ page }) => {
-    // The frame itself fits (the web app's half, PST-T-14.8). What is INSIDE it is the usercontent
-    // origin's document (apps/api/src/usercontent/index.ts's BASE_STYLE), which a sealed frame lets
-    // no script of ours touch: a sender's fixed 600 px table still overflows until that stylesheet
-    // linearises tables at narrow widths. Marked expected-to-fail so it turns red the moment it
-    // passes — then delete this line.
-    test.fail(true, "the usercontent document has no narrow-width fit rules yet (PST-T-14.8's needsOutside)");
+    // PST-T-14.8: the frame spans the pane, and the usercontent document's narrow-frame rule
+    // (apps/api/src/usercontent/index.ts's NARROW_FIT_STYLE) fits the sender's 600 px layout inside it.
     const t = tag();
     // A sender's fixed 600 px newsletter layout: a table, a banner cell and a fixed-width block.
     const html =

@@ -12,7 +12,7 @@
 // the new value into the shared operator file, so every spec after this one keeps working.
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { ensureOperator, freshCode, loadOperator, openNav, openPlace, saveOperator, signInWithPassword, type Operator } from './support.js';
+import { ensureOperator, freshCode, isPhone, loadOperator, openNav, openPlace, saveOperator, signInWithPassword, type Operator } from './support.js';
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 });
 
@@ -75,6 +75,8 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
 
   await signInWithPassword(page, operator);
   await openPlace(page, 'Settings');
+  // On a phone Settings opens at its index screen (PST-T-14.8); Account is its first row.
+  if (isPhone(page)) await page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Account' }).click();
   await expect(page).toHaveURL(/\/settings\/account$/);
   await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
 

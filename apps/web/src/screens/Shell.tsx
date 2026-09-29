@@ -666,6 +666,9 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
       <PushFrame key={pushScreen} direction={direction} className={isMailView ? 'pr-push--mail' : undefined}>
         {isMailView ? null : <ContextBar back={contextParent(location.pathname, lastMailViewPath, lastMailName)} title={contextTitle(location.pathname)} />}
         {frame}
+        {/* With no drawer, a Settings or Admin screen keeps the account menu (theme, Sign out) at its
+            foot, so signing out never means leaving the page first. */}
+        {phoneIndex === null && (place === 'settings' || place === 'admin') ? <div className="pr-place-account">{accountMenu}</div> : null}
       </PushFrame>
     );
   }

@@ -253,6 +253,12 @@
   padding: var(--space-8) var(--space-16);
 }
 
+.pr-place-account {
+  margin-top: var(--space-24);
+  padding: var(--space-8) var(--space-16) var(--space-24);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
 /* --- The thread's bottom action bar ------------------------------------------------------------------ */
 
 .pr-abar {
