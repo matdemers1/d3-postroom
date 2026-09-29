@@ -67,7 +67,11 @@ export async function listMailboxes(db: Db, accountId: string): Promise<MailboxJ
     .sort((a, b) => rank(a.specialUse, a.name) - rank(b.specialUse, b.name) || a.name.localeCompare(b.name));
 }
 
-type MessageWithVerdict = Message & { verdict: Pick<MessageVerdict, 'bucket' | 'scores'> | null };
+type MessageWithVerdict = Message & {
+  verdict: Pick<MessageVerdict, 'bucket' | 'scores'> | null;
+  /** The search row's attachment flag, when the query included it (the list's paperclip, PST-T-14.5). */
+  search?: { hasAttachment: boolean } | null;
+};
 
 /** True when the classify stage marked this message with the new-sender badge (PST-REQ-106). */
 function newSenderOf(scores: MessageVerdict['scores'] | undefined): boolean {
@@ -128,6 +132,7 @@ export function summaryJson(m: MessageWithVerdict, trashDays: number | null = DE
     bucket: m.verdict?.bucket ?? null,
     ...trashClock(m, trashDays),
     newSender: newSenderOf(m.verdict?.scores),
+    hasAttachments: m.search?.hasAttachment === true,
   };
 }
 
@@ -257,7 +262,7 @@ export async function listMessages(
     },
     orderBy: { uid: 'desc' },
     take: opts.limit + 1,
-    include: { verdict: { select: { bucket: true, scores: true } } },
+    include: { verdict: { select: { bucket: true, scores: true } }, search: { select: { hasAttachment: true } } },
   });
   const page = rows.slice(0, opts.limit);
   const last = page[page.length - 1];
@@ -282,7 +287,7 @@ export async function mailboxSplit(db: Db, mailboxId: string): Promise<{ priorit
 }
 
 export async function findOwnMessage(db: Db | Tx, accountId: string, id: string): Promise<(Message & { verdict: MessageVerdict | null }) | null> {
-  return db.message.findFirst({ where: { id, mailbox: { accountId } }, include: { verdict: true } });
+  return db.message.findFirst({ where: { id, mailbox: { accountId } }, include: { verdict: true, search: { select: { hasAttachment: true } } } });
 }
 
 export async function findOwnThread(db: Db, accountId: string, id: string) {
@@ -290,7 +295,7 @@ export async function findOwnThread(db: Db, accountId: string, id: string) {
   if (thread === null) return null;
   const messages = await db.message.findMany({
     where: { threadId: id, mailbox: { accountId } },
-    include: { verdict: { select: { bucket: true, scores: true } } },
+    include: { verdict: { select: { bucket: true, scores: true } }, search: { select: { hasAttachment: true } } },
   });
   messages.sort((a, b) => (a.sentAt ?? a.internalDate).getTime() - (b.sentAt ?? b.internalDate).getTime() || a.id.localeCompare(b.id));
   return { thread, messages };

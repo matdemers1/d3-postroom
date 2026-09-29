@@ -57,7 +57,7 @@ describe.skipIf(!baseUrl)('list summaries: fromName and snippet (PST-T-14.2)', (
   };
 
   /** Files a message into `mailboxId` and indexes it with its display name, as the file stage does. */
-  const file = async (me: Person, fields: { subject: string; from: string; fromName: string | null; body: string; threadId?: string }) => {
+  const file = async (me: Person, fields: { subject: string; from: string; fromName: string | null; body: string; threadId?: string; attachmentNames?: string[] }) => {
     const raw = Buffer.from(`From: ${fields.from}\r\nSubject: ${fields.subject}\r\n\r\n${fields.body}\r\n`);
     const put = await blobs.put(raw);
     return db.$transaction(async (tx) => {
@@ -80,7 +80,7 @@ describe.skipIf(!baseUrl)('list summaries: fromName and snippet (PST-T-14.2)', (
         },
       });
       await tx.mailbox.update({ where: { id: me.inbox }, data: { uidnext: mb.uidnext + 1, highestModseq: modseq } });
-      await indexMessage(tx, { messageId: created.id, accountId: me.id, subject: fields.subject, from: fields.from, bodyText: fields.body, fromName: fields.fromName });
+      await indexMessage(tx, { messageId: created.id, accountId: me.id, subject: fields.subject, from: fields.from, bodyText: fields.body, fromName: fields.fromName, ...(fields.attachmentNames === undefined ? {} : { attachmentNames: fields.attachmentNames }) });
       return created;
     });
   };
@@ -130,6 +130,16 @@ describe.skipIf(!baseUrl)('list summaries: fromName and snippet (PST-T-14.2)', (
 
     const search = SearchResponse.parse((await request(app).get('/api/search?q=platypus').set('cookie', me.cookie)).body);
     expect(search.messages.map((m) => [m.id, m.fromName, m.snippet])).toEqual([[bare.id, null, long]]);
+  });
+
+  it('list summaries say whether a message has an attachment (the paperclip, PST-T-14.5)', async () => {
+    const me = await person();
+    const withFile = await file(me, { subject: 'Blackwoods B-22', from: 'priya@example.com', fromName: 'Priya Shah', body: 'Confirmation attached.', attachmentNames: ['Blackwoods-B22-confirmation.pdf'] });
+    const plain = await file(me, { subject: 'No files', from: 'jonah@example.com', fromName: 'Jonah Reyes', body: 'Just text.' });
+    const page = MessageList.parse((await request(app).get(`/api/mailboxes/${me.inbox}/messages`).set('cookie', me.cookie)).body);
+    const byId = new Map(page.messages.map((m) => [m.id, m]));
+    expect(byId.get(withFile.id)?.hasAttachments).toBe(true);
+    expect(byId.get(plain.id)?.hasAttachments).toBe(false);
   });
 
   it('a message not yet summarised lists with a null snippet; a move keeps the summary', async () => {

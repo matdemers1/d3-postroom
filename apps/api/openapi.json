@@ -2027,6 +2027,9 @@
           "newSender": {
             "type": "boolean"
           },
+          "hasAttachments": {
+            "type": "boolean"
+          },
           "messageIdHeader": {
             "type": [
               "string",
@@ -2147,6 +2150,7 @@
           "trashedAt",
           "expiresAt",
           "newSender",
+          "hasAttachments",
           "messageIdHeader",
           "inReplyTo",
           "references",
@@ -3627,6 +3631,9 @@
           },
           "newSender": {
             "type": "boolean"
+          },
+          "hasAttachments": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -3646,7 +3653,8 @@
           "bucket",
           "trashedAt",
           "expiresAt",
-          "newSender"
+          "newSender",
+          "hasAttachments"
         ],
         "additionalProperties": false
       },
