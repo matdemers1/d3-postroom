@@ -23,6 +23,7 @@ import {
 } from '@d3cloud/ui';
 import { ApiError, compileErrorOf, describeError, sieveApi, type SieveCompileError, type SieveScriptSummary } from '../api';
 import { Loading, LoadFailed } from './states';
+import { SortingCorrections } from '../mail/sorting/SortingCorrections';
 
 // ─── The builder's model, and its Sieve (PST-REQ-150) ────────────────────────────────────────────
 //
@@ -467,6 +468,8 @@ export function Rules() {
         <Loading label="Loading your rules" />
       ) : (
         <Stack gap="24">
+          {/* PST-T-14.9: the corrections made from a bucket chip, each with Undo. */}
+          <SortingCorrections />
           <Section
             title={`Editing “${name}”`}
             description={current?.active === true ? 'This script runs on every new message.' : 'This script is not running. Save and turn it on to use it.'}

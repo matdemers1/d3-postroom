@@ -7,6 +7,7 @@
 // an encrypted blob, then pg_notify so /api/events sees it.
 import { randomUUID } from 'node:crypto';
 import { audited, getAuditContext } from '@postroom/audit';
+import { BUCKET_FOLDERS, FILING_BUCKETS } from '@postroom/classifier';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import type { Prisma } from '@postroom/db';
 import { displayNameOf } from '@postroom/mime';
@@ -34,7 +35,8 @@ export const FAKE_DELIVERY_REPLY = 'Ok: queued';
 const Header = z.string().max(998).regex(/^[^\r\n]*$/, 'no line breaks in a header');
 
 const SeedMessage = z.object({
-  mailbox: z.enum(['inbox', 'archive', 'trash', 'sent', 'drafts', 'junk']).default('inbox'),
+  /** PST-T-14.9: the bucket folders too, for the sorting-correction specs. */
+  mailbox: z.enum(['inbox', 'archive', 'trash', 'sent', 'drafts', 'junk', 'newsletters', 'updates', 'receipts', 'notifications']).default('inbox'),
   from: Header.default('Sender <sender@example.org>'),
   to: Header.optional(),
   cc: Header.optional(),
@@ -50,6 +52,10 @@ const SeedMessage = z.object({
    * empty object `{}` is a "no verdict yet" fixture with an authenticated-looking absence of
    * signal); its absence leaves the message without one, as real Sent/Drafts copies have none. */
   authVerdicts: z.record(z.string(), z.unknown()).optional(),
+  /** PST-T-14.9: the stored sorting decision (bucket + reasons) the verdict carries, as the worker's
+   *  classify stage would have written it. Only with authVerdicts (which creates the verdict row). */
+  bucket: z.enum(FILING_BUCKETS).optional(),
+  reasons: z.array(z.string().max(500)).max(20).optional(),
 });
 const SeedBody = z.object({ messages: z.array(SeedMessage).min(1).max(50) });
 
@@ -122,7 +128,11 @@ export function adminDevRoutes(deps: ApiDeps): Router {
 
       const filed: { id: string; mailboxId: string; uid: number; subject: string; messageIdHeader: string }[] = [];
       for (const seed of parsed.data.messages) {
-        const mailbox = mailboxes.find((m) => m.specialUse === seed.mailbox) ?? (seed.mailbox === 'inbox' ? mailboxes.find((m) => m.name === 'INBOX') : undefined);
+        const folder = seed.mailbox === 'newsletters' || seed.mailbox === 'updates' || seed.mailbox === 'receipts' || seed.mailbox === 'notifications' ? BUCKET_FOLDERS[seed.mailbox] : null;
+        const mailbox =
+          folder !== null
+            ? mailboxes.find((m) => m.specialUse === null && m.name === folder)
+            : (mailboxes.find((m) => m.specialUse === seed.mailbox) ?? (seed.mailbox === 'inbox' ? mailboxes.find((m) => m.name === 'INBOX') : undefined));
         if (mailbox === undefined) {
           res.status(409).json({ error: 'no_such_mailbox', message: `this account has no ${seed.mailbox} mailbox` });
           return;
@@ -161,7 +171,7 @@ export function adminDevRoutes(deps: ApiDeps): Router {
             await tx.mailbox.update({ where: { id: mailbox.id }, data: { uidnext: mb.uidnext + 1, highestModseq: modseq } });
             if (seed.authVerdicts !== undefined) {
               const auth = JSON.parse(JSON.stringify(seed.authVerdicts)) as Prisma.InputJsonValue;
-              await tx.messageVerdict.create({ data: { messageId: created.id, auth, bucket: 'people', reasons: ['e2e seed'] } });
+              await tx.messageVerdict.create({ data: { messageId: created.id, auth, bucket: seed.bucket ?? 'people', reasons: seed.reasons ?? ['e2e seed'] } });
             }
             await tx.$executeRaw`SELECT pg_notify(${MAILBOX_CHANNEL}, ${mailbox.id})`;
             const after = { mailboxId: mailbox.id, uid: created.uid, subject: seed.subject };

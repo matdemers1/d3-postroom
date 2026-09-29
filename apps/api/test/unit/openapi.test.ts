@@ -86,6 +86,9 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'POST /api/sieve/scripts/{name}/activate',
         'POST /api/sieve/deactivate',
         'POST /api/sieve/check',
+        'GET /api/sorting/corrections',
+        'POST /api/sorting/corrections',
+        'POST /api/sorting/corrections/{id}/undo',
         // PST-T-8.5: calendar and contacts.
         'GET /api/calendar/calendars',
         'GET /api/calendar/events',

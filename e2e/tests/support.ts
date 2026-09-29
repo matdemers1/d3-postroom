@@ -131,11 +131,14 @@ export interface SeedMessage {
   text?: string | null;
   html?: string;
   attachment?: { filename: string; contentType?: string; content: string };
-  mailbox?: 'inbox' | 'archive' | 'trash' | 'sent' | 'drafts' | 'junk';
+  mailbox?: 'inbox' | 'archive' | 'trash' | 'sent' | 'drafts' | 'junk' | 'newsletters' | 'updates' | 'receipts' | 'notifications';
   flags?: ('\\Seen' | '\\Flagged' | '\\Answered')[];
   /** Creates this message's MessageVerdict.auth (PST-T-6.5, PST-REQ-120): spf/dkim/dmarc/arc, the
    * same shape smtp-in stores. Its presence is what makes GET /api/messages/:id compute `phish`. */
   authVerdicts?: Record<string, unknown>;
+  /** PST-T-14.9: the stored sorting decision, with authVerdicts. */
+  bucket?: 'priority' | 'people' | 'newsletters' | 'updates' | 'receipts' | 'notifications' | 'junk';
+  reasons?: string[];
 }
 
 export interface SeededMessage {

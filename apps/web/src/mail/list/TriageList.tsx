@@ -46,13 +46,16 @@ export interface TriageListProps {
   onRowAction: (action: RowAction, message: MessageSummary, index: number) => void;
   onShowNew: () => void;
   onNearEnd: () => void;
+  /** PST-T-14.9: a row's bucket chip label (null: no chip), and what a click on it does. */
+  chipFor?: (message: MessageSummary) => string | null;
+  onChip?: (message: MessageSummary, chip: HTMLElement) => void;
 }
 
 /** Where the action cluster sits inside a row (px from the row's top). */
 const ACTIONS_INSET = 6;
 
 export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function TriageList(
-  { messages, cursor, openId, label, selected, leaving, warnedId, pendingCount, canArchive, canTrash, canSnooze, onOpen, onToggleSelect, onRowAction, onShowNew, onNearEnd },
+  { messages, cursor, openId, label, selected, leaving, warnedId, pendingCount, canArchive, canTrash, canSnooze, onOpen, onToggleSelect, onRowAction, onShowNew, onNearEnd, chipFor, onChip },
   ref,
 ) {
   const box = useRef<HTMLDivElement>(null);
@@ -135,6 +138,11 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
     const m = messages[index];
     if (m === undefined) return;
     const selecting = selected.size > 0;
+    const chip = target?.closest<HTMLElement>('[data-chip]') ?? null;
+    if (chip !== null && !selecting && onChip !== undefined) {
+      onChip(m, chip);
+      return;
+    }
     if (target?.closest('[data-select]') !== null || (selecting && (e.metaKey || e.ctrlKey || e.shiftKey))) onToggleSelect(m, index);
     else onOpen(m, index);
   };
@@ -229,6 +237,7 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
               leaving={leaving.has(m.id)}
               warned={m.id === warnedId}
               now={now}
+              chip={chipFor === undefined ? null : chipFor(m)}
             />
           );
         })}

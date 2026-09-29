@@ -48,3 +48,6 @@ export {
   type FilingDecision,
   type PinInput,
 } from './bucket-for.js';
+
+// PST-T-14.9: sender preferences recorded by a sorting correction — on the address, or "@domain".
+export { domainPreferenceKey, isDomainPreference, prefersDomain } from './preference.js';

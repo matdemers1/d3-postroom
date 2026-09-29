@@ -54,6 +54,12 @@ import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { emptyMailboxCopy, inSegment, isInboxSegment, segmentItems, segmentKeyword, type InboxSegment } from './split';
 import { SPLIT_QUERY, useMediaQuery } from './useMedia';
 import { SessionEnded } from '../screens/states';
+// PST-T-14.9: sorting you can see and correct where you read.
+import { sortingApi } from './sorting/api';
+import { SortingContext, type SortingActions } from './sorting/SortingContext';
+import { BUCKET_LABEL, chipShows, correctedMessage, isFilingBucket, listKeeps, loadSegment, mailboxBucket, saveSegment, type ChipContext, type FilingBucket } from './sorting/sorting';
+import { WhyPopover } from './sorting/WhyPopover';
+import './sorting/sorting.css';
 
 const PAGE = 50;
 /** --motion-row-exit's duration: a leaving row's slot is dropped when its content has faded out. */
@@ -129,7 +135,15 @@ function MailPanes({ route }: { route: MailRoute }) {
   const reducedMotion = useMediaQuery(REDUCED_MOTION);
   // PST-T-11.4: the Inbox's Priority / People split. Held here, not in the URL, so opening a message
   // (a new URL under the same layout route) keeps the segment; Everything is the default.
-  const [segment, setSegment] = useState<InboxSegment>('all');
+  // PST-T-14.9: still Everything by default (the reply graph is young), but each browser remembers
+  // the last segment it used (localStorage, and quietly nothing when storage is unavailable).
+  const [segment, setSegmentState] = useState<InboxSegment>(loadSegment);
+  const setSegment = (next: InboxSegment) => {
+    setSegmentState(next);
+    saveSegment(next);
+  };
+  // PST-T-14.9: the row chip's "Why it's here" popover, for the message whose chip was clicked.
+  const [why, setWhy] = useState<{ message: MessageSummary; anchor: DOMRect } | null>(null);
   const [inboxSplit, setInboxSplit] = useState<MailboxSplit | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -570,6 +584,72 @@ function MailPanes({ route }: { route: MailRoute }) {
     return inbox !== undefined && messages.length > 0 && messages.every((m) => m.mailboxId === inbox.id && m.threadId !== null);
   };
 
+  // --- Sorting corrections (PST-T-14.9, PST-ADR-011) --------------------------------------------------
+  /** Where the list is, for the bucket chip: search, the Inbox (and its segment), or another mailbox. */
+  const chipContext: ChipContext =
+    searchQuery !== null ? { kind: 'search' } : isInbox ? { kind: 'inbox', segment: activeSegment } : { kind: 'mailbox', bucket: mailboxBucket(mailbox) };
+  const chipRef = useRef(chipContext);
+  chipRef.current = chipContext;
+
+  /**
+   * A correction: the move plus a recorded sender preference, made by the server in one audited step.
+   * A message that no longer belongs in this list leaves it (and the next one opens, as with any
+   * triage); one that stays is replaced by what the server sent back. The Toast offers Undo (z),
+   * which reverses both halves.
+   */
+  const correct = (m: MessageSummary, bucket: FilingBucket, scope: 'sender' | 'domain', source: 'chip' | 'card') => {
+    const stays = listKeeps(bucket, chipRef.current);
+    const wasOpen = latest.current.route.messageId === m.id;
+    const inList = latest.current.list.messages.some((x) => x.id === m.id);
+    if (!stays && inList) {
+      advancePast(new Set([m.id]));
+      exitRows([m.id]);
+    }
+    enqueue(async () => {
+      let result;
+      try {
+        result = await sortingApi.correct({ messageId: m.id, bucket, scope, source });
+      } catch (error) {
+        recover(error);
+        return;
+      }
+      const moved = result.message;
+      modseqs.current.set(moved.id, moved.modseq);
+      if (stays && inList) {
+        if (moved.id === m.id) dispatch({ type: 'patch', message: moved });
+        else {
+          dispatch({ type: 'remove', id: m.id });
+          dispatch({ type: 'upsert', message: moved });
+        }
+      }
+      if (wasOpen && (stays || !inList)) {
+        if (moved.id !== m.id) void navigate(mailPath(latest.current.route.mailboxId ?? moved.mailboxId, moved.id), { replace: true });
+        else setOpenReload((n) => n + 1);
+      } else if (!wasOpen && m.threadId !== null && m.threadId === latest.current.open?.detail?.threadId) {
+        // A member of the open conversation: the thread shows it in its new bucket.
+        setReplyEpoch((n) => n + 1);
+      }
+      void refreshMailboxes();
+      offerUndo(correctedMessage(bucket, result.correction.moved), () => {
+        enqueue(async () => {
+          try {
+            const undone = await sortingApi.undo(result.correction.id);
+            if (undone.message !== null) modseqs.current.set(undone.message.id, undone.message.modseq);
+            toast.show({ message: undone.movedBack ? `Correction undone · back in ${BUCKET_LABEL[isFilingBucket(m.bucket) ? m.bucket : bucket]}` : 'Correction undone.' });
+            if (wasOpen && undone.message !== null) void navigate(mailPath(latest.current.route.mailboxId ?? undone.message.mailboxId, undone.message.id), { replace: true });
+            reloadList(true);
+            setOpenReload((n) => n + 1);
+            setReplyEpoch((n) => n + 1);
+            void refreshMailboxes();
+          } catch (error) {
+            recover(error);
+          }
+        });
+      });
+    });
+  };
+  const sorting: SortingActions = { list: chipContext, openId: route.messageId, openBucket: open?.detail?.bucket ?? null, correct };
+
   // A selected row that left the list (another client moved it) is no longer selected.
   useEffect(() => {
     setSelected((s) => pruneSelected(s, list.messages));
@@ -956,6 +1036,10 @@ function MailPanes({ route }: { route: MailRoute }) {
           }}
           onShowNew={showNew}
           onNearEnd={loadMore}
+          chipFor={(m) => (chipShows(m.bucket, chipContext) && isFilingBucket(m.bucket) ? BUCKET_LABEL[m.bucket] : null)}
+          onChip={(m, el) => {
+            setWhy({ message: m, anchor: el.getBoundingClientRect() });
+          }}
         />
       </ListBody>
     </section>
@@ -1111,7 +1195,21 @@ function MailPanes({ route }: { route: MailRoute }) {
   return (
     <div className="pr-mail" data-layout={split ? 'split' : 'push'} data-view={view ?? 'split'} ref={rootRef}>
       <h1 className="pr-vh">Mail</h1>
-      {content}
+      <SortingContext.Provider value={sorting}>{content}</SortingContext.Provider>
+      {why === null ? null : (
+        <WhyPopover
+          message={why.message}
+          anchor={why.anchor}
+          returnFocus={null}
+          onClose={() => {
+            setWhy(null);
+            listRef.current?.focus();
+          }}
+          onCorrect={(bucket, scope) => {
+            correct(why.message, bucket, scope, 'chip');
+          }}
+        />
+      )}
       <ShortcutsOverlay open={overlay} onOpenChange={setOverlay} />
       <CommandPalette
         open={paletteOpen}

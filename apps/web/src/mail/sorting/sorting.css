@@ -1,0 +1,394 @@
+/* PST-T-14.9: the bucket chip, "Why it's here", the Person card and the sheet they become on a phone.
+   Tokens only: floating layers are surface-raised + border-float with no shadow; motion is
+   --motion-popover-enter / --motion-drawer / --motion-hover, and prefers-reduced-motion leaves an
+   opacity fade (the library zeroes durations globally as well). */
+
+/* --- The chip ------------------------------------------------------------------------------------- */
+
+.pr-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: var(--space-20);
+  padding: 0 var(--space-8);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-fg-muted);
+  font: inherit;
+  font-size: var(--text-11);
+  line-height: var(--leading-11);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--motion-hover), color var(--motion-hover);
+}
+
+.pr-chip[data-bucket='priority'] {
+  border-color: var(--color-accent-muted);
+  background: var(--color-accent-muted);
+  color: var(--color-accent);
+}
+
+.pr-chip:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.pr-chip:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+.pr-chip--static {
+  cursor: default;
+}
+
+.pr-chip--static:hover {
+  border-color: var(--color-border);
+  color: var(--color-fg-muted);
+}
+
+.pr-mrow__chip {
+  margin-right: var(--space-6);
+  vertical-align: 1px;
+}
+
+/* --- The sender's name, as the Person card's button ----------------------------------------------- */
+
+.pr-mhead__person {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  text-align: start;
+  text-decoration: underline dotted var(--color-fg-faint);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.pr-mhead__person:hover {
+  color: var(--color-accent);
+}
+
+.pr-mhead__person:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+  border-radius: var(--radius-xs);
+}
+
+/* --- The floating layer ------------------------------------------------------------------------- */
+
+@keyframes pr-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--space-6))) scale(0.97);
+  }
+}
+
+@keyframes pr-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes pr-float-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.pr-float {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+  border: var(--border-width) solid var(--color-border-float);
+  background: var(--color-surface-raised);
+  color: var(--color-fg);
+  font-size: var(--text-13);
+  line-height: var(--leading-20);
+}
+
+.pr-float:focus {
+  outline: none;
+}
+
+.pr-float--popover {
+  position: fixed;
+  z-index: 60;
+  width: min(340px, calc(100vw - var(--space-16)));
+  max-height: calc(100vh - var(--space-16));
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  animation: pr-float-in var(--motion-popover-enter) backwards;
+}
+
+.pr-float__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  background: var(--scrim);
+  animation: pr-float-fade var(--motion-drawer) backwards;
+}
+
+.pr-float--sheet {
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding-bottom: calc(var(--space-24) + env(safe-area-inset-bottom));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  animation: pr-sheet-in var(--motion-drawer) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pr-float--popover,
+  .pr-float--sheet {
+    animation: pr-float-fade var(--motion-popover-enter) backwards;
+  }
+}
+
+/* --- Why it's here ---------------------------------------------------------------------------------- */
+
+.pr-why__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-why__sentence {
+  margin: 0;
+  font-size: var(--text-14);
+  line-height: var(--leading-20);
+}
+
+.pr-why__actions {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--space-8));
+}
+
+.pr-why__action {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: var(--space-6) var(--space-8);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-fg);
+  font: inherit;
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+  text-align: start;
+  cursor: pointer;
+  transition: background-color var(--motion-hover);
+}
+
+.pr-why__action:hover,
+.pr-why__action:focus-visible {
+  background: var(--color-surface-hover);
+}
+
+.pr-why__action:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: calc(-1 * var(--focus-width));
+}
+
+.pr-why__action--quiet {
+  color: var(--color-fg-muted);
+}
+
+.pr-why__action--sub {
+  padding-left: var(--space-20);
+}
+
+.pr-why__foot {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+}
+
+/* --- The Person card ---------------------------------------------------------------------------------- */
+
+.pr-person__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.pr-person__who {
+  min-width: 0;
+}
+
+.pr-person__name,
+.pr-person__addr {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-person__name {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-person__addr,
+.pr-person__muted,
+.pr-person__help {
+  color: var(--color-fg-muted);
+}
+
+.pr-person__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.pr-person__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.pr-person__label {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-11);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pr-person__select {
+  min-height: 36px;
+  padding: 0 var(--space-8);
+  border: var(--border-width) solid var(--color-border-field);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  font: inherit;
+}
+
+.pr-person__select:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+.pr-person__help {
+  margin: 0;
+  font-size: var(--text-12);
+}
+
+.pr-person__recent {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-person__msg {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: var(--space-4) 0;
+  color: var(--color-fg);
+  text-decoration: none;
+}
+
+.pr-person__msg:hover .pr-person__subject {
+  text-decoration: underline;
+}
+
+.pr-person__msg time {
+  flex: none;
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+}
+
+.pr-person__subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-person__status {
+  margin: 0;
+  font-size: var(--text-12);
+  color: var(--color-fg-muted);
+}
+
+.pr-person__status:empty {
+  display: none;
+}
+
+.pr-person__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding-top: var(--space-8);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.pr-person__link {
+  color: var(--color-accent);
+  font-weight: var(--weight-medium);
+}
+
+/* --- Settings → Rules → Sorting corrections ------------------------------------------------------------ */
+
+.pr-corrections__what {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.pr-corrections__subject {
+  font-weight: var(--weight-medium);
+}
+
+.pr-corrections__move {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+}
+
+/* --- Phone: every control a real 44×44 hit area (PST-T-11.2's rule; e2e/tests/mobile.spec.ts) ------- */
+
+@media (max-width: 599px) {
+  .pr-mhead__person,
+  .pr-mhead .pr-chip,
+  .pr-why__action,
+  .pr-person__select,
+  .pr-person__link,
+  .pr-person__msg {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .pr-mhead__person,
+  .pr-person__link,
+  .pr-person__msg {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .pr-person__msg {
+    display: flex;
+  }
+}

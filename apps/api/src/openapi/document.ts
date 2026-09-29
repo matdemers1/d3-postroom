@@ -16,6 +16,7 @@ import { COMPOSE_COMPONENTS, COMPOSE_ROUTES } from '../compose/openapi.js';
 import { MOBILECONFIG_ROUTES } from '../mobileconfig/openapi.js';
 import { INSPECT_COMPONENTS, INSPECT_ROUTES } from '../mail/inspect.js';
 import { SIEVE_COMPONENTS, SIEVE_ROUTES } from '../sieve/openapi.js';
+import { SORTING_COMPONENTS, SORTING_ROUTES } from '../sorting/openapi.js';
 import { CALENDAR_COMPONENTS, CALENDAR_ROUTES } from '../calendar/openapi.js';
 import { CONTACTS_COMPONENTS, CONTACTS_ROUTES } from '../contacts/openapi.js';
 import { TEMPLATES_COMPONENTS, TEMPLATES_ROUTES } from '../templates/openapi.js';
@@ -78,6 +79,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   UnsubscribeResult: SP.UnsubscribeResult,
   ...COMPOSE_COMPONENTS,
   ...SIEVE_COMPONENTS,
+  ...SORTING_COMPONENTS,
   ...CALENDAR_COMPONENTS,
   ...CONTACTS_COMPONENTS,
   ...TEMPLATES_COMPONENTS,
@@ -363,6 +365,7 @@ export const ROUTES: RouteSpec[] = [
   ...MOBILECONFIG_ROUTES,
   ...INSPECT_ROUTES,
   ...SIEVE_ROUTES,
+  ...SORTING_ROUTES,
   ...CALENDAR_ROUTES,
   ...CONTACTS_ROUTES,
   ...TEMPLATES_ROUTES,
