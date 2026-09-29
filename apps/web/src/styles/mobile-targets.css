@@ -16,7 +16,7 @@
  * centre and 20px out each way): each probe lands on the control itself, and never on another one.
  * No raw hex, no shadows, no invented tokens: only sizes, `inset`, `position` and spacing tokens.
  */
-@media (max-width: 599px) {
+@media (max-width: 767px) {
   /* Every @d3cloud/ui Button size is under 44px tall (sm 28, md 34, lg 40). Grown for real: a row
    * of small buttons wraps onto more lines instead of sharing one tap area. */
   .d3-btn--sm,
@@ -161,6 +161,10 @@
   }
   .d3-inp:not(.d3-sel) {
     align-items: stretch;
+  }
+  /* PST-T-14.8: a stretched field keeps its glyph (the search field's magnifier) centred. */
+  .d3-inp:not(.d3-sel) > .d3-inp__affix {
+    align-self: center;
   }
   .d3-inp__control {
     padding-block: var(--space-12);

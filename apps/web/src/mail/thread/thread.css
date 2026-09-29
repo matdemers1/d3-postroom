@@ -507,7 +507,7 @@
 }
 
 /* At phone width every control owns a 44px target (mobile-targets.css, e2e/tests/mobile.spec.ts). */
-@media (max-width: 599px) {
+@media (max-width: 767px) {
   .pr-mhead__to,
   .pr-mhead__date {
     display: inline-flex;

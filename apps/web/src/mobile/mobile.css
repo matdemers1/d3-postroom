@@ -1,0 +1,380 @@
+/* PST-T-14.8 (PST-REQ-155, PST-REQ-192, PST-REQ-193, PST-ADR-011): the phone (≤767 px) as one push
+ * stack. System tokens only (d3-check-usage): no raw colours, no shadows — the bars are a tone step
+ * and a hairline. Motion is --motion-drawer (280 ms, --ease-out); under reduced motion, none. */
+
+/* --- No drawer on a phone ------------------------------------------------------------------------ */
+
+@media (max-width: 767px) {
+  /* The shell's top bar holds only the hamburger and the brand; the push stack replaces both (the
+   * Mailboxes root is the way to every place). One navigation model, not two (IA-14, RSP-04). */
+  .d3-shell__bar {
+    display: none;
+  }
+
+  /* A screen sliding in from +100% must never widen the page. `clip`, not `hidden`: it makes no
+   * scroll container, so the context bars stay sticky to the viewport. */
+  .pr-place {
+    overflow-x: clip;
+  }
+}
+
+/* --- The push levels ------------------------------------------------------------------------------ */
+
+/* Entrances animate FROM the offset with backwards fill, never forwards (a retained transform would
+ * make every position:fixed overlay inside it relative to the frame). The push: the incoming screen
+ * from the right edge. The pop: the parent returns from where a push leaves it — a third to the left,
+ * dimmed — the exact reverse of the move that hid it. */
+@keyframes pr-push-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pr-pop-in {
+  from {
+    opacity: 0.55;
+    transform: translateX(-30%);
+  }
+}
+
+.pr-push[data-push='forward'] {
+  animation: pr-push-in var(--motion-drawer) backwards;
+}
+
+.pr-push[data-push='back'] {
+  animation: pr-pop-in var(--motion-drawer) backwards;
+}
+
+/* A level inside the mail view fills it: the screen, then (in a thread) the bottom action bar. */
+.pr-push--level {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pr-push--level > section,
+.pr-push--level > article {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* --- The context bar ------------------------------------------------------------------------------ */
+
+.pr-cbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  /* The sides share what the title leaves, and never fall under 120 px: room for "‹ Mailboxes" and
+   two 44 px icons. */
+  grid-template-columns: minmax(120px, 1fr) minmax(0, auto) minmax(120px, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 52px;
+  padding: var(--space-4) var(--space-4);
+  background: var(--color-surface);
+  border-bottom: var(--border-width) solid var(--color-border);
+  flex: none;
+}
+
+.pr-cbar__lead {
+  display: flex;
+  min-width: 0;
+}
+
+.pr-cbar__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 44px;
+  min-height: 44px;
+  max-width: 100%;
+  padding-inline: var(--space-4) var(--space-8);
+  border-radius: var(--radius-md);
+  color: var(--color-accent);
+  font-size: var(--text-16);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  transition: background-color var(--motion-hover);
+}
+
+.pr-cbar__back:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-cbar__back:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+.pr-cbar__back > svg {
+  flex: none;
+}
+
+.pr-cbar__back-label,
+.pr-cbar__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-cbar__title {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+.pr-cbar__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* --- Push rows: the Mailboxes root and the Settings / Admin indexes -------------------------------- */
+
+.pr-pindex {
+  padding-bottom: var(--space-24);
+}
+
+.pr-prows {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-4) var(--space-8);
+}
+
+.pr-prows__heading {
+  margin: var(--space-12) 0 0;
+  padding: 0 var(--space-20);
+  color: var(--color-fg-faint);
+  font-size: var(--text-11);
+  line-height: var(--leading-11);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pr-prow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: 48px;
+  padding: 0 var(--space-12);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+  font-size: var(--text-16);
+  text-decoration: none;
+  transition: background-color var(--motion-hover);
+}
+
+.pr-prow:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-prow:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+.pr-prow__icon {
+  display: inline-flex;
+  color: var(--color-fg-muted);
+}
+
+.pr-prow__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-prow__count {
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-prow__chevron {
+  display: inline-flex;
+  color: var(--color-fg-faint);
+}
+
+.pr-mailboxes__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-24);
+}
+
+.pr-mailboxes__state {
+  padding: var(--space-16);
+}
+
+/* Calendar and Contacts: two tiles under the mailboxes, not a second menu. */
+.pr-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-16) var(--space-8);
+}
+
+.pr-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-fg);
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  transition: background-color var(--motion-hover);
+}
+
+.pr-tile:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-tile:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+.pr-mailboxes__account,
+.pr-pindex__account {
+  padding: var(--space-8) var(--space-16);
+}
+
+/* --- The thread's bottom action bar ------------------------------------------------------------------ */
+
+.pr-abar {
+  flex: none;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  background: var(--color-surface-raised);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.pr-abar__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 44px;
+  min-height: 52px;
+  margin: 0;
+  padding: var(--space-4) 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-fg);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color var(--motion-hover), color var(--motion-hover);
+}
+
+.pr-abar__btn:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-abar__btn:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+.pr-abar__btn:disabled {
+  color: var(--color-fg-faint);
+  cursor: default;
+}
+
+.pr-abar__btn:disabled:hover {
+  background: transparent;
+}
+
+.pr-abar__icon {
+  display: inline-flex;
+}
+
+.pr-abar__label {
+  font-size: var(--text-11);
+  line-height: var(--leading-11);
+  font-weight: var(--weight-medium);
+}
+
+/* ⋯'s items are 44 px rows on a phone, like every other target. */
+.pr-abar__menu .d3-menu__item {
+  min-height: 44px;
+}
+
+/* --- The mail view at phone width -------------------------------------------------------------------- */
+
+/* The context bar carries the title, Search and Compose: the list's own heading row stays for
+ * screen readers (focus lands on it on every push) but is not drawn twice. */
+.pr-mail[data-layout='push'] .pr-listhead__row {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Body first: the thread's actions are the bottom bar, so the top toolbar is not drawn. */
+.pr-mail[data-layout='push'] .pr-reader--open .pr-toolbar {
+  display: none;
+}
+
+.pr-mail[data-layout='push'] .pr-reader.pr-reader--open {
+  padding: 0;
+}
+
+.pr-mail[data-layout='push'] .pr-reader:not(.pr-reader--open) > .pr-cbar {
+  margin: calc(var(--space-16) * -1) calc(var(--space-16) * -1) var(--space-16);
+}
+
+.pr-mail[data-layout='push'] .pr-mail__feed > .pr-cbar {
+  max-width: none;
+  margin: calc(var(--space-16) * -1) calc(var(--space-16) * -1) var(--space-12);
+}
+
+/* Everything / Priority / People: 44 px segments with 4 px between them, spanning the width (RSP-07,
+ * A11Y-02). */
+.pr-mail[data-layout='push'] .pr-split {
+  display: flex;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.pr-mail[data-layout='push'] .pr-split .d3-seg__item {
+  flex: 1 1 0;
+  min-height: 44px;
+}
+
+/* HTML mail fits the screen: the frame spans the pane minus a 12 px gutter, with no card around it. */
+.pr-mail[data-layout='push'] .pr-reader__scroll {
+  padding-inline: var(--space-12);
+}
+
+.pr-mail[data-layout='push'] .pr-frame__frame {
+  border-radius: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Asked for less motion: a push is an instant swap. */
+  .pr-push[data-push] {
+    animation: none;
+  }
+}

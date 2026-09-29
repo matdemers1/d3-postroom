@@ -15,16 +15,16 @@
 //  - the NEXT message opens at once: the one below (older), or above when nothing below is left;
 //  - a Toast says what happened and offers Undo (z), which moves each moved copy — by the NEW id the
 //    server gave it in the destination — back where it came from, on the server.
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type SyntheticEvent } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useReducer, useRef, useState, type SyntheticEvent } from 'react';
 import { Link as RouterLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Alert, Button, EmptyState, Link, SearchField, SegmentedControl, Skeleton, Stack, useToast } from '@d3cloud/ui';
+import { Alert, Button, EmptyState, IconButton, SearchField, SegmentedControl, Skeleton, Stack, useToast } from '@d3cloud/ui';
 import { api, ApiError, serverUnreachable, type Mailbox, type MailboxSplit, type MessageDetail, type MessageSummary } from '../api';
 import { CommandPalette } from './CommandPalette';
 import { Composer } from './Composer';
 import { draftFor } from './compose';
 import { Feed } from './Feed';
 import { findSpecial, mailboxLabel } from './format';
-import { ComposeIcon, mailboxIcon } from './icons';
+import { ComposeIcon, mailboxIcon, SearchIcon } from './icons';
 import { describeTarget, resolveKey, type MailAction } from './keys';
 import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEEN } from './list';
 import { useMail } from './MailContext';
@@ -48,6 +48,11 @@ import './list/list.css';
 import { ReadingPane, type OpenMessage } from './ReadingPane';
 import { ScheduledSends, UndoSendToast } from './Scheduled';
 import { SnoozeIconControl } from './thread/ThreadToolbar';
+import { MobileActionBar } from './thread/MobileActionBar';
+import { mailSidebar } from './sidebar';
+import { ContextBar, PushFrame, usePushDirection } from '../mobile/ContextBar';
+import { PhoneAccountMenu, PushRow } from '../mobile/PlaceIndex';
+import { pushDepth } from '../mobile/push';
 import { mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { emptyMailboxCopy, inSegment, isInboxSegment, segmentItems, segmentKeyword, type InboxSegment } from './split';
@@ -95,6 +100,7 @@ export function MailView() {
 
 function MailPanes({ route }: { route: MailRoute }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { mailboxes, mailboxesFailed, refreshMailboxes, me, subscribe } = useMail();
   const split = useMediaQuery(SPLIT_QUERY);
 
@@ -598,6 +604,7 @@ function MailPanes({ route }: { route: MailRoute }) {
   }, [openReady, route.compose]);
 
   const view = split ? null : narrowView(route);
+  const pushDirectionNow = usePushDirection(view ?? 'split', pushDepth(location.pathname, location.search));
   useEffect(() => {
     if (view === 'list' || view === 'mailboxes') viewHeading.current?.focus({ preventScroll: true });
   }, [view]);
@@ -784,30 +791,42 @@ function MailPanes({ route }: { route: MailRoute }) {
   const pickerWhat = pickerCount <= 1 ? 'this message' : pickerScope?.thread !== null ? `this conversation (${String(pickerCount)} messages)` : `${String(pickerCount)} messages`;
   const title = searchQuery !== null ? 'Search results' : mailbox === null ? 'Mail' : mailboxLabel(mailbox);
   const listLabel = searchQuery !== null ? `Messages matching ${searchQuery}` : `Messages in ${title}`;
-  const backToList = (
-    <div className="pr-back">
-      <Link asChild variant="standalone">
-        <RouterLink to={listPath}>
-          <span aria-hidden="true">‹ </span>
-          {title}
-        </RouterLink>
-      </Link>
-    </div>
+  // PST-T-14.8: at phone width every level has a sticky context bar — Back with the parent's
+  // name, the title, and at most two icon actions (Search, Compose). No floating Compose button.
+  const composeAction = (
+    <IconButton
+      variant="ghost"
+      label="Compose"
+      icon={<ComposeIcon />}
+      onClick={() => {
+        compose('new', null);
+      }}
+    />
   );
+  const backToList = <ContextBar back={{ to: listPath, label: title }} />;
 
   const listPane = (
     <section className="pr-mail__list" aria-labelledby="pr-list-title">
+      {!split ? (
+        <ContextBar
+          back={{ to: '/mail', label: 'Mailboxes' }}
+          title={title}
+          actions={
+            <>
+              <IconButton
+                variant="ghost"
+                label="Search"
+                icon={<SearchIcon />}
+                onClick={() => {
+                  searchInput.current?.focus();
+                }}
+              />
+              {composeAction}
+            </>
+          }
+        />
+      ) : null}
       <div className="pr-listhead">
-        {!split ? (
-          <div className="pr-back">
-            <Link asChild variant="standalone">
-              <RouterLink to="/mail">
-                <span aria-hidden="true">‹ </span>
-                Mailboxes
-              </RouterLink>
-            </Link>
-          </div>
-        ) : null}
         {/* PST-T-14.5: while rows are selected, the selection toolbar lies over this block — the
             header stays underneath, inert, so nothing below it moves. */}
         <div className="pr-headswap" data-selecting={selecting ? 'true' : 'false'}>
@@ -858,7 +877,7 @@ function MailPanes({ route }: { route: MailRoute }) {
         {isInbox ? (
           <SegmentedControl
             aria-label="Show in Inbox"
-            size="sm"
+            size={split ? 'sm' : 'md'}
             className="pr-split"
             value={segment}
             onValueChange={(v) => {
@@ -1038,16 +1057,7 @@ function MailPanes({ route }: { route: MailRoute }) {
   const feedPane = mailbox === null ? null : (
     <section className="pr-mail__feed" aria-labelledby="pr-list-title">
       {/* Up one level is the mailboxes, not this same feed (PST-T-11.4). */}
-      {!split ? (
-        <div className="pr-back">
-          <Link asChild variant="standalone">
-            <RouterLink to="/mail">
-              <span aria-hidden="true">‹ </span>
-              Mailboxes
-            </RouterLink>
-          </Link>
-        </div>
-      ) : null}
+      {!split ? <ContextBar back={{ to: '/mail', label: 'Mailboxes' }} title={title} actions={composeAction} /> : null}
       <h2 id="pr-list-title" className="pr-listhead__title" tabIndex={-1} ref={viewHeading}>
         {title}
       </h2>
@@ -1066,11 +1076,34 @@ function MailPanes({ route }: { route: MailRoute }) {
       </>
     );
   } else if (view === 'mailboxes') {
-    content = <MailboxIndex mailboxes={mailboxes} headingRef={viewHeading} />;
+    content = <MailboxIndex mailboxes={mailboxes} headingRef={viewHeading} onCompose={() => { compose('new', null); }} />;
   } else if (view === 'list') {
     content = listPane;
   } else {
     content = readerPane;
+  }
+
+  // PST-T-14.8: at phone width each level is a push screen — it slides in from the right when you
+  // go deeper and back when you return. The open thread shows its body first; its actions sit in a
+  // sticky bar at the bottom (the desktop toolbar at the top is hidden there, mail.css).
+  const openDetail = open?.status === 'ready' ? open.detail : null;
+  if (!split && view !== null) {
+    content = (
+      <PushFrame key={view} direction={pushDirectionNow} className="pr-push--level">
+        {content}
+        {view === 'message' && openDetail !== null ? (
+          <MobileActionBar
+            detail={openDetail}
+            canArchive={archive !== undefined && openDetail.mailboxId !== archive.id}
+            canTrash={trash !== undefined && openDetail.mailboxId !== trash.id}
+            onAction={perform}
+            onMoveTo={(d, to) => {
+              triage(to, summaryOf(d));
+            }}
+          />
+        ) : null}
+      </PushFrame>
+    );
   }
 
   return (
@@ -1185,44 +1218,76 @@ function ListBody({
   return children;
 }
 
-/** Below tablet width, the first level of push navigation. */
-function MailboxIndex({ mailboxes, headingRef }: { mailboxes: Mailbox[] | null; headingRef: React.Ref<HTMLHeadingElement> }) {
+/** Below tablet width, the root of the one push stack (PST-T-14.8): the mailboxes grouped as the
+ *  desktop sidebar groups them, then Calendar, Contacts and the account menu (Settings, the Admin
+ *  console, theme, Sign out). There is no hamburger drawer beside it. */
+function MailboxIndex({ mailboxes, headingRef, onCompose }: { mailboxes: Mailbox[] | null; headingRef: React.Ref<HTMLHeadingElement>; onCompose: () => void }) {
+  const account = useContext(PhoneAccountMenu);
+  const groups = mailboxes === null ? null : mailSidebar(mailboxes);
+  const row = (m: Mailbox) => (
+    <PushRow
+      key={m.id}
+      to={mailPath(m.id)}
+      icon={mailboxIcon(m.specialUse, m.name)}
+      label={mailboxLabel(m)}
+      count={m.specialUse === 'trash' ? 0 : m.unseen}
+      countLabel={`${mailboxLabel(m)}, ${String(m.unseen)} unread`}
+    />
+  );
   return (
     <section className="pr-mail__list pr-mailboxes" aria-labelledby="pr-mailboxes-title">
-      <div className="pr-listhead">
-        <h2 id="pr-mailboxes-title" className="pr-listhead__title" tabIndex={-1} ref={headingRef}>
-          Mailboxes
-        </h2>
-      </div>
-      {mailboxes === null ? (
-        <div role="status" aria-label="Loading mailboxes" aria-busy="true">
-          <Skeleton variant="text" lines={5} />
-        </div>
-      ) : mailboxes.length === 0 ? (
-        <EmptyState kind="empty" heading="No mailboxes yet" size="inline" headingLevel={3}>
-          Your mailboxes appear here once the server has made them.
-        </EmptyState>
-      ) : (
-        <nav aria-label="Mailboxes">
-          <ul className="pr-mailboxes__list">
-            {mailboxes.map((m) => (
-              <li key={m.id}>
-                <RouterLink className="pr-mailboxes__item" to={mailPath(m.id)} aria-label={m.unseen > 0 ? `${mailboxLabel(m)}, ${String(m.unseen)} unread` : mailboxLabel(m)}>
-                  <span className="pr-mailboxes__icon" aria-hidden="true">
-                    {mailboxIcon(m.specialUse, m.name)}
-                  </span>
-                  <span className="pr-mailboxes__name">{mailboxLabel(m)}</span>
-                  {m.unseen > 0 ? (
-                    <span className="pr-mailboxes__count" aria-hidden="true">
-                      {m.unseen}
-                    </span>
-                  ) : null}
-                </RouterLink>
-              </li>
-            ))}
-          </ul>
+      <ContextBar
+        title="Mailboxes"
+        actions={<IconButton variant="ghost" label="Compose" icon={<ComposeIcon />} onClick={onCompose} />}
+      />
+      <h2 id="pr-mailboxes-title" className="pr-vh" tabIndex={-1} ref={headingRef}>
+        Mailboxes
+      </h2>
+      <div className="pr-mailboxes__scroll">
+        {groups === null ? (
+          <div role="status" aria-label="Loading mailboxes" aria-busy="true" className="pr-mailboxes__state">
+            <Skeleton variant="text" lines={5} />
+          </div>
+        ) : mailboxes?.length === 0 ? (
+          <div className="pr-mailboxes__state">
+            <EmptyState kind="empty" heading="No mailboxes yet" size="inline" headingLevel={3}>
+              Your mailboxes appear here once the server has made them.
+            </EmptyState>
+          </div>
+        ) : (
+          <nav aria-label="Mailboxes">
+            <ul className="pr-prows" role="list">
+              {groups.primary.map(row)}
+            </ul>
+            {groups.sorted.length > 0 ? (
+              <>
+                <h3 className="pr-prows__heading">Sorted for you</h3>
+                <ul className="pr-prows" role="list">
+                  {groups.sorted.map(row)}
+                </ul>
+              </>
+            ) : null}
+            {groups.safetyNet.length + groups.more.length > 0 ? (
+              <>
+                <h3 className="pr-prows__heading">Filtered and more</h3>
+                <ul className="pr-prows" role="list">
+                  {groups.safetyNet.map(row)}
+                  {groups.more.map(row)}
+                </ul>
+              </>
+            ) : null}
+          </nav>
+        )}
+        <nav aria-label="Places" className="pr-tiles">
+          <RouterLink className="pr-tile" to="/calendar">
+            Calendar
+          </RouterLink>
+          <RouterLink className="pr-tile" to="/contacts">
+            Contacts
+          </RouterLink>
         </nav>
-      )}
+        {account === null ? null : <div className="pr-mailboxes__account">{account}</div>}
+      </div>
     </section>
   );
 }
