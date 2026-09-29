@@ -271,19 +271,9 @@
   letter-spacing: 0.04em;
 }
 
+/* The design-system Select (filled); it spans the card. */
 .pr-person__select {
-  min-height: 36px;
-  padding: 0 var(--space-8);
-  border: var(--border-width) solid var(--color-border-field);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-fg);
-  font: inherit;
-}
-
-.pr-person__select:focus-visible {
-  outline: var(--focus-width) solid var(--color-focus);
-  outline-offset: var(--focus-offset);
+  width: 100%;
 }
 
 .pr-person__help {
@@ -371,8 +361,21 @@
 /* --- Phone: every control a real 44×44 hit area (PST-T-11.2's rule; e2e/tests/mobile.spec.ts) ------- */
 
 @media (max-width: 599px) {
+  /* The header's bucket chip keeps its 20 px pill: its 44 px hit area is an invisible extension
+   * above and below (a 44 px-tall filled pill crowded the recipient summary to "to …"). */
+  .pr-mhead .pr-chip {
+    position: relative;
+    min-width: 44px;
+    justify-content: center;
+  }
+
+  .pr-mhead .pr-chip::after {
+    content: '';
+    position: absolute;
+    inset: -12px 0;
+  }
+
   .pr-mhead__person,
-  .pr-mhead .pr-chip,
   .pr-why__action,
   .pr-person__select,
   .pr-person__link,

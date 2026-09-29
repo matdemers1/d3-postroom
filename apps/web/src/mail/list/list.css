@@ -127,11 +127,14 @@
 }
 
 .pr-mrow__name {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  max-width: 70%;
   min-width: 0;
   color: var(--color-fg-muted);
 }
 
+/* The address gives way first: a first-time sender's name is read whole ("Sam Whitaker") and the
+   bare address beside it takes what is left (PST-T-14.11). */
 .pr-mrow__addr {
   flex: 0 1 auto;
   min-width: 0;
@@ -231,6 +234,13 @@
 
 .pr-rowacts[data-visible='false'] {
   visibility: hidden;
+}
+
+/* The row under the cluster keeps its name line and subject line clear of it: the cluster (four
+   28 px buttons, their gaps, padding and border) is drawn in reserved space, never over the text. */
+.pr-mrow--acting .pr-mrow__line,
+.pr-mrow--acting .pr-mrow__subject {
+  padding-right: calc(4 * 28px + 3 * var(--space-2) + 2 * var(--space-2) + var(--space-4));
 }
 
 /* --- The "N new" pill ------------------------------------------------------------------------------ */

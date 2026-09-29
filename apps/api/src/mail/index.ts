@@ -34,7 +34,7 @@ import {
   type SearchResultJson,
   type ThreadDetailJson,
 } from './schemas.js';
-import { detailJson, findOwnMessage, findOwnThread, listMailboxes, listMessages, mailboxSplit, messagePhish, ownMailbox, PreconditionFailed, summaryJson, trashRetentionDays, updateMessage } from './store.js';
+import { decodeListCursor, detailJson, findOwnMessage, findOwnThread, legacyListCursor, listMailboxes, listMessages, type ListCursor, mailboxSplit, messagePhish, ownMailbox, PreconditionFailed, summaryJson, trashRetentionDays, updateMessage } from './store.js';
 
 export const DEFAULT_BLOB_ROOT = '/var/lib/postroom/blobs';
 
@@ -121,8 +121,20 @@ export function mailRoutes(deps: ApiDeps): Router {
         notFound(res);
         return;
       }
+      let cursor: ListCursor | undefined;
+      if (query.cursor !== undefined) {
+        // A bare UID is the cursor an older page carried (before PST-T-14.10): resolved to its row.
+        const resolved = /^\d{1,10}$/.test(query.cursor)
+          ? await legacyListCursor(db, params.id, Math.min(Number(query.cursor), 2_147_483_647))
+          : decodeListCursor(query.cursor);
+        if (resolved === null) {
+          res.status(400).json({ error: 'invalid_cursor' });
+          return;
+        }
+        cursor = resolved;
+      }
       res.setHeader('Cache-Control', 'no-store');
-      res.json(await listMessages(db, params.id, { cursor: query.cursor === undefined ? undefined : Number(query.cursor), limit: query.limit, keyword: query.keyword }));
+      res.json(await listMessages(db, params.id, { cursor, limit: query.limit, keyword: query.keyword }));
     }),
   );
 

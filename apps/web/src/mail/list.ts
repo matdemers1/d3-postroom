@@ -3,6 +3,7 @@
 // unit-tested — including the ones that must NOT happen (a duplicate from SSE, a cursor that runs
 // off the end after an archive).
 import type { MessageSummary } from '../api';
+import { newestFirst } from './order';
 
 export interface ListState {
   mailboxId: string | null;
@@ -28,10 +29,8 @@ export type ListAction =
 
 export const initialList: ListState = { mailboxId: null, messages: [], nextCursor: null, status: 'idle', cursor: -1 };
 
-/** Newest first: the API's order (by UID, descending). */
-function byUidDesc(a: MessageSummary, b: MessageSummary): number {
-  return b.uid - a.uid;
-}
+// The order (PST-T-14.10) lives in ./order, shared with apps/api's integration test.
+export { newestFirst, sortsAboveTop } from './order';
 
 function clampCursor(cursor: number, length: number): number {
   if (length === 0) return -1;
@@ -46,7 +45,7 @@ export function listReducer(state: ListState, action: ListAction): ListState {
       if (action.mailboxId !== state.mailboxId) return state;
       const cursorId = state.messages[state.cursor]?.id;
       const merged = action.append ? dedupe([...state.messages, ...action.messages]) : dedupe(action.messages);
-      merged.sort(byUidDesc);
+      merged.sort(newestFirst);
       const kept = cursorId === undefined ? -1 : merged.findIndex((m) => m.id === cursorId);
       return {
         ...state,
@@ -62,7 +61,7 @@ export function listReducer(state: ListState, action: ListAction): ListState {
       if (action.message.mailboxId !== state.mailboxId) return state;
       const cursorId = state.messages[state.cursor]?.id;
       const others = state.messages.filter((m) => m.id !== action.message.id);
-      const messages = [...others, action.message].sort(byUidDesc);
+      const messages = [...others, action.message].sort(newestFirst);
       const kept = cursorId === undefined ? 0 : messages.findIndex((m) => m.id === cursorId);
       return { ...state, messages, cursor: clampCursor(kept, messages.length) };
     }

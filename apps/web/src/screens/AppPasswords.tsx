@@ -22,6 +22,7 @@ import {
 import { api, describeError, type AppPassword, type AppPasswordScope } from '../api';
 import { relativeTime } from './app-passwords-format';
 import { Loading, LoadFailed } from './states';
+import { SubNav } from './SubNav';
 
 const SCOPES: { scope: AppPasswordScope; label: string }[] = [
   { scope: 'imap', label: 'Read mail (IMAP)' },
@@ -173,6 +174,7 @@ export function AppPasswords() {
         description="Mail, calendar and contacts apps on your devices sign in with an app password, never your account password."
         {...(rows === null ? {} : { count: rows.length, countNoun: { one: 'password', other: 'passwords' } })}
       />
+      <SubNav />
       {notice === null ? null : (
         <Alert tone="info" dynamic>
           {notice}
@@ -252,6 +254,11 @@ export function AppPasswords() {
         <LoadFailed error={loadError} what="app passwords" onRetry={() => void load()} />
       ) : rows === null ? (
         <Loading label="Loading app passwords" />
+      ) : rows.length === 0 ? (
+        // No table header over nothing (PST-T-14.11): the empty state says what goes here.
+        <EmptyState kind="empty" heading="No app passwords yet" headingLevel={2} size="inline">
+          Create one above for each mail, calendar or contacts app you sign in to.
+        </EmptyState>
       ) : (
         <Table
           caption="Your app passwords"

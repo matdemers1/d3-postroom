@@ -45,9 +45,11 @@ export interface MessageRowProps {
   /** PST-T-14.9: the bucket chip's label, where the list does not imply the bucket; null for none.
    *  Part of the option (it holds nothing focusable): a click on it opens "Why it's here". */
   chip?: string | null;
+  /** PST-T-14.11: the action cluster sits on this row — its first two lines leave room for it. */
+  acting?: boolean;
 }
 
-export const MessageRow = memo(function MessageRow({ message: m, index, count, cursor, open, checked, leaving, warned, now, chip = null }: MessageRowProps) {
+export const MessageRow = memo(function MessageRow({ message: m, index, count, cursor, open, checked, leaving, warned, now, chip = null, acting = false }: MessageRowProps) {
   const unread = isUnread(m);
   const starred = isStarred(m);
   const sender = senderLine(m, warned);
@@ -57,6 +59,7 @@ export const MessageRow = memo(function MessageRow({ message: m, index, count, c
   if (unread) classes.push('pr-mrow--unread', 'pr-row--unread');
   if (checked === true) classes.push('pr-mrow--checked');
   if (leaving) classes.push('pr-mrow--leaving');
+  if (acting) classes.push('pr-mrow--acting');
   return (
     <div
       id={rowId(m.id)}

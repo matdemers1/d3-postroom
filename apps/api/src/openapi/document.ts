@@ -109,7 +109,7 @@ export const ROUTES: RouteSpec[] = [
     path: '/api/mailboxes/{id}/messages',
     operationId: 'listMessages',
     tag: 'Mailboxes',
-    summary: 'One page of a mailbox, newest UID first.',
+    summary: 'One page of a mailbox, newest first by internal date (ties by UID).',
     params: S.IdParams,
     query: S.MessageListQuery,
     responses: { '200': { description: 'A page; nextCursor is null on the last.', schema: 'MessageList' }, ...COMMON, '404': err('Not a mailbox of the caller.') },

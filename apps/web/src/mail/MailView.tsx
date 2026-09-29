@@ -27,7 +27,7 @@ import { Feed } from './Feed';
 import { findSpecial, mailboxLabel } from './format';
 import { ComposeIcon, mailboxIcon, SearchIcon } from './icons';
 import { describeTarget, resolveKey, type MailAction } from './keys';
-import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEEN } from './list';
+import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEEN, sortsAboveTop } from './list';
 import { useMail } from './MailContext';
 import { SelectionToolbar } from './list/SelectionToolbar';
 import { TriageList, type RowAction, type TriageListHandle } from './list/TriageList';
@@ -57,7 +57,7 @@ import { pushDepth } from '../mobile/push';
 import { composesInPane, draftPath, mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { emptyMailboxCopy, inSegment, isInboxSegment, segmentItems, segmentKeyword, type InboxSegment } from './split';
-import { SPLIT_QUERY, useMediaQuery } from './useMedia';
+import { showsKeyHints, SPLIT_QUERY, useMediaQuery } from './useMedia';
 import { SessionEnded } from '../screens/states';
 // PST-T-14.9: sorting you can see and correct where you read.
 import { sortingApi } from './sorting/api';
@@ -311,7 +311,9 @@ function MailPanes({ route }: { route: MailRoute }) {
             if (!inSegment(detail.flags, latest.current.activeSegment)) return;
             const summary = summaryOf(detail);
             // PST-T-14.5: never shift rows under the pointer — held behind the "N new" pill instead.
-            if (listRef.current?.isCalm() ?? true) dispatch({ type: 'upsert', message: summary });
+            // PST-T-14.10: only what would land at the very top waits; a message moved in with an
+            // older date goes straight to its date position.
+            if ((listRef.current?.isCalm() ?? true) || !sortsAboveTop(summary, latest.current.list.messages)) dispatch({ type: 'upsert', message: summary });
             else setPending((p) => (p.some((x) => x.id === summary.id) ? p : [...p, summary]));
           })
           .catch(() => undefined);
@@ -470,7 +472,7 @@ function MailPanes({ route }: { route: MailRoute }) {
     };
     const id = toast.show({
       message,
-      action: { label: 'Undo', shortcut: 'z', onAction: run },
+      action: { label: 'Undo', ...(showsKeyHints() ? { shortcut: 'z' } : {}), onAction: run },
       onDismiss: () => {
         if (undoRef.current?.id === id) undoRef.current = null;
       },
@@ -1210,7 +1212,7 @@ function MailPanes({ route }: { route: MailRoute }) {
     content = (
       <PushFrame key={view} direction={pushDirectionNow} className="pr-push--level">
         {content}
-        {view === 'message' && openDetail !== null ? (
+        {view === 'message' && openDetail !== null && !isNewslettersFeed ? (
           <MobileActionBar
             detail={openDetail}
             canArchive={archive !== undefined && openDetail.mailboxId !== archive.id}

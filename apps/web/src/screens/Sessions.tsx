@@ -16,6 +16,7 @@ import {
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, type AccountSession } from '../api';
 import { Loading, LoadFailed } from './states';
+import { SubNav } from './SubNav';
 
 const when = (iso: string): string =>
   new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -127,6 +128,7 @@ export function Sessions() {
         description="Every browser signed in to Postroom as you, right now. Mail apps are under Devices."
         {...(sessions === null ? {} : { count: sessions.length, countNoun: { one: 'session', other: 'sessions' } })}
       />
+      <SubNav />
       {notice === null ? null : (
         <Alert tone="info" dynamic>
           {notice}

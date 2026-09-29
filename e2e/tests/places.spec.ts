@@ -121,7 +121,7 @@ test('the account menu opens Settings and the Admin console; each has its own na
 test('the old URLs redirect to their new homes', async ({ page }) => {
   const moved: [string, RegExp, string][] = [
     ['/app-passwords', /\/settings\/security\/devices$/, 'Devices'],
-    ['/account/password', /\/settings\/account$/, 'Change password'],
+    ['/account/password', /\/settings\/account$/, 'Account'],
     ['/account/sessions', /\/settings\/security$/, 'Browser sessions'],
     ['/account/device-setup', /\/settings\/security\/device-setup$/, 'Set up iPhone / Mac'],
     ['/account/aliases', /\/settings\/addresses$/, 'Masked aliases'],

@@ -1,31 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Button, Card, CardBody, CardTitle, EmptyState, Grid, Page, PageHeader } from '@d3cloud/ui';
+import { Button, Card, CardBody, CardTitle, EmptyState, Grid, Page, PageHeader } from '@d3cloud/ui';
 import { api, type HealthTile, type HealthTileState } from '../api';
 import { Loading, LoadFailed } from './states';
+import type { StatusKind } from '../status/status';
+import { StatusBadge } from '../status/StatusBadge';
 
 const REFRESH_MS = 30_000;
 
-const when = (iso: string | null): string =>
-  iso === null ? 'never' : new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const when = (iso: string): string =>
+  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
-const TONE_LABEL: Record<HealthTileState, { label: string; tone: 'neutral' | 'attention' | 'danger' }> = {
-  ok: { label: 'OK', tone: 'neutral' },
-  warn: { label: 'Warning', tone: 'attention' },
-  down: { label: 'Down', tone: 'danger' },
-  unknown: { label: 'Unknown', tone: 'attention' },
+/** Each tile state as a status (status.ts holds the tones): Unknown is quiet, Warning asks. */
+export const TILE_STATUS: Record<HealthTileState, { label: string; kind: StatusKind }> = {
+  ok: { label: 'OK', kind: 'good' },
+  warn: { label: 'Warning', kind: 'warning' },
+  down: { label: 'Down', kind: 'bad' },
+  unknown: { label: 'Unknown', kind: 'unknown' },
 };
 
 function Tile({ tile }: { tile: HealthTile }) {
-  const { label, tone } = TONE_LABEL[tile.state];
+  const { label, kind } = TILE_STATUS[tile.state];
   return (
-    <Card as="li" data-tile-id={tile.id} data-tile-state={tile.state}>
+    <Card as="li" className="pr-health__tile" data-tile-id={tile.id} data-tile-state={tile.state}>
       <CardBody>
         <CardTitle as="h2">{tile.label}</CardTitle>
         <p>
-          <Badge tone={tone}>{label}</Badge>
+          <StatusBadge kind={kind}>{label}</StatusBadge>
         </p>
         <p>{tile.detail}</p>
-        <p>Since {when(tile.since)}</p>
+        {/* A tile never checked says so in its detail; "Since never" under it said it twice. */}
+        {tile.since === null ? null : <p className="pr-health__since">Since {when(tile.since)}</p>}
       </CardBody>
     </Card>
   );
