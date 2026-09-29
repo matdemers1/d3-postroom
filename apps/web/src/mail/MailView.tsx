@@ -1010,7 +1010,9 @@ function MailPanes({ route }: { route: MailRoute }) {
               }
         }
         onMoveTo={(d, to) => {
-          move(summaryOf(d), to);
+          // Not junk / Rescue / Move to… go through the triage loop (PST-T-14.5): thread scope,
+          // the next message opens, and the Undo toast offers the way back.
+          triage(to, summaryOf(d));
         }}
         snooze={
           /* PST-T-9.1 (PST-REQ-142): snooze the open conversation, or bring it back — inside the
