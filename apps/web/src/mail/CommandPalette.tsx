@@ -4,7 +4,7 @@
 // Modal already gives it role="dialog"/aria-modal, a focus trap and focus return (it wraps Radix's
 // Dialog); this component layers the combobox/listbox pattern on top — an input owning
 // aria-activedescendant, and a listbox of options it points at — so arrow keys move the selection
-// without moving DOM focus off the input, the way MessageList's j/k cursor already works.
+// without moving DOM focus off the input, the way the message list's j/k cursor already works.
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Input, Modal, Stack } from '@d3cloud/ui';
 import '../styles/places.css';
