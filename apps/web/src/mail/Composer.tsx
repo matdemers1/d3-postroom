@@ -25,6 +25,11 @@
 // then "Draft saved" and Discard on the right. Minimise and full screen are this composer's own view
 // (nothing is closed or saved differently); Close is Escape's path, which keeps an unsaved draft.
 //
+// PST-T-15.8 (PST-REQ-194) draws the phone to the canvas's PhoneCompose: below 768 px a new message
+// or a resumed draft is a full-height sheet whose bar is Cancel (Escape's path, which keeps the
+// draft), the title, and a round Send — the same submit as the split button, which the sheet does not
+// draw. Send later…, the reminder and the undo window move into ⋯ More there, so none is lost.
+//
 // There is no Attach: the compose API takes no uploads (a forward attaches the original whole), so
 // the canvas's paperclip is not drawn.
 //
@@ -35,7 +40,7 @@
 // After sending, the composer closes back to the message it answered (PST-T-3.15): the server has
 // already filed and threaded the reply by the time send() resolves, so the open thread there shows
 // it without a reload. The mailbox list updates over SSE.
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Alert,
@@ -150,10 +155,20 @@ export interface ComposerProps {
   onSent?: () => void;
   /** A resumed draft was saved under a new id (a save replaces the draft): the view moves its URL on. */
   onDraftSaved?: (id: string) => void;
-  back?: ReactNode;
+  /** The phone's full-height sheet (PST-T-15.8): Cancel, the title and a round Send in one bar. */
+  sheet?: boolean;
 }
 
-export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, onSent, onDraftSaved, back }: ComposerProps) {
+/** The sheet's round Send: an arrow up (the canvas's .pr-csend). */
+function SendArrow() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m5 12 7-7 7 7M12 19V5" />
+    </svg>
+  );
+}
+
+export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, onSent, onDraftSaved, sheet = false }: ComposerProps) {
   const { me, mailboxes, refreshMailboxes } = useMail();
   const toast = useToast();
   const location = useLocation();
@@ -558,6 +573,19 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
   const fromId = `${uid}-from`;
   const sheetId = `${uid}-sheet`;
   const HeadingTag = placement === 'inline' ? 'h3' : 'h2';
+  const sendWord = timing.kind === 'later' ? 'Schedule' : 'Send';
+  // Send later…, the reminder and the undo window: the split button's menu, or ⋯ More on the sheet.
+  const sendMenuItems = (
+    <>
+      {timing.kind === 'later' ? (
+        <MenuItem onSelect={() => { setTiming({ kind: 'now' }); }}>Send now instead</MenuItem>
+      ) : (
+        <MenuItem onSelect={() => { setTiming({ kind: 'later', local: toLocalInput(new Date(Date.now() + 3_600_000)) }); }}>Send later…</MenuItem>
+      )}
+      <MenuItem onSelect={() => { setSendRows((r) => ({ ...r, remind: true })); }}>Remind me if no reply…</MenuItem>
+      {timing.kind === 'now' ? <MenuItem onSelect={() => { setSendRows((r) => ({ ...r, undo: true })); }}>Undo send window…</MenuItem> : null}
+    </>
+  );
 
   const revealButtons = (
     <span className="pr-compose__reveals">
@@ -614,7 +642,6 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
         }
       }}
     >
-      {back}
       <form
         className="pr-compose__form"
         noValidate
@@ -624,7 +651,19 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
           void send();
         }}
       >
-        {/* The header (PST-T-15.4): the title, then Minimise, Open full screen and Close. */}
+        {sheet ? (
+          /* The phone's sheet bar (PST-T-15.8): Cancel · the title · a round Send. */
+          <div className="pr-compose__sheetbar">
+            <Button type="button" variant="ghost" className="pr-compose__cancel" onClick={onDiscard}>
+              Cancel
+            </Button>
+            <HeadingTag id={titleId} className="pr-compose__title pr-compose__title--sheet">
+              {title}
+            </HeadingTag>
+            <IconButton type="submit" label={sendWord} icon={<SendArrow />} loading={sending} disabled={loadingDraft} className="pr-compose__sheetsend" />
+          </div>
+        ) : (
+        /* The header (PST-T-15.4): the title, then Minimise, Open full screen and Close. */
         <div className="pr-compose__head">
           <HeadingTag id={titleId} className={placement === 'inline' ? 'pr-compose__title pr-compose__title--inline' : 'pr-compose__title'}>
             {title}
@@ -655,6 +694,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
             <IconButton variant="ghost" size="sm" label="Close" icon={<CloseIcon />} onClick={onDiscard} />
           </Tooltip>
         </div>
+        )}
         <div id={sheetId} className="pr-compose__sheet" hidden={view.minimised}>
           {error !== null ? (
             <Alert tone="danger" dynamic className="pr-compose__alert">
@@ -811,24 +851,20 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
           ) : null}
           {/* One quiet action bar (PST-T-15.4): Send ▾ · Formatting · Insert link · More … Draft saved · Discard. */}
           <div className="pr-compose__footer">
-            <SplitButton
-              type="submit"
-              variant="primary"
-              label={timing.kind === 'later' ? 'Schedule' : 'Send'}
-              menuLabel="More send options"
-              loading={sending}
-              disabled={loadingDraft}
-              title={`${timing.kind === 'later' ? 'Schedule' : 'Send'} (${SEND_CHORD_HINT})`}
-              className="pr-compose__send"
-            >
-              {timing.kind === 'later' ? (
-                <MenuItem onSelect={() => { setTiming({ kind: 'now' }); }}>Send now instead</MenuItem>
-              ) : (
-                <MenuItem onSelect={() => { setTiming({ kind: 'later', local: toLocalInput(new Date(Date.now() + 3_600_000)) }); }}>Send later…</MenuItem>
-              )}
-              <MenuItem onSelect={() => { setSendRows((r) => ({ ...r, remind: true })); }}>Remind me if no reply…</MenuItem>
-              {timing.kind === 'now' ? <MenuItem onSelect={() => { setSendRows((r) => ({ ...r, undo: true })); }}>Undo send window…</MenuItem> : null}
-            </SplitButton>
+            {sheet ? null : (
+              <SplitButton
+                type="submit"
+                variant="primary"
+                label={sendWord}
+                menuLabel="More send options"
+                loading={sending}
+                disabled={loadingDraft}
+                title={`${sendWord} (${SEND_CHORD_HINT})`}
+                className="pr-compose__send"
+              >
+                {sendMenuItems}
+              </SplitButton>
+            )}
             <span className="pr-compose__tools">
               <Tooltip content="Formatting">
                 <IconButton variant="ghost" label="Formatting" icon={<FormatIcon />} pressed={formatBar} onClick={() => { setFormatBar((on) => !on); }} />
@@ -841,6 +877,12 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
                   <IconButton variant="ghost" label="More options" icon={<MoreIcon />} />
                 </MenuTrigger>
                 <MenuContent align="start" side="top">
+                  {sheet ? (
+                    <>
+                      {sendMenuItems}
+                      <MenuSeparator />
+                    </>
+                  ) : null}
                   <MenuItem onSelect={() => { edit({ format: state.format === 'markdown' ? 'plain' : 'markdown' }); }}>
                     {state.format === 'markdown' ? 'Write in plain text' : 'Write in Markdown'}
                   </MenuItem>

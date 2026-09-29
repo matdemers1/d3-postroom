@@ -79,6 +79,10 @@
   flex: none;
 }
 
+.pr-cbar--flush {
+  border-bottom-color: transparent;
+}
+
 .pr-cbar__lead {
   display: flex;
   min-width: 0;
@@ -261,16 +265,24 @@
 
 /* --- The thread's bottom action bar ------------------------------------------------------------------ */
 
-/* The bar's height: a 52 px button, 4 px above and below, the hairline, and the home indicator. */
+/* PST-T-15.8: @d3cloud/ui's ActionBar (MobileActionBar.tsx), its items 52 px tall as the canvas's
+ * PhoneThread draws them. The bar's height: an item, 4 px above, the library's bottom padding (8 px or
+ * the home indicator, whichever is more) and the hairline. */
 :root {
-  --pr-abar-height: calc(52px + 2 * var(--space-4) + var(--border-width) + env(safe-area-inset-bottom, 0px));
+  --pr-abar-height: calc(52px + var(--space-4) + max(var(--space-8), env(safe-area-inset-bottom, 0px)) + var(--border-width));
+  /* The list's bottom bar: a 44 px button, 4 px above, 4 px (or the home indicator) below, the hairline. */
+  --pr-lbar-height: calc(44px + var(--space-4) + max(var(--space-4), env(safe-area-inset-bottom, 0px)) + var(--border-width));
 }
 
 /* PST-T-14.11: while the bar is on screen a toast (the triage Undo) rises above it rather than
- * covering Archive / Delete / Move / Reply / More. */
+ * covering Archive / Delete / Move / Reply / More — and above the list's bottom bar the same way. */
 @media (max-width: 767px) {
   :root:has(.pr-abar) .d3-toast-region {
     bottom: calc(var(--pr-abar-height) + var(--space-8));
+  }
+
+  :root:has(.pr-lbar) .d3-toast-region {
+    bottom: calc(var(--pr-lbar-height) + var(--space-8));
   }
 }
 
@@ -284,60 +296,10 @@
 
 .pr-abar {
   flex: none;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
-  background: var(--color-surface-raised);
-  border-top: var(--border-width) solid var(--color-border);
 }
 
-.pr-abar__btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-width: 44px;
+.pr-abar .d3-abar__item {
   min-height: 52px;
-  margin: 0;
-  padding: var(--space-4) 0;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-fg);
-  font-family: inherit;
-  cursor: pointer;
-  transition: background-color var(--motion-hover), color var(--motion-hover);
-}
-
-.pr-abar__btn:hover {
-  background: var(--color-surface-hover);
-}
-
-.pr-abar__btn:focus-visible {
-  outline: var(--focus-width) solid var(--color-focus);
-  outline-offset: calc(var(--focus-width) * -1);
-}
-
-.pr-abar__btn:disabled {
-  color: var(--color-fg-faint);
-  cursor: default;
-}
-
-.pr-abar__btn:disabled:hover {
-  background: transparent;
-}
-
-.pr-abar__icon {
-  display: inline-flex;
-}
-
-.pr-abar__label {
-  font-size: var(--text-11);
-  line-height: var(--leading-11);
-  font-weight: var(--weight-medium);
 }
 
 /* ⋯'s items are 44 px rows on a phone, like every other target. */
@@ -345,18 +307,63 @@
   min-height: 44px;
 }
 
+/* --- The list's bottom bar (PST-T-15.8, the canvas's PhoneInbox) --------------------------------------- */
+
+/* Whether the list is current, centred, and New message at the thumb's corner. A tone and a hairline,
+ * no blur and no shadow. */
+.pr-lbar {
+  flex: none;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8) max(var(--space-4), env(safe-area-inset-bottom, 0px));
+  background: var(--color-surface);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.pr-lbar__status {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  color: var(--color-fg-muted);
+}
+
+.pr-lbar__compose {
+  grid-column: 3;
+  color: var(--color-accent);
+}
+
 /* --- The mail view at phone width -------------------------------------------------------------------- */
 
-/* The context bar carries the title, Search and Compose: the list's own heading row stays for
- * screen readers (focus lands on it on every push) but is not drawn twice. */
-.pr-mail[data-layout='push'] .pr-listhead__row {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+/* PST-T-15.8 (the canvas's PhoneInbox): the list's own heading is the screen's large title — the
+ * mailbox's name at 24 px, its unread count under it — right below a bar that holds only Back. The
+ * list's Compose is the bottom bar's New message on a phone. */
+.pr-mail[data-layout='push'] .pr-listhead {
+  padding-top: 0;
+}
+
+.pr-mail[data-layout='push'] .pr-listhead__title {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-24);
+  line-height: var(--leading-24);
+}
+
+.pr-mail[data-layout='push'] .pr-listhead__count {
+  font-size: var(--text-14);
+  line-height: var(--leading-14);
+  color: var(--color-fg-muted);
+}
+
+.pr-mail[data-layout='push'] .pr-listhead__compose {
+  display: none;
 }
 
 /* The Newsletters feed: the context bar already names it, so its h2 (focus lands on it) is not

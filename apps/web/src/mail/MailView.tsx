@@ -26,7 +26,7 @@ import { draftFor, draftToResume } from './compose';
 import { composerKey } from './compose/session';
 import { Feed } from './Feed';
 import { findSpecial, mailboxLabel } from './format';
-import { ComposeIcon, mailboxIcon, SearchIcon } from './icons';
+import { ComposeIcon, mailboxIcon } from './icons';
 import { describeTarget, resolveKey, type MailAction } from './keys';
 import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEEN, sortsAboveTop } from './list';
 import { useMail } from './MailContext';
@@ -109,7 +109,7 @@ export function MailView() {
 function MailPanes({ route }: { route: MailRoute }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { mailboxes, mailboxesFailed, refreshMailboxes, me, subscribe } = useMail();
+  const { mailboxes, mailboxesFailed, refreshMailboxes, me, subscribe, live } = useMail();
   const split = useMediaQuery(SPLIT_QUERY);
 
   const inbox = mailboxes === null ? undefined : (findSpecial(mailboxes, 'inbox') ?? mailboxes[0]);
@@ -881,11 +881,11 @@ function MailPanes({ route }: { route: MailRoute }) {
   const title = searchQuery !== null ? 'Search results' : mailbox === null ? 'Mail' : mailboxLabel(mailbox);
   const listLabel = searchQuery !== null ? `Messages matching ${searchQuery}` : `Messages in ${title}`;
   // PST-T-14.8: at phone width every level has a sticky context bar — Back with the parent's
-  // name, the title, and at most two icon actions (Search, Compose). No floating Compose button.
+  // name, the title, and at most two icon actions. No floating Compose button.
   const composeAction = (
     <IconButton
       variant="ghost"
-      label="Compose"
+      label="New message"
       icon={<ComposeIcon />}
       onClick={() => {
         compose('new', null);
@@ -894,27 +894,13 @@ function MailPanes({ route }: { route: MailRoute }) {
   );
   const backToList = <ContextBar back={{ to: listPath, label: title }} />;
 
+  // PST-T-15.8 (PST-REQ-194): the phone's list is the canvas's PhoneInbox — a bar with only
+  // "‹ Mailboxes", then the list's own heading as a large title with its unread count under it, the
+  // search field and the segments at full width, the rows edge to edge, and a bottom bar: whether the
+  // list is current, and New message. The search field opens the palette, so the bar has no Search.
   const listPane = (
     <section className="pr-mail__list" aria-labelledby="pr-list-title">
-      {!split ? (
-        <ContextBar
-          back={{ to: '/mail', label: 'Mailboxes' }}
-          title={title}
-          actions={
-            <>
-              <IconButton
-                variant="ghost"
-                label="Search"
-                icon={<SearchIcon />}
-                onClick={() => {
-                  searchInput.current?.focus();
-                }}
-              />
-              {composeAction}
-            </>
-          }
-        />
-      ) : null}
+      {!split ? <ContextBar back={{ to: '/mail', label: 'Mailboxes' }} flush /> : null}
       <div className="pr-listhead">
         {/* PST-T-14.5: while rows are selected, the selection toolbar lies over this block — the
             header stays underneath, inert, so nothing below it moves. */}
@@ -1072,6 +1058,22 @@ function MailPanes({ route }: { route: MailRoute }) {
           showPriority={activeSegment !== 'priority'}
         />
       </ListBody>
+      {!split ? (
+        <div className="pr-lbar" data-testid="list-bar">
+          {/* Only a claim the app can stand behind: the list follows the server over the event
+              stream, so while the stream is connected it is current; otherwise nothing is said. */}
+          <span className="pr-lbar__status">{live ? 'Updated just now' : null}</span>
+          <IconButton
+            variant="ghost"
+            label="New message"
+            icon={<ComposeIcon />}
+            className="pr-lbar__compose"
+            onClick={() => {
+              compose('new', null);
+            }}
+          />
+        </div>
+      ) : null}
     </section>
   );
 
@@ -1119,7 +1121,9 @@ function MailPanes({ route }: { route: MailRoute }) {
               },
             }
           : {})}
-        {...(split || !composesInPane(route.compose) ? {} : { back: backToList })}
+        // PST-T-15.8: on a phone a new message or a resumed draft is a full-height sheet with its
+        // own bar (Cancel, the title, a round Send) in place of the context bar.
+        sheet={!split && composesInPane(route.compose)}
       />
     );
 
@@ -1384,7 +1388,7 @@ function MailboxIndex({ mailboxes, headingRef, onCompose }: { mailboxes: Mailbox
     <section className="pr-mail__list pr-mailboxes" aria-labelledby="pr-mailboxes-title">
       <ContextBar
         title="Mailboxes"
-        actions={<IconButton variant="ghost" label="Compose" icon={<ComposeIcon />} onClick={onCompose} />}
+        actions={<IconButton variant="ghost" label="New message" icon={<ComposeIcon />} onClick={onCompose} />}
       />
       <h2 id="pr-mailboxes-title" className="pr-vh" tabIndex={-1} ref={headingRef}>
         Mailboxes

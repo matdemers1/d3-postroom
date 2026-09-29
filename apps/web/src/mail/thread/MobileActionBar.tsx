@@ -1,15 +1,20 @@
 // PST-T-14.8 (PST-REQ-155, PST-ADR-011; design audit RSP-01, IA-15, TF-04): at phone width the
 // thread shows its body first and the actions sit in a sticky bar at the bottom, in thumb reach from
 // anywhere in a long thread — Archive, Delete, Move, Reply, and ⋯ for Reply all, Forward, Snooze,
-// Mark unread, Star and Inspect. Every target is a real 44 px box (52 px tall, the label under the
-// icon). No swipe gestures.
+// Mark unread, Star and Inspect. No swipe gestures.
+//
+// PST-T-15.8 (PST-REQ-194): drawn to the canvas's PhoneThread with @d3cloud/ui's ActionBar (D-083) —
+// a labelled group of plain buttons in tab order, an icon over a word, never under 44 px, the home
+// indicator's inset below. Reply is the bar's one accent. The library hides the bar from lg up;
+// Postroom's phone layout ends at 768 px, and MailView only mounts this bar in that layout, so it is
+// forced visible here.
 //
 // It forks no action logic: every button is a MailAction handed to MailView's perform() — the same
 // path as the keys, the palette and the desktop toolbar — so Archive and Delete run the triage loop
 // (thread scope, next message, Undo toast), Move and Snooze open its picker, and Inspect is
 // keys.ts's requestInspect(). Which buttons a mailbox gets is ThreadToolbar's own toolbarModel().
-import { useRef, type ReactNode } from 'react';
-import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@d3cloud/ui';
+import { useRef } from 'react';
+import { ActionBar, ActionBarItem, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@d3cloud/ui';
 import type { Mailbox, MessageDetail } from '../../api';
 import { ArchiveIcon, FolderIcon, TrashIcon } from '../icons';
 import { requestInspect, type MailAction } from '../keys';
@@ -29,17 +34,6 @@ export interface MobileActionBarProps {
   onMoveTo?: ((message: MessageDetail, to: Mailbox) => void) | undefined;
 }
 
-function BarButton({ label, icon, disabled = false, onClick }: { label: string; icon: ReactNode; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button type="button" className="pr-abar__btn" disabled={disabled} onClick={onClick}>
-      <span className="pr-abar__icon" aria-hidden="true">
-        {icon}
-      </span>
-      <span className="pr-abar__label">{label}</span>
-    </button>
-  );
-}
-
 export function MobileActionBar({ detail, canArchive, canTrash, onAction, onMoveTo }: MobileActionBarProps) {
   const { mailboxes } = useMail();
   const current = mailboxes?.find((m) => m.id === detail.mailboxId) ?? null;
@@ -51,25 +45,21 @@ export function MobileActionBar({ detail, canArchive, canTrash, onAction, onMove
   const rescue = (model.lead === 'notJunk' || model.lead === 'rescue') && onMoveTo !== undefined && inbox !== null ? model.lead : null;
 
   return (
-    <div role="toolbar" aria-label="Message actions" className="pr-abar" data-testid="action-bar">
-      {model.labelled.includes('archive') ? <BarButton label={ACTION_LABEL.archive} icon={<ArchiveIcon />} disabled={!canArchive} onClick={() => { onAction('archive'); }} /> : null}
-      <BarButton label={ACTION_LABEL.delete} icon={<TrashIcon />} disabled={!canTrash} onClick={() => { onAction('delete'); }} />
-      <BarButton label="Move" icon={<FolderIcon />} onClick={() => { onAction('moveTo'); }} />
+    <ActionBar aria-label="Message actions" forceVisible className="pr-abar" data-testid="action-bar">
+      {model.labelled.includes('archive') ? (
+        <ActionBarItem label={ACTION_LABEL.archive} icon={<ArchiveIcon />} disabled={!canArchive} onClick={() => { onAction('archive'); }} />
+      ) : null}
+      <ActionBarItem label={ACTION_LABEL.delete} icon={<TrashIcon />} disabled={!canTrash} onClick={() => { onAction('delete'); }} />
+      <ActionBarItem label="Move" icon={<FolderIcon />} onClick={() => { onAction('moveTo'); }} />
       {rescue !== null && inbox !== null && onMoveTo !== undefined ? (
-        <BarButton label={ACTION_LABEL[rescue]} icon={<ArchiveIcon />} onClick={() => { onMoveTo(detail, inbox); }} />
+        <ActionBarItem label={ACTION_LABEL[rescue]} icon={<ArchiveIcon />} tone="accent" onClick={() => { onMoveTo(detail, inbox); }} />
       ) : canReply ? (
-        <BarButton label={ACTION_LABEL.reply} icon={<ReplyIcon />} onClick={() => { onAction('reply'); }} />
+        <ActionBarItem label={ACTION_LABEL.reply} icon={<ReplyIcon />} tone="accent" onClick={() => { onAction('reply'); }} />
       ) : null}
       <Menu>
         <MenuTrigger>
-          <button ref={moreRef} type="button" className="pr-abar__btn" aria-label="More actions">
-            <span className="pr-abar__icon" aria-hidden="true">
-              <MoreIcon />
-            </span>
-            <span className="pr-abar__label" aria-hidden="true">
-              More
-            </span>
-          </button>
+          {/* The word under the icon is "More"; the name says what it holds (it contains the word). */}
+          <ActionBarItem ref={moreRef} label="More" aria-label="More actions" icon={<MoreIcon />} />
         </MenuTrigger>
         <MenuContent align="end" side="top" className="pr-abar__menu">
           {canReply ? (
@@ -85,6 +75,6 @@ export function MobileActionBar({ detail, canArchive, canTrash, onAction, onMove
           <MenuItem onSelect={() => { afterMenu(() => { requestInspect(moreRef.current); }); }}>Inspect message</MenuItem>
         </MenuContent>
       </Menu>
-    </div>
+    </ActionBar>
   );
 }

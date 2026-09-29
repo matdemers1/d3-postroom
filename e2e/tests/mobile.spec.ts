@@ -272,25 +272,43 @@ test.describe('signed in', () => {
     await page.goto('/');
     await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
     await assertMobileFriendly(page, '/ (inbox list)');
-    // PST-T-14.8: one push stack — no hamburger drawer competing with it; the context bar says
-    // where Back goes and offers Search and Compose, and the Inbox's segments are 44 px.
+    // PST-T-14.8: one push stack — no hamburger drawer competing with it, and the Inbox's segments
+    // are 44 px. PST-T-15.8 (the canvas's PhoneInbox): the top bar holds only "‹ Mailboxes"; the
+    // list's heading is the large title with the unread count under it; the search field and the
+    // segments span the width; the rows run edge to edge; and a bottom bar says the list is current
+    // and offers New message.
     await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden();
     const listBar = page.getByTestId('context-bar');
     await expect(listBar.getByRole('link', { name: 'Mailboxes', exact: true })).toBeVisible();
-    await expect(listBar.getByRole('button')).toHaveCount(2);
-    await expect(listBar.getByRole('button', { name: 'Search' })).toBeVisible();
-    await expect(listBar.getByRole('button', { name: 'Compose' })).toBeVisible();
-    for (const box of await page.getByRole('radiogroup', { name: 'Show in Inbox' }).getByRole('radio').all()) {
+    await expect(listBar.getByRole('button')).toHaveCount(0);
+    const largeTitle = page.getByRole('heading', { name: /^Inbox/, level: 2 });
+    await expect(largeTitle).toBeVisible();
+    expect(await largeTitle.evaluate((el) => (globalThis as unknown as { getComputedStyle(e: unknown): { fontSize: string } }).getComputedStyle(el).fontSize)).toBe('24px');
+    await expect(page.getByRole('button', { name: 'Compose' })).toHaveCount(0);
+    const search = page.getByRole('search').filter({ has: page.getByRole('searchbox', { name: 'Search mail' }) });
+    expect((await search.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(390 - 2 * 16 - 2);
+    const segments = page.getByRole('radiogroup', { name: 'Show in Inbox' });
+    expect((await segments.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(390 - 2 * 16 - 2);
+    for (const box of await segments.getByRole('radio').all()) {
       expect((await box.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
     }
+    const firstRow = await page.getByRole('option').first().boundingBox();
+    expect(firstRow?.x ?? 99).toBeLessThanOrEqual(1);
+    expect(firstRow?.width ?? 0).toBeGreaterThanOrEqual(389);
+    const bottomBar = page.getByTestId('list-bar');
+    await expect(bottomBar.getByRole('button', { name: 'New message' })).toBeVisible();
+    await expect(bottomBar).toContainText('Updated just now');
+    const bottomBox = await bottomBar.boundingBox();
+    expect((bottomBox?.y ?? 0) + (bottomBox?.height ?? 0)).toBeGreaterThan(844 - 2);
     // assertMobileFriendly scrolls every row into view to probe it; start the list from its top
     // again, so the newest message (the one seeded above) is a rendered row, however long the Inbox.
     await page.goto('/');
 
     await page.getByRole('option', { name: new RegExp(msg.subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
     await expect(page.getByRole('heading', { name: msg.subject, level: 2 })).toBeVisible();
-    // Body first: the actions are a bottom bar, not rows of links above the body.
-    const actionBar = page.getByRole('toolbar', { name: 'Message actions' });
+    // Body first: the actions are a bottom bar, not rows of links above the body — @d3cloud/ui's
+    // ActionBar since PST-T-15.8, a labelled group of plain buttons (D-083).
+    const actionBar = page.getByRole('group', { name: 'Message actions' });
     await expect(actionBar).toHaveCount(1);
     await expect(actionBar.getByRole('button')).toHaveText(['Archive', 'Delete', 'Move', 'Reply', 'More']);
     const bar = await actionBar.boundingBox();
@@ -321,8 +339,31 @@ test.describe('signed in', () => {
     await assertMobileFriendly(page, '/mail (mailbox list)');
 
     await page.goto('/?compose=new');
-    await expect(page.getByRole('region', { name: 'New message' })).toBeVisible();
+    const sheet = page.getByRole('region', { name: 'New message' });
+    await expect(sheet).toBeVisible();
     await assertMobileFriendly(page, '/?compose=new (composer)');
+    // PST-T-15.8 (the canvas's PhoneCompose): a full-height sheet whose bar is Cancel, the title and a
+    // round Send; the split button is not drawn, and Send later… is in ⋯ More instead.
+    await expect(sheet.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
+    await expect(sheet.getByRole('heading', { name: 'New message', level: 2 })).toBeVisible();
+    const send = sheet.getByRole('button', { name: 'Send', exact: true });
+    await expect(send).toHaveCount(1);
+    const sendBox = await send.boundingBox();
+    expect(sendBox?.y ?? 844).toBeLessThan(60);
+    expect((sendBox?.x ?? 0) + (sendBox?.width ?? 0)).toBeGreaterThan(390 - 16);
+    await expect(sheet.getByRole('button', { name: 'More send options' })).toHaveCount(0);
+    const sheetBox = await sheet.boundingBox();
+    expect(Math.abs(sheetBox?.y ?? 99)).toBeLessThanOrEqual(1);
+    expect(sheetBox?.height ?? 0).toBeGreaterThan(844 - 2);
+    await sheet.getByRole('button', { name: 'More options' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Send later…' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Remind me if no reply…' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toBeHidden();
+    // Cancel is the close that keeps the draft: back to the list, no composer.
+    await sheet.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page).not.toHaveURL(/compose=/);
+    await expect(page.getByRole('region', { name: 'New message' })).toHaveCount(0);
 
     // The Newsletters feed: three messages moved there, exactly as feed-and-profile.spec.ts seeds it.
     const from = `feed-mobile-${t}@example.test`;
