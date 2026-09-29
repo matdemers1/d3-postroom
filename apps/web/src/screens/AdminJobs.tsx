@@ -148,7 +148,7 @@ export function AdminJobs() {
         {...(jobs === null ? {} : { count: jobs.length, countNoun: { one: 'job', other: 'jobs' } })}
       />
       <FormField label="Status" width="sm">
-        <Select
+        <Select appearance="filled"
           options={STATUS_OPTIONS}
           value={status}
           onValueChange={(v) => {
@@ -202,7 +202,7 @@ export function AdminJobs() {
         }
       >
         <FormField label="From stage">
-          <Select
+          <Select appearance="filled"
             options={STAGE_OPTIONS}
             value={stage}
             onValueChange={(v) => {

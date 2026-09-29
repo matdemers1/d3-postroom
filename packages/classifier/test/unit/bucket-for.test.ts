@@ -154,6 +154,15 @@ describe('bucketFor: sender pins (PST-T-5.4, PST-REQ-105, PST-REQ-106)', () => {
     expect(filed.reasons).toContain('pinned: jane@example.com → junk');
   });
 
+  it('a domain preference from a sorting correction names the domain in its reason (PST-T-14.9)', () => {
+    const input = directMessage({});
+    const signals = extractSignals(input);
+    const tokens = tokenize({ headers: input.headers, from: signals.fromAddress });
+    const filed = bucketFor({ signals, headers: input.headers, pin: { bucket: 'notifications', on: '@example.com' } }, { model: null, tokens });
+    expect(filed).toMatchObject({ bucket: 'notifications', folder: 'Notifications', keyword: null });
+    expect(filed.reasons).toContain('pinned: @example.com → notifications');
+  });
+
   it('a pin to priority requires authentication: a DMARC-failing message does not ride the pin into INBOX', () => {
     const input = directMessage({ authVerdicts: { dmarc: { result: 'fail' } } });
     const signals = extractSignals(input);

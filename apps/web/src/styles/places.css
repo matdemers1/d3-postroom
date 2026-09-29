@@ -1,0 +1,237 @@
+/* The three places (PST-T-14.3, PST-REQ-189, PST-ADR-011): Mail, Settings and the Admin console.
+ * Existing tokens only — no new colours. */
+
+/* Moving between places never slides (D-024): the incoming place cross-fades in at --dur-2. Only a
+ * move between places fades; a page load simply appears (Shell.tsx's usePlaceFade). */
+@keyframes pr-place-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.pr-place--fade {
+  animation: pr-place-in var(--dur-2) var(--ease-out) backwards;
+}
+
+/* Quiet counts: the sorted buckets and Junk / Rejects say how many without shouting — the same
+ * recipe as @d3cloud/ui's CountBadge `quiet`, which SideNavItem does not expose. */
+.pr-nav-quiet .d3-bdg--count {
+  background: var(--color-surface-raised);
+  color: var(--color-fg-muted);
+}
+
+/* "More": Trash and your own folders, folded away. The button borrows the nav row's recipe. */
+.pr-nav-more {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* The library's list is display:flex, which would otherwise beat the hidden attribute. */
+.pr-nav-more__list[hidden] {
+  display: none;
+}
+
+.pr-nav-more__chevron {
+  display: inline-flex;
+  transition: transform var(--dur-3) var(--ease-out);
+}
+
+.pr-nav-more[aria-expanded='true'] .pr-nav-more__chevron {
+  transform: rotate(90deg);
+}
+
+.pr-nav-more__detail {
+  flex: none;
+  color: var(--color-fg-faint);
+  font-size: var(--text-11);
+}
+
+.pr-nav-compose {
+  margin-bottom: var(--space-8);
+}
+
+/* The Admin console's instrument register: a denser nav on the same tokens. */
+.pr-nav-admin .d3-snav__item {
+  min-height: 30px;
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+}
+
+/* A section's own sub-navigation (Security & devices). */
+.pr-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--page-pad) var(--page-pad) 0;
+  list-style: none;
+}
+
+.pr-subnav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 var(--space-12);
+  border-radius: var(--radius-full);
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  transition: background-color var(--motion-hover), color var(--motion-hover);
+}
+
+.pr-subnav a:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-fg);
+}
+
+.pr-subnav a[aria-current='page'] {
+  background: var(--color-accent-muted);
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-subnav a:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+/* At phone width every tap target is 44×44 of its own (PST-T-11.2, mobile-targets.css): grown for
+ * real, since the chips wrap into rows where an invisible extension would reach the next one. */
+@media (max-width: 767px) {
+  .pr-subnav {
+    gap: var(--space-8);
+  }
+
+  .pr-subnav a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* --- The command palette ------------------------------------------------------------------------ */
+
+/* It opens like a popover, not a modal: --motion-popover-enter, a short drop-in. */
+@keyframes pr-cmdk-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - var(--space-6))) scale(0.97);
+  }
+}
+
+.d3-modal.pr-cmdk {
+  animation: pr-cmdk-in var(--motion-popover-enter) backwards;
+}
+
+.pr-cmdk__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+}
+
+.pr-cmdk__heading {
+  padding: var(--space-4) var(--space-8);
+  color: var(--color-fg-faint);
+  font-size: var(--text-11);
+  line-height: var(--leading-11);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pr-cmdk__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 36px;
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+  cursor: pointer;
+  transition: background-color var(--motion-hover);
+}
+
+.pr-cmdk__row[aria-selected='true'] {
+  background: var(--color-accent-muted);
+}
+
+.pr-cmdk__row mark {
+  background: none;
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-cmdk__label {
+  flex: none;
+}
+
+.pr-cmdk__hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+}
+
+.pr-cmdk__keys {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
+  flex: none;
+}
+
+.pr-cmdk__keys kbd {
+  min-width: 20px;
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--color-border-field);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-11);
+  line-height: var(--leading-16);
+  text-align: center;
+}
+
+.pr-cmdk__then {
+  color: var(--color-fg-muted);
+  font-size: var(--text-11);
+}
+
+/* --- A pane that failed ------------------------------------------------------------------------- */
+
+.pr-pane-error {
+  padding: var(--page-pad);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Asked for less motion: places swap instantly, and the palette only fades. */
+  .pr-place--fade {
+    animation: none;
+  }
+
+  .d3-modal.pr-cmdk {
+    animation-name: pr-place-in;
+  }
+
+  .pr-nav-more__chevron {
+    transition: none;
+  }
+}
+
+/* On the recessed sidebar (PST-T-14.4) the current row is --color-surface-raised, the quiet
+ * count's own fill; the count steps back down to --color-bg there, as CountBadge `quiet` does. */
+.pr-nav-quiet .d3-snav__item[aria-current='page'] .d3-bdg--count {
+  background: var(--color-bg);
+}

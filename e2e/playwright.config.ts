@@ -11,6 +11,10 @@ export default defineConfig({
   use: {
     baseURL: process.env['POSTROOM_URL'] ?? 'http://127.0.0.1:3300',
     trace: 'retain-on-failure',
+    // Reduced motion by default: axe measures colour contrast on whatever frame it lands on, and a
+    // badge or sheet caught mid-fade reads as low contrast (a false positive, not the design). Specs
+    // that assert motion itself opt back in with page.emulateMedia({ reducedMotion: 'no-preference' }).
+    contextOptions: { reducedMotion: 'reduce' },
   },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },

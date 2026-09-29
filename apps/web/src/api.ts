@@ -20,7 +20,7 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(
+export async function call<T>(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
   path: string,
   body?: unknown,
@@ -489,11 +489,17 @@ export interface MessageSummary {
   subject: string | null;
   /** The sender's address (denormalised at filing); the display name is in the body's headers. */
   from: string | null;
+  /** PST-T-14.2: the From display name, decoded; null when it has none (show `from`). */
+  fromName?: string | null;
+  /** PST-T-14.2: a one-line body preview (≤ 140 chars); null until the message is summarised. */
+  snippet?: string | null;
   date: string;
   internalDate: string;
   size: number;
   flags: string[];
   bucket: string | null;
+  /** PST-T-14.5: the list's paperclip; from the search index, false until indexed. */
+  hasAttachments?: boolean;
 }
 
 export interface MailboxSplit {
@@ -553,6 +559,8 @@ export interface MessageBody {
 
 export interface SenderProfileMessage {
   id: string;
+  /** PST-T-14.9: where it is, so the Person card's recent messages open in the reading pane. */
+  mailboxId?: string;
   subject: string | null;
   date: string;
   bucket: string | null;

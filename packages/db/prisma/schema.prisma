@@ -153,6 +153,7 @@ model Account {
   retentionPolicies RetentionPolicy[]
   // PST-T-5.4: sender pins and the new-sender screen (Allow/Block).
   senderPins        SenderPin[]
+  sortingCorrections SortingCorrection[]
 
   // PST-T-8.2: CalDAV calendars and CardDAV address books.
   davCollections DavCollection[]
@@ -207,6 +208,48 @@ model SenderPin {
   @@unique([accountId, address])
   @@index([accountId])
   @@map("sender_pin")
+}
+
+/// A sorting correction (PST-T-14.9, PST-ADR-011): the reader told Postroom a message was filed in
+/// the wrong bucket (or confirmed where it was). A correction is a move plus a recorded sender
+/// preference — a SenderPin on the address, or on "@domain" for a domain preference — and this row
+/// is what Settings → Rules lists under "Sorting corrections", with the state Undo restores. Undo
+/// never deletes the row: it sets undoneAt (nothing is removed silently).
+model SortingCorrection {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId       String    @map("account_id") @db.Uuid
+  /// sender | domain
+  scope           String
+  /// The SenderPin address the preference was recorded on: a normalized address, or "@domain".
+  target          String
+  /// The bucket the message was in before (its stored verdict bucket); null when it had none.
+  fromBucket      String?   @map("from_bucket")
+  /// priority | people | newsletters | updates | receipts | notifications | junk
+  toBucket        String    @map("to_bucket")
+  /// The corrected message's row id AFTER the move (a move gives the message a new row). Not a
+  /// foreign key: the message may move again, or be expunged, and the correction stays listed.
+  messageId       String?   @map("message_id") @db.Uuid
+  /// Where the message was before, so Undo can move it back; null when nothing moved.
+  fromMailboxId   String?   @map("from_mailbox_id") @db.Uuid
+  /// Its flags before, so Undo restores $Priority/$People exactly.
+  fromFlags       String[]  @default([]) @map("from_flags")
+  subject         String?
+  fromAddress     String?   @map("from_address")
+  /// The pin's bucket on `target` before this correction; null when it had none.
+  previousPin     String?   @map("previous_pin")
+  /// Whether a SenderPin row existed on `target` before (a screen-only row keeps existing on Undo).
+  previousPinRow  Boolean   @default(false) @map("previous_pin_row")
+  /// The reason line added to the message's stored verdict (removed again on Undo).
+  reason          String
+  /// chip | card — where the correction was made.
+  source          String    @default("chip")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  undoneAt        DateTime? @map("undone_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@map("sorting_correction")
 }
 
 /// One address this account has written to (PST-T-5.8, PST-REQ-102): the reply graph, indexed for a
@@ -416,6 +459,11 @@ model Message {
   messageIdHeader  String?   @map("message_id_header")
   subject          String?
   fromAddress      String?   @map("from_address")
+  /// PST-T-14.2: the From display name (RFC 2047 decoded), null when there is none, and a one-line
+  /// preview of the body (at most 140 chars, whitespace collapsed, quoted history dropped). Written
+  /// at filing time; snippet NULL means "not summarised yet" — the worker's summary sweep fills it.
+  fromName         String?   @map("from_name")
+  snippet          String?
   sentAt           DateTime? @map("sent_at") @db.Timestamptz(6)
   /// Threading headers (PST-T-3.8): In-Reply-To's first msg-id and the References chain.
   inReplyTo        String?   @map("in_reply_to")

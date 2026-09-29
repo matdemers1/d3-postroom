@@ -110,6 +110,12 @@ export function refusalBody(outcome: Exclude<AcceptOutcome, { ok: true }>, messa
   return outcome.reason === 'recipient-suppressed' ? { error, message, addresses: outcome.suppressed } : { error, message };
 }
 
+/** A From display name as the list keeps it (PST-T-14.2): whitespace-collapsed, null when empty. */
+function nameOrNull(name: string): string | null {
+  const n = name.replace(/\s+/g, ' ').trim();
+  return n === '' ? null : n;
+}
+
 /** A mailbox as the composer's input field shows it: `Name <a@b>`, the name quoted only when it must be. */
 function displayMailbox(m: Mailbox): string {
   if (m.name === '') return m.address;
@@ -275,6 +281,7 @@ export function composeRoutes(deps: ApiDeps): Router {
           messageIdHeader: message.messageId,
           subject: body.subject,
           fromAddress: from.address,
+          fromName: nameOrNull(from.name),
           to: [...to, ...cc].map((m) => m.address).join(' '),
           sentAt: date,
           inReplyTo,
@@ -682,6 +689,7 @@ export function composeRoutes(deps: ApiDeps): Router {
               messageIdHeader: message.messageId,
               subject: body.subject,
               fromAddress: from.address,
+              fromName: nameOrNull(from.name),
               to: [...to, ...cc].map((m) => m.address).join(' '),
               sentAt: date,
               inReplyTo,
@@ -999,6 +1007,7 @@ export function mdnRoutes(deps: ApiDeps): Router {
                   messageIdHeader: mdnMessageId,
                   subject: `Read: ${subject}`,
                   fromAddress: from.address,
+                  fromName: nameOrNull(from.name),
                   to: to.address,
                   sentAt: now,
                   inReplyTo: null,

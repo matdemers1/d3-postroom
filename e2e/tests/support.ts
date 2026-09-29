@@ -52,8 +52,32 @@ export async function freshCode(operator: Operator): Promise<string> {
   }
 }
 
-/** Below `lg` the sidebar is a drawer behind "Open navigation". */
+/** PST-T-14.8: below 768 px there is no drawer — the app is one push stack. */
+export function isPhone(page: Page): boolean {
+  return (page.viewportSize()?.width ?? 1280) <= 767;
+}
+
+/** On a phone, the push screen that holds the current place's nav: '/admin', '/settings' or '/mail'. */
+function phoneIndexFor(pathname: string): string {
+  if (pathname.startsWith('/admin')) return '/admin';
+  if (pathname.startsWith('/settings')) return '/settings';
+  return '/mail';
+}
+
+/**
+ * Brings the place's navigation and the account menu within reach. Between `md` and `lg` the
+ * sidebar is a drawer behind "Open navigation". On a phone (PST-T-14.8) there is no drawer: the
+ * account menu sits at the foot of every Settings and Admin screen and on the root screens, and
+ * the place's nav is its index screen — so this goes there only when the account menu is not
+ * already on the page.
+ */
 export async function openNav(page: Page): Promise<void> {
+  if (isPhone(page)) {
+    if ((await page.locator('button.d3-acct').count()) > 0) return;
+    await page.goto(phoneIndexFor(new URL(page.url()).pathname));
+    await page.locator('button.d3-acct').waitFor();
+    return;
+  }
   // A link inside the drawer closes it with an exit animation, and until that ends the top bar is
   // still aria-hidden — so the opener is not found by role, and a check made then wrongly concludes
   // there is no drawer (the wide layout). Wait for a closing drawer to go before asking.
@@ -64,6 +88,20 @@ export async function openNav(page: Page): Promise<void> {
   if (!(await opener.isVisible())) return;
   await opener.click();
   await drawer.waitFor();
+}
+
+/** PST-T-14.3: Settings and the Admin console are places behind the account menu, not sidebar rows.
+ * On a phone (PST-T-14.8) each is a push screen of its own: '/settings', '/admin'. */
+export async function openPlace(page: Page, item: 'Settings' | 'Admin console'): Promise<void> {
+  if (isPhone(page)) {
+    await page.goto(item === 'Settings' ? '/settings' : '/admin');
+    await page.getByRole('navigation', { name: item }).waitFor();
+    return;
+  }
+  await openNav(page);
+  await page.locator('button.d3-acct').click();
+  await page.getByRole('menuitem', { name: new RegExp(`^${item}`) }).click();
+  await page.getByRole('navigation', { name: item }).waitFor();
 }
 
 export async function signInWithPassword(page: Page, operator: Operator): Promise<void> {
@@ -123,11 +161,14 @@ export interface SeedMessage {
   text?: string | null;
   html?: string;
   attachment?: { filename: string; contentType?: string; content: string };
-  mailbox?: 'inbox' | 'archive' | 'trash' | 'sent' | 'drafts' | 'junk';
+  mailbox?: 'inbox' | 'archive' | 'trash' | 'sent' | 'drafts' | 'junk' | 'newsletters' | 'updates' | 'receipts' | 'notifications';
   flags?: ('\\Seen' | '\\Flagged' | '\\Answered')[];
   /** Creates this message's MessageVerdict.auth (PST-T-6.5, PST-REQ-120): spf/dkim/dmarc/arc, the
    * same shape smtp-in stores. Its presence is what makes GET /api/messages/:id compute `phish`. */
   authVerdicts?: Record<string, unknown>;
+  /** PST-T-14.9: the stored sorting decision, with authVerdicts. */
+  bucket?: 'priority' | 'people' | 'newsletters' | 'updates' | 'receipts' | 'notifications' | 'junk';
+  reasons?: string[];
 }
 
 export interface SeededMessage {

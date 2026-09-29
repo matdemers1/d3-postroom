@@ -130,17 +130,20 @@ test('learn mode links headers and verdicts to rfc-editor sections, and is remem
   await drawer.getByRole('checkbox', { name: /Learn mode/ }).click();
 });
 
-test('the Inspect button and the command palette open it too', async ({ page }, testInfo) => {
+test('the ⋯ menu and the command palette open it too, and focus comes back (PST-T-14.6)', async ({ page }, testInfo) => {
   const m = await seedOne(tag());
   await page.goto(`/mail/${m.mailboxId}/${m.id}`);
   await expect(page.getByRole('heading', { name: m.subject, level: 2 })).toBeVisible();
-  const button = page.getByRole('button', { name: 'Inspect', exact: true });
-  await button.click();
+  // Inspect's trigger moved into ⋯ (design audit VIS-06): no Inspect button in the toolbar.
+  await expect(page.getByRole('button', { name: 'Inspect', exact: true })).toHaveCount(0);
+  const more = page.getByRole('toolbar', { name: 'Message actions' }).getByRole('button', { name: 'More actions' });
+  await more.click();
+  await page.getByRole('menuitem', { name: 'Inspect message' }).click();
   const drawer = page.getByRole('dialog', { name: 'Inspect message' });
   await expect(drawer).toBeVisible();
   await drawer.getByRole('button', { name: 'Close' }).click();
   await expect(drawer).toBeHidden();
-  await expect(button).toBeFocused();
+  await expect(more).toBeFocused();
 
   if (testInfo.project.name === 'desktop') {
     await page.keyboard.press('Control+k');
@@ -157,7 +160,8 @@ test('fills the screen at 390 px', async ({ page }, testInfo) => {
   const m = await seedOne(tag());
   await page.goto(`/mail/${m.mailboxId}/${m.id}`);
   await expect(page.getByRole('heading', { name: m.subject, level: 2 })).toBeVisible();
-  await page.getByRole('button', { name: 'Inspect', exact: true }).click();
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Inspect message' }).click();
   const drawer = page.getByRole('dialog', { name: 'Inspect message' });
   await expect(drawer.getByTestId('inspect-body')).toBeVisible();
   // Measured once the sheet's slide-in has settled.

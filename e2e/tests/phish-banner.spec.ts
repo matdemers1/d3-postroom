@@ -143,6 +143,10 @@ test.describe('at 1280 px', () => {
         await expect(region).toContainText(substring);
       }
 
+      // PST-T-14.6: an exception chip and Details (which opens Inspect); never a "Verified" chip.
+      await expect(region.getByRole('button', { name: /^Details/ })).toBeVisible();
+      await expect(page.getByText('Verified', { exact: true })).toHaveCount(0);
+
       if (f.severity === 'high') {
         await expect(page.getByRole('alert').filter({ hasText: f.reasonContains[0] ?? '' })).toBeVisible();
       } else {
@@ -180,6 +184,8 @@ test.describe('at 1280 px', () => {
     await page.goto(`/mail/${m.mailboxId}/${m.id}`);
     await expect(page.getByRole('heading', { name: m.subject, level: 2 })).toBeVisible();
     await expect(page.getByTestId('phish-warnings')).toHaveCount(0);
+    // Normal is silent: no positive "Verified" chip for a message that passed every check.
+    await expect(page.getByText('Verified', { exact: true })).toHaveCount(0);
   });
 });
 

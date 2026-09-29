@@ -30,7 +30,7 @@
 // receivedAt, so a replay reaches the same answer it reached the first time.
 import { attachmentPolicy } from '@postroom/attachments';
 import type { BlobStore } from '@postroom/blobstore';
-import { bucketFor, extractSignals, FILING_BUCKETS, normalizeAddress, tokenize, type AuthVerdicts, type FilingBucket, type HeaderLike, type PinInput } from '@postroom/classifier';
+import { bucketFor, domainPreferenceKey, extractSignals, FILING_BUCKETS, normalizeAddress, tokenize, type AuthVerdicts, type FilingBucket, type HeaderLike, type PinInput } from '@postroom/classifier';
 import { loadKek, type Kek } from '@postroom/crypto';
 import { contactIndexFor } from '@postroom/dav-store';
 import { SpecialUse, type Db, type SenderPin } from '@postroom/db';
@@ -111,6 +111,19 @@ function isFilingBucket(value: string | null): value is FilingBucket {
 export async function loadSenderPin(db: Db, accountId: string, address: string | null): Promise<SenderPin | null> {
   if (address === null) return null;
   return db.senderPin.findUnique({ where: { accountId_address: { accountId, address: normalizeAddress(address) } } });
+}
+
+/**
+ * A domain preference (PST-T-14.9): the "@domain" pin a sorting correction recorded for this
+ * sender's domain, when it carries a bucket. Only consulted when the address itself has no bucket
+ * pin, so a person-level choice always beats a domain one.
+ */
+export async function loadDomainPin(db: Db, accountId: string, address: string | null): Promise<(SenderPin & { bucket: string }) | null> {
+  if (address === null) return null;
+  const key = domainPreferenceKey(address);
+  if (key === null) return null;
+  const row = await db.senderPin.findUnique({ where: { accountId_address: { accountId, address: key } } });
+  return row !== null && row.bucket !== null ? { ...row, bucket: row.bucket } : null;
 }
 
 /** The account's contact addresses (lower-cased), for the classifier's "contact" signal. */
@@ -227,7 +240,13 @@ export async function classifyStage(
       signals = signalsWith([sender]);
     }
     const model = await loadBayesModel(deps.db, accountId, tokens);
-    const pin: PinInput | null = isFilingBucket(pinRow?.bucket ?? null) ? { bucket: pinRow?.bucket as FilingBucket } : null;
+    // The address's own pin first; else a domain preference from a sorting correction (PST-T-14.9).
+    const domainPin = isFilingBucket(pinRow?.bucket ?? null) ? null : await loadDomainPin(deps.db, accountId, sender);
+    const pin: PinInput | null = isFilingBucket(pinRow?.bucket ?? null)
+      ? { bucket: pinRow?.bucket as FilingBucket }
+      : domainPin !== null && isFilingBucket(domainPin.bucket)
+        ? { bucket: domainPin.bucket, on: domainPin.address }
+        : null;
     const d = bucketFor({ signals, headers, subject: prior.parse.subject, pin }, { model, tokens });
 
     // A new-sender badge (PST-REQ-106): a first-time human this account has never heard from —

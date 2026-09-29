@@ -4,7 +4,7 @@
 // attachment. Deterministic: the blob is immutable, so re-running it re-derives the same summary.
 import { Readable } from 'node:stream';
 import type { BlobStore } from '@postroom/blobstore';
-import { collectMessage, parseDate, parseMailboxes, parseMessageId, parseMessageIdList, parseMessage, type MessageSummary } from '@postroom/mime';
+import { collectMessage, displayNameOf, parseDate, parseMailboxes, parseMessageId, parseMessageIdList, parseMessage, type MessageSummary } from '@postroom/mime';
 import { htmlToText, truncateUtf8 } from '@postroom/search';
 import type { ParseResult, StageInput } from './types.js';
 
@@ -51,6 +51,7 @@ export function summarise(collected: MessageSummary): ParseResult {
     messageId: mid === null ? null : parseMessageId(mid),
     subject: subject === null ? null : subject.slice(0, 998),
     fromAddress: from === null ? null : (parseMailboxes(from)[0]?.address ?? null),
+    fromName: displayNameOf(from),
     toAddress: to === null ? null : parseMailboxes(to).map((m) => m.address).join(', ') || null,
     sentAt: sentAt === null || Number.isNaN(sentAt.getTime()) ? null : sentAt.toISOString(),
     inReplyTo: inReplyTo === null ? [] : parseMessageIdList(inReplyTo),

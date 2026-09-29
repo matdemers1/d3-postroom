@@ -34,6 +34,9 @@ export const PEOPLE_KEYWORD = '$People';
 /** A sender pin (PST-T-5.4, PST-REQ-105): the account pinned this message's From address to `bucket`. */
 export interface PinInput {
   readonly bucket: FilingBucket;
+  /** What the pin is on, when it is not the From address itself — "@github.com" for a domain
+   *  preference recorded by a sorting correction (PST-T-14.9). The reason names it. */
+  readonly on?: string;
 }
 
 export interface BucketForInput {
@@ -186,7 +189,7 @@ function folderFor(bucket: Exclude<SortBucket, 'inbox'>): string {
 function applyPin(input: BucketForInput): { decision: FilingDecision; skippedReason: null } | { decision: null; skippedReason: string | null } {
   const pin = input.pin;
   if (pin === null || pin === undefined) return { decision: null, skippedReason: null };
-  const address = input.signals.fromAddress ?? 'unknown sender';
+  const address = pin.on ?? input.signals.fromAddress ?? 'unknown sender';
   const ridesToInbox = pin.bucket === 'priority' || pin.bucket === 'people';
   if (ridesToInbox && !input.signals.authenticated.value) {
     const skippedReason = `pinned: ${address} → ${pin.bucket}, but unauthenticated (${input.signals.authenticated.reason}) — a pin does not ride an unauthenticated message into INBOX`;

@@ -18,7 +18,9 @@
   height: calc(100vh - var(--pr-mail-top, 0px));
   height: calc(100dvh - var(--pr-mail-top, 0px));
   min-height: 20rem;
-  background: var(--color-bg);
+  /* One content tone (PST-T-14.4, PST-ADR-011 §2): list and reading pane both sit on
+     --color-surface, the main tone of the recessed AppShell; one hairline between them. */
+  background: var(--color-surface);
   color: var(--color-fg);
 }
 
@@ -111,17 +113,6 @@
 
 .pr-notice__row:has(> .pr-notice:empty):not(:has(> button)) {
   display: none;
-}
-
-/* The search field's "/" key hint (PST-T-11.4). */
-.pr-search__key {
-  padding: 0 var(--space-4);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: var(--text-11);
-  line-height: var(--leading-14);
-  color: var(--color-fg-faint);
 }
 
 /* The Priority / People split fills the list's width, so its three segments share it evenly. */
@@ -413,6 +404,21 @@
   row-gap: var(--space-8);
 }
 
+/* A failed snooze says so beside the control and the message stays open (PST-T-14.1). */
+.pr-snooze {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.pr-snooze__error {
+  font-size: var(--text-13);
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+
 /* --- The phishing verdict above the warnings (PST-T-11.4) ----------------------------------------- */
 
 .pr-phish__verdict {
@@ -439,7 +445,7 @@
   overflow-y: auto;
   box-sizing: border-box;
   padding: var(--space-24);
-  background: var(--color-bg);
+  background: var(--color-surface);
 }
 
 .pr-mail[data-layout='push'] .pr-mail__feed {
@@ -529,6 +535,31 @@
   display: flex;
   align-items: center;
   gap: var(--space-8);
+}
+
+.pr-delivery__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+/* The calm line (PST-T-14.1): words, not reply codes. A bounce reads in the danger colour, but the
+   word "Bounced" carries it too — never colour alone. */
+.pr-delivery__state {
+  margin: 0;
+  font-size: var(--text-14);
+  color: var(--color-fg);
+  overflow-wrap: anywhere;
+}
+
+.pr-delivery__state[data-tone='danger'] {
+  color: var(--color-danger);
+}
+
+.pr-delivery__when {
+  color: var(--color-fg-muted);
 }
 
 .pr-delivery__address {
@@ -904,7 +935,7 @@
   z-index: 1;
   margin-inline: calc(var(--space-24) * -1);
   padding: var(--space-12) var(--space-24);
-  background: var(--color-bg);
+  background: var(--color-surface);
   border-top: var(--border-width) solid var(--color-border);
 }
 

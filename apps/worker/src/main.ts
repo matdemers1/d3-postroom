@@ -24,6 +24,7 @@ import { buildMonitors, createMonitorRunner } from './monitors/index.js';
 import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
 import { startSesFeedback } from './ses-feedback/index.js';
 import { startReportLoop } from './reports/index.js';
+import { createSummarySweeper, drainSummaries } from './sweep/summary-sweep.js';
 import { createThreadSweeper } from './sweep/thread-sweep.js';
 import { startTrainingLoop } from './training/index.js';
 import { startRetentionLoop } from './retention/index.js';
@@ -112,6 +113,31 @@ await runDaemon({
     };
     runThreadSweep();
     const threadSweepTimer = setInterval(runThreadSweep, threadSweepMs);
+
+    // PST-T-14.2: fills a Message's list summary (from_name, snippet) where it is missing. At start it
+    // drains every such row a batch at a time — the one-off backfill of mail filed before the
+    // columns existed — then keeps a batch on an interval for the paths that leave it to the sweep.
+    const summarySweepMs = envInt(ctx.env, 'SUMMARY_SWEEP_MS', 60_000);
+    const summarySweep = createSummarySweeper({ db, blobs: lazyBlobs, log: ctx.log, now: () => new Date() });
+    let summarySweeping = false;
+    const runSummarySweep = (drain: boolean): void => {
+      if (summarySweeping) return;
+      summarySweeping = true;
+      (drain ? drainSummaries(summarySweep) : summarySweep())
+        .catch((err: unknown) => {
+          ctx.log('summary-sweep-error', { error: err instanceof Error ? err.message : String(err) });
+        })
+        .finally(() => {
+          summarySweeping = false;
+        });
+    };
+    runSummarySweep(true);
+    const summarySweepTimer = setInterval(() => {
+      runSummarySweep(false);
+    }, summarySweepMs);
+    ctx.onShutdown(() => {
+      clearInterval(summarySweepTimer);
+    });
 
     // PST-T-5.3 (PST-REQ-104): train each account's naive Bayes on the moves users make, from any
     // client. Its own block and its own shutdown hook, so it merges beside the other registrations.

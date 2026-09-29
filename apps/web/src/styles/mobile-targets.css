@@ -16,7 +16,7 @@
  * centre and 20px out each way): each probe lands on the control itself, and never on another one.
  * No raw hex, no shadows, no invented tokens: only sizes, `inset`, `position` and spacing tokens.
  */
-@media (max-width: 599px) {
+@media (max-width: 767px) {
   /* Every @d3cloud/ui Button size is under 44px tall (sm 28, md 34, lg 40). Grown for real: a row
    * of small buttons wraps onto more lines instead of sharing one tap area. */
   .d3-btn--sm,
@@ -162,8 +162,22 @@
   .d3-inp:not(.d3-sel) {
     align-items: stretch;
   }
+  /* PST-T-14.8: a stretched field keeps its glyph (the search field's magnifier) centred. */
+  .d3-inp:not(.d3-sel) > .d3-inp__affix {
+    align-self: center;
+  }
   .d3-inp__control {
     padding-block: var(--space-12);
+  }
+
+  /* The composer's To/Cc/Bcc rows (@d3cloud/ui RecipientField): the row is 44px but its <input> is
+   * a 24px line inside 8px padding, so a tap above or below the text missed it. The input itself
+   * becomes the 44px target; chips stay centred beside it. */
+  .d3-rcp--row .d3-rcp__value {
+    padding-block: 0;
+  }
+  .d3-rcp--row .d3-rcp__input {
+    height: 44px;
   }
 
   /* PST-T-11.4: iOS Safari zooms the whole page when a focused field's text is under 16px, and

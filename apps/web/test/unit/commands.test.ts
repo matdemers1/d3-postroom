@@ -2,8 +2,9 @@
 // behaviour — opening with ⌘K, moving a message with it — is e2e/tests/command-palette.spec.ts.
 import { describe, expect, it, vi } from 'vitest';
 import type { Mailbox, MessageSummary } from '../../src/api';
-import { buildCommands, filterCommands, fuzzyMatch, type CommandContext } from '../../src/mail/commands';
+import { buildCommands, COMMAND_GROUPS, filterCommands, fuzzyMatch, groupMatches, keycapsFor, type CommandContext } from '../../src/mail/commands';
 import { SHORTCUTS } from '../../src/mail/keys';
+import { paletteRoutes, ROUTES } from '../../src/routes';
 
 const mailbox = (id: string, name: string, specialUse: Mailbox['specialUse'] = null): Mailbox => ({
   id,
@@ -81,13 +82,73 @@ describe('buildCommands', () => {
         expect(actionIds.has(`action:${s.action}`)).toBe(false);
         continue;
       }
+      if (s.action === 'goInbox') {
+        // With mailboxes loaded, g then i rides on "Go to Inbox" instead of a second row.
+        expect(commands.find((c) => c.label === 'Go to Inbox')?.keycaps).toEqual(['g', 'then', 'i']);
+        continue;
+      }
       expect(actionIds.has(`action:${s.action}`)).toBe(true);
     }
   });
 
+  it('keeps g then i as its own command while the mailboxes are still loading', () => {
+    const commands = buildCommands(context({ mailboxes: null }));
+    expect(commands.some((c) => c.id === 'action:goInbox' && c.group === 'Go to')).toBe(true);
+  });
+
+  it('lists no keyboard actions outside Mail (no perform), but still every place', () => {
+    const ctx: CommandContext = context();
+    delete ctx.perform;
+    const commands = buildCommands(ctx);
+    expect(commands.some((c) => c.id.startsWith('action:'))).toBe(false);
+    expect(commands.some((c) => c.group === 'Settings')).toBe(true);
+  });
+
+  it('carries keycaps from keys.ts, and only where a binding exists (PST-T-14.3)', () => {
+    const commands = buildCommands(context());
+    const withCaps = commands.filter((c) => c.keycaps !== undefined);
+    const bound = new Set(SHORTCUTS.map((s) => keycapsFor(s.keys).join(' ')));
+    for (const c of withCaps) expect(bound.has((c.keycaps ?? []).join(' '))).toBe(true);
+    expect(commands.find((c) => c.id === 'action:reply')?.keycaps).toEqual(['r']);
+    expect(commands.find((c) => c.id === 'action:markUnread')?.keycaps).toEqual(['Shift', 'u']);
+    expect(commands.find((c) => c.label === 'Rules')?.keycaps).toBeUndefined();
+  });
+
+  it('is grouped Message actions, Go to, Settings, Admin — in that order', () => {
+    const commands = buildCommands(context({ target: message(INBOX.id) }), true);
+    const groups = [...new Set(commands.map((c) => c.group))];
+    expect(groups).toEqual([...COMMAND_GROUPS]);
+  });
+
+  it('lists every place in the route table: all of them for an admin, none of Admin otherwise', () => {
+    const asAdmin = buildCommands(context(), true);
+    for (const route of paletteRoutes(true)) {
+      expect(asAdmin.some((c) => c.id === `nav:${route.path}`), route.path).toBe(true);
+    }
+    const asOperator = buildCommands(context(), false);
+    expect(asOperator.some((c) => c.group === 'Admin')).toBe(false);
+    for (const route of ROUTES.filter((r) => r.palette && !r.adminOnly)) {
+      expect(asOperator.some((c) => c.id === `nav:${route.path}`), route.path).toBe(true);
+    }
+  });
+
+  it('running a place command navigates to its path', () => {
+    const navigate = vi.fn();
+    const commands = buildCommands(context({ navigate }));
+    commands.find((c) => c.label === 'Security & devices' || c.label === 'Browser sessions')?.run();
+    expect(navigate).toHaveBeenCalledWith('/settings/security');
+  });
+
+  it('old names survive as searchable hints: "devices" finds Security & devices and Sign-in sessions', () => {
+    const labels = filterCommands(buildCommands(context(), true), 'devices').map((m) => m.command.label);
+    expect(labels).toContain('Browser sessions');
+    expect(labels).toContain('Devices');
+    expect(labels).toContain('Sign-in sessions');
+  });
+
   it('offers "Move to <bucket>" for every other mailbox when a message is selected', () => {
     const commands = buildCommands(context({ target: message(INBOX.id) }));
-    const moveLabels = commands.filter((c) => c.group === 'Move').map((c) => c.label);
+    const moveLabels = commands.filter((c) => c.id.startsWith('move:')).map((c) => c.label);
     expect(moveLabels).toContain('Move to Receipts');
     expect(moveLabels).toContain('Move to Newsletters');
     expect(moveLabels).not.toContain('Move to Inbox'); // already there
@@ -95,7 +156,7 @@ describe('buildCommands', () => {
 
   it('offers no "Move to" commands with nothing selected', () => {
     const commands = buildCommands(context({ target: null }));
-    expect(commands.some((c) => c.group === 'Move')).toBe(false);
+    expect(commands.some((c) => c.id.startsWith('move:'))).toBe(false);
   });
 
   it('running "Move to Receipts" calls move() with the target and the Receipts mailbox', () => {
@@ -117,12 +178,14 @@ describe('buildCommands', () => {
     expect(navigate).toHaveBeenCalledWith(`/mail/${RECEIPTS.id}`);
   });
 
-  it('offers the account screens, and the admin screens only for an admin', () => {
+  it('offers the Settings screens, and the Admin screens only for an admin', () => {
     const asOperator = buildCommands(context(), false).map((c) => c.label);
     const asAdmin = buildCommands(context(), true).map((c) => c.label);
-    expect(asOperator).toContain('Go to App passwords');
-    expect(asOperator).not.toContain('Go to Admin health');
-    expect(asAdmin).toContain('Go to Admin health');
+    expect(asOperator).toContain('Devices');
+    expect(asOperator).toContain('Encryption keys');
+    expect(asOperator).not.toContain('Health');
+    expect(asAdmin).toContain('Health');
+    expect(asAdmin).toContain('Live SMTP');
   });
 
   it('running a keyboard-action command calls perform() with that action', () => {
@@ -147,6 +210,14 @@ describe('filterCommands', () => {
     const matches = filterCommands(commands, 'rec');
     expect(matches[0]?.command.label).toBe('Move to Receipts');
     expect(matches[0]?.indices.length).toBeGreaterThan(0);
+  });
+
+  it('groups matches in the order of their best member, so the top result stays first', () => {
+    const matches = filterCommands(buildCommands(context({ target: message(INBOX.id) })), 'rec');
+    const sections = groupMatches(matches);
+    expect(sections[0]?.matches[0]?.command.label).toBe('Move to Receipts');
+    expect(sections.flatMap((s) => s.matches)).toHaveLength(matches.length);
+    expect(new Set(sections.map((s) => s.group)).size).toBe(sections.length);
   });
 
   it('drops commands that do not match at all', () => {

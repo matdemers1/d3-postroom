@@ -226,6 +226,10 @@ describe.skipIf(!baseUrl)('composer API (PST-T-3.11)', () => {
     const thread = await request(app).get(`/api/threads/${sent.threadId ?? ''}`).set('cookie', me.cookie);
     expect(thread.status).toBe(200);
     expect(ThreadDetail.parse(thread.body).messages.map((m) => m.id)).toEqual([original.id, sent.sentMessageId]);
+    // PST-T-14.2: the Sent copy's list summary is stored at filing — the sender's display name, and
+    // the reply's own text without the quoted history.
+    const sentSummary = ThreadDetail.parse(thread.body).messages.find((m) => m.id === sent.sentMessageId);
+    expect(sentSummary).toMatchObject({ fromName: `Person ${me.address.split('@')[0] ?? ''}`, snippet: 'Thursday works.' });
 
     // Queued exactly as SMTP submission queues: one outbound row, its recipient, the same blob.
     const outbound = await db.outboundMessage.findUniqueOrThrow({ where: { id: sent.outboundId }, include: { recipients: true } });

@@ -45,8 +45,10 @@ one directive, `frame-src https://usercontent.d3cloud.io`.
 `allow-popups allow-popups-to-escape-sandbox` is there only so that a link — always rewritten to
 `target="_blank" rel="noopener noreferrer"` — opens in an ordinary tab. Nothing else is granted.
 
-The frame has a fixed height (70vh) and scrolls inside itself: no script runs in it to report its
-content height, and a server-side guess would be wrong for any layout that depends on width.
+In the reading pane the frame fills the pane's remaining height (a flex column, PST-T-14.6), so the
+page has one scroller and the frame scrolls inside itself: no script runs in it to report its
+content height, and a server-side guess would be wrong for any layout that depends on width. The
+Newsletters feed still gives each frame a fixed 70vh.
 
 ## Remote images
 

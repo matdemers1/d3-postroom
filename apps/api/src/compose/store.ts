@@ -35,6 +35,8 @@ export interface Denorm {
   readonly inReplyTo: string | null;
   readonly references: readonly string[];
   readonly bodyText: string;
+  /** The From display name for the list (PST-T-14.2); null or absent when there is none. */
+  readonly fromName?: string | null;
 }
 
 async function writeDenorm(tx: Tx, accountId: string, messageId: string, d: Denorm): Promise<void> {
@@ -51,7 +53,7 @@ async function writeDenorm(tx: Tx, accountId: string, messageId: string, d: Deno
       references: d.references.map(normalizeMsgId).filter((r) => r !== ''),
     },
   });
-  await indexMessage(tx, { messageId, accountId, subject: d.subject, from: d.fromAddress, to: d.to, bodyText: d.bodyText });
+  await indexMessage(tx, { messageId, accountId, subject: d.subject, from: d.fromAddress, to: d.to, bodyText: d.bodyText, fromName: d.fromName ?? null });
 }
 
 export interface FiledCopy {

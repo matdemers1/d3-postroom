@@ -95,6 +95,13 @@ export const MessageSummary = z.object({
   threadId: Uuid.nullable(),
   subject: z.string().nullable(),
   from: z.string().nullable(),
+  /** PST-T-14.2: what a message row shows beside the subject, both stored at filing time. */
+  fromName: z.string().nullable().describe("The From header's display name, RFC 2047 decoded; null when it has none (show `from`)."),
+  snippet: z
+    .string()
+    .max(140)
+    .nullable()
+    .describe('A one-line preview of the body: at most 140 characters, whitespace collapsed, quoted history dropped. Empty when there is no text; null until the message is summarised.'),
   /** The Date header when there was one, else the arrival time. */
   date: Iso,
   internalDate: Iso,
@@ -106,6 +113,8 @@ export const MessageSummary = z.object({
   expiresAt: Iso.nullable().describe('When the retention sweep expunges it from Trash; null outside Trash or when Trash keeps mail forever.'),
   /** A first-time human sender's message (PST-T-5.4, PST-REQ-106): the new-sender badge, Allow/Block. */
   newSender: z.boolean(),
+  /** Whether the message has an attachment (from the search index; false until it is indexed). */
+  hasAttachments: z.boolean(),
 });
 export const MessageList = z.object({
   messages: z.array(MessageSummary),

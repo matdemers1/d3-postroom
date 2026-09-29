@@ -308,7 +308,7 @@ export function AdminDeliverability() {
       ) : null}
 
       <FormField label="Range" width="sm">
-        <Select options={RANGES} value={days} onValueChange={setDays} />
+        <Select appearance="filled" options={RANGES} value={days} onValueChange={setDays} />
       </FormField>
 
       {loadError !== null ? (

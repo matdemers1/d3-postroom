@@ -85,6 +85,7 @@ export async function clearNewSenderBadge(tx: Tx, accountId: string, address: st
 
 export interface SenderProfileMessage {
   id: string;
+  mailboxId: string;
   subject: string | null;
   date: string;
   bucket: FilingBucket | null;
@@ -180,7 +181,7 @@ export async function getSenderProfile(db: Db, accountId: string, address: strin
     firstSeenAt: first === undefined ? null : first.internalDate.toISOString(),
     lastSeenAt: last === undefined ? null : last.internalDate.toISOString(),
     buckets: [...buckets.entries()].map(([bucket, count]) => ({ bucket, count })),
-    recentMessages: messages.slice(0, 20).map((m) => ({ id: m.id, subject: m.subject, date: (m.sentAt ?? m.internalDate).toISOString(), bucket: (m.verdict?.bucket as FilingBucket | null | undefined) ?? null })),
+    recentMessages: messages.slice(0, 20).map((m) => ({ id: m.id, mailboxId: m.mailboxId, subject: m.subject, date: (m.sentAt ?? m.internalDate).toISOString(), bucket: (m.verdict?.bucket as FilingBucket | null | undefined) ?? null })),
     pin: (pin?.bucket as FilingBucket | null | undefined) ?? null,
     screen: (pin?.screen as 'allow' | 'block' | null | undefined) ?? null,
     unsubscribe,

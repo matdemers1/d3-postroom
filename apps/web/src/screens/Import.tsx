@@ -254,7 +254,7 @@ export function Import() {
                 </Alert>
               )}
               <FormField label="Server" help="e.g. imap.example.org">
-                <Input
+                <Input appearance="filled"
                   name="host"
                   autoComplete="off"
                   required
@@ -265,7 +265,7 @@ export function Import() {
                 />
               </FormField>
               <FormField label="Port" help="993 for IMAP over TLS">
-                <Input
+                <Input appearance="filled"
                   name="port"
                   inputMode="numeric"
                   required
@@ -276,7 +276,7 @@ export function Import() {
                 />
               </FormField>
               <FormField label="Username">
-                <Input
+                <Input appearance="filled"
                   name="username"
                   autoComplete="off"
                   required
@@ -287,7 +287,7 @@ export function Import() {
                 />
               </FormField>
               <FormField label="Password" help="Its password or app password on that server. Deleted when the import ends.">
-                <Input
+                <Input appearance="filled"
                   name="password"
                   type="password"
                   autoComplete="off"
@@ -302,7 +302,7 @@ export function Import() {
                 label="Trust this certificate (optional)"
                 help="Only for your own server with a self-signed certificate: its SHA-256 fingerprint, from openssl x509 -noout -fingerprint -sha256 on that server."
               >
-                <Input
+                <Input appearance="filled"
                   name="trustFingerprint"
                   autoComplete="off"
                   spellCheck={false}
@@ -313,7 +313,7 @@ export function Import() {
                 />
               </FormField>
               <FormField label="Only these folders (optional)" help="One per line. Leave empty for every folder.">
-                <Textarea
+                <Textarea appearance="filled"
                   name="folders"
                   rows={3}
                   value={folders}
@@ -352,7 +352,7 @@ export function Import() {
       >
         <form id="import-step-up" onSubmit={confirmStepUp}>
           <FormField label="Authentication code" {...(codeError === null ? {} : { error: codeError })}>
-            <Input
+            <Input appearance="filled"
               name="code"
               inputMode="numeric"
               autoComplete="one-time-code"

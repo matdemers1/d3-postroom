@@ -53,8 +53,8 @@ test('document.title names the screen, not just "Postroom", on navigation (PST-D
   await expect(page).toHaveTitle('Mail — Postroom');
   await page.goto('/calendar');
   await expect(page).toHaveTitle('Calendar — Postroom');
-  await page.goto('/account/keys');
-  await expect(page).toHaveTitle('Keys — Postroom');
+  await page.goto('/settings/keys');
+  await expect(page).toHaveTitle('Encryption keys — Postroom');
 });
 
 test.describe('at 1280 px', () => {
@@ -103,7 +103,7 @@ test.describe('at 1280 px', () => {
     await expect(page).toHaveURL(new RegExp(`/${b.id}$`));
   });
 
-  test('the reading pane links the From line to the sender profile (PST-DA-028)', async ({ page }) => {
+  test('the reading pane links the From line to the sender profile, through the Person card (PST-DA-028, PST-T-14.9)', async ({ page }) => {
     const t = tag();
     const from = `sender-link-${t}@example.test`;
     const [msg] = await seedMail(api, [{ subject: `Reachable sender ${t}`, from: `Someone <${from}>`, text: `Hi from ${t}.` }]);
@@ -113,7 +113,9 @@ test.describe('at 1280 px', () => {
     await row(page, msg.subject).click();
     await expect(page.getByRole('heading', { name: msg.subject, level: 2 })).toBeVisible();
 
-    const link = page.getByRole('link', { name: 'Sender profile' });
+    // PST-T-14.9: the sender's name opens the Person card, and its "Open full profile" goes here.
+    await page.getByTestId('message-header').getByRole('button', { name: 'Someone' }).click();
+    const link = page.getByRole('dialog', { name: 'Someone' }).getByRole('link', { name: /Open full profile/ });
     await expect(link).toBeVisible();
     await link.click();
     await expect(page).toHaveURL(new RegExp(`/senders/${encodeURIComponent(from)}`));
@@ -135,8 +137,9 @@ test.describe('at 1280 px', () => {
 
     await page.keyboard.press('e');
     await expect(row(page, d.subject)).toHaveCount(0);
-    await expect(page.getByRole('status').filter({ hasText: 'Moved to Archive.' })).toBeVisible();
-    await expect(page).toHaveURL(new RegExp(`/mail/${d.mailboxId}$`));
+    // PST-T-14.5: an Undo toast, and the next message opens (or the list, when none is left).
+    await expect(page.getByRole('region', { name: 'Notifications' })).toContainText(`Moved to Archive · ${d.subject}`);
+    await expect(page).not.toHaveURL(new RegExp(`/${d.id}$`));
 
     const ids = await mailboxIds();
     await expect
@@ -170,9 +173,12 @@ test.describe('at 1280 px', () => {
     const reply = page.getByRole('region', { name: 'Reply', exact: true });
     await expect(reply).toBeVisible();
     await expect(page).toHaveURL(/compose=reply$/);
-    await expect(reply.getByRole('textbox', { name: 'To' })).toHaveValue('Alice Example <alice@example.org>');
+    // PST-T-14.7: recipients are chips; the quote is folded behind "···" until asked for.
+    await expect(reply.getByRole('list', { name: 'To recipients' }).getByRole('listitem')).toHaveCount(1);
+    await expect(reply.getByRole('list', { name: 'To recipients' })).toContainText('Alice Example');
     await expect(reply.getByRole('textbox', { name: 'Subject' })).toHaveValue(`Re: Quarterly numbers ${t}`);
     await expect(reply).toHaveAttribute('data-in-reply-to', e.messageIdHeader);
+    await reply.getByRole('button', { name: 'Show quoted text' }).click();
     await expect(reply.getByRole('textbox', { name: 'Message' })).toHaveValue(/> Numbers attached\./);
     await reply.getByRole('button', { name: 'Discard' }).click();
     await expect(reply).toBeHidden();
@@ -180,19 +186,23 @@ test.describe('at 1280 px', () => {
     await page.keyboard.press('a');
     const all = page.getByRole('region', { name: 'Reply all' });
     await expect(all).toBeVisible();
-    await expect(all.getByRole('textbox', { name: 'To' })).toHaveValue('Alice Example <alice@example.org>');
-    await expect(all.getByRole('textbox', { name: /^Cc\b/ })).toHaveValue('Bob Example <bob@example.org>');
+    await expect(all.getByRole('list', { name: 'To recipients' })).toContainText('Alice Example');
+    // A reply-all's Cc has something in it, so its row starts open.
+    await expect(all.getByRole('combobox', { name: 'Cc' })).toBeVisible();
+    await expect(all.getByRole('list', { name: 'Cc recipients' })).toContainText('Bob Example');
+    await expect(all.getByRole('list', { name: 'Cc recipients' })).not.toContainText('operator@d3cloud.io');
     await all.getByRole('button', { name: 'Discard' }).click();
 
     await page.keyboard.press('c');
     const fresh = page.getByRole('region', { name: 'New message' });
     await expect(fresh).toBeVisible();
-    await expect(fresh.getByRole('textbox', { name: 'To' })).toHaveValue('');
-    await expect(fresh.getByRole('textbox', { name: 'To' })).toBeFocused();
+    await expect(fresh.getByRole('combobox', { name: 'To' })).toHaveValue('');
+    await expect(fresh.getByRole('list', { name: 'To recipients' })).toHaveCount(0);
+    await expect(fresh.getByRole('combobox', { name: 'To' })).toBeFocused();
     await expect(fresh.getByRole('textbox', { name: 'Subject' })).toHaveValue('');
     // Typing in the composer is typing, not shortcuts.
     await page.keyboard.type('jk');
-    await expect(fresh.getByRole('textbox', { name: 'To' })).toHaveValue('jk');
+    await expect(fresh.getByRole('combobox', { name: 'To' })).toHaveValue('jk');
   });
 
   test('? shows the shortcuts overlay, and ? again hides it', async ({ page }) => {

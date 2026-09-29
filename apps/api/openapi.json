@@ -1952,6 +1952,25 @@
               "null"
             ]
           },
+          "fromName": {
+            "description": "The From header's display name, RFC 2047 decoded; null when it has none (show `from`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 140
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A one-line preview of the body: at most 140 characters, whitespace collapsed, quoted history dropped. Empty when there is no text; null until the message is summarised."
+          },
           "date": {
             "type": "string",
             "format": "date-time",
@@ -2006,6 +2025,9 @@
             "description": "When the retention sweep expunges it from Trash; null outside Trash or when Trash keeps mail forever."
           },
           "newSender": {
+            "type": "boolean"
+          },
+          "hasAttachments": {
             "type": "boolean"
           },
           "messageIdHeader": {
@@ -2118,6 +2140,8 @@
           "threadId",
           "subject",
           "from",
+          "fromName",
+          "snippet",
           "date",
           "internalDate",
           "size",
@@ -2126,6 +2150,7 @@
           "trashedAt",
           "expiresAt",
           "newSender",
+          "hasAttachments",
           "messageIdHeader",
           "inReplyTo",
           "references",
@@ -3532,6 +3557,25 @@
               "null"
             ]
           },
+          "fromName": {
+            "description": "The From header's display name, RFC 2047 decoded; null when it has none (show `from`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 140
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A one-line preview of the body: at most 140 characters, whitespace collapsed, quoted history dropped. Empty when there is no text; null until the message is summarised."
+          },
           "date": {
             "type": "string",
             "format": "date-time",
@@ -3587,6 +3631,9 @@
           },
           "newSender": {
             "type": "boolean"
+          },
+          "hasAttachments": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -3597,6 +3644,8 @@
           "threadId",
           "subject",
           "from",
+          "fromName",
+          "snippet",
           "date",
           "internalDate",
           "size",
@@ -3604,7 +3653,8 @@
           "bucket",
           "trashedAt",
           "expiresAt",
-          "newSender"
+          "newSender",
+          "hasAttachments"
         ],
         "additionalProperties": false
       },
@@ -4012,6 +4062,9 @@
                 "id": {
                   "type": "string"
                 },
+                "mailboxId": {
+                  "type": "string"
+                },
                 "subject": {
                   "type": [
                     "string",
@@ -4043,6 +4096,7 @@
               },
               "required": [
                 "id",
+                "mailboxId",
                 "subject",
                 "date",
                 "bucket"
@@ -4513,6 +4567,163 @@
           "state",
           "mailboxId",
           "messageIds"
+        ],
+        "additionalProperties": false
+      },
+      "SortingCorrection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "sender",
+              "domain"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "fromBucket": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "toBucket": {
+            "type": "string"
+          },
+          "messageId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "moved": {
+            "type": "boolean"
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fromAddress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "chip",
+              "card"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "undoneAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "target",
+          "fromBucket",
+          "toBucket",
+          "messageId",
+          "moved",
+          "subject",
+          "fromAddress",
+          "source",
+          "createdAt",
+          "undoneAt"
+        ],
+        "additionalProperties": false
+      },
+      "SortingCorrectionList": {
+        "type": "object",
+        "properties": {
+          "corrections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SortingCorrection"
+            }
+          }
+        },
+        "required": [
+          "corrections"
+        ],
+        "additionalProperties": false
+      },
+      "SortingCorrectionResult": {
+        "type": "object",
+        "properties": {
+          "correction": {
+            "$ref": "#/components/schemas/SortingCorrection"
+          },
+          "message": {
+            "$ref": "#/components/schemas/MessageSummary"
+          }
+        },
+        "required": [
+          "correction",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "SortingCorrectionUndo": {
+        "type": "object",
+        "properties": {
+          "correction": {
+            "$ref": "#/components/schemas/SortingCorrection"
+          },
+          "movedBack": {
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preferenceRestored": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "correction",
+          "movedBack",
+          "message",
+          "preferenceRestored"
         ],
         "additionalProperties": false
       },
@@ -13004,6 +13215,264 @@
           },
           "404": {
             "description": "No script by that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sorting/corrections": {
+      "get": {
+        "operationId": "listSortingCorrections",
+        "tags": [
+          "Sorting"
+        ],
+        "summary": "The caller’s sorting corrections that are still in force, newest first (Settings → Rules → Sorting corrections).",
+        "responses": {
+          "200": {
+            "description": "Corrections.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SortingCorrectionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createSortingCorrection",
+        "tags": [
+          "Sorting"
+        ],
+        "summary": "Correct where a message was sorted: move it to a bucket and record a sender preference the sorter honours for new mail (PST-ADR-011).",
+        "description": "In one transaction: a sender pin on the From address (or on \"@domain\" when scope is domain), a move to the bucket’s mailbox (INBOX with $Priority/$People, a bucket folder, or Junk) that trains the Bayes model like any move, the stored verdict updated with one more reason, and a correction row that Undo reverses. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messageId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "description": "The message the correction is made on."
+                  },
+                  "bucket": {
+                    "type": "string",
+                    "enum": [
+                      "priority",
+                      "people",
+                      "newsletters",
+                      "updates",
+                      "receipts",
+                      "notifications",
+                      "junk"
+                    ],
+                    "description": "Where the message — and, from now on, this sender’s new mail — belongs."
+                  },
+                  "scope": {
+                    "default": "sender",
+                    "description": "Record the preference on the From address, or on its whole domain (\"Always put github.com in Notifications\"). A domain preference is refused for Priority/People and for mailbox providers.",
+                    "type": "string",
+                    "enum": [
+                      "sender",
+                      "domain"
+                    ]
+                  },
+                  "source": {
+                    "default": "chip",
+                    "description": "Where the correction was made: the bucket chip’s popover, or the Person card.",
+                    "type": "string",
+                    "enum": [
+                      "chip",
+                      "card"
+                    ]
+                  }
+                },
+                "required": [
+                  "messageId",
+                  "bucket"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Corrected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SortingCorrectionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation, the message has no sender, or a domain preference was asked for where it is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The account has no mailbox for that bucket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sorting/corrections/{id}/undo": {
+      "post": {
+        "operationId": "undoSortingCorrection",
+        "tags": [
+          "Sorting"
+        ],
+        "summary": "Undo a sorting correction: the sender preference goes back as it was and the message goes back where it came from, when each is still as the correction left it.",
+        "description": "The correction row is kept and marked undone, never deleted. Audited. Needs x-postroom-csrf: 1.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Undone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SortingCorrectionUndo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such correction.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already undone.",
             "content": {
               "application/json": {
                 "schema": {

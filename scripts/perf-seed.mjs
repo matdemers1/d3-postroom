@@ -83,7 +83,7 @@ export async function seedInbox(db, opts) {
   const bucketsSql = `ARRAY[${BUCKETS.map((b) => `'${b}'`).join(',')}]::text[]`;
 
   await db.$executeRawUnsafe(`
-    INSERT INTO message (id, mailbox_id, uid, modseq, blob_sha256, size, internal_date, received_at, flags, subject, from_address, sent_at, thread_id)
+    INSERT INTO message (id, mailbox_id, uid, modseq, blob_sha256, size, internal_date, received_at, flags, subject, from_address, from_name, snippet, sent_at, thread_id)
     SELECT gen_random_uuid(),
            '${mailboxId}'::uuid,
            ${uidStart} + g - 1,
@@ -95,6 +95,8 @@ export async function seedInbox(db, opts) {
            CASE WHEN g % 5 = 0 THEN ARRAY[]::text[] ELSE ARRAY['\\Seen']::text[] END,
            'Perf message ' || g,
            'perf-sender-' || (g % ${senderCount}) || '@perf.example.test',
+           'Perf Sender ' || (g % ${senderCount}),
+           left('Perf message ' || g || ' preview: ' || repeat('a realistic one-line preview of the body ', 4), 140),
            now() - (g || ' seconds')::interval,
            (${threadIdsSql})[(g % ${threadCount}) + 1]
     FROM generate_series(1, ${count}) AS g`);

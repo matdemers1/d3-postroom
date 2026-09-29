@@ -86,7 +86,7 @@ export function Contacts() {
   const list = (
     <div className="pr-contacts__list">
       <FilterBar aria-label="Filter contacts">
-        <Input
+        <Input appearance="filled"
           type="search"
           aria-label="Search contacts"
           placeholder="Search by name, email or organization"
@@ -96,7 +96,7 @@ export function Contacts() {
           }}
         />
         {books !== null && books.length > 1 ? (
-          <Select
+          <Select appearance="filled"
             aria-label="Address book"
             options={[{ value: 'all', label: 'All address books' }, ...books.map((b) => ({ value: b.id, label: `${b.displayName} (${String(b.count)})` }))]}
             value={bookFilter}
@@ -412,7 +412,7 @@ function ContactEditor({
           )}
           <Cluster gap="12">
             <FormField label="First name" width="sm">
-              <Input
+              <Input appearance="filled"
                 value={form.given}
                 autoComplete="off"
                 onChange={(e) => {
@@ -421,7 +421,7 @@ function ContactEditor({
               />
             </FormField>
             <FormField label="Last name" width="sm">
-              <Input
+              <Input appearance="filled"
                 value={form.family}
                 autoComplete="off"
                 onChange={(e) => {
@@ -431,7 +431,7 @@ function ContactEditor({
             </FormField>
           </Cluster>
           <FormField label="Display name" optional help="Shown in lists; made from the name when blank.">
-            <Input
+            <Input appearance="filled"
               value={form.fn}
               autoComplete="off"
               onChange={(e) => {
@@ -440,7 +440,7 @@ function ContactEditor({
             />
           </FormField>
           <FormField label="Organization" optional>
-            <Input
+            <Input appearance="filled"
               value={form.org}
               autoComplete="off"
               onChange={(e) => {
@@ -452,7 +452,7 @@ function ContactEditor({
             <Stack gap="8">
               {form.emails.map((e, i) => (
                 <Cluster key={e.key} gap="8" align="center">
-                  <Input
+                  <Input appearance="filled"
                     type="email"
                     aria-label={`Email ${String(i + 1)}`}
                     value={e.address}
@@ -461,7 +461,7 @@ function ContactEditor({
                       set({ emails: form.emails.map((x) => (x.key === e.key ? { ...x, address: ev.target.value } : x)) });
                     }}
                   />
-                  <Select
+                  <Select appearance="filled"
                     aria-label={`Email ${String(i + 1)} type`}
                     options={typeOptions(EMAIL_TYPES, e.type)}
                     value={e.type}
@@ -497,7 +497,7 @@ function ContactEditor({
             <Stack gap="8">
               {form.tels.map((t, i) => (
                 <Cluster key={t.key} gap="8" align="center">
-                  <Input
+                  <Input appearance="filled"
                     type="tel"
                     aria-label={`Phone ${String(i + 1)}`}
                     value={t.value}
@@ -506,7 +506,7 @@ function ContactEditor({
                       set({ tels: form.tels.map((x) => (x.key === t.key ? { ...x, value: ev.target.value } : x)) });
                     }}
                   />
-                  <Select
+                  <Select appearance="filled"
                     aria-label={`Phone ${String(i + 1)} type`}
                     options={typeOptions(TEL_TYPES, t.type)}
                     value={t.type}
@@ -539,7 +539,7 @@ function ContactEditor({
             </Stack>
           </FormField>
           <FormField label="Notes" optional>
-            <Textarea
+            <Textarea appearance="filled"
               rows={3}
               value={form.note}
               onChange={(e) => {
@@ -549,7 +549,7 @@ function ContactEditor({
           </FormField>
           {existing === null && books.length > 1 ? (
             <FormField label="Address book" width="md">
-              <Select options={books.map((b) => ({ value: b.id, label: b.displayName }))} value={bookId} onValueChange={setBookId} />
+              <Select appearance="filled" options={books.map((b) => ({ value: b.id, label: b.displayName }))} value={bookId} onValueChange={setBookId} />
             </FormField>
           ) : null}
           <FormActions>

@@ -1,0 +1,237 @@
+/* The composer (PST-T-14.7, PST-REQ-191/192/193; design audit D-04). Borderless header rows with
+   their labels beside them, a body with no box that fills the pane, one footer everywhere. Motion:
+   the composer rises 12px and fades in over --dur-3; a revealed row opens height + opacity over
+   --dur-2; under reduced motion nothing moves. RecipientField's suggestion list is not portalled,
+   so nothing that holds a row clips its overflow once the row has opened. */
+
+.pr-compose {
+  animation: pr-compose-in var(--dur-3) var(--ease-out) backwards;
+}
+
+@keyframes pr-compose-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+/* --- In the reading pane's place (new message, a resumed draft) ---------------------------------- */
+
+.pr-compose--pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.pr-compose--pane .pr-compose__form {
+  flex: 1;
+  min-height: 0;
+}
+
+.pr-compose__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.pr-compose__title {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-20);
+  font-weight: var(--weight-title);
+}
+
+/* Inline under the thread: a card below the last message (TF-08). */
+.pr-compose--inline {
+  margin-top: var(--space-16);
+  padding: var(--space-12) var(--space-16);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.pr-compose__title--inline {
+  margin: 0;
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg-muted);
+}
+
+/* --- Header rows -------------------------------------------------------------------------------- */
+
+.pr-compose__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.pr-compose__reveals {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.pr-compose__reveal-link {
+  color: var(--color-fg-muted);
+}
+
+/* A borderless row like RecipientField's: the label beside the value, a 3:1 hairline under both. */
+.pr-compose__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 44px;
+  border-bottom: var(--border-width) solid var(--color-border-field);
+}
+
+.pr-compose__row:focus-within .pr-compose__label {
+  color: var(--color-accent);
+  font-weight: var(--weight-medium);
+}
+
+.pr-compose__label {
+  flex: none;
+  min-width: 64px;
+  padding-right: var(--space-8);
+  color: var(--color-fg-faint);
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+  transition: color var(--motion-hover);
+}
+
+/* Subject and the other rows' inputs sit in the row, not in a box of their own: the row's hairline
+   and label identify them; focus keeps its outline. */
+.pr-compose__row .d3-input,
+.pr-compose__row input,
+.pr-compose__row .pr-compose__subject {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border-color: transparent;
+}
+
+.pr-compose__from {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A row revealed on demand: height + opacity over --dur-2 (PST-REQ-192). Clipped only while it opens. */
+.pr-compose__reveal {
+  animation: pr-compose-row-in var(--dur-2) var(--ease-out) backwards;
+}
+
+@keyframes pr-compose-row-in {
+  from {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+  }
+  to {
+    max-height: 44px;
+    opacity: 1;
+    overflow: hidden;
+  }
+}
+
+/* --- The body ------------------------------------------------------------------------------------- */
+
+.pr-compose__body {
+  flex: 1;
+  min-height: 12rem;
+  max-width: var(--container-prose);
+  resize: none;
+  background: transparent;
+  border-color: transparent;
+  padding-inline: 0;
+  font-size: var(--text-14);
+  line-height: var(--leading-14);
+}
+
+.pr-compose--inline .pr-compose__body {
+  min-height: 8rem;
+}
+
+.pr-compose__formatbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  padding-block: var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.pr-compose__quote {
+  display: flex;
+}
+
+.pr-compose__templates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pr-compose__hint {
+  margin: 0;
+  font-size: var(--text-12);
+  color: var(--color-fg-muted);
+}
+
+/* --- The footer: Send ▾, Aa, ⋯ … status, Discard ---------------------------------------------------- */
+
+.pr-compose__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  padding-top: var(--space-12);
+  border-top: var(--border-width) solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.pr-compose--pane .pr-compose__footer {
+  position: sticky;
+  bottom: calc(var(--space-24) * -1);
+  z-index: 1;
+  margin-inline: calc(var(--space-24) * -1);
+  padding: var(--space-12) var(--space-24);
+}
+
+.pr-mail[data-layout='push'] .pr-compose--pane .pr-compose__footer {
+  bottom: calc(var(--space-16) * -1);
+  margin-inline: calc(var(--space-16) * -1);
+  padding-inline: var(--space-16);
+}
+
+.pr-compose--inline .pr-compose__footer {
+  background: transparent;
+}
+
+/* Send and its ▾ read as one control. */
+.pr-compose__send {
+  display: inline-flex;
+  gap: var(--border-width);
+}
+
+.pr-compose__status {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  min-width: 8rem;
+  margin: 0;
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
+}
+
+.pr-compose__summary {
+  color: var(--color-fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pr-compose,
+  .pr-compose__reveal {
+    animation: none;
+  }
+
+  .pr-compose__label {
+    transition: none;
+  }
+}

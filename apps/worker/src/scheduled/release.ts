@@ -241,6 +241,7 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
               inReplyTo: row.inReplyTo,
               references: row.references,
               bodyText,
+              fromName: draft?.fromName ?? null,
             },
             now,
             takeReference: true,

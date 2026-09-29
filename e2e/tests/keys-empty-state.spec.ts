@@ -36,7 +36,7 @@ test('empty is one caption, no table header, and Generate reaches the form', asy
   for (const k of keys.filter((row) => row.owner === 'contact')) await api.delete(`/api/keys/${k.id}`, { headers: CSRF });
   const ownKeysExist = keys.some((row) => row.owner === 'own');
 
-  await page.goto('/account/keys');
+  await page.goto('/settings/keys');
   await expect(page.getByRole('heading', { name: 'Keys', level: 1 })).toBeVisible();
 
   // "Contacts' keys" is always forced empty: one caption (the Section heading), no header, an

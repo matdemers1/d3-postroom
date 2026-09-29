@@ -123,8 +123,8 @@ export function Sessions() {
   return (
     <Page>
       <PageHeader
-        title="Devices"
-        description="Every device signed in to Postroom as you, right now."
+        title="Browser sessions"
+        description="Every browser signed in to Postroom as you, right now. Mail apps are under Devices."
         {...(sessions === null ? {} : { count: sessions.length, countNoun: { one: 'session', other: 'sessions' } })}
       />
       {notice === null ? null : (
@@ -195,7 +195,7 @@ export function Sessions() {
       >
         <form id="sessions-step-up" onSubmit={confirmStepUp}>
           <FormField label="Authentication code" {...(codeError === null ? {} : { error: codeError })}>
-            <Input
+            <Input appearance="filled"
               name="code"
               inputMode="numeric"
               autoComplete="one-time-code"

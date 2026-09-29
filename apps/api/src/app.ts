@@ -32,6 +32,7 @@ import { exportRoutes } from './export/index.js';
 import { senderRoutes } from './senders/index.js';
 import { unsubscribeRoutes } from './unsubscribe/index.js';
 import { sieveRoutes } from './sieve/index.js';
+import { sortingRoutes } from './sorting/index.js';
 import { sesSnsRoutes } from './ses/index.js';
 import { importRoutes } from './import/index.js';
 import { mobileconfigRoutes } from './mobileconfig/index.js';
@@ -132,6 +133,8 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/aliases', requireSession(deps), aliasRoutes(deps));
   app.use('/api/senders', requireSession(deps), senderRoutes(deps));
   app.use('/api/sieve', requireSession(deps), sieveRoutes(deps));
+  // PST-T-14.9: sorting corrections — a move plus a recorded sender preference, with Undo.
+  app.use('/api/sorting', requireSession(deps), sortingRoutes(deps));
   app.use('/api/messages', requireSession(deps), deliveryRoutes(deps));
   // PST-T-5.6: one-click unsubscribe. Same prefix as deliveryRoutes above, disjoint paths (.../unsubscribe).
   app.use('/api/messages', requireSession(deps), unsubscribeRoutes(deps));

@@ -7,4 +7,5 @@ export { parseQuery } from './parser.js';
 export { formatQuery } from './format.js';
 export { buildSearchSql, InvalidSearchCursorError, parseCursor, parseDateValue, searchMessages, type SearchOptions, type SearchRow } from './sql.js';
 export { htmlToText, indexMessage, truncateUtf8, type IndexMessageInput } from './index-message.js';
+export { MAX_SNIPPET_LENGTH, snippetOf } from './snippet.js';
 export { imapSearchToAst, imapTextCriteriaSql, type ImapTextCriterion, type ImapTextKey } from './imap.js';

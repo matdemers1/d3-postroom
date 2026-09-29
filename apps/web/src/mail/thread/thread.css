@@ -1,0 +1,547 @@
+/* The calm thread view (PST-T-14.6, PST-ADR-011). System tokens only (d3-check-usage): no raw
+   colours, no shadows. Motion uses the library's --dur-* / --ease-* tokens; under
+   prefers-reduced-motion the library's global rule zeroes every duration (PST-REQ-193). */
+
+/* --- The pane: a flex column with one scroller ------------------------------------------------- */
+
+.pr-reader.pr-reader--open {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.pr-reader--open > .pr-back {
+  flex: none;
+  margin: var(--space-16) var(--space-24) 0;
+}
+
+.pr-reader__top {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-20) var(--space-24) var(--space-12);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.pr-reader__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-16) var(--space-24) var(--space-24);
+  /* j/k: a short fade and nothing more — no entrance (PST-REQ-192). */
+  animation: pr-fade var(--dur-1) var(--ease-out) backwards;
+}
+
+@keyframes pr-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.pr-mail[data-layout='push'] .pr-reader--open > .pr-back {
+  margin: var(--space-12) var(--space-16) 0;
+}
+
+.pr-mail[data-layout='push'] .pr-reader__top {
+  padding: var(--space-12) var(--space-16) var(--space-8);
+}
+
+.pr-mail[data-layout='push'] .pr-reader__scroll {
+  padding: var(--space-12) var(--space-16) var(--space-16);
+}
+
+/* --- The toolbar ------------------------------------------------------------------------------- */
+
+.pr-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+}
+
+.pr-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* A CSS tooltip for an icon button that also opens a menu (ThreadToolbar.tsx's HintTip): the same
+   look as the library's, shown on hover (after its 400ms delay) and at once on keyboard focus. */
+.pr-hint {
+  position: relative;
+  display: inline-flex;
+}
+
+.pr-hint__tip {
+  position: absolute;
+  bottom: calc(100% + var(--space-6));
+  left: 50%;
+  translate: -50% 0;
+  z-index: 60;
+  padding: var(--space-6) var(--space-8);
+  border: var(--border-width) solid var(--color-border-float);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-fg);
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--dur-2) var(--ease-out),
+    visibility 0s linear var(--dur-2);
+}
+
+.pr-hint:hover .pr-hint__tip {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--dur-2) var(--ease-out) 400ms,
+    visibility 0s linear 400ms;
+}
+
+.pr-hint:has(:focus-visible) .pr-hint__tip {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+
+.pr-hint:has([aria-expanded='true']) .pr-hint__tip {
+  display: none;
+}
+
+/* A ⋯ row: the action, then its key. */
+.pr-menurow {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-16);
+}
+
+.pr-menurow__key {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  color: var(--color-fg-faint);
+}
+
+.pr-moveto {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.pr-moveto__btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* --- One message ------------------------------------------------------------------------------- */
+
+.pr-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+.pr-reader__scroll > .pr-msg[data-fill='true'] {
+  flex: 1 0 auto;
+}
+
+.pr-msg[data-fill='true'] > .pr-msg__body {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.pr-msg__body {
+  min-width: 0;
+}
+
+/* The one-line header. */
+.pr-mhead__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--space-32);
+  min-width: 0;
+}
+
+.pr-mhead__who {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.pr-mhead__name {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-mhead__to {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-fg-muted);
+  font: inherit;
+  font-size: var(--text-13);
+  cursor: pointer;
+}
+
+.pr-mhead__to > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-mhead__to:hover {
+  color: var(--color-fg);
+  background: var(--color-surface-hover);
+}
+
+.pr-mhead__to:focus-visible,
+.pr-mhead__date:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+.pr-mhead__caret {
+  display: inline-flex;
+  flex: none;
+  transition: rotate var(--dur-2) var(--ease-out);
+}
+
+.pr-mhead__to[aria-expanded='true'] .pr-mhead__caret {
+  rotate: 180deg;
+}
+
+.pr-mhead__date {
+  flex: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-mhead__block {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-4) var(--space-12);
+  margin: 0;
+  padding: var(--space-8) var(--space-4) var(--space-4) var(--space-40);
+  font-size: var(--text-13);
+}
+
+.pr-mhead__block dt {
+  color: var(--color-fg-muted);
+}
+
+.pr-mhead__block dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Height + opacity over --dur-2 (PST-REQ-192): a grid-rows transition from 0fr to 1fr, so nothing
+   measures a height. Used by the address block and by an earlier message opened by hand. */
+.pr-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--dur-2) var(--ease-out),
+    opacity var(--dur-2) var(--ease-out),
+    visibility 0s linear var(--dur-2);
+}
+
+.pr-reveal[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--dur-2) var(--ease-out),
+    opacity var(--dur-2) var(--ease-out);
+}
+
+.pr-reveal__inner {
+  min-height: 0;
+  min-width: 0;
+}
+
+.pr-reveal:not([data-settled='true']) > .pr-reveal__inner {
+  overflow: hidden;
+}
+
+.pr-reveal:focus {
+  outline: none;
+}
+
+/* The HTML frame. A fill frame takes the rest of the pane's height (flex: 1, min 20rem); any other
+   is clamp(16rem, 50vh, 36rem). No border and no card: the sender's own page, edge to edge. */
+.pr-frame {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.pr-frame[data-fill='true'] {
+  flex: 1 0 auto;
+}
+
+.pr-frame__frame {
+  display: block;
+  width: 100%;
+  height: clamp(16rem, 50vh, 36rem);
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--radius-md);
+}
+
+.pr-frame[data-fill='true'] > .pr-frame__frame {
+  flex: 1 0 20rem;
+  height: auto;
+}
+
+/* Attachments as cards: type tile, name, size. */
+.pr-reader__attachments .pr-attachment {
+  padding: var(--space-8) var(--space-12);
+  background: var(--color-surface);
+}
+
+/* --- The thread: earlier messages as one-line cards ---------------------------------------------- */
+
+.pr-thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.pr-thread .pr-thread__item {
+  padding: 0;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.pr-thread .pr-thread__item[data-expanded='true'] {
+  padding: var(--space-12) var(--space-16) var(--space-16);
+}
+
+.pr-thread .pr-thread__item[data-fill='true'] {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+.pr-thread__item[data-fill='true'] > .pr-reveal {
+  flex: 1 0 auto;
+}
+
+.pr-thread__item[data-fill='true'] > .pr-reveal > .pr-reveal__inner {
+  display: flex;
+  flex-direction: column;
+}
+
+.pr-thread__item[data-fill='true'] > .pr-reveal > .pr-reveal__inner > .pr-msg {
+  flex: 1 0 auto;
+}
+
+.pr-thread .pr-thread__collapsed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-12);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.pr-thread .pr-thread__collapsed:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-thread .pr-thread__collapsed-main {
+  display: flex;
+  flex: 1;
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--space-8);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pr-thread .pr-thread__collapsed-summary {
+  flex: none;
+  max-width: 40%;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-thread .pr-thread__snippet {
+  flex: 1;
+  min-width: 0;
+}
+
+.pr-thread__date {
+  flex: none;
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+}
+
+/* --- Exception chips (only ever for something wrong) --------------------------------------------- */
+
+.pr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.pr-chip__icon {
+  display: inline-flex;
+}
+
+.pr-chip__icon svg {
+  width: var(--size-icon-14, 14px);
+  height: var(--size-icon-14, 14px);
+}
+
+/* The delivery line drawn as a chip (a <span>, so the line's own words stay its text). */
+.pr-chip--line {
+  min-height: 24px;
+  padding: 0 var(--space-12);
+  border-radius: var(--radius-full);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+/* The Badge's own tone pairs, so the contrast is the library's, checked in both themes. */
+.pr-chip--line[data-tone='danger'] {
+  background: var(--color-surface-raised);
+  color: var(--color-danger);
+}
+
+.pr-chip--line[data-tone='attention'] {
+  background: var(--color-accent-muted);
+  color: var(--color-accent);
+}
+
+.pr-chip--line .pr-delivery__when {
+  color: inherit;
+  font-weight: var(--weight-regular);
+}
+
+.pr-exception {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-6) var(--space-12);
+  align-items: start;
+}
+
+.pr-exception__head,
+.pr-exception__text {
+  grid-column: 1;
+}
+
+.pr-exception__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.pr-exception__actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+.pr-exception__sentence {
+  margin: 0;
+  font-size: var(--text-14);
+  color: var(--color-fg);
+  overflow-wrap: anywhere;
+}
+
+.pr-delivery__recipient[data-exception='true'] .pr-delivery__address {
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
+}
+
+/* At phone width every control owns a 44px target (mobile-targets.css, e2e/tests/mobile.spec.ts). */
+@media (max-width: 767px) {
+  .pr-mhead__to,
+  .pr-mhead__date {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* --- Print: the message, not the app around it ---------------------------------------------------- */
+
+@media print {
+  .pr-mail__list,
+  .pr-toolbar,
+  .pr-back {
+    display: none;
+  }
+
+  .pr-mail,
+  .pr-reader.pr-reader--open,
+  .pr-reader__scroll {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+.pr-exception__reasons {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
+  overflow-wrap: anywhere;
+}

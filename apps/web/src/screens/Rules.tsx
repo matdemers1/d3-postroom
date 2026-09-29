@@ -23,6 +23,7 @@ import {
 } from '@d3cloud/ui';
 import { ApiError, compileErrorOf, describeError, sieveApi, type SieveCompileError, type SieveScriptSummary } from '../api';
 import { Loading, LoadFailed } from './states';
+import { SortingCorrections } from '../mail/sorting/SortingCorrections';
 
 // ─── The builder's model, and its Sieve (PST-REQ-150) ────────────────────────────────────────────
 //
@@ -200,7 +201,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
     <Section title={`Rule ${n}`} headingLevel={3} actions={<Button variant="danger-ghost" size="sm" aria-label={`Remove rule ${n}`} onClick={onRemove}>Remove</Button>}>
       <Cluster gap="12" align="end">
         <FormField label="When">
-          <Select
+          <Select appearance="filled"
             options={FIELDS}
             value={rule.field}
             onValueChange={(v) => {
@@ -209,7 +210,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
           />
         </FormField>
         <FormField label="Match">
-          <Select
+          <Select appearance="filled"
             options={MATCHES}
             value={rule.match}
             onValueChange={(v) => {
@@ -218,7 +219,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
           />
         </FormField>
         <FormField label="Text">
-          <Input
+          <Input appearance="filled"
             value={rule.value}
             autoComplete="off"
             spellCheck={false}
@@ -228,7 +229,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
           />
         </FormField>
         <FormField label="Then">
-          <Select
+          <Select appearance="filled"
             options={ACTIONS}
             value={rule.action}
             onValueChange={(v) => {
@@ -239,7 +240,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
         </FormField>
         {rule.action === 'move' ? (
           <FormField label="Folder">
-            <Input
+            <Input appearance="filled"
               value={rule.target}
               autoComplete="off"
               onChange={(e) => {
@@ -250,7 +251,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
         ) : null}
         {rule.action === 'bucket' ? (
           <FormField label="Bucket">
-            <Select
+            <Select appearance="filled"
               options={BUCKETS}
               value={rule.target}
               onValueChange={(v) => {
@@ -467,6 +468,8 @@ export function Rules() {
         <Loading label="Loading your rules" />
       ) : (
         <Stack gap="24">
+          {/* PST-T-14.9: the corrections made from a bucket chip, each with Undo. */}
+          <SortingCorrections />
           <Section
             title={`Editing “${name}”`}
             description={current?.active === true ? 'This script runs on every new message.' : 'This script is not running. Save and turn it on to use it.'}
@@ -519,7 +522,7 @@ export function Rules() {
                       label="Sieve script"
                       help={handWritten ? 'Written by hand or in another client, so it is edited here as Sieve.' : 'Switch back to Rules to edit rows again.'}
                     >
-                      <Textarea
+                      <Textarea appearance="filled"
                         mono
                         rows={16}
                         spellCheck={false}

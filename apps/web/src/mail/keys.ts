@@ -19,7 +19,11 @@ export type MailAction =
   | 'goInbox'
   | 'help'
   | 'commandPalette'
-  | 'inspect';
+  | 'inspect'
+  | 'undo'
+  | 'moveTo'
+  | 'select'
+  | 'snooze';
 
 export interface Shortcut {
   keys: string;
@@ -35,6 +39,10 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { keys: 'u', action: 'back', description: 'Back to the list' },
   { keys: 'e', action: 'archive', description: 'Archive' },
   { keys: '#', action: 'delete', description: 'Move to Trash' },
+  { keys: 'v', action: 'moveTo', description: 'Move to a mailbox' },
+  { keys: 'b', action: 'snooze', description: 'Snooze the conversation' },
+  { keys: 'z', action: 'undo', description: 'Undo the last move' },
+  { keys: 'x', action: 'select', description: 'Select or deselect a message' },
   { keys: 'r', action: 'reply', description: 'Reply' },
   { keys: 'a', action: 'replyAll', description: 'Reply all' },
   { keys: 'f', action: 'forward', description: 'Forward' },
@@ -55,6 +63,10 @@ const SINGLE: Readonly<Record<string, MailAction>> = {
   u: 'back',
   e: 'archive',
   '#': 'delete',
+  v: 'moveTo',
+  b: 'snooze',
+  z: 'undo',
+  x: 'select',
   r: 'reply',
   a: 'replyAll',
   f: 'forward',
@@ -119,11 +131,14 @@ export function describeTarget(target: EventTarget | null): { editable: boolean;
 // `i` and the palette's "Inspect the open message" call requestInspect(); the drawer of the message
 // that is open subscribes. Nothing open → nobody listening → nothing happens.
 
-type InspectListener = () => void;
+// `returnTo` is where focus goes when the drawer closes: the ⋯ button or the chip's Details button
+// that asked for it. The key and the palette pass nothing, and the drawer falls back to what the
+// reader was on before.
+type InspectListener = (returnTo: HTMLElement | null) => void;
 const inspectListeners = new Set<InspectListener>();
 
-export function requestInspect(): void {
-  for (const listener of [...inspectListeners]) listener();
+export function requestInspect(returnTo: HTMLElement | null = null): void {
+  for (const listener of [...inspectListeners]) listener(returnTo);
 }
 
 /** Subscribes; returns the unsubscribe. */

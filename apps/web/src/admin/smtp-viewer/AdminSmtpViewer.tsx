@@ -147,7 +147,7 @@ export function AdminSmtpViewer() {
   return (
     <Page>
       <PageHeader
-        title="SMTP sessions"
+        title="Live SMTP"
         description="Every SMTP session's transcript, credentials redacted, kept forever — and the live feed as it happens."
         actions={
           <Button variant="secondary" onClick={() => void load()}>

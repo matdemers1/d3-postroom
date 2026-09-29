@@ -99,7 +99,7 @@ export function ChangePassword() {
               />
             </FormField>
             <FormField label="Authentication code" help="A fresh code from your authenticator.">
-              <Input
+              <Input appearance="filled"
                 name="code"
                 inputMode="numeric"
                 autoComplete="one-time-code"

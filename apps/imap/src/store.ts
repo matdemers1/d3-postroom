@@ -38,7 +38,7 @@ import { contactIndexFor, DavStore, DEFAULT_DAV_LIMITS, harvestRecipients, parse
 import { Prisma, randomUidValidity, type Db, type SpecialUse } from '@postroom/db';
 import { fileLocalMessage } from '@postroom/dsn';
 import type { StoreOperation } from '@postroom/imap-proto';
-import { parseDate, parseHeaderBlock, parseMailboxes, parseMessageId, parseMessageIdList, type HeaderList } from '@postroom/mime';
+import { displayNameOf, parseDate, parseHeaderBlock, parseMailboxes, parseMessageId, parseMessageIdList, type HeaderList } from '@postroom/mime';
 import { applyFlags, DELETED, isKeyword, normalizeFlags, sameFlags, SEEN } from './flags.js';
 import { MAILBOX_CHANNEL } from './extensions/notify.js';
 import { isSelfOrChild, parentsOf } from './names.js';
@@ -91,6 +91,11 @@ export interface Denormalised {
   readonly messageIdHeader: string | null;
   readonly subject: string | null;
   readonly fromAddress: string | null;
+  /** The From display name (PST-T-14.2); null when there is none. */
+  readonly fromName: string | null;
+  /** The list preview (PST-T-14.2), when the caller could read the body; absent = left for the
+   * worker's summary sweep. */
+  readonly snippet?: string | null;
   readonly sentAt: Date | null;
   readonly inReplyTo: string | null;
   readonly references: string[];
@@ -127,6 +132,7 @@ export function denormalise(headers: HeaderList): Denormalised {
     messageIdHeader: mid === null ? null : parseMessageId(mid),
     subject: subject === null ? null : subject.slice(0, 998),
     fromAddress: from === null ? null : (parseMailboxes(from)[0]?.address ?? null),
+    fromName: displayNameOf(from),
     sentAt: sent === null || Number.isNaN(sent.getTime()) ? null : sent,
     inReplyTo: irt === null ? null : (parseMessageIdList(irt)[0] ?? null),
     references: refs === null ? [] : parseMessageIdList(refs).slice(0, 100),
@@ -410,13 +416,15 @@ export class MailStore {
           message_id_header: string | null;
           subject: string | null;
           from_address: string | null;
+          from_name: string | null;
+          snippet: string | null;
           sent_at: Date | null;
           in_reply_to: string | null;
           references: string[];
         }[]
       >`
         SELECT id::text AS id, uid, blob_sha256, size, internal_date, flags, message_id_header, subject,
-               from_address, sent_at, in_reply_to, "references"
+               from_address, from_name, snippet, sent_at, in_reply_to, "references"
         FROM message WHERE mailbox_id = ${sourceId}::uuid AND uid = ANY(${[...uids]}::int[]) ORDER BY uid`;
       if (rows.length === 0) return { uidvalidity: target.uidvalidity, pairs: [] };
       // One more reference per copy (PST-REQ-012: the blob itself is never touched).
@@ -442,6 +450,8 @@ export class MailStore {
             messageIdHeader: r.message_id_header,
             subject: r.subject,
             fromAddress: r.from_address,
+            fromName: r.from_name,
+            snippet: r.snippet,
             sentAt: r.sent_at,
             inReplyTo: r.in_reply_to,
             references: r.references,
@@ -537,6 +547,8 @@ export class MailStore {
             messageIdHeader: denorm.messageIdHeader,
             subject: denorm.subject,
             fromAddress: denorm.fromAddress,
+            fromName: denorm.fromName,
+            ...(denorm.snippet === undefined ? {} : { snippet: denorm.snippet }),
             sentAt: denorm.sentAt,
             inReplyTo: denorm.inReplyTo,
             references: denorm.references,

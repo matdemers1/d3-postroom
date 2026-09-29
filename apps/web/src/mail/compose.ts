@@ -18,6 +18,8 @@ export interface ComposeDraft {
   body: string;
   /** The message being answered or forwarded. */
   sourceId: string | null;
+  /** PST-T-14.7: a saved draft to pick up again in place (the Drafts mailbox's Edit draft). */
+  resumeId?: string | null;
 }
 
 export interface ComposeSource {
@@ -185,6 +187,11 @@ export function stateFromSaved(saved: SavedDraft): ComposeState {
     format: 'plain',
     requestReceipt: false,
   };
+}
+
+/** PST-T-14.7: the composer for a saved draft, opened from Drafts — blank until the draft loads. */
+export function draftToResume(id: string): ComposeDraft {
+  return { mode: 'new', to: '', cc: '', subject: '', inReplyTo: null, references: [], body: '', sourceId: null, resumeId: id };
 }
 
 /** The saved draft this composer should pick up again: the same kind of answer to the same message. */
