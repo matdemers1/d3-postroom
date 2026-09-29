@@ -170,6 +170,16 @@
     padding-block: var(--space-12);
   }
 
+  /* The composer's To/Cc/Bcc rows (@d3cloud/ui RecipientField): the row is 44px but its <input> is
+   * a 24px line inside 8px padding, so a tap above or below the text missed it. The input itself
+   * becomes the 44px target; chips stay centred beside it. */
+  .d3-rcp--row .d3-rcp__value {
+    padding-block: 0;
+  }
+  .d3-rcp--row .d3-rcp__input {
+    height: 44px;
+  }
+
   /* PST-T-11.4: iOS Safari zooms the whole page when a focused field's text is under 16px, and
    * every @d3cloud/ui field is 12-14px. At phone width the field text is 16px, so focusing To,
    * Subject or search never zooms the layout. */
