@@ -167,7 +167,7 @@ const SCREENS: Screen[] = [
     data: /\/api\/senders\/[^/]+\/profile(\?|$)/,
   },
   // PST-T-14.3: Settings, under /settings/* (the old /account/* and /app-passwords URLs redirect).
-  { name: 'Settings — Account', path: () => '/settings/account', ready: h1('Change password') },
+  { name: 'Settings — Account', path: () => '/settings/account', ready: h1('Account') },
   { name: 'Settings — Browser sessions', path: () => '/settings/security', ready: h1('Browser sessions'), data: /\/api\/auth\/sessions(\?|$)/ },
   { name: 'Settings — Devices (app passwords)', path: () => '/settings/security/devices', ready: h1('Devices'), data: /\/api\/app-passwords(\?|$)/ },
   { name: 'Settings — Set up iPhone / Mac', path: () => '/settings/security/device-setup', ready: h1('Set up iPhone / Mac') },
@@ -539,7 +539,7 @@ for (const theme of THEMES) {
       // open: the cookie goes, and moving to the next screen (client-side, no reload) makes its
       // fetch — which the real server answers 401.
       await page.goto('/settings/account');
-      await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
       await context.clearCookies();
       await navigateInApp(page, screen.path());
       await screen.ready(page);

@@ -18,6 +18,8 @@
 // opened it — the ⋯ or Details button, else whatever the reader was on (./focusReturn.ts).
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Badge, Button, Checkbox, Cluster, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
+import { STATUS_TONE, toneKind, verdictKind } from '../status/status';
+import { StatusBadge } from '../status/StatusBadge';
 import { api, serverUnreachable, type DeliveryRecipient, type InspectAlignment, type InspectScore, type MessageInspect, type ReceivedHop } from '../api';
 import { DeliveryEvidence } from './DeliveryRows';
 import { byteSize, fullDate } from './format';
@@ -44,13 +46,9 @@ export const INSPECT_SECTIONS = ['Authentication', 'Signature and encryption', '
 
 type Tone = 'neutral' | 'attention' | 'danger';
 
-/** How a verdict result reads at a glance. Only a failure is danger; anything short of a pass asks for attention. */
+/** How a verdict result reads at a glance: status.ts's mapping, shared with Admin › Health. */
 export function resultTone(result: string): Tone {
-  const r = result.toLowerCase();
-  if (r === 'pass') return 'neutral';
-  if (r === 'fail' || r === 'permerror') return 'danger';
-  if (r === 'none') return 'neutral';
-  return 'attention';
+  return STATUS_TONE[verdictKind(result)];
 }
 
 export function delayText(seconds: number | null): string | null {
@@ -111,7 +109,7 @@ function Verdict({ label, result, learn, refTo, children }: { label: string; res
     <div className="pr-inspect__verdict" data-testid="verdict" data-verdict={label}>
       <div className="pr-inspect__verdict-head">
         <span className="pr-inspect__term">{label}</span>
-        <Badge tone={resultTone(result)}>{result}</Badge>
+        <StatusBadge kind={verdictKind(result)}>{result}</StatusBadge>
         <RfcLink refTo={refTo} learn={learn} />
       </div>
       {children}
@@ -216,7 +214,7 @@ function CryptoPart({ label, part }: { label: string; part: CryptoPartView }) {
     <div className="pr-inspect__verdict" data-testid="crypto-part" data-crypto={label} data-status={part.status}>
       <div className="pr-inspect__verdict-head">
         <span className="pr-inspect__term">{label}</span>
-        <Badge tone={part.tone}>{part.status}</Badge>
+        <StatusBadge kind={toneKind(part.tone, part.status === 'verified-known-key' || part.status === 'decrypted')}>{part.status}</StatusBadge>
       </div>
       <p className="pr-inspect__evidence">{part.headline}</p>
       {part.facts.length === 0 ? null : (
@@ -283,9 +281,9 @@ function ReceivedSection({ data, learn }: { data: MessageInspect; learn: boolean
               <li key={`${String(i)}-${hop.raw}`} className="pr-inspect__hop" data-testid="received-hop">
                 <div className="pr-inspect__verdict-head">
                   <span className="pr-inspect__term">{hop.by ?? '(unnamed host)'}</span>
-                  <Badge tone={hop.tls.encrypted ? 'neutral' : 'attention'} data-testid="tls-badge">
+                  <StatusBadge kind={hop.tls.encrypted ? 'good' : 'warning'} data-testid="tls-badge">
                     {tlsLabel(hop.tls)}
-                  </Badge>
+                  </StatusBadge>
                   {hop.ours ? <Badge tone="neutral">This server</Badge> : null}
                   {hop.tls.encrypted ? <RfcLink refTo={TLS_PROTOCOL_REF} learn={learn} /> : null}
                 </div>

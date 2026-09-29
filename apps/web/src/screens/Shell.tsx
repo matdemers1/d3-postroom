@@ -509,28 +509,6 @@ function PlaceNav({ place, isAdmin, setupLeft }: { place: 'settings' | 'admin'; 
   );
 }
 
-/** A nav entry with several screens (Security & devices) gets a row of links above them. */
-function SubNav({ place, isAdmin }: { place: Place; isAdmin: boolean }) {
-  const location = useLocation();
-  const route = routeForPath(location.pathname);
-  if (route === null || route.navGroup === undefined || place === 'mail') return null;
-  const entry = navEntries(place, isAdmin).find((e) => e.label === route.navGroup);
-  if (entry === undefined || entry.routes.length < 2) return null;
-  return (
-    <nav aria-label={entry.label}>
-      <ul className="pr-subnav" role="list">
-        {entry.routes.map((r) => (
-          <li key={r.id}>
-            <RouterLink to={r.path} {...(r === route ? { 'aria-current': 'page' as const } : {})}>
-              {r.title}
-            </RouterLink>
-          </li>
-        ))}
-      </ul>
-    </nav>
-  );
-}
-
 /** ⌘K outside Mail: MailView owns the palette in Mail (with message actions); Settings and the
  * Admin console get the same palette, with places only. */
 function PlacePalette({ enabled }: { enabled: boolean }) {
@@ -650,7 +628,6 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
 
   let frame: ReactNode = (
     <>
-      <SubNav place={navPlace} isAdmin={isAdmin} />
       <PaneBoundary name="This page" resetKey={location.pathname}>
         {page}
       </PaneBoundary>

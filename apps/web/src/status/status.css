@@ -1,0 +1,26 @@
+/* PST-T-14.11: the outcome glyph beside a status badge's word (status.ts has the mapping). Drawn by
+ * CSS with empty alt text, so the badge's text and accessible name stay the word alone. The hairline
+ * keeps a neutral badge visible on a raised surface (the Inspect drawer is the same tone as it). */
+.pr-status {
+  border: var(--border-width) solid var(--color-border);
+}
+
+.pr-status::before {
+  font-weight: var(--weight-semibold);
+}
+
+.pr-status[data-status='good']::before {
+  content: '✓' / '';
+}
+
+.pr-status[data-status='unknown']::before {
+  content: '?' / '';
+}
+
+.pr-status[data-status='warning']::before {
+  content: '!' / '';
+}
+
+.pr-status[data-status='bad']::before {
+  content: '✕' / '';
+}

@@ -212,17 +212,22 @@ test.describe('the Person card', () => {
     if (testInfo.project.name === 'mobile') await expect(card).toHaveAttribute('aria-modal', 'true');
     await expect(card).toContainText(address);
     await expect(card).toContainText('Not in your contacts');
-    await expect(card.getByLabel('Their mail goes to')).toHaveValue('');
+    // The design-system Select (PST-T-14.11): its trigger names the choice.
+    const routing = card.getByRole('combobox', { name: 'Their mail goes to' });
+    await expect(routing).toContainText('Sorted automatically');
     await expect(card.getByRole('link', { name: new RegExp(escape(m.subject)) })).toBeVisible();
 
     const axe = await new AxeBuilder({ page }).withTags(WCAG).include('[data-testid="person-card"]').analyze();
     expect(axe.violations.map((v) => `${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(' ')).join(', ')})`)).toEqual([]);
 
     // Routing is a control: the sender pin, audited server-side.
-    await card.getByLabel('Their mail goes to').selectOption('receipts');
+    await routing.click();
+    await page.getByRole('option', { name: 'Receipts' }).click();
+    await expect(card).toBeVisible();
     await expect(card.getByRole('status')).toContainText('New mail from Casey Card goes to Receipts.');
     await expect.poll(async () => ((await (await api.get(`/api/senders/${encodeURIComponent(address)}/pin`)).json()) as { bucket: string | null }).bucket).toBe('receipts');
-    await card.getByLabel('Their mail goes to').selectOption('');
+    await routing.click();
+    await page.getByRole('option', { name: /^Sorted automatically/ }).click();
     await expect.poll(async () => ((await (await api.get(`/api/senders/${encodeURIComponent(address)}/pin`)).json()) as { bucket: string | null }).bucket).toBeNull();
 
     await card.getByRole('button', { name: 'Add to contacts' }).click();
