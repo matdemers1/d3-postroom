@@ -1,3 +1,4 @@
+import '../settings/settings.css';
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import {
   Alert,
@@ -198,7 +199,9 @@ type Mode = 'builder' | 'sieve';
 function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: number; onChange: (next: Rule) => void; onRemove: () => void }) {
   const n = String(index + 1);
   return (
-    <Section title={`Rule ${n}`} headingLevel={3} actions={<Button variant="danger-ghost" size="sm" aria-label={`Remove rule ${n}`} onClick={onRemove}>Remove</Button>}>
+    // PST-T-15.6: a rule is a region of the editing card, not a card inside it — rules are divided by
+    // hairlines (settings.css), never boxed.
+    <Section title={`Rule ${n}`} headingLevel={3} surface="plain" className="pr-rule" actions={<Button variant="danger-ghost" size="sm" aria-label={`Remove rule ${n}`} onClick={onRemove}>Remove</Button>}>
       <Cluster gap="12" align="end">
         <FormField label="When">
           <Select appearance="filled"
@@ -218,7 +221,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
             }}
           />
         </FormField>
-        <FormField label="Text">
+        <FormField label="Text" width="md">
           <Input appearance="filled"
             value={rule.value}
             autoComplete="off"
@@ -239,7 +242,7 @@ function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: numbe
           />
         </FormField>
         {rule.action === 'move' ? (
-          <FormField label="Folder">
+          <FormField label="Folder" width="md">
             <Input appearance="filled"
               value={rule.target}
               autoComplete="off"
@@ -451,7 +454,8 @@ export function Rules() {
   ];
 
   return (
-    <Page>
+    // PST-T-15.6: the settings grid — a 680px column of Section cards.
+    <Page width="narrow">
       <PageHeader
         title="Rules"
         description="Sort, flag or file new mail as it arrives. The rules are a Sieve script — the same ones a Sieve client like Thunderbird edits."

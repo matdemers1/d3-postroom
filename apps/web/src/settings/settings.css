@@ -1,0 +1,98 @@
+/* Settings on the canvas (PST-T-15.6, PST-REQ-194; Settings.dc.html). Every settings page is
+ * @d3cloud/ui's Page width="narrow" holding Section cards of SettingsRows; this file only adds what
+ * the library has no part for. D3 semantic tokens only: no hex, no shadows, no outlines of our own.
+ * Hairlines between rows, never a box around them. */
+
+/* A row's value on the right: an avatar beside a name, an address beside its badge. */
+.pr-set-value {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  font-size: var(--text-14);
+  line-height: var(--leading-14);
+  color: var(--color-fg-muted);
+}
+
+.pr-set-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  color: var(--color-fg);
+  overflow-wrap: anywhere;
+}
+
+/* ---- The change-password form, opened in place inside the Sign-in card ---------------------------- */
+
+/* The row that opened it sits flush on top of it. */
+.pr-settings .d3-setrow:has(+ .pr-pwform) {
+  padding-bottom: 0;
+}
+
+.pr-pwform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+/* The rows after it get their hairline back (the library draws one only between adjacent rows),
+ * and lose the section's gap so the spacing matches row to row. */
+.pr-pwform + .d3-setrow {
+  margin-top: calc(var(--space-16) * -1);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+/* The footer: "Sign out other sessions" on the left, Cancel / Update password on the right, under
+ * a hairline. */
+.pr-pwform__actions {
+  margin-top: var(--space-4);
+  padding: var(--space-12) 0 var(--space-16);
+  border-top: var(--border-width) solid var(--color-border);
+  align-items: center;
+}
+
+/* From tablet width the labels take a 164px column and the fields a 360px one, as on the canvas;
+ * below it the label sits over its field and the field keeps FormField's `lg` cap. */
+@media (min-width: 768px) {
+  .pr-pwform .d3-ff {
+    display: grid;
+    grid-template-columns: 164px minmax(0, 360px);
+    column-gap: var(--space-20);
+    align-items: start;
+  }
+
+  .pr-pwform .d3-ff > .d3-lb {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    padding-top: var(--space-8);
+  }
+
+  .pr-pwform .d3-ff > :not(.d3-lb) {
+    grid-column: 2;
+  }
+
+  .pr-pwform .d3-ff > :not(.d3-lb, .d3-ff__help, .d3-ff__error) {
+    max-width: none;
+  }
+
+  .pr-pwform__actions {
+    padding-inline-start: calc(164px + var(--space-20));
+  }
+}
+
+/* ---- Rules: each rule a region of the editing card, divided by hairlines -------------------------- */
+
+.pr-rule + .pr-rule {
+  padding-top: var(--space-16);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+/* ---- Keys: the fingerprint on its own line under what the key is ---------------------------------- */
+
+.pr-key-fpr {
+  display: block;
+  margin-top: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  overflow-wrap: anywhere;
+}

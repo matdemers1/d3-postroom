@@ -5,6 +5,8 @@ import {
   Button,
   Checkbox,
   Cluster,
+  DataList,
+  DataListRow,
   EmptyState,
   FormActions,
   FormField,
@@ -15,9 +17,7 @@ import {
   PageHeader,
   Section,
   Stack,
-  Table,
   Textarea,
-  type TableColumn,
 } from '@d3cloud/ui';
 import { api, describeError, type AppPassword, type AppPasswordScope } from '../api';
 import { relativeTime } from './app-passwords-format';
@@ -127,48 +127,12 @@ export function AppPasswords() {
       });
   };
 
-  const columns: TableColumn<AppPassword>[] = [
-    { key: 'label', header: 'Name', cell: (p) => p.label },
-    {
-      key: 'scopes',
-      header: 'Permissions',
-      cell: (p) => (
-        <Cluster gap="4">
-          {p.scopes.map((s) => (
-            <Badge key={s} size="sm">
-              {s.toUpperCase()}
-            </Badge>
-          ))}
-        </Cluster>
-      ),
-    },
-    { key: 'createdAt', header: 'Created', cell: (p) => when(p.createdAt) },
-    {
-      key: 'lastUsedAt',
-      header: 'Last used',
-      cell: (p) => (p.lastUsedAt === null ? 'Never' : `${relativeTime(p.lastUsedAt)}${p.lastUsedIp === null ? '' : ` from ${p.lastUsedIp}`}`),
-    },
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'end',
-      cell: (p) => (
-        <Button
-          variant="danger-ghost"
-          size="sm"
-          aria-label={`Revoke ${p.label}`}
-          onClick={() => {
-            setConfirming(p);
-          }}
-        >
-          Revoke
-        </Button>
-      ),
-    },
-  ];
+  const lastUsed = (p: AppPassword): string =>
+    p.lastUsedAt === null ? 'Never used' : `Last used ${relativeTime(p.lastUsedAt)}${p.lastUsedIp === null ? '' : ` from ${p.lastUsedIp}`}`;
 
   return (
-    <Page>
+    // PST-T-15.6: the settings grid — a 680px column of Section cards; the passwords are rows.
+    <Page width="narrow">
       <PageHeader
         title="Devices"
         description="Mail, calendar and contacts apps on your devices sign in with an app password, never your account password."
@@ -187,7 +151,7 @@ export function AppPasswords() {
             <Alert tone="warning" title="Shown once">
               Postroom keeps only a hash. If you lose it, revoke it and create another.
             </Alert>
-            <FormField label="App password">
+            <FormField label="App password" width="lg">
               <Textarea appearance="filled" mono readOnly rows={1} value={revealed.password} onFocus={(e) => { e.currentTarget.select(); }} />
             </FormField>
             <Cluster>
@@ -214,7 +178,7 @@ export function AppPasswords() {
       <Section title="Create an app password">
         <form onSubmit={create}>
           <Stack gap="16">
-            <FormField label="Name" help="The device or app it is for, e.g. iPhone Mail." {...(formError === null ? {} : { error: formError })}>
+            <FormField label="Name" width="lg" help="The device or app it is for, e.g. iPhone Mail." {...(formError === null ? {} : { error: formError })}>
               <Input appearance="filled"
                 name="label"
                 maxLength={100}
@@ -254,19 +218,47 @@ export function AppPasswords() {
         <LoadFailed error={loadError} what="app passwords" onRetry={() => void load()} />
       ) : rows === null ? (
         <Loading label="Loading app passwords" />
-      ) : rows.length === 0 ? (
-        // No table header over nothing (PST-T-14.11): the empty state says what goes here.
-        <EmptyState kind="empty" heading="No app passwords yet" headingLevel={2} size="inline">
-          Create one above for each mail, calendar or contacts app you sign in to.
-        </EmptyState>
       ) : (
-        <Table
-          caption="Your app passwords"
-          columns={columns}
-          rows={rows}
-          rowKey={(p) => p.id}
-          empty={<EmptyState kind="empty" heading="No app passwords yet" size="row" />}
-        />
+        <Section title="Your app passwords" description="Revoking one signs its app out at its next connection.">
+          {/* No header over nothing (PST-T-14.11): the empty state says what goes here. */}
+          <DataList
+            aria-label="Your app passwords"
+            empty={
+              <EmptyState kind="empty" heading="No app passwords yet" headingLevel={3} size="inline">
+                Create one above for each mail, calendar or contacts app you sign in to.
+              </EmptyState>
+            }
+          >
+            {rows.map((p) => (
+              <DataListRow
+                key={p.id}
+                title={p.label}
+                description={`Created ${when(p.createdAt)} · ${lastUsed(p)}`}
+                meta={
+                  <Cluster gap="4">
+                    {p.scopes.map((s) => (
+                      <Badge key={s} size="sm">
+                        {s.toUpperCase()}
+                      </Badge>
+                    ))}
+                  </Cluster>
+                }
+                actions={
+                  <Button
+                    variant="danger-ghost"
+                    size="sm"
+                    aria-label={`Revoke ${p.label}`}
+                    onClick={() => {
+                      setConfirming(p);
+                    }}
+                  >
+                    Revoke
+                  </Button>
+                }
+              />
+            ))}
+          </DataList>
+        </Section>
       )}
 
       <Modal

@@ -224,7 +224,8 @@ export function Import() {
   };
 
   return (
-    <Page>
+    // PST-T-15.6: the settings grid — a 680px column of Section cards, each field sized to its value.
+    <Page width="narrow">
       <PageHeader title="Import mail" description="Copy folders from another IMAP server into this account. Nothing is deleted there." />
       {notice === null ? null : (
         <Alert tone="info" dynamic>
@@ -253,7 +254,7 @@ export function Import() {
                   {formError}
                 </Alert>
               )}
-              <FormField label="Server" help="e.g. imap.example.org">
+              <FormField label="Server" width="lg" help="e.g. imap.example.org">
                 <Input appearance="filled"
                   name="host"
                   autoComplete="off"
@@ -264,7 +265,7 @@ export function Import() {
                   }}
                 />
               </FormField>
-              <FormField label="Port" help="993 for IMAP over TLS">
+              <FormField label="Port" width="xs" help="993 for IMAP over TLS">
                 <Input appearance="filled"
                   name="port"
                   inputMode="numeric"
@@ -275,7 +276,7 @@ export function Import() {
                   }}
                 />
               </FormField>
-              <FormField label="Username">
+              <FormField label="Username" width="lg">
                 <Input appearance="filled"
                   name="username"
                   autoComplete="off"
@@ -286,7 +287,7 @@ export function Import() {
                   }}
                 />
               </FormField>
-              <FormField label="Password" help="Its password or app password on that server. Deleted when the import ends.">
+              <FormField label="Password" width="lg" help="Its password or app password on that server. Deleted when the import ends.">
                 <Input appearance="filled"
                   name="password"
                   type="password"
@@ -300,6 +301,7 @@ export function Import() {
               </FormField>
               <FormField
                 label="Trust this certificate (optional)"
+                width="lg"
                 help="Only for your own server with a self-signed certificate: its SHA-256 fingerprint, from openssl x509 -noout -fingerprint -sha256 on that server."
               >
                 <Input appearance="filled"
@@ -312,7 +314,7 @@ export function Import() {
                   }}
                 />
               </FormField>
-              <FormField label="Only these folders (optional)" help="One per line. Leave empty for every folder.">
+              <FormField label="Only these folders (optional)" width="lg" help="One per line. Leave empty for every folder.">
                 <Textarea appearance="filled"
                   name="folders"
                   rows={3}
