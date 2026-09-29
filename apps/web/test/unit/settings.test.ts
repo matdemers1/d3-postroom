@@ -38,12 +38,20 @@ describe('scorePassword', () => {
     expect(scorePassword('abababababababab').score).toBe(1);
   });
 
-  it('is fair at the minimum, good or strong with length and variety', () => {
-    expect(scorePassword('q1w2e3r4t5y6')).toEqual({ score: 2, label: 'Fair · 12 characters' });
+  it('meets the minimum at 12, and rises with length and variety — never claiming "Strong"', () => {
+    expect(scorePassword('q1w2e3r4t5y6')).toEqual({ score: 2, label: 'Meets the minimum · 12 characters' });
     expect(scorePassword('correcthorsebattery').score).toBe(3);
     expect(scorePassword('Correct horse 12').score).toBe(4);
     // The e2e suite's new password.
-    expect(scorePassword('a fresh strong passphrase 2026')).toEqual({ score: 4, label: 'Strong · 30 characters' });
+    expect(scorePassword('a fresh strong passphrase 2026')).toEqual({ score: 4, label: 'Long and varied · 30 characters' });
+    // The server refuses these as common (apps/api common-passwords.ts); the hint must not praise them.
+    for (const common of ['1q2w3e4r5t6y7u8i9o0p', '123456789vuonggialong']) expect(scorePassword(common).label).not.toMatch(/strong/i);
+  });
+
+  it('flags a password built on a word the server refuses, including the mail domain', () => {
+    expect(scorePassword('Postroom-2026!!!!!')).toEqual({ score: 1, label: 'Built on “postroom”, which is refused · 18 characters' });
+    expect(scorePassword('my-examplehost-password', undefined, 'examplehost.test').score).toBe(1);
+    expect(scorePassword('my-examplehost-password').score).toBeGreaterThan(1);
   });
 
   it('never goes above 4', () => {

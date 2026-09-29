@@ -47,11 +47,14 @@ import { Loading, LoadFailed } from './states';
 export function ChangePasswordForm({
   id,
   totpEnabled,
+  address = null,
   onChanged,
   onCancel,
 }: {
   id: string;
   totpEnabled: boolean;
+  /** The account's address: its domain's first label is one of the words the server refuses. */
+  address?: string | null;
   /** Called with the sentence to show once the password has changed. */
   onChanged: (notice: string) => void;
   onCancel: () => void;
@@ -71,7 +74,7 @@ export function ChangePasswordForm({
   }, []);
 
   const mismatch = confirm !== '' && confirm !== newPassword;
-  const strength = scorePassword(newPassword);
+  const strength = scorePassword(newPassword, undefined, address?.split('@')[1] ?? null);
 
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
@@ -279,6 +282,7 @@ export function AccountScreen() {
               <ChangePasswordForm
                 id={formId}
                 totpEnabled={account.totpEnabled}
+                address={account.address}
                 onCancel={close}
                 onChanged={(text) => {
                   setNotice(text);

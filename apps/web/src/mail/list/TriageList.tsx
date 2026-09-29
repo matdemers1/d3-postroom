@@ -56,6 +56,9 @@ export interface TriageListProps {
   onChip?: (message: MessageSummary, chip: HTMLElement) => void;
   /** PST-T-15.2: a $Priority row shows the Priority badge (false where the list IS Priority). */
   showPriority?: boolean;
+  /** PST-P-15: group rows by day (the mailbox view). Off for search results, which are ordered by
+   * relevance, so day headers would repeat. */
+  grouped?: boolean;
 }
 
 /** Where the action cluster sits inside a row (px from the row's top). */
@@ -68,7 +71,7 @@ export const GROUP_HEAD_HEIGHT = 36;
 const dayStamp = (d: Date): string => `${String(d.getFullYear())}-${String(d.getMonth())}-${String(d.getDate())}`;
 
 export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function TriageList(
-  { messages, cursor, openId, label, selected, leaving, warnedId, pendingCount, canArchive, canTrash, canSnooze, onOpen, onToggleSelect, onRowAction, onShowNew, onNearEnd, chipFor, onChip, showPriority = true },
+  { messages, cursor, openId, label, selected, leaving, warnedId, pendingCount, canArchive, canTrash, canSnooze, onOpen, onToggleSelect, onRowAction, onShowNew, onNearEnd, chipFor, onChip, showPriority = true, grouped = true },
   ref,
 ) {
   const box = useRef<HTMLDivElement>(null);
@@ -88,8 +91,11 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
   const today = dayStamp(now);
   const weekStart = useMemo(() => weekStartDay(), []);
   // `today` stands for `now`: regroup when the day turns, not on every render.
-  const groups = useMemo(() => dayGroups(messages, now, weekStart), [messages, today, weekStart]);
-  const layout = useMemo(() => layoutRows(groups, messages.length, ROW_HEIGHT, GROUP_HEAD_HEIGHT), [groups, messages.length]);
+  const groups = useMemo(
+    () => (grouped ? dayGroups(messages, now, weekStart) : [{ key: 'all', label: '', start: 0 }]),
+    [grouped, messages, today, weekStart],
+  );
+  const layout = useMemo(() => layoutRows(groups, messages.length, ROW_HEIGHT, grouped ? GROUP_HEAD_HEIGHT : 0), [groups, grouped, messages.length]);
   // The thread count beside a sender: how many LISTED messages share the conversation (the list is
   // per message, and the API sends no count — this is what the loaded pages hold).
   const threadCounts = useMemo(() => {
@@ -258,8 +264,8 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
           const to = Math.min(groups[gi + 1]?.start ?? messages.length, end);
           if (from >= to) return null;
           return (
-            <div key={g.key} role="group" aria-label={g.label} className="pr-group">
-              {from === g.start ? (
+            <div key={g.key} {...(grouped ? { role: 'group', 'aria-label': g.label } : {})} className="pr-group">
+              {grouped && from === g.start ? (
                 <div className="pr-group__head" aria-hidden="true">
                   {g.label}
                 </div>

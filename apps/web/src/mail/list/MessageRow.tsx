@@ -80,7 +80,8 @@ export const MessageRow = memo(function MessageRow({
   const sender = senderLine(m, warned);
   const snippet = snippetLine(m.snippet);
   const expiry = deletesIn(m.expiresAt, now);
-  const priority = showPriority && m.flags.includes(PRIORITY);
+  // One Priority label per row: where the bucket chip already says Priority, the badge would repeat it.
+  const priority = showPriority && m.flags.includes(PRIORITY) && chip === null;
   const classes = ['pr-mrow'];
   if (unread) classes.push('pr-mrow--unread', 'pr-row--unread');
   if (checked === true) classes.push('pr-mrow--checked');

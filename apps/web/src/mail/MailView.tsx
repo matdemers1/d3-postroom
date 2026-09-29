@@ -1056,6 +1056,7 @@ function MailPanes({ route }: { route: MailRoute }) {
             setWhy({ message: m, anchor: el.getBoundingClientRect() });
           }}
           showPriority={activeSegment !== 'priority'}
+          grouped={searchQuery === null}
         />
       </ListBody>
       {!split ? (

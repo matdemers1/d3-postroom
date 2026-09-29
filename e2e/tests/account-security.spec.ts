@@ -87,7 +87,7 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   await page.getByLabel('Current password', { exact: true }).fill(operator.password);
   await page.getByLabel('New password', { exact: true }).fill(STRONG_PASSWORD);
   await page.getByLabel('Confirm new password', { exact: true }).fill(STRONG_PASSWORD);
-  await expect(page.getByText(/^Strong · \d+ characters$/)).toBeVisible();
+  await expect(page.getByText(/^Long and varied · \d+ characters$/)).toBeVisible();
   await expect(page.getByRole('checkbox', { name: 'Sign out other sessions' })).toBeChecked();
   await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
   await page.getByRole('button', { name: 'Update password' }).click();

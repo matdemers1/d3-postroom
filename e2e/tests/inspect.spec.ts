@@ -136,7 +136,9 @@ test('the ⋯ menu and the command palette open it too, and focus comes back (PS
   await expect(page.getByRole('heading', { name: m.subject, level: 2 })).toBeVisible();
   // Inspect's trigger moved into ⋯ (design audit VIS-06): no Inspect button in the toolbar.
   await expect(page.getByRole('button', { name: 'Inspect', exact: true })).toHaveCount(0);
-  const more = page.getByRole('toolbar', { name: 'Message actions' }).getByRole('button', { name: 'More actions' });
+  // The phone's bar is @d3cloud/ui ActionBar, a labelled group rather than a toolbar (D-083).
+  const bar = page.getByRole(testInfo.project.name === 'mobile' ? 'group' : 'toolbar', { name: 'Message actions' });
+  const more = bar.getByRole('button', { name: 'More actions' });
   await more.click();
   await page.getByRole('menuitem', { name: 'Inspect message' }).click();
   const drawer = page.getByRole('dialog', { name: 'Inspect message' });
