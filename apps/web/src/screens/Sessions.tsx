@@ -123,8 +123,8 @@ export function Sessions() {
   return (
     <Page>
       <PageHeader
-        title="Devices"
-        description="Every device signed in to Postroom as you, right now."
+        title="Browser sessions"
+        description="Every browser signed in to Postroom as you, right now. Mail apps are under Devices."
         {...(sessions === null ? {} : { count: sessions.length, countNoun: { one: 'session', other: 'sessions' } })}
       />
       {notice === null ? null : (

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Alert, AuthLayout, Button, Spinner, ThemeProvider } from '@d3cloud/ui';
 import { api, redirectFor, serverUnreachable, type AuthState } from './api';
+import { REDIRECTS, ROUTES, type RouteId } from './routes';
 import { titleForPath } from './title';
 import { Calendar } from './calendar/Calendar';
 import { Contacts } from './contacts/Contacts';
@@ -31,6 +32,47 @@ import { Shell } from './screens/Shell';
 import { SignIn } from './screens/SignIn';
 
 export const THEME_KEY = 'postroom-theme';
+
+type ShellRouteId = Exclude<RouteId, 'setup' | 'signin' | 'mail' | 'mailFolder'>;
+
+/** The element for every route in the table (PST-T-14.3). A route added to routes.ts without a
+ * screen here fails the typecheck, so the table and the router cannot disagree. */
+const SCREENS: Readonly<Record<ShellRouteId, ReactElement>> = {
+  calendar: <Calendar />,
+  contacts: <Contacts />,
+  contactNew: <Contacts />,
+  contactCard: <Contacts />,
+  // PST-T-5.6: the sender profile, linked from the reading pane's From line.
+  sender: <SenderProfile />,
+  settingsAccount: <ChangePassword />,
+  settingsBrowsers: <Sessions />,
+  settingsDevices: <AppPasswords />,
+  settingsDeviceSetup: <DeviceSetup />,
+  settingsAddresses: <Aliases />,
+  settingsRules: <Rules />,
+  settingsTemplates: <TemplatesScreen />,
+  settingsImport: <Import />,
+  // PST-T-12.2: OpenPGP keys and S/MIME certificates.
+  settingsKeys: <Keys />,
+  adminHealth: <AdminHealth />,
+  adminQueue: <AdminQueue />,
+  adminDeliverability: <AdminDeliverability />,
+  adminDns: <AdminDns />,
+  adminSmtp: <AdminSmtpViewer />,
+  adminJobs: <AdminJobs />,
+  adminSessions: <AdminSessions />,
+  adminSuppressions: <AdminSuppressions />,
+  adminSetup: <SetupWizard />,
+};
+
+const isShellRoute = (id: RouteId): id is ShellRouteId => id !== 'setup' && id !== 'signin' && id !== 'mail' && id !== 'mailFolder';
+
+/** An old URL (/account/*, /app-passwords) lands on its new home, keeping its query string. */
+function Moved({ to }: { to: string }) {
+  const location = useLocation();
+  return <Navigate to={{ pathname: to, search: location.search }} replace />;
+}
+
 
 function Gate() {
   const location = useLocation();
@@ -97,31 +139,12 @@ function Gate() {
           <Route index element={null} />
           <Route path="/mail/*" element={null} />
         </Route>
-        <Route path="/calendar" element={<Calendar />} />
-        <Route path="/contacts" element={<Contacts />} />
-        <Route path="/contacts/new" element={<Contacts />} />
-        <Route path="/contacts/:addressBookId/:name" element={<Contacts />} />
-        {/* PST-T-5.6: the sender profile, linked from the reading pane's From line. */}
-        <Route path="/senders/:address" element={<SenderProfile />} />
-        <Route path="/app-passwords" element={<AppPasswords />} />
-        <Route path="/account/aliases" element={<Aliases />} />
-        <Route path="/account/password" element={<ChangePassword />} />
-        <Route path="/account/sessions" element={<Sessions />} />
-        <Route path="/account/import" element={<Import />} />
-        <Route path="/account/device-setup" element={<DeviceSetup />} />
-        <Route path="/account/rules" element={<Rules />} />
-        <Route path="/account/templates" element={<TemplatesScreen />} />
-        {/* PST-T-12.2: OpenPGP keys and S/MIME certificates. */}
-        <Route path="/account/keys" element={<Keys />} />
-        <Route path="/admin/sessions" element={<AdminSessions />} />
-        <Route path="/admin/health" element={<AdminHealth />} />
-        <Route path="/admin/jobs" element={<AdminJobs />} />
-        <Route path="/admin/queue" element={<AdminQueue />} />
-        <Route path="/admin/suppressions" element={<AdminSuppressions />} />
-        <Route path="/admin/deliverability" element={<AdminDeliverability />} />
-        <Route path="/admin/smtp" element={<AdminSmtpViewer />} />
-        <Route path="/admin/setup" element={<SetupWizard />} />
-        <Route path="/admin/dns" element={<AdminDns />} />
+        {ROUTES.filter((r) => isShellRoute(r.id)).map((r) => (
+          <Route key={r.id} path={r.path} element={isShellRoute(r.id) ? SCREENS[r.id] : null} />
+        ))}
+        {REDIRECTS.map((r) => (
+          <Route key={r.from} path={r.from} element={<Moved to={r.to} />} />
+        ))}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

@@ -372,7 +372,7 @@ function DnsStep({ domain, busy, onNext }: { domain: string; busy: boolean; onNe
           </>
         )}
         <p style={mutedStyle}>
-          You can continue while records are pending and come back to <Link asChild variant="inline"><RouterLink to="/admin/dns">Admin → DNS records</RouterLink></Link> at any time.
+          You can continue while records are pending and come back to <Link asChild variant="inline"><RouterLink to="/admin/dns">Admin console → DNS &amp; DKIM</RouterLink></Link> at any time.
         </p>
         <FormActions>
           <Button variant="primary" loading={busy} onClick={onNext}>

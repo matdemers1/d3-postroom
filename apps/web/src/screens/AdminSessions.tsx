@@ -120,7 +120,7 @@ export function AdminSessions() {
   return (
     <Page>
       <PageHeader
-        title="Sessions"
+        title="Sign-in sessions"
         description="Everyone signed in to the web app right now."
         {...(sessions === null ? {} : { count: sessions.length, countNoun: { one: 'session', other: 'sessions' } })}
       />

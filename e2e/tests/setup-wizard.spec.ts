@@ -253,8 +253,11 @@ test('a fresh install walks the wizard to a delivered test message with its time
   test.skip(start.completed, 'the wizard already ran against this stack');
 
   await page.goto('/');
-  // Admin nav carries the way in, with the steps left.
-  await page.getByRole('link', { name: /^Setup/ }).click();
+  // PST-T-14.3: the account menu offers the Admin console (naming the steps left); its nav carries
+  // the way in, with the count.
+  await page.locator('button.d3-acct').click();
+  await page.getByRole('menuitem', { name: /^Admin console \(\d+ setup steps? left\)/ }).click();
+  await page.getByRole('navigation', { name: 'Admin console' }).getByRole('link', { name: /^Setup/ }).click();
   await expect(page.getByRole('heading', { name: 'Set up mail', level: 1 })).toBeVisible();
 
   // 1. Domain.
@@ -349,7 +352,7 @@ test('the wizard and the DNS checker are axe-clean in light and dark, and fit 39
     }, theme);
     await page.goto('/admin/dns');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    await expect(page.getByRole('heading', { name: 'DNS records', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'DNS & DKIM', level: 1 })).toBeVisible();
     await expect(page.getByRole('row').filter({ hasText: /SPF\s*TXT/ })).toBeVisible({ timeout: 30_000 });
     await axe(page, `${theme} /admin/dns`);
     expect(await fitsWidth(page)).toBe(true);

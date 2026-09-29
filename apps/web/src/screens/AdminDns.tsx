@@ -151,7 +151,7 @@ export function AdminDns() {
   return (
     <Page>
       <PageHeader
-        title="DNS records"
+        title="DNS & DKIM"
         description={report === null ? 'Expected and live values for every record Postroom needs.' : `${report.domain} — ${dnsSummary(report.summary)}`}
         actions={
           <Button

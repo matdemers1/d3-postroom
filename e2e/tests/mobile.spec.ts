@@ -274,7 +274,7 @@ test.describe('signed in', () => {
     await assertMobileFriendly(page, '/ (inbox list)');
 
     // The sidebar is a drawer below tablet width (Shell.tsx) — open it once to check its own
-    // mailbox/organise/account/admin links, then close it before the rest of this test's navigation.
+    // mailbox and place links, then close it before the rest of this test's navigation.
     await openNav(page);
     await assertMobileFriendly(page, '/ (navigation drawer open)');
     await page.keyboard.press('Escape');
@@ -365,36 +365,43 @@ test.describe('signed in', () => {
     await assertMobileFriendly(page, '/contacts/new');
   });
 
-  test('Account screens: app passwords, aliases, password, devices, import, device setup, rules, templates, keys', async ({ page }) => {
+  test('Settings: account, browser sessions, devices, device setup, addresses, import, rules, templates, keys', async ({ page }) => {
     const t = tag();
 
     await api.post('/api/app-passwords', { headers: CSRF, data: { label: `Phone Mail ${t}`, scopes: ['imap', 'smtp'] } }).catch(() => undefined);
-    await page.goto('/app-passwords');
-    await expect(page.getByRole('heading', { name: 'App passwords', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/app-passwords');
+    await page.goto('/settings/security/devices');
+    await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
+    await assertMobileFriendly(page, '/settings/security/devices');
 
     await api.post('/api/aliases', { headers: CSRF, data: { site: `shop-${t}.example` } }).catch(() => undefined);
-    await page.goto('/account/aliases');
+    await page.goto('/settings/addresses');
     await expect(page.getByRole('heading', { name: 'Masked aliases', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/account/aliases');
+    await assertMobileFriendly(page, '/settings/addresses');
 
-    await page.goto('/account/password');
+    await page.goto('/settings/account');
     await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/account/password');
+    await assertMobileFriendly(page, '/settings/account');
 
-    await page.goto('/account/sessions');
-    await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/account/sessions');
+    await page.goto('/settings/security');
+    await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
+    await assertMobileFriendly(page, '/settings/security');
 
-    await page.goto('/account/import');
+    await page.goto('/settings/import');
     await expect(page.getByRole('heading', { name: 'Import mail', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/account/import');
+    await assertMobileFriendly(page, '/settings/import');
 
-    await page.goto('/account/device-setup');
+    await page.goto('/settings/security/device-setup');
     await expect(page.getByRole('heading', { name: 'Set up iPhone / Mac', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/account/device-setup');
+    await assertMobileFriendly(page, '/settings/security/device-setup');
 
-    await page.goto('/account/rules');
+    // The Settings nav is the drawer below tablet width, with its way back to Mail.
+    await openNav(page);
+    await expect(page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Back to Mail' })).toBeVisible();
+    await assertMobileFriendly(page, '/settings (navigation drawer open)');
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog', { name: 'Navigation' }).waitFor({ state: 'detached' });
+
+    await page.goto('/settings/rules');
     await expect(page.getByRole('heading', { name: 'Rules', level: 1 })).toBeVisible();
     await page.getByRole('button', { name: 'Add rule' }).click();
     // Another test (or an earlier run against this database) may have left a rule here already —
@@ -403,28 +410,28 @@ test.describe('signed in', () => {
     await page.getByRole('textbox', { name: 'Folder' }).last().fill('Receipts');
     await page.getByRole('button', { name: 'Save and turn on' }).click();
     await expect(page.getByText('now runs on new mail')).toBeVisible();
-    await assertMobileFriendly(page, '/account/rules');
+    await assertMobileFriendly(page, '/settings/rules');
 
     await api.post('/api/templates', { headers: CSRF, data: { shortcut: `ty${t}`, name: `Thank you ${t}`, body: 'Thanks for reaching out.' } }).catch(() => undefined);
-    await page.goto('/account/templates');
+    await page.goto('/settings/templates');
     await expect(page.getByRole('heading', { name: 'Compose templates', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/account/templates');
+    await assertMobileFriendly(page, '/settings/templates');
 
     // Keys (PST-T-12.2): one generated own key as the seeded data; a rerun against the same
     // database may already have one, which is fine.
     const state = (await (await api.get('/api/auth/state')).json()) as { account?: { address: string | null } };
     const own = state.account?.address;
     if (own !== null && own !== undefined) await api.post('/api/keys/generate', { headers: CSRF, data: { address: own } }).catch(() => undefined);
-    await page.goto('/account/keys');
+    await page.goto('/settings/keys');
     await expect(page.getByRole('heading', { name: 'Keys', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/account/keys');
+    await assertMobileFriendly(page, '/settings/keys');
   });
 
-  test('Admin: sessions, health, jobs, queue, suppression list, deliverability, SMTP sessions', async ({ page }) => {
+  test('Admin console: sign-in sessions, health, jobs, queue, suppressions, deliverability, live SMTP', async ({ page }) => {
     const t = tag();
 
     await page.goto('/admin/sessions');
-    await expect(page.getByRole('heading', { name: 'Sessions', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sign-in sessions', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/admin/sessions');
 
     await page.goto('/admin/health');
@@ -459,7 +466,7 @@ test.describe('signed in', () => {
     // dependency to insert one directly — so this screen is exercised in its real "no transcripts
     // yet" empty state, which is itself a state the mobile layout must handle without overflow.
     await page.goto('/admin/smtp');
-    await expect(page.getByRole('heading', { name: 'SMTP sessions', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Live SMTP', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/admin/smtp');
   });
 });

@@ -8,7 +8,7 @@ const SPECIAL_LABELS: Readonly<Record<SpecialUse, string>> = {
   archive: 'Archive',
   junk: 'Junk',
   trash: 'Trash',
-  rejects: 'Rejected',
+  rejects: 'Rejects',
 };
 
 /** "Inbox", not "INBOX"; a special-use folder by its role, anything else by its own name. */

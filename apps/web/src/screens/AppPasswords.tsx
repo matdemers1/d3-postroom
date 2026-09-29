@@ -169,8 +169,8 @@ export function AppPasswords() {
   return (
     <Page>
       <PageHeader
-        title="App passwords"
-        description="Mail, calendar and contacts apps sign in with an app password, never your account password."
+        title="Devices"
+        description="Mail, calendar and contacts apps on your devices sign in with an app password, never your account password."
         {...(rows === null ? {} : { count: rows.length, countNoun: { one: 'password', other: 'passwords' } })}
       />
       {notice === null ? null : (

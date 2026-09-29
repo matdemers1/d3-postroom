@@ -164,25 +164,26 @@ const SCREENS: Screen[] = [
     },
     data: /\/api\/senders\/[^/]+\/profile(\?|$)/,
   },
-  { name: 'App passwords', path: () => '/app-passwords', ready: h1('App passwords'), data: /\/api\/app-passwords(\?|$)/ },
-  { name: 'Masked aliases', path: () => '/account/aliases', ready: h1('Masked aliases'), data: /\/api\/aliases(\?|$)/ },
-  { name: 'Change password', path: () => '/account/password', ready: h1('Change password') },
-  { name: 'Devices (own sessions)', path: () => '/account/sessions', ready: h1('Devices'), data: /\/api\/auth\/sessions(\?|$)/ },
+  // PST-T-14.3: Settings, under /settings/* (the old /account/* and /app-passwords URLs redirect).
+  { name: 'Settings — Account', path: () => '/settings/account', ready: h1('Change password') },
+  { name: 'Settings — Browser sessions', path: () => '/settings/security', ready: h1('Browser sessions'), data: /\/api\/auth\/sessions(\?|$)/ },
+  { name: 'Settings — Devices (app passwords)', path: () => '/settings/security/devices', ready: h1('Devices'), data: /\/api\/app-passwords(\?|$)/ },
+  { name: 'Settings — Set up iPhone / Mac', path: () => '/settings/security/device-setup', ready: h1('Set up iPhone / Mac') },
+  { name: 'Settings — Addresses', path: () => '/settings/addresses', ready: h1('Masked aliases'), data: /\/api\/aliases(\?|$)/ },
   {
-    name: 'Import mail',
-    path: () => '/account/import',
+    name: 'Settings — Import & export',
+    path: () => '/settings/import',
     ready: h1('Import mail'),
     data: /\/api\/import(\?|$)/,
     empty: (body) => ({ ...body, import: null }),
   },
-  { name: 'Set up iPhone / Mac', path: () => '/account/device-setup', ready: h1('Set up iPhone / Mac') },
-  { name: 'Rules', path: () => '/account/rules', ready: h1('Rules'), data: /\/api\/sieve\/scripts(\?|$)/ },
-  { name: 'Compose templates', path: () => '/account/templates', ready: h1('Compose templates'), data: /\/api\/templates(\?|$)/ },
-  { name: 'Admin — Sessions', path: () => '/admin/sessions', ready: h1('Sessions'), data: /\/api\/admin\/sessions(\?|$)/, admin: true },
+  { name: 'Settings — Rules', path: () => '/settings/rules', ready: h1('Rules'), data: /\/api\/sieve\/scripts(\?|$)/ },
+  { name: 'Settings — Templates', path: () => '/settings/templates', ready: h1('Compose templates'), data: /\/api\/templates(\?|$)/ },
+  { name: 'Admin — Sign-in sessions', path: () => '/admin/sessions', ready: h1('Sign-in sessions'), data: /\/api\/admin\/sessions(\?|$)/, admin: true },
   { name: 'Admin — Health', path: () => '/admin/health', ready: h1('Health'), data: /\/api\/admin\/health(\?|$)/, admin: true },
   { name: 'Admin — Jobs', path: () => '/admin/jobs', ready: h1('Jobs'), data: /\/api\/admin\/jobs(\?|$)/, admin: true },
   { name: 'Admin — Outbound queue', path: () => '/admin/queue', ready: h1('Outbound queue'), data: /\/api\/admin\/queue(\?|$)/, admin: true },
-  { name: 'Admin — Suppression list', path: () => '/admin/suppressions', ready: h1('Suppression list'), data: /\/api\/admin\/suppressions(\?|$)/, empty: (body) => ({ ...body, suppressions: [], total: 0 }), admin: true },
+  { name: 'Admin — Suppressions', path: () => '/admin/suppressions', ready: h1('Suppression list'), data: /\/api\/admin\/suppressions(\?|$)/, empty: (body) => ({ ...body, suppressions: [], total: 0 }), admin: true },
   {
     name: 'Admin — Deliverability',
     path: () => '/admin/deliverability',
@@ -191,7 +192,7 @@ const SCREENS: Screen[] = [
     empty: emptyDeep,
     admin: true,
   },
-  { name: 'Admin — SMTP sessions', path: () => '/admin/smtp', ready: h1('SMTP sessions'), data: /\/api\/admin\/smtp\/transcripts(\?|$)/, admin: true },
+  { name: 'Admin — Live SMTP', path: () => '/admin/smtp', ready: h1('Live SMTP'), data: /\/api\/admin\/smtp\/transcripts(\?|$)/, admin: true },
 ];
 
 /** Every array anywhere in the body becomes [], and every count 0 — Deliverability's shape nests. */
@@ -531,7 +532,7 @@ for (const theme of THEMES) {
       // Start on a screen that loads nothing, signed in, then end the session while the page is
       // open: the cookie goes, and moving to the next screen (client-side, no reload) makes its
       // fetch — which the real server answers 401.
-      await page.goto('/account/password');
+      await page.goto('/settings/account');
       await expect(page.getByRole('heading', { name: 'Change password', level: 1 })).toBeVisible();
       await context.clearCookies();
       await navigateInApp(page, screen.path());
