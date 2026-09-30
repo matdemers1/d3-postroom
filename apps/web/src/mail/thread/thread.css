@@ -278,7 +278,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-14);
-  line-height: var(--leading-14);
+  /* A 24px line: the name opens the person card, and a pointer target is at least 24px (WCAG 2.5.8). */
+  line-height: 24px;
   font-weight: var(--weight-semibold);
 }
 
@@ -297,6 +298,8 @@
   font: inherit;
   font-size: var(--text-12);
   line-height: var(--leading-12);
+  /* The recipients toggle is a target too: 24px tall, however small its text (WCAG 2.5.8). */
+  min-height: 24px;
   cursor: pointer;
 }
 
