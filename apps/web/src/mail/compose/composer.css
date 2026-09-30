@@ -138,12 +138,23 @@
   padding-right: 0;
 }
 
-/* Focus is the library's 2px outline around the row, drawn inside it so the pane's edge never clips
-   it — never a box around the field (the library's rules sit in @layer d3-ui, so these win). */
+/* Focus on a header row is the row's own line turning accent and thickening to the focus width, with
+   its label in the accent — the way a mail header shows where you are typing. A 2px box around a
+   borderless row read as a highlight around nothing (the operator's words: "highlights around odd
+   things"). The inset line is a boundary, not a shadow; forced colours fall back to the outline. */
 .pr-compose__rows .d3-rcp--row:has(.d3-rcp__input:focus-visible),
 .pr-compose__row:focus-within {
-  outline: var(--focus-width) solid var(--color-focus);
-  outline-offset: calc(var(--focus-width) * -1);
+  outline: none;
+  border-bottom-color: var(--color-accent);
+  box-shadow: inset 0 calc(var(--focus-width) * -1) 0 var(--color-accent);
+}
+
+@media (forced-colors: active) {
+  .pr-compose__rows .d3-rcp--row:has(.d3-rcp__input:focus-visible),
+  .pr-compose__row:focus-within {
+    outline: var(--focus-width) solid CanvasText;
+    outline-offset: calc(var(--focus-width) * -1);
+  }
 }
 
 .pr-compose__reveals {

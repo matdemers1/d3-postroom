@@ -265,11 +265,13 @@ describe('the canvas composer: status, header view, action bar', () => {
 
   it('draws hairlines, not boxes: no shadow, the body transparent with no border at rest, focus as the library outline', () => {
     const css = src('mail/compose/composer.css');
-    expect(css).not.toMatch(/box-shadow/);
+    // The only box-shadow is the focused row's inset line — a boundary, never an outer shadow.
+    expect(css.match(/box-shadow:[^;]*/g) ?? []).toEqual(['box-shadow: inset 0 calc(var(--focus-width) * -1) 0 var(--color-accent)']);
     const body = /\.pr-compose__body \{([^}]*)\}/.exec(css)?.[1] ?? '';
     expect(body).toContain('background: transparent;');
     expect(body).toContain('border-color: transparent;');
-    expect(css).toMatch(/\.pr-compose__row:focus-within \{\s*outline: var\(--focus-width\) solid var\(--color-focus\);/);
+    // Focus on a header row is its line turning accent, not a box around the row.
+    expect(css).toMatch(/\.pr-compose__row:focus-within \{\s*outline: none;\s*border-bottom-color: var\(--color-accent\);/);
     // A minimised composer really hides its sheet (a display rule would otherwise beat [hidden]).
     expect(css).toMatch(/\.pr-compose__sheet\[hidden\] \{\s*display: none;/);
   });
