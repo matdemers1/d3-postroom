@@ -1,6 +1,7 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import { Alert, Badge, Button, DataList, DataListRow, EmptyState, FormField, Input, Modal, ModalClose, Page, PageHeader, Section } from '@d3cloud/ui';
 import { ApiError, api, describeError, type AccountSession } from '../api';
+import { describeAgent } from './agent';
 import { Loading, LoadFailed } from './states';
 import { SubNav } from './SubNav';
 
@@ -97,7 +98,7 @@ export function Sessions() {
             {sessions.map((s) => (
               <DataListRow
                 key={s.id}
-                title={s.userAgent ?? 'Unknown device'}
+                title={describeAgent(s.userAgent)}
                 description={`Signed in ${when(s.createdAt)} · from ${s.ip ?? 'an unknown address'}`}
                 meta={s.current ? <Badge size="sm">This session</Badge> : null}
                 actions={
@@ -128,7 +129,7 @@ export function Sessions() {
         }}
         destructive
         title="Sign out this session?"
-        description={confirming === null ? '' : `${confirming.userAgent ?? 'This device'} is signed out immediately.`}
+        description={confirming === null ? '' : `${describeAgent(confirming.userAgent)} is signed out immediately.`}
         footer={
           <>
             <ModalClose>
