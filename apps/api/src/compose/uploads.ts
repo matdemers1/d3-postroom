@@ -28,7 +28,7 @@
 import { once } from 'node:events';
 import { PassThrough, Transform, type TransformCallback } from 'node:stream';
 import { audited, getAuditContext, recordAudit, type RequestContext } from '@postroom/audit';
-import type { BlobStore } from '@postroom/blobstore';
+import { BlobNotFoundError, type BlobStore } from '@postroom/blobstore';
 import { envInt } from '@postroom/daemon';
 import type { Db } from '@postroom/db';
 import { parseMessage, type PartInfo } from '@postroom/mime';
@@ -38,9 +38,21 @@ import { currentSession, handle } from '../auth/middleware.js';
 import { sanitizeContentType, type OutgoingAttachment } from './message.js';
 import { UploadParams, type ComposeLimitsJson, type ComposeUploadJson } from './schemas.js';
 
-/** 20 MiB: the total of all attachments in one message, before encoding — and so also one file's cap. */
-export const DEFAULT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+/**
+ * 17 MiB (17,825,792 bytes): the total of all attachments in one message, before encoding — and so
+ * also one file's cap. Chosen so the encoded message stays under Gmail's 25 MB (25,000,000-byte)
+ * acceptance limit: base64 is 4/3, so 17,825,792 → 23,767,723 characters, plus a CRLF every 76 →
+ * × 78/76 ≈ 24,393,190 bytes, which leaves ~600 KB for the headers, the text and HTML body parts and
+ * the MIME framing. (20 MiB would encode to ~28.7 MB and be refused.)
+ */
+export const DEFAULT_MAX_ATTACHMENT_BYTES = 17 * 1024 * 1024;
 export const DEFAULT_MAX_ATTACHMENTS = 20;
+/** Uploads an account may hold at once (not yet expired or removed), by count… */
+export const DEFAULT_MAX_OUTSTANDING_UPLOADS = 100;
+/** …and by bytes: five messages' worth, by default. */
+export const DEFAULT_OUTSTANDING_BYTES_FACTOR = 5;
+/** compose_upload.size (and blob.size) is a PostgreSQL integer. */
+export const MAX_INT_COLUMN = 2 ** 31 - 1;
 /** Filenames longer than this (in characters) are refused. */
 export const MAX_FILENAME_CHARS = 255;
 
@@ -49,13 +61,25 @@ const TX_OPTIONS = { maxWait: 30_000, timeout: 120_000 } as const;
 export interface ComposeLimits {
   readonly maxAttachmentBytes: number;
   readonly maxAttachments: number;
+  /** COMPOSE_MAX_OUTSTANDING_UPLOADS: live compose_upload rows per account. */
+  readonly maxOutstandingUploads: number;
+  /** COMPOSE_MAX_OUTSTANDING_BYTES: their total size. */
+  readonly maxOutstandingBytes: number;
 }
 
 export function limitsFromEnv(env: NodeJS.ProcessEnv): ComposeLimits {
+  const maxAttachmentBytes = envInt(env, 'COMPOSE_MAX_ATTACHMENT_BYTES', DEFAULT_MAX_ATTACHMENT_BYTES);
   return {
-    maxAttachmentBytes: envInt(env, 'COMPOSE_MAX_ATTACHMENT_BYTES', DEFAULT_MAX_ATTACHMENT_BYTES),
+    maxAttachmentBytes,
     maxAttachments: envInt(env, 'COMPOSE_MAX_ATTACHMENTS', DEFAULT_MAX_ATTACHMENTS),
+    maxOutstandingUploads: envInt(env, 'COMPOSE_MAX_OUTSTANDING_UPLOADS', DEFAULT_MAX_OUTSTANDING_UPLOADS),
+    maxOutstandingBytes: envInt(env, 'COMPOSE_MAX_OUTSTANDING_BYTES', DEFAULT_OUTSTANDING_BYTES_FACTOR * maxAttachmentBytes),
   };
+}
+
+/** The largest single file: the per-message limit, and never more than the integer size column holds. */
+export function perFileCap(limits: ComposeLimits): number {
+  return Math.min(limits.maxAttachmentBytes, MAX_INT_COLUMN);
 }
 
 /** A refusal about attachments: status, stable code, a sentence. index.ts answers it like its own. */
@@ -97,11 +121,23 @@ export function countingTransform(limit: number): Transform & { readonly seen: (
 
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+/**
+ * Bidirectional controls — LRE RLE PDF LRO RLO (U+202A–U+202E), LRI RLI FSI PDI (U+2066–U+2069), LRM
+ * and RLM (U+200E, U+200F). They are stripped from every filename: "\u202Efdp.exe" would render as
+ * "exe.pdf" and pass an executable off as a document.
+ */
+const BIDI = /[\u202a-\u202e\u2066-\u2069\u200e\u200f]/g;
+
+/** A filename with its bidirectional controls removed. */
+export function stripBidi(name: string): string {
+  return name.replace(BIDI, '');
+}
 
 /**
  * The X-Postroom-Filename header as a filename: percent-decoded as UTF-8, any path dropped (only
- * what follows the last `/` or `\`), and refused (null) when it cannot be decoded, is empty or only
- * whitespace, is `.` or `..`, contains a control character, or is longer than 255 characters.
+ * what follows the last `/` or `\`), bidirectional controls stripped, and refused (null) when it
+ * cannot be decoded, is empty or only whitespace, is `.` or `..`, contains a control character, or
+ * is longer than 255 characters.
  */
 export function parseUploadFilename(header: string | undefined): string | null {
   if (header === undefined) return null;
@@ -112,7 +148,7 @@ export function parseUploadFilename(header: string | undefined): string | null {
     return null; // malformed %-escapes or bytes that are not UTF-8
   }
   const cut = Math.max(decoded.lastIndexOf('/'), decoded.lastIndexOf('\\'));
-  const name = decoded.slice(cut + 1);
+  const name = stripBidi(decoded.slice(cut + 1));
   if (name.trim() === '' || name === '.' || name === '..') return null;
   if (CONTROL.test(name)) return null;
   if (Array.from(name).length > MAX_FILENAME_CHARS) return null;
@@ -121,12 +157,13 @@ export function parseUploadFilename(header: string | undefined): string | null {
 
 /**
  * A filename read back from a draft's MIME (any client may have written it): the same rules, but
- * repaired rather than refused — path dropped, controls removed, cut to 255 characters.
+ * repaired rather than refused — path dropped, controls and bidirectional controls removed, cut to
+ * 255 characters.
  */
 export function repairFilename(name: string | null, fallback: string): string {
   if (name === null) return fallback;
   const cut = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
-  const clean = Array.from(name.slice(cut + 1).replace(new RegExp(CONTROL.source, 'g'), ''))
+  const clean = Array.from(stripBidi(name.slice(cut + 1)).replace(new RegExp(CONTROL.source, 'g'), ''))
     .slice(0, MAX_FILENAME_CHARS)
     .join('');
   return clean.trim() === '' || clean === '.' || clean === '..' ? fallback : clean;
@@ -142,13 +179,16 @@ export function uploadJson(row: UploadRow): ComposeUploadJson {
  * The upload ids a send or a draft save names, checked and in order: each must be the account's
  * own (404 not_found, naming the ids that are not), at most `maxAttachments` of them (400
  * too_many_attachments), their total at most `maxAttachmentBytes` (413 attachments_too_large).
- * Using them touches last_used_at, so the sweep leaves them alone. A repeated id counts once.
+ * Using them touches last_used_at, so the sweep leaves them alone. A repeated id attaches the file
+ * again — a draft may hold the same file twice, and reopening it names that upload twice — and
+ * every occurrence counts toward both limits.
  */
 export async function resolveAttachments(db: Db, accountId: string, ids: readonly string[] | undefined, limits: ComposeLimits, now: Date): Promise<UploadRow[]> {
   if (ids === undefined || ids.length === 0) return [];
-  const unique = [...new Set(ids.map((id) => id.toLowerCase()))];
-  if (unique.length > limits.maxAttachments) {
-    throw new AttachmentRefusal(400, 'too_many_attachments', `At most ${String(limits.maxAttachments)} attachments per message; this one has ${String(unique.length)}.`);
+  const wanted = ids.map((id) => id.toLowerCase());
+  const unique = [...new Set(wanted)];
+  if (wanted.length > limits.maxAttachments) {
+    throw new AttachmentRefusal(400, 'too_many_attachments', `At most ${String(limits.maxAttachments)} attachments per message; this one has ${String(wanted.length)}.`);
   }
   const rows = await db.composeUpload.findMany({ where: { id: { in: unique }, accountId } });
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -156,7 +196,7 @@ export async function resolveAttachments(db: Db, accountId: string, ids: readonl
   if (missing.length > 0) {
     throw new AttachmentRefusal(404, 'not_found', `attachments: ${missing.join(', ')} ${missing.length === 1 ? 'is not one of your uploads' : 'are not your uploads'} (removed, or expired after 24 hours unused). Attach the file again.`);
   }
-  const ordered = unique.map((id) => byId.get(id)).filter((r): r is NonNullable<typeof r> => r !== undefined);
+  const ordered = wanted.map((id) => byId.get(id)).filter((r): r is NonNullable<typeof r> => r !== undefined);
   const total = ordered.reduce((n, r) => n + r.size, 0);
   if (total > limits.maxAttachmentBytes) {
     throw new AttachmentRefusal(413, 'attachments_too_large', `The attachments total ${String(total)} bytes; a message may carry at most ${String(limits.maxAttachmentBytes)} bytes of attachments.`);
@@ -165,14 +205,45 @@ export async function resolveAttachments(db: Db, accountId: string, ids: readonl
   return ordered;
 }
 
-/** Uploads as the builder's attachments: each opens its blob's plaintext stream when its part is written. */
+/** The refusal when an upload's bytes vanished between the check and the build. */
+export function attachmentGone(filename: string): AttachmentRefusal {
+  return new AttachmentRefusal(409, 'attachment_gone', `The attachment "${filename}" was removed (or expired) while the message was being built. Nothing was sent and nothing was saved; attach the file again.`);
+}
+
+/**
+ * Uploads as the builder's attachments: each opens its blob's plaintext stream when its part is
+ * written. A DELETE or the sweep can release the upload after resolveAttachments checked it; the
+ * blob's row is then gone and the open fails with BlobNotFoundError, which is answered as 409
+ * attachment_gone (the error travels up through the build's stream to the route) — never a 500,
+ * and never a message sent without the file.
+ */
 export function outgoingAttachments(blobs: BlobStore, rows: readonly UploadRow[]): OutgoingAttachment[] {
-  return rows.map((r) => ({ filename: r.filename, contentType: r.contentType, open: () => blobs.get(r.blobSha256) }));
+  return rows.map((r) => ({
+    filename: r.filename,
+    contentType: r.contentType,
+    open: async () => {
+      try {
+        return await blobs.get(r.blobSha256);
+      } catch (error) {
+        if (error instanceof BlobNotFoundError) throw attachmentGone(r.filename);
+        throw error;
+      }
+    },
+  }));
 }
 
 /** An attachment leaf of a draft: a file, not the body text (and never inside a forwarded message). */
 function isAttachmentLeaf(part: PartInfo): boolean {
   return part.kind === 'leaf' && (part.disposition === 'attachment' || part.filename !== null);
+}
+
+/** A draft attachment part that was not registered as an upload, and why. */
+export interface OmittedAttachment {
+  filename: string;
+  /** Decoded bytes. */
+  size: number;
+  /** too_large: over the per-file limit; too_many: past the most attachments a message may carry. */
+  reason: 'too_large' | 'too_many';
 }
 
 /**
@@ -181,6 +252,13 @@ function isAttachmentLeaf(part: PartInfo): boolean {
  * again by id. An upload the account already has with the same bytes and name is reused (the extra
  * reference the put took is released in the same transaction); a new one is audited. Parts inside
  * an encapsulated message/rfc822 are not the draft's own (a forward is represented by forwardOf).
+ *
+ * A draft is mail — any IMAP client may have saved it — so its parts are not refused, but only
+ * what a send could carry is registered: a part larger than the per-file limit (or than the
+ * integer size column) is abandoned mid-stream, its transaction rolled back so nothing is stored,
+ * and so is every part past the most attachments a message may carry. Those come back in
+ * `omitted`, so the composer can say the draft holds a file it cannot send on. The per-account
+ * outstanding-upload quota does not apply here: these are files the account already keeps in mail.
  */
 export async function registerDraftAttachments(input: {
   db: Db;
@@ -190,15 +268,42 @@ export async function registerDraftAttachments(input: {
   source: AsyncIterable<Uint8Array>;
   context: RequestContext;
   now: Date;
-}): Promise<ComposeUploadJson[]> {
+  limits: ComposeLimits;
+}): Promise<{ attachments: ComposeUploadJson[]; omitted: OmittedAttachment[] }> {
   const { db, blobs, accountId } = input;
+  const cap = perFileCap(input.limits);
   const out: ComposeUploadJson[] = [];
+  const omitted: OmittedAttachment[] = [];
   const insideMessage = new Set<string>();
-  let current: { id: string; write: (chunk: Buffer) => Promise<void>; finish: () => Promise<ComposeUploadJson>; abort: (error: unknown) => Promise<void> } | null = null;
+  let parts = 0;
 
-  const capture = (part: PartInfo, index: number): NonNullable<typeof current> => {
+  interface Capture {
+    id: string;
+    filename: string;
+    size: number;
+    /** Why it is being skipped (its bytes are only counted); null while it is being stored. */
+    skip: OmittedAttachment['reason'] | null;
+    write: (chunk: Buffer) => Promise<void>;
+    finish: () => Promise<ComposeUploadJson>;
+    abort: (error: unknown) => Promise<void>;
+  }
+  let current: Capture | null = null;
+
+  const skipping = (part: PartInfo, filename: string, reason: OmittedAttachment['reason']): Capture => ({
+    id: part.id,
+    filename,
+    size: 0,
+    skip: reason,
+    write: () => Promise.resolve(),
+    finish: () => Promise.reject(new Error('a skipped part has no upload')),
+    abort: () => Promise.resolve(),
+  });
+
+  const capture = (part: PartInfo, filename: string): Capture => {
     const pt = new PassThrough();
-    const filename = repairFilename(part.filename, `attachment-${String(index)}`);
+    // put() attaches its listeners only after an await; a part abandoned before then (too large in
+    // its first chunk) must not be an uncaught 'error' event. put() still sees the destroyed stream.
+    pt.on('error', () => undefined);
     const contentType = sanitizeContentType(part.contentType);
     const done = db.$transaction(async (tx) => {
       const put = await blobs.put(pt, { tx });
@@ -223,9 +328,22 @@ export async function registerDraftAttachments(input: {
     }, TX_OPTIONS);
     // Awaited in finish/abort; this keeps an early failure from being an unhandled rejection meanwhile.
     done.catch(() => undefined);
-    return {
+    const c: Capture = {
       id: part.id,
+      filename,
+      size: 0,
+      skip: null,
       write: async (chunk) => {
+        c.size += chunk.length;
+        if (c.skip !== null) return;
+        if (c.size > cap) {
+          // Too large to carry on: abandon the put (its transaction rolls back, its temp file goes)
+          // and only count the rest.
+          c.skip = 'too_large';
+          pt.destroy(new AttachmentTooLarge(cap));
+          await done.catch(() => undefined);
+          return;
+        }
         if (!pt.write(chunk)) await Promise.race([once(pt, 'drain'), done]);
       },
       finish: async () => {
@@ -237,6 +355,7 @@ export async function registerDraftAttachments(input: {
         await done.catch(() => undefined);
       },
     };
+    return c;
   };
 
   try {
@@ -247,11 +366,16 @@ export async function registerDraftAttachments(input: {
           insideMessage.add(part.id);
           continue;
         }
-        if (isAttachmentLeaf(part)) current = capture(part, out.length + 1);
+        if (!isAttachmentLeaf(part)) continue;
+        parts += 1;
+        const filename = repairFilename(part.filename, `attachment-${String(parts)}`);
+        current = out.length >= input.limits.maxAttachments ? skipping(part, filename, 'too_many') : capture(part, filename);
       } else if (event.type === 'body' && current?.id === event.part.id) {
-        await current.write(event.chunk);
+        if (current.skip !== null) current.size += event.chunk.length;
+        else await current.write(event.chunk);
       } else if (event.type === 'end-part' && current?.id === event.part.id) {
-        out.push(await current.finish());
+        if (current.skip === null) out.push(await current.finish());
+        else omitted.push({ filename: current.filename, size: current.size, reason: current.skip });
         current = null;
       }
     }
@@ -259,7 +383,27 @@ export async function registerDraftAttachments(input: {
     if (current !== null) await current.abort(error);
     throw error;
   }
-  return out;
+  return { attachments: out, omitted };
+}
+
+type Tx = Parameters<Parameters<Db['$transaction']>[0]>[0];
+
+/** The account's live uploads: how many, and their total bytes. */
+async function outstanding(db: Db | Tx, accountId: string): Promise<{ count: number; bytes: number }> {
+  const agg = await db.composeUpload.aggregate({ where: { accountId }, _count: { _all: true }, _sum: { size: true } });
+  return { count: agg._count._all, bytes: agg._sum.size ?? 0 };
+}
+
+/** 413 upload_quota_exceeded when one more upload of `adding` bytes would pass either quota. */
+function quotaRefusal(held: { count: number; bytes: number }, adding: number, limits: ComposeLimits): AttachmentRefusal | null {
+  if (held.count + 1 > limits.maxOutstandingUploads || held.bytes + adding > limits.maxOutstandingBytes) {
+    return new AttachmentRefusal(
+      413,
+      'upload_quota_exceeded',
+      `You have ${String(held.count)} attachments (${String(held.bytes)} bytes) uploaded and not yet sent; the most you can hold is ${String(limits.maxOutstandingUploads)} files or ${String(limits.maxOutstandingBytes)} bytes. Remove attachments you no longer need, or send the messages they belong to, first.`,
+    );
+  }
+  return null;
 }
 
 /** The raw body is never read: let it drain to nowhere, and say so to the client. */
@@ -309,13 +453,21 @@ export function mountUploadRoutes(
       const contentType = sanitizeContentType(req.get('content-type'));
       // A declared length already over the limit is refused before a byte is read.
       const declared = Number(req.get('content-length') ?? 'NaN');
-      if (Number.isFinite(declared) && declared > limits.maxAttachmentBytes) {
+      if (Number.isFinite(declared) && declared > perFileCap(limits)) {
         discard(req, res);
         tooLarge(res);
         return;
       }
+      // The account's outstanding uploads, before a byte is read too (checked again, under a lock,
+      // once the file is stored).
+      const quota = quotaRefusal(await outstanding(db, me.accountId), Number.isFinite(declared) ? declared : 0, limits);
+      if (quota !== null) {
+        discard(req, res);
+        res.status(quota.status).json({ error: quota.code, message: quota.message });
+        return;
+      }
 
-      const counter = countingTransform(limits.maxAttachmentBytes);
+      const counter = countingTransform(perFileCap(limits));
       // put() only attaches its own listeners after an await, and bytes may already be flowing: an
       // error before then must not be an uncaught 'error' event. put() still sees it (the stream is
       // destroyed), and the catch below reads the cause from the count.
@@ -331,7 +483,7 @@ export function mountUploadRoutes(
         put = await store.blobs.put(counter);
       } catch (error) {
         req.unpipe(counter);
-        if (error instanceof AttachmentTooLarge || counter.seen() > limits.maxAttachmentBytes) {
+        if (error instanceof AttachmentTooLarge || counter.seen() > perFileCap(limits)) {
           // put() failed before its commit and removed its temp file: no row, no reference.
           discard(req, res);
           tooLarge(res);
@@ -346,6 +498,10 @@ export function mountUploadRoutes(
       let row: UploadRow;
       try {
         row = await audited(db, { kind: 'account', accountId: me.accountId }, { action: 'compose.upload', entityType: 'compose_upload', context: getAuditContext(req) }, async (tx) => {
+          // Serialise this account's uploads for the quota check, so two at once cannot both fit.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'postroom-compose-upload:' + me.accountId}, 0))`;
+          const over = quotaRefusal(await outstanding(tx, me.accountId), put.size, limits);
+          if (over !== null) throw over;
           const created = await tx.composeUpload.create({ data: { accountId: me.accountId, blobSha256: put.sha256, filename, contentType, size: put.size, lastUsedAt: opts.now() } });
           return { entityId: created.id, before: null, after: { filename, contentType, size: put.size, blobSha256: put.sha256 }, result: created };
         });
@@ -353,7 +509,9 @@ export function mountUploadRoutes(
         // No row holds the reference the put took: give it back.
         const released = await store.blobs.release(put.sha256).catch(() => null);
         if (released === null) process.stderr.write(`${JSON.stringify({ event: 'upload-release-failed', sha256: put.sha256 })}\n`);
-        throw error;
+        if (!(error instanceof AttachmentRefusal)) throw error;
+        res.status(error.status).json({ error: error.code, message: error.message });
+        return;
       }
       res.status(201).json(uploadJson(row));
     }),
@@ -375,7 +533,10 @@ export function mountUploadRoutes(
         await audited(db, { kind: 'account', accountId: me.accountId }, { action: 'compose.upload.delete', entityType: 'compose_upload', context: getAuditContext(req) }, async (tx) => {
           const row = await tx.composeUpload.findFirst({ where: { id: parsed.data.id, accountId: me.accountId } });
           if (row === null) throw new AttachmentRefusal(404, 'not_found', 'no such upload');
-          await tx.composeUpload.delete({ where: { id: row.id } });
+          // Conditional: a concurrent DELETE of the same upload blocks on the row lock here and then
+          // deletes nothing — 404, and its reference is never released twice.
+          const gone = await tx.composeUpload.deleteMany({ where: { id: row.id, accountId: me.accountId } });
+          if (gone.count === 0) throw new AttachmentRefusal(404, 'not_found', 'no such upload');
           const released = await store.blobs.release(row.blobSha256, tx);
           if (released.refcount === 0) toReap.push(row.blobSha256);
           return { entityId: row.id, before: { filename: row.filename, contentType: row.contentType, size: row.size, blobSha256: row.blobSha256 }, after: null, result: null };
