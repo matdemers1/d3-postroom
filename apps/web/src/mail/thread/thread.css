@@ -278,7 +278,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-14);
-  /* A 24px line: the name opens the person card, and a pointer target is at least 24px (WCAG 2.5.8). */
+  /* 24px tall: the name opens the person card, and a pointer target is at least 24px (WCAG 2.5.8).
+     inline-block, because an inline box is as tall as its font, whatever its line-height. */
+  display: inline-block;
+  min-height: 24px;
   line-height: 24px;
   font-weight: var(--weight-semibold);
 }
@@ -704,9 +707,13 @@
     align-items: center;
     min-height: 44px;
     min-width: 44px;
-    /* The target is 44px; the line it sits on is not. Pull the box over its neighbours so the name,
-       the recipients and the time keep the header's rhythm rather than stacking 44px rows. */
-    margin-block: -12px;
+  }
+
+  /* The time sits beside the name, not between rows: its 44px box may reach over empty space, never
+     over another control, so only it is pulled up (the recipients toggle stays in its own row — its
+     box overlapping the name's is exactly what the tap-target check refuses). */
+  .pr-mhead__date {
+    margin-block: -10px;
   }
 
   .pr-mhead__line {
