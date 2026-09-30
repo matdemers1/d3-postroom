@@ -14,7 +14,7 @@ const config = {
 } as unknown as UsercontentConfig;
 
 describe('the served render document', () => {
-  const doc = renderDocument('<table width="600"><tr><td width="600">Hello</td></tr></table>');
+  const doc = renderDocument('<table width="600"><tr><td width="600">Hello</td></tr></table>', { designed: true, theme: 'light' });
 
   it('carries the narrow-frame fit rule in its own <style>, before the body', () => {
     const style = /<head>.*<style>(.*)<\/style>.*<\/head>/s.exec(doc)?.[1] ?? '';

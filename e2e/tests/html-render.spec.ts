@@ -179,3 +179,77 @@ test('the render carries its CSP to any client, and stays inert when visited dir
   await expect(page.locator('#x')).toHaveText('framed only');
   expect(w.dialogs).toEqual([]);
 });
+
+// PST-T-15.12: no white box. What the operator saw on 2026-09-30 in the dark theme: an Outlook reply
+// drawn as a huge white slab, and every address in it shown as "[email protected]". A plain message
+// (MsoNormal paragraphs, black/windowtext, no background) now renders on a transparent page in the
+// app's own ink — the frame document's background is transparent — with its address text intact
+// (the body sits inside Cloudflare's email_off markers). A designed message keeps its white page
+// inside a radius-lg hairline.
+test('an Outlook reply in the dark theme shows no white box, and its addresses are intact', async ({ page, context }) => {
+  const t = tag();
+  const html = [
+    '<html><head><meta name=Generator content="Microsoft Word 15 (filtered medium)"><style><!--',
+    'p.MsoNormal, li.MsoNormal, div.MsoNormal {margin:0in; font-size:11.0pt; font-family:"Calibri",sans-serif;}',
+    'a:link, span.MsoHyperlink {mso-style-priority:99; color:#0563C1; text-decoration:underline;}',
+    'span.EmailStyle17 {mso-style-type:personal-compose; font-family:"Calibri",sans-serif; color:windowtext;}',
+    '--></style></head>',
+    '<body lang=EN-US link="#0563C1" vlink="#954F72" style="word-wrap:break-word"><div class=WordSection1>',
+    '<p class=MsoNormal id="first">test 2</p><p class=MsoNormal>V/R</p><p class=MsoNormal>Matthew Demers</p>',
+    '<div style="border:none;border-top:solid #E1E1E1 1.0pt;padding:3.0pt 0in 0in 0in">',
+    '<p class=MsoNormal><b><span style="color:black">From:</span></b><span id="from" style="color:black"> Matthew Demers &lt;matthew@d3cloud.io&gt;<br>',
+    '<b>Sent:</b> Tuesday, September 29, 2026 9:12 PM<br><b>To:</b> someone@example.org<br><b>Subject:</b> test</span></p></div>',
+    '</div></body></html>',
+  ].join('\n');
+  const text = 'test 2\r\nV/R\r\nMatthew Demers\r\n\r\nFrom: Matthew Demers <matthew@d3cloud.io>\r\nSent: Tuesday, September 29, 2026 9:12 PM\r\nTo: someone@example.org\r\nSubject: test\r\n';
+  const designedHtml = '<table bgcolor="#f4f4f4" width="100%"><tr><td id="news">The weekly issue, from news@example.org</td></tr></table>';
+  const [plain, designed] = await seedMail(api, [
+    { subject: `RE: test ${t}`, from: 'Matthew Demers <matthew@d3cloud.io>', text, html },
+    { subject: `Weekly issue ${t}`, from: 'News <news@example.org>', text: 'The weekly issue', html: designedHtml },
+  ]);
+  if (plain === undefined || designed === undefined) throw new Error('seed returned nothing');
+
+  // The ticket says which look, and the served document carries the markers.
+  const ticket = (await (await api.get(`/api/messages/${plain.id}/render?theme=dark`)).json()) as { url: string; designed: boolean };
+  expect(ticket.designed).toBe(false);
+  expect(new URL(ticket.url).searchParams.get('theme')).toBe('dark');
+  const served = await (await api.get(ticket.url)).text();
+  expect(served).toMatch(/<body><!--email_off-->[\s\S]*matthew@d3cloud\.io[\s\S]*<!--\/email_off--><\/body>/);
+
+  await context.addInitScript(() => {
+    (globalThis as unknown as { localStorage: { setItem(k: string, v: string): void } }).localStorage.setItem('postroom-theme', 'dark');
+  });
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await row(page, plain.subject).click();
+  await expect(page.getByRole('heading', { name: plain.subject, level: 2 })).toBeVisible();
+
+  const frameEl = page.getByTestId('message-html');
+  await expect(frameEl).toBeVisible();
+  expect(new URL((await frameEl.getAttribute('src')) ?? '').searchParams.get('theme')).toBe('dark');
+  await expect(page.locator('.pr-frame')).toHaveAttribute('data-designed', 'false');
+  await expect(frameEl).toHaveCSS('border-top-width', '0px');
+  await expect(frameEl).toHaveCSS('border-top-left-radius', '0px');
+
+  const frame = page.frameLocator('[data-testid="message-html"]');
+  await expect(frame.locator('#first')).toHaveText('test 2');
+  // No white box: the frame document paints nothing, and the text is the app's light ink.
+  await expect(frame.locator('html')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(frame.locator('body')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(frame.locator('html')).toHaveCSS('color-scheme', 'dark');
+  await expect(frame.locator('#from')).toHaveCSS('color', 'rgb(240, 242, 247)');
+  // The address is text, not an obfuscated placeholder.
+  await expect(frame.locator('#from')).toContainText('Matthew Demers <matthew@d3cloud.io>');
+  await expect(frame.locator('body')).not.toContainText('[email');
+
+  // A designed message keeps its white page, inside a radius-lg hairline and no shadow.
+  await row(page, designed.subject).click();
+  await expect(page.getByRole('heading', { name: designed.subject, level: 2 })).toBeVisible();
+  await expect(page.locator('.pr-frame')).toHaveAttribute('data-designed', 'true');
+  await expect(page.getByTestId('message-html')).toHaveCSS('border-top-width', '1px');
+  await expect(page.getByTestId('message-html')).toHaveCSS('border-top-left-radius', '14px');
+  await expect(page.getByTestId('message-html')).toHaveCSS('box-shadow', 'none');
+  const designedFrame = page.frameLocator('[data-testid="message-html"]');
+  await expect(designedFrame.locator('#news')).toContainText('news@example.org');
+  await expect(designedFrame.locator('html')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+});

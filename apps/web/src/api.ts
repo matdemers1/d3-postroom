@@ -151,8 +151,12 @@ export const api = {
   mailboxSplit: (mailboxId: string) => call<MailboxSplit>('GET', `/api/mailboxes/${encodeURIComponent(mailboxId)}/split`),
   message: (id: string) => call<MessageDetail>('GET', `/api/messages/${encodeURIComponent(id)}`),
   messageBody: (id: string) => call<MessageBody>('GET', `/api/messages/${encodeURIComponent(id)}/body`),
-  /** A short-lived URL of the sanitised HTML on the usercontent origin (PST-T-3.12). 503 when that origin is not configured. */
-  renderMessage: (id: string, images: boolean) => call<RenderTicket>('GET', renderPath(id, images)),
+  /**
+   * A short-lived URL of the sanitised HTML on the usercontent origin (PST-T-3.12). 503 when that
+   * origin is not configured. `theme` is the app's resolved theme (PST-T-15.12); left out, it is read
+   * from <html data-theme> at the time of the call.
+   */
+  renderMessage: (id: string, images: boolean, theme: FrameTheme = documentTheme()) => call<RenderTicket>('GET', renderPath(id, images, theme)),
   /** Everything Postroom knows about one message, with its reasons — the Inspect drawer (PST-T-6.1, PST-REQ-114). */
   inspectMessage: (id: string) => call<MessageInspect>('GET', `/api/messages/${encodeURIComponent(id)}/inspect`),
   /** Flags and/or a move. `modseq` is the row's current MODSEQ: the server answers 412 if it moved on. A move returns a NEW id. */
@@ -387,9 +391,26 @@ export function wizardReachable(view: WizardView, step: WizardStep): boolean {
   return order.indexOf(step) <= order.indexOf(view.step);
 }
 
-/** The render-ticket request: remote images only when the reader chose to load them (PST-REQ-082). */
-export const renderPath = (messageId: string, images: boolean): string =>
-  `/api/messages/${encodeURIComponent(messageId)}/render${images ? '?images=1' : ''}`;
+/** The theme a message frame renders in: the app's resolved theme, never `system` (PST-T-15.12). */
+export type FrameTheme = 'light' | 'dark';
+
+/** The resolved theme @d3cloud/ui's ThemeProvider writes to <html data-theme>; light outside a browser. */
+export function documentTheme(): FrameTheme {
+  if (typeof document === 'undefined') return 'light';
+  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+}
+
+/**
+ * The render-ticket request: remote images only when the reader chose to load them (PST-REQ-082),
+ * and the theme a plain message should render in (PST-T-15.12).
+ */
+export const renderPath = (messageId: string, images: boolean, theme?: FrameTheme): string => {
+  const q = new URLSearchParams();
+  if (images) q.set('images', '1');
+  if (theme !== undefined) q.set('theme', theme);
+  const qs = q.toString();
+  return `/api/messages/${encodeURIComponent(messageId)}/render${qs === '' ? '' : `?${qs}`}`;
+};
 
 /** Where an attachment downloads from: always a download, never rendered on this origin. */
 export const attachmentUrl = (messageId: string, partId: string): string =>
@@ -663,6 +684,11 @@ export interface RenderTicket {
   trackersBlocked: number;
   /** Links whose tracking parameters were stripped or whose click-redirect wrapper was unwrapped. */
   linksCleaned: number;
+  /**
+   * The HTML paints its own page (PST-T-15.12): it renders on white and the pane frames it with a
+   * hairline. False: it renders transparent in the app's theme, flush with the text around it.
+   */
+  designed: boolean;
 }
 
 /** Matches apps/api/src/mail/inspect.ts's MessageInspect (PST-T-6.1, PST-REQ-114). */

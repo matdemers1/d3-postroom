@@ -16,6 +16,10 @@
 // (always target=_blank rel=noopener noreferrer) opens in a normal tab.
 //
 // Nothing here writes to the database, so nothing here is audited: a render is a read.
+//
+// PST-T-15.12: a render URL carries `?theme=light|dark` — the app's resolved theme, NOT part of the
+// capability (it changes only how the page looks). A plain message is served on a transparent page
+// in that theme's ink and color-scheme; a designed one on the white page it always had (theme.ts).
 import { createHash } from 'node:crypto';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import { collectMessage, parseMessage } from '@postroom/mime';
@@ -27,7 +31,8 @@ import type { ApiDeps } from '../deps.js';
 import { DEFAULT_BLOB_ROOT } from '../mail/index.js';
 import { findOwnMessage } from '../mail/store.js';
 import { fetchImage, type FetchPolicy } from './proxy.js';
-import { sanitizeHtml, escapeText } from './sanitize.js';
+import { sanitizeHtml, escapeText, type SanitizeOptions } from './sanitize.js';
+import { parseTheme, THEME_COLORS, type RenderTheme } from './theme.js';
 import { deriveKey, mintToken, signImage, TOKEN_TTL_S, verifyImage, verifyToken, type Capability } from './token.js';
 
 export interface UsercontentConfig {
@@ -101,10 +106,13 @@ export function usercontentConfig(deps: ApiDeps): UsercontentConfig | null {
   return config;
 }
 
-/** A render URL for one message of the caller's, valid for TOKEN_TTL_S. */
-export function mintRenderUrl(config: UsercontentConfig, cap: Omit<Capability, 'exp'>, now: Date): { url: string; expiresAt: string } {
+/**
+ * A render URL for one message of the caller's, valid for TOKEN_TTL_S. The theme rides as a query
+ * parameter beside the token, outside the capability: the usercontent route validates it itself.
+ */
+export function mintRenderUrl(config: UsercontentConfig, cap: Omit<Capability, 'exp'>, now: Date, theme: RenderTheme = 'light'): { url: string; expiresAt: string } {
   const exp = Math.floor(now.getTime() / 1000) + TOKEN_TTL_S;
-  return { url: `${config.origin}/m/${mintToken(config.key, { ...cap, exp })}`, expiresAt: new Date(exp * 1000).toISOString() };
+  return { url: `${config.origin}/m/${mintToken(config.key, { ...cap, exp })}?theme=${theme}`, expiresAt: new Date(exp * 1000).toISOString() };
 }
 
 /** The CSP of a rendered message. No script-src at all: default-src 'none' covers it. */
@@ -146,14 +154,47 @@ export const NARROW_FIT_STYLE =
   '@media (max-width:599px){body *{max-width:100%!important;min-width:0!important;box-sizing:border-box}' +
   'table,tbody,tr,td,th{display:block;width:auto!important}}';
 
-/** Mail's defaults, before the sender's own styles: readable, contained, light (senders assume white). */
-const BASE_STYLE =
-  ':root{color-scheme:light}html{background:#fff;color:#111}body{margin:0;padding:12px;font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow-wrap:anywhere}' +
+/** Contained and readable, whichever look: images and tables fit, quotes are ruled. */
+const SHARED_STYLE =
   'img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}blockquote{margin:0 0 0 8px;padding-left:8px;border-left:2px solid #ccc}' +
   NARROW_FIT_STYLE;
 
-export function renderDocument(body: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_STYLE}</style></head><body>${body}</body></html>`;
+/** A designed message: the white page senders assume, exactly as it always was. */
+export const DESIGNED_STYLE =
+  ':root{color-scheme:light}html{background:#fff;color:#111}body{margin:0;padding:12px;font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow-wrap:anywhere}' +
+  SHARED_STYLE;
+
+/**
+ * A plain message: no page of its own, so it reads like the app's own text — a transparent page in
+ * the theme's ink and link colour, 16px/1.6 in the app's font stack, no padding (the reading pane
+ * provides the gutter, as it does for a text body). color-scheme matches the app's theme so the
+ * browser paints no opaque backdrop behind the transparent document. The colours are @d3cloud/ui's
+ * (theme.ts THEME_COLORS): hard-coded because this CSS is served inside the frame, not the web app.
+ */
+export function plainStyle(theme: RenderTheme): string {
+  const { ink, link } = THEME_COLORS[theme];
+  return (
+    `:root{color-scheme:${theme}}html{background:transparent;color:${ink}}` +
+    `body{margin:0;padding:0;font:16px/1.6 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}` +
+    `a{color:${link}}` +
+    SHARED_STYLE
+  );
+}
+
+export interface RenderLook {
+  designed: boolean;
+  theme: RenderTheme;
+}
+
+/**
+ * The served document. The body is wrapped in Cloudflare's email_off markers: the usercontent host
+ * is proxied by Cloudflare, whose Email Address Obfuscation would otherwise rewrite every address
+ * into "[email protected]" plus a decoder script — which our CSP and sandbox (rightly) never run.
+ * The markers are added here, after sanitization; the sanitizer drops every comment a sender writes.
+ */
+export function renderDocument(body: string, look: RenderLook): string {
+  const style = look.designed ? DESIGNED_STYLE : plainStyle(look.theme);
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${style}</style></head><body><!--email_off-->${body}<!--/email_off--></body></html>`;
 }
 
 const plainText = (text: string): string => `<pre style="font: inherit">${escapeText(text)}</pre>`;
@@ -223,19 +264,25 @@ export function usercontentApp(deps: ApiDeps, config: UsercontentConfig): Expres
       }
       const summary = await collectMessage(await store.get(found.message.blobSha256));
       const base = `${config.origin}/m/${token}`;
+      const theme = parseTheme(req.query['theme']);
       let body: string;
+      let designed = false;
       if (summary.html !== null) {
-        body = sanitizeHtml(summary.html.text, {
+        const opts: SanitizeOptions = {
           cidImage: (cid) => `${base}/cid/${encodeURIComponent(normalCid(cid))}`,
           remoteImage: found.cap.images
             ? (url) => `${config.origin}/img?u=${encodeURIComponent(url)}&t=${token}&s=${signImage(config.key, token, url)}`
             : undefined,
-        }).html;
+        };
+        const first = sanitizeHtml(summary.html.text, opts);
+        designed = first.designed;
+        // A plain message in the dark theme: again, dropping the near-black ink (theme.ts).
+        body = !designed && theme === 'dark' ? sanitizeHtml(summary.html.text, { ...opts, darkPlain: true }).html : first.html;
       } else {
         body = plainText(summary.text?.text ?? '');
       }
       res.setHeader('Content-Security-Policy', renderCsp(config));
-      res.type('text/html; charset=utf-8').send(renderDocument(body));
+      res.type('text/html; charset=utf-8').send(renderDocument(body, { designed, theme }));
     }),
   );
 

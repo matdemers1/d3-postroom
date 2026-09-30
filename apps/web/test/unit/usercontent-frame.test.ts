@@ -2,11 +2,11 @@
 // grants scripts or same-origin (PST-REQ-081); remote images are asked for only on request, and the
 // reader is told why they are blocked (PST-REQ-082). The browser behaviour is e2e/tests/html-render.spec.ts.
 import { describe, expect, it, vi } from 'vitest';
-import { renderPath } from '../../src/api';
+import { documentTheme, renderPath } from '../../src/api';
 
 // The component library ships CSS, which Node cannot import; nothing here renders.
 vi.mock('@d3cloud/ui', () => ({}));
-import { blockedImagesNote, MAIL_FRAME_SANDBOX } from '../../src/mail/ReadingPane';
+import { blockedImagesNote, frameLook, MAIL_FRAME_SANDBOX } from '../../src/mail/ReadingPane';
 
 const ID = '22222222-2222-4222-8222-222222222222';
 
@@ -22,6 +22,25 @@ describe('the mail frame', () => {
   it('asks for remote images only when the reader chose to load them', () => {
     expect(renderPath(ID, false)).toBe(`/api/messages/${ID}/render`);
     expect(renderPath(ID, true)).toBe(`/api/messages/${ID}/render?images=1`);
+  });
+
+  it('carries the resolved theme on the render request (PST-T-15.12)', () => {
+    expect(renderPath(ID, false, 'dark')).toBe(`/api/messages/${ID}/render?theme=dark`);
+    expect(renderPath(ID, true, 'light')).toBe(`/api/messages/${ID}/render?images=1&theme=light`);
+    // Outside a browser (and so before any ThemeProvider), light.
+    expect(documentTheme()).toBe('light');
+    // In the browser, what ThemeProvider wrote to <html data-theme>.
+    vi.stubGlobal('document', { documentElement: { getAttribute: (name: string) => (name === 'data-theme' ? 'dark' : null) } });
+    try {
+      expect(documentTheme()).toBe('dark');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('frames a designed message and leaves a plain one flush (PST-T-15.12)', () => {
+    expect(frameLook({ designed: true })).toBe('true');
+    expect(frameLook({ designed: false })).toBe('false');
   });
 
   it('says why images are blocked, and only when some are', () => {

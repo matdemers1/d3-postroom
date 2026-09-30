@@ -46,8 +46,14 @@
 //
 // When the server has no usercontent origin configured (503), the text/plain part is shown instead
 // and an HTML-only message says so.
+//
+// No white box (PST-T-15.12): the ticket is asked for in the app's resolved theme and says whether
+// the HTML is "designed" (paints its own page). A plain message — most personal mail — renders on a
+// transparent page in the app's ink, and its frame has no border, radius or background, flush with
+// the text around it. A designed one keeps its own white page, framed by a radius-lg hairline and no
+// shadow. A theme change asks for a fresh ticket, so the frame reloads in the new theme.
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type ForwardedRef, type ReactNode } from 'react';
-import { Alert, Avatar, Button, EmptyState, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
+import { Alert, Avatar, Button, EmptyState, Modal, ModalClose, Skeleton, Stack, useTheme } from '@d3cloud/ui';
 import { AttachmentList } from './AttachmentCard';
 import { deliveryPhase, isPending, NO_DELIVERY_RECORD_TEXT } from './delivery';
 import { DeliveryEvidence, DeliveryRecipientRow } from './DeliveryRows';
@@ -637,17 +643,23 @@ export function blockedImagesNote(ticket: Pick<RenderTicket, 'images' | 'remoteI
   return `${String(ticket.remoteImages)} images come from the sender's servers. Loading them would tell them you opened this message, so they are blocked.`;
 }
 
+/** The frame's chrome (PST-T-15.12): a designed message gets the hairline page, a plain one nothing. */
+export function frameLook(ticket: Pick<RenderTicket, 'designed'>): 'true' | 'false' {
+  return ticket.designed ? 'true' : 'false';
+}
+
 type FrameState = { status: 'loading' } | { status: 'ready'; ticket: RenderTicket } | { status: 'unavailable' } | { status: 'error' };
 
 function HtmlFrame({ messageId, fallback, note: lead, fill }: { messageId: string; fallback: ReactNode; note: ReactNode; fill: boolean }) {
   const [images, setImages] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<FrameState>({ status: 'loading' });
+  const theme = useTheme().resolved;
 
   useEffect(() => {
     let live = true;
     setState({ status: 'loading' });
-    api.renderMessage(messageId, images).then(
+    api.renderMessage(messageId, images, theme).then(
       (ticket) => {
         if (live) setState({ status: 'ready', ticket });
       },
@@ -658,7 +670,7 @@ function HtmlFrame({ messageId, fallback, note: lead, fill }: { messageId: strin
     return () => {
       live = false;
     };
-  }, [messageId, images, attempt]);
+  }, [messageId, images, attempt, theme]);
 
   if (state.status === 'loading') return <Skeleton variant="block" height={160} />;
   if (state.status === 'unavailable') return <>{fallback}</>;
@@ -672,7 +684,7 @@ function HtmlFrame({ messageId, fallback, note: lead, fill }: { messageId: strin
   const note = blockedImagesNote(state.ticket);
   const trackers = trackersBlockedNote(state.ticket);
   return (
-    <div className="pr-frame" data-fill={fill}>
+    <div className="pr-frame" data-fill={fill} data-designed={frameLook(state.ticket)}>
       {lead}
       {trackers !== null ? (
         <p className="pr-reader__note" data-testid="trackers-blocked">
