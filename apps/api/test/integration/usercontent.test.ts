@@ -91,8 +91,12 @@ describe.skipIf(!baseUrl)('usercontent origin (PST-T-3.12)', () => {
     return m.id;
   };
 
-  const ticket = async (cookie: string, id: string, images = false) => {
-    const res = await request(app).get(`/api/messages/${id}/render${images ? '?images=1' : ''}`).set('cookie', cookie);
+  const ticket = async (cookie: string, id: string, images = false, theme?: 'light' | 'dark') => {
+    const q = new URLSearchParams();
+    if (images) q.set('images', '1');
+    if (theme !== undefined) q.set('theme', theme);
+    const qs = q.toString();
+    const res = await request(app).get(`/api/messages/${id}/render${qs === '' ? '' : `?${qs}`}`).set('cookie', cookie);
     expect(res.status).toBe(200);
     return RenderTicket.parse(res.body);
   };
@@ -222,7 +226,7 @@ describe.skipIf(!baseUrl)('usercontent origin (PST-T-3.12)', () => {
     expect((await uc(u.href)).status).toBe(403);
     const plain = await ticket(me.cookie, id, false);
     const noImages = new URL(proxied);
-    const tok = plain.url.split('/m/')[1] ?? '';
+    const tok = new URL(plain.url).pathname.split('/m/')[1] ?? '';
     noImages.searchParams.set('t', tok);
     expect((await uc(noImages.href)).status).toBe(403);
     expect(senderHits.length).toBe(before + 1);
@@ -245,7 +249,9 @@ describe.skipIf(!baseUrl)('usercontent origin (PST-T-3.12)', () => {
     const me = await person();
     const id = await file(me.inbox, htmlMessage('<p>secret</p>'));
     const { url } = await ticket(me.cookie, id);
-    expect((await uc(`${url.slice(0, -2)}xx`)).status).toBe(404);
+    const tampered = new URL(url);
+    tampered.pathname = `${tampered.pathname.slice(0, -2)}xx`;
+    expect((await uc(tampered.href)).status).toBe(404);
     clock.advance(16 * 60 * 1000);
     expect((await uc(url)).status).toBe(404);
     const fresh = (await ticket(me.cookie, id)).url;
@@ -273,6 +279,54 @@ describe.skipIf(!baseUrl)('usercontent origin (PST-T-3.12)', () => {
     const csp = String((await request(app).get('/api/auth/state')).headers['content-security-policy']);
     expect(csp).toContain(`frame-src ${UC_ORIGIN}`);
     expect(csp).toContain("frame-ancestors 'none'");
+  });
+
+  // PST-T-15.12: no white box. A plain message (an Outlook reply) renders transparent in the app's
+  // theme with its near-black ink dropped in dark; a designed one keeps its white page; addresses
+  // sit inside Cloudflare's email_off markers; the CSP is the same either way.
+  it('renders a plain message in the theme and a designed one on white, with addresses left alone', async () => {
+    const me = await person();
+    const outlook =
+      '<html><head><style><!-- p.MsoNormal{margin:0in;font-size:11.0pt;font-family:"Calibri",sans-serif} span.EmailStyle17{color:windowtext} --></style></head>' +
+      '<body lang=EN-US link="#0563C1"><div class=WordSection1><p class=MsoNormal>test 2</p>' +
+      "<div style='border:none;border-top:solid #E1E1E1 1.0pt'><p class=MsoNormal><b><span style='color:black'>From:</span></b>" +
+      "<span style='color:black'> Matthew Demers &lt;matthew@d3cloud.io&gt;</span></p></div></div></body></html>";
+    const plainId = await file(me.inbox, htmlMessage(outlook));
+    const designedId = await file(me.inbox, htmlMessage('<table bgcolor="#f4f4f4" width="600"><tr><td style="color:#000">Newsletter, from news@example.org</td></tr></table>'));
+
+    const darkTicket = await ticket(me.cookie, plainId, false, 'dark');
+    expect(darkTicket.designed).toBe(false);
+    expect(new URL(darkTicket.url).searchParams.get('theme')).toBe('dark');
+    const dark = await uc(darkTicket.url);
+    expect(dark.status).toBe(200);
+    expect(dark.text).toContain(':root{color-scheme:dark}html{background:transparent;color:#f0f2f7}');
+    expect(dark.text).toContain('font:16px/1.6 Inter,');
+    expect(dark.text).not.toMatch(/color: black|color: windowtext/);
+    expect(dark.text).toContain('border-top: solid #E1E1E1 1.0pt');
+    expect(dark.text).toMatch(/<body><!--email_off-->[\s\S]*matthew@d3cloud\.io[\s\S]*<!--\/email_off--><\/body>/);
+
+    const lightTicket = await ticket(me.cookie, plainId);
+    expect(new URL(lightTicket.url).searchParams.get('theme')).toBe('light');
+    const light = (await uc(lightTicket.url)).text;
+    expect(light).toContain(':root{color-scheme:light}html{background:transparent;color:#101117}');
+    expect(light).toContain('color: black');
+
+    const designed = await ticket(me.cookie, designedId, false, 'dark');
+    expect(designed.designed).toBe(true);
+    const page = await uc(designed.url);
+    expect(page.text).toContain(':root{color-scheme:light}html{background:#fff;color:#111}');
+    expect(page.text).toContain('color: #000');
+    expect(page.text).toContain('<body><!--email_off-->');
+    expect(page.headers['content-security-policy']).toBe(dark.headers['content-security-policy']);
+
+    // The theme is validated, not trusted: anything but dark is light; it is not part of the capability.
+    const odd = new URL(darkTicket.url);
+    odd.searchParams.set('theme', '</style><script>');
+    const oddRes = await uc(odd.href);
+    expect(oddRes.status).toBe(200);
+    expect(oddRes.text).toContain(':root{color-scheme:light}');
+    expect(oddRes.text).not.toContain('<script');
+    expect((await request(app).get(`/api/messages/${plainId}/render?theme=dim`).set('cookie', me.cookie)).status).toBe(400);
   });
 
   it('logs a CSP report and answers 204', async () => {

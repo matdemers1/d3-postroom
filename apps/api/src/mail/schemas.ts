@@ -66,6 +66,10 @@ export const MessagePatch = z
 
 export const RenderQuery = z.object({
   images: z.enum(['0', '1']).default('0').describe('1 = the reader chose to load remote images, through the image proxy (PST-REQ-082).'),
+  theme: z
+    .enum(['light', 'dark'])
+    .default('light')
+    .describe("The app's resolved theme (PST-T-15.12). Carried on the render URL, outside the capability: a plain message renders in this theme's ink."),
 });
 
 export const SearchQuery = z.object({
@@ -182,6 +186,9 @@ export const RenderTicket = z.object({
   remoteImages: z.number().int().describe('Remote images in the message. Above 0 with images false means some are blocked.'),
   trackersBlocked: z.number().int().describe('Known tracking pixels dropped entirely from this message, never loaded even with images on (PST-REQ-116).'),
   linksCleaned: z.number().int().describe('Links with a tracking parameter stripped or a known redirect wrapper unwrapped (PST-REQ-116).'),
+  designed: z
+    .boolean()
+    .describe('The HTML paints its own page (a bgcolor/background attribute, or a non-white background declaration): it renders on a white page the client should frame. False: it renders on a transparent page in the requested theme (PST-T-15.12).'),
 });
 
 export const SearchResult = z.object({

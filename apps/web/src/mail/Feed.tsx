@@ -5,7 +5,7 @@
 // offers RFC 8058 one-click unsubscribe gets its own button (PST-REQ-110), right there in the feed.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Alert, Button, EmptyState, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
+import { Alert, Button, EmptyState, Modal, ModalClose, Skeleton, Stack, useTheme } from '@d3cloud/ui';
 import { api, ApiError, senderProfilePath, type Mailbox, type MessageSummary, type RenderTicket } from '../api';
 import { fullDate } from './format';
 import { isUnread, SEEN } from './list';
@@ -43,11 +43,13 @@ function FeedItemFrame({ messageId }: { messageId: string }) {
     return () => { observer.disconnect(); };
   }, []);
 
+  // PST-T-15.12: the frame renders in the app's theme, so a theme change fetches a fresh ticket.
+  const theme = useTheme().resolved;
   useEffect(() => {
     if (!visible) return;
     let live = true;
     setState({ status: 'loading' });
-    api.renderMessage(messageId, false).then(
+    api.renderMessage(messageId, false, theme).then(
       (ticket) => {
         if (live) setState({ status: 'ready', ticket });
       },
@@ -58,7 +60,7 @@ function FeedItemFrame({ messageId }: { messageId: string }) {
     return () => {
       live = false;
     };
-  }, [visible, messageId]);
+  }, [visible, messageId, theme]);
 
   return (
     <div ref={wrapperRef} data-testid="feed-item-frame">

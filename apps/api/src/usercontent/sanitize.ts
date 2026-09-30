@@ -21,8 +21,14 @@
 // the reader asks for images, unlike an ordinary blocked remote image — and every `<a href>` is run
 // through `cleanLink`, which strips tracking query parameters and unwraps a known click-redirect
 // wrapper. The counts of each are returned so the caller can show "N trackers blocked".
+//
+// And (PST-T-15.12): whether the message is "designed" — it paints its own page — is noticed on
+// the way through (theme.ts), and with `darkPlain` a plain message's near-black text colours and
+// white backgrounds are dropped for the dark theme. Both only read or remove; neither admits
+// anything the allow-lists above would not.
 import { classifyImage, cleanLink } from '@postroom/trackers';
-import { sanitizeInlineStyle, sanitizeStylesheet } from './css.js';
+import { sanitizeInlineStyle, sanitizeStylesheet, type DeclarationFilter } from './css.js';
+import { declarationsDesigned, dropForDark, isNearBlack } from './theme.js';
 import { RAW_TEXT, tokenize } from './tokenizer.js';
 
 export interface SanitizeOptions {
@@ -33,6 +39,12 @@ export interface SanitizeOptions {
   remoteImage?: ((url: string) => string | null) | undefined;
   /** `cid:` image → a URL for that part of the same message; null drops the src. Unset keeps `cid:…`. */
   cidImage?: ((contentId: string) => string | null) | undefined;
+  /**
+   * PST-T-15.12: this is a plain (not designed) message shown in the dark theme — drop near-black
+   * text colours (style declarations and `color` attributes) and white backgrounds, so the text
+   * inherits the reader's light ink. Only ever removes.
+   */
+  darkPlain?: boolean | undefined;
 }
 
 export interface SanitizeResult {
@@ -45,6 +57,12 @@ export interface SanitizeResult {
   trackersBlocked: number;
   /** Links that had a tracking parameter stripped or a known redirect wrapper unwrapped (PST-REQ-116). */
   linksCleaned: number;
+  /**
+   * PST-T-15.12: the message paints its own page — a `bgcolor` or `background` attribute, or a
+   * background declaration that is not white or a no-op (theme.ts). Decided on what the sender
+   * wrote, on elements and <style> blocks the sanitizer keeps.
+   */
+  designed: boolean;
 }
 
 /** A transparent 1×1 GIF: a blocked remote image keeps its box, and asks nothing of anyone. */
@@ -149,6 +167,7 @@ interface Counters {
   blocked: number;
   trackers: number;
   links: number;
+  designed: boolean;
 }
 
 /** Attribute name → value, for `classifyImage`'s dimension/style checks. Tokenizer names are already lowercase. */
@@ -207,6 +226,10 @@ function imageAttributes(attrs: readonly Attr[], opts: SanitizeOptions, counts: 
 
 function sanitizeAttributes(element: string, attrs: readonly Attr[], opts: SanitizeOptions, counts: Counters): string {
   const kept: Attr[] = [];
+  for (const [name, value] of attrs) {
+    if (name === 'bgcolor' || name === 'background' || (name === 'style' && declarationsDesigned(value))) counts.designed = true;
+  }
+  const drop: DeclarationFilter | undefined = opts.darkPlain === true ? dropForDark : undefined;
   const candidates = element === 'img' ? imageAttributes(attrs, opts, counts) : attrs;
   for (const [name, raw] of candidates) {
     let value = raw;
@@ -231,9 +254,10 @@ function sanitizeAttributes(element: string, attrs: readonly Attr[], opts: Sanit
     }
     if (!ATTRIBUTES.has(name)) continue;
     if (name === 'style') {
-      value = sanitizeInlineStyle(value);
+      value = sanitizeInlineStyle(value, drop);
       if (value === '') continue;
     }
+    if (name === 'color' && drop !== undefined && isNearBlack(value)) continue;
     // eslint-disable-next-line no-control-regex -- control characters are exactly what is removed
     kept.push([name, value.replace(/[\0-\x08\x0b\x0e-\x1f\x7f]/g, '')]);
   }
@@ -251,7 +275,8 @@ function sanitizeAttributes(element: string, attrs: readonly Attr[], opts: Sanit
 export function sanitizeHtml(input: string, opts: SanitizeOptions = {}): SanitizeResult {
   const out: string[] = [];
   const stack: string[] = [];
-  const counts: Counters = { remote: 0, blocked: 0, trackers: 0, links: 0 };
+  const counts: Counters = { remote: 0, blocked: 0, trackers: 0, links: 0, designed: false };
+  const drop: DeclarationFilter | undefined = opts.darkPlain === true ? dropForDark : undefined;
   let skip: { name: string; depth: number } | null = null;
   /** The raw token that follows is the body of a <style> we opened. */
   let styleOpen = false;
@@ -283,7 +308,10 @@ export function sanitizeHtml(input: string, opts: SanitizeOptions = {}): Sanitiz
         text += token.text;
         break;
       case 'raw':
-        if (styleOpen && token.name === 'style') emit(sanitizeStylesheet(token.text));
+        if (styleOpen && token.name === 'style') {
+          if (declarationsDesigned(token.text)) counts.designed = true;
+          emit(sanitizeStylesheet(token.text, drop));
+        }
         styleOpen = false;
         break;
       case 'start': {
@@ -313,5 +341,5 @@ export function sanitizeHtml(input: string, opts: SanitizeOptions = {}): Sanitiz
   }
   while (stack.length > 0) emit(`</${stack.pop() ?? ''}>`);
   emit('');
-  return { html: out.join(''), remoteImages: counts.remote, blockedImages: counts.blocked, trackersBlocked: counts.trackers, linksCleaned: counts.links };
+  return { html: out.join(''), remoteImages: counts.remote, blockedImages: counts.blocked, trackersBlocked: counts.trackers, linksCleaned: counts.links, designed: counts.designed };
 }

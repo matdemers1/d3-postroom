@@ -409,7 +409,10 @@
 }
 
 /* The HTML frame. A fill frame takes the rest of the pane's height (flex: 1, min 20rem); any other
-   is clamp(16rem, 50vh, 36rem). No border and no card: the sender's own page, edge to edge. */
+   is clamp(16rem, 50vh, 36rem). PST-T-15.12: a plain message's frame has no border, radius or
+   background — its document is transparent, in the app's ink and theme — so it sits flush with the
+   text around it. A designed message (it paints its own page) keeps its white page, which the frame
+   document draws itself; here only the radius-lg hairline around it, clipped, with no shadow. */
 .pr-frame {
   display: flex;
   flex-direction: column;
@@ -426,7 +429,14 @@
   height: clamp(16rem, 50vh, 36rem);
   box-sizing: border-box;
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: 0;
+  background: none;
+}
+
+.pr-frame[data-designed='true'] > .pr-frame__frame {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .pr-frame[data-fill='true'] > .pr-frame__frame {

@@ -52,8 +52,14 @@ export function cssValue(raw: string): string | null {
   return value;
 }
 
+/**
+ * A theme filter over declarations that already passed the allowlist (PST-T-15.12, theme.ts): true
+ * drops one. It can only remove, never admit, so it cannot widen what a message may do.
+ */
+export type DeclarationFilter = (prop: string, value: string) => boolean;
+
 /** `prop: value; …` → the allowed declarations, `; `-joined; '' when none survive. */
-export function sanitizeDeclarations(block: string): string {
+export function sanitizeDeclarations(block: string, drop?: DeclarationFilter): string {
   const out: string[] = [];
   for (const piece of block.split(';')) {
     const colon = piece.indexOf(':');
@@ -61,7 +67,7 @@ export function sanitizeDeclarations(block: string): string {
     const prop = collapse(piece.slice(0, colon)).toLowerCase();
     if (!PROPERTIES.has(prop)) continue;
     const value = cssValue(piece.slice(colon + 1));
-    if (value === null) continue;
+    if (value === null || drop?.(prop, value) === true) continue;
     out.push(`${prop}: ${value}`);
   }
   return out.join('; ');
@@ -70,10 +76,10 @@ export function sanitizeDeclarations(block: string): string {
 const stripComments = (css: string): string => css.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, ' ');
 
 /** A `style` attribute. */
-export function sanitizeInlineStyle(style: string): string {
+export function sanitizeInlineStyle(style: string, drop?: DeclarationFilter): string {
   const css = stripComments(style);
   if (css.includes('\\')) return '';
-  return sanitizeDeclarations(css);
+  return sanitizeDeclarations(css, drop);
 }
 
 function safeSelector(raw: string): string | null {
@@ -104,7 +110,7 @@ function blockEnd(css: string, from: number): number {
   return css.length;
 }
 
-function rules(css: string, depth: number): string[] {
+function rules(css: string, depth: number, drop: DeclarationFilter | undefined): string[] {
   const out: string[] = [];
   let i = 0;
   const n = css.length;
@@ -128,7 +134,7 @@ function rules(css: string, depth: number): string[] {
       const header = /^@([A-Za-z-]+)([\s\S]*)$/.exec(css.slice(i, brace));
       if (header !== null && header[1]?.toLowerCase() === 'media' && depth < 2) {
         const prelude = safeMediaPrelude(header[2] ?? '');
-        const inner = prelude === null ? [] : rules(css.slice(brace + 1, end), depth + 1);
+        const inner = prelude === null ? [] : rules(css.slice(brace + 1, end), depth + 1, drop);
         if (prelude !== null && inner.length > 0) out.push(`@media ${prelude}{${inner.join('')}}`);
       }
       i = end + 1;
@@ -139,7 +145,7 @@ function rules(css: string, depth: number): string[] {
     const selector = safeSelector(css.slice(i, brace));
     const body = css.slice(brace + 1, end);
     if (selector !== null && !body.includes('{')) {
-      const decls = sanitizeDeclarations(body);
+      const decls = sanitizeDeclarations(body, drop);
       if (decls !== '') out.push(`${selector}{${decls}}`);
     }
     i = end + 1;
@@ -148,9 +154,9 @@ function rules(css: string, depth: number): string[] {
 }
 
 /** The content of a `<style>` element. Never contains `<`, so it can never close its element early. */
-export function sanitizeStylesheet(sheet: string): string {
+export function sanitizeStylesheet(sheet: string, drop?: DeclarationFilter): string {
   // CDO/CDC (`<!--`, `-->`) are ignored by CSS and common in mail, which hides styles from old clients.
   const css = stripComments(sheet.replace(/<!--|-->/g, ' '));
   if (css.includes('\\') || css.includes('<')) return '';
-  return rules(css, 0).join('\n');
+  return rules(css, 0, drop).join('\n');
 }

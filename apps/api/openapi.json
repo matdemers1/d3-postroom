@@ -4037,6 +4037,10 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991,
             "description": "Links with a tracking parameter stripped or a known redirect wrapper unwrapped (PST-REQ-116)."
+          },
+          "designed": {
+            "type": "boolean",
+            "description": "The HTML paints its own page (a bgcolor/background attribute, or a non-white background declaration): it renders on a white page the client should frame. False: it renders on a transparent page in the requested theme (PST-T-15.12)."
           }
         },
         "required": [
@@ -4045,7 +4049,8 @@
           "images",
           "remoteImages",
           "trackersBlocked",
-          "linksCleaned"
+          "linksCleaned",
+          "designed"
         ],
         "additionalProperties": false
       },
@@ -12372,6 +12377,21 @@
               "enum": [
                 "0",
                 "1"
+              ]
+            }
+          },
+          {
+            "name": "theme",
+            "in": "query",
+            "required": false,
+            "description": "The app's resolved theme (PST-T-15.12). Carried on the render URL, outside the capability: a plain message renders in this theme's ink.",
+            "schema": {
+              "default": "light",
+              "description": "The app's resolved theme (PST-T-15.12). Carried on the render URL, outside the capability: a plain message renders in this theme's ink.",
+              "type": "string",
+              "enum": [
+                "light",
+                "dark"
               ]
             }
           }
