@@ -31,14 +31,27 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies(cookies);
 });
 
-test('Health renders a tile per source, axe clean in both themes', async ({ page }) => {
+// PST-T-15.7: the canvas layout — a StatusDot summary under the title, four Stats, a Services table
+// with a row per tile, and the Edge / Deliverability / Outbound queue cards.
+test('Health renders a Services row per source, the Stats and the side cards, axe clean in both themes', async ({ page }) => {
   await page.goto('/admin/health');
   await expect(page.getByRole('heading', { name: 'Health', level: 1 })).toBeVisible();
-  const grid = page.getByRole('list', { name: 'Health tiles' });
-  await expect(grid).toBeVisible();
-  await expect(page.locator('[data-tile-id="queue"]')).toBeVisible();
-  await expect(page.locator('[data-tile-id="backup"]')).toBeVisible();
-  await expect(page.locator('[data-tile-id="drill"]')).toBeVisible();
+  await expect(page.getByText(/· checked /)).toBeVisible();
+  const services = page.getByRole('table', { name: 'Services' });
+  await expect(services).toBeVisible();
+  await expect(services.locator('[data-tile-id="queue"]')).toBeVisible();
+  await expect(services.locator('[data-tile-id="backup"]')).toBeVisible();
+  await expect(services.locator('[data-tile-id="drill"]')).toBeVisible();
+
+  const summary = page.getByRole('region', { name: 'Summary' });
+  for (const label of ['Inbound queue', 'Certificates', 'Backups', 'Restore drill']) await expect(summary.getByText(label, { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Edge', level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Deliverability', level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Outbound queue', level: 2 })).toBeVisible();
+  await page.getByRole('link', { name: 'View queue' }).click();
+  await expect(page.getByRole('heading', { name: 'Outbound queue', level: 1 })).toBeVisible();
+  await page.goto('/admin/health');
+  await expect(page.getByRole('table', { name: 'Services' })).toBeVisible();
 
   const light = await new AxeBuilder({ page }).include('main').analyze();
   expect(light.violations).toEqual([]);
@@ -62,7 +75,11 @@ test('a simulated fault (a dead inbound job) shows the queue tile down', async (
   await page.goto('/admin/health');
   const queueTile = page.locator('[data-tile-id="queue"]');
   await expect(queueTile).toHaveAttribute('data-tile-state', 'down');
-  await expect(queueTile).toContainText('dead job');
+  const queueRow = page.getByRole('table', { name: 'Services' }).getByRole('row').filter({ has: queueTile });
+  await expect(queueRow).toContainText('dead job');
+  await expect(queueRow).toContainText('Down');
+  // A down check turns the header's summary from neutral to danger, in words as well as the dot.
+  await expect(page.getByText(/checks? down/)).toBeVisible();
 
   await test.step('Jobs lists the failure and Replay re-files it', async () => {
     await page.goto('/admin/jobs');

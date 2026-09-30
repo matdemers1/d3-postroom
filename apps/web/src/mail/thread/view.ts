@@ -23,12 +23,13 @@ export interface ToolbarModel {
 }
 
 /**
- * What the reading toolbar shows for a message in a mailbox of this special use.
+ * What a mailbox's actions are, for a message in a mailbox of this special use (PST-T-14.6). The
+ * phone's bottom bar (MobileActionBar.tsx) reads it as is; the desktop toolbar reads it through
+ * readingToolbar() below.
  *
- * Reply is the one primary everywhere a reply is the likely next move. In Sent it is not (replying
- * to yourself is rare), so nothing is filled and Reply joins the icons. Junk leads with Not junk and
- * Rejected with Rescue — the one thing you came there to do — and Drafts with Edit draft. Everything
- * rare lives in the ⋯ menu, which every mailbox has.
+ * Reply is the likely next move everywhere but Sent (replying to yourself is rare), Junk leads with
+ * Not junk and Rejected with Rescue — the one thing you came there to do — and Drafts with Edit
+ * draft. Everything rare lives in the ⋯ menu, which every mailbox has.
  */
 export function toolbarModel(use: SpecialUse | null | undefined): ToolbarModel {
   switch (use) {
@@ -45,12 +46,45 @@ export function toolbarModel(use: SpecialUse | null | undefined): ToolbarModel {
   }
 }
 
+/** The labelled move the desktop toolbar leads with — the point of that mailbox — if any. */
+export type ReadingLead = 'notJunk' | 'rescue' | 'editDraft' | null;
+/** Triage icon buttons, in order. */
+export type TriageAction = LabelledAction;
+
+export interface ReadingToolbar {
+  lead: ReadingLead;
+  triage: readonly TriageAction[];
+  /** Whether the Snooze control belongs here. */
+  snooze: boolean;
+  /** Whether a reply makes sense: the header's Reply and the quick-reply bar. */
+  reply: boolean;
+}
+
+/**
+ * The desktop reading toolbar drawn to the redesign canvas (PST-T-15.3): triage as ghost icon
+ * buttons — Archive, Delete, Move, Snooze — then the list position with up/down, then ⋯. Reply,
+ * Reply all and Forward left the toolbar for the message header and the quick-reply bar under the
+ * thread, so a Reply lead becomes no lead; Not junk, Rescue and Edit draft still lead.
+ */
+export function readingToolbar(use: SpecialUse | null | undefined): ReadingToolbar {
+  const m = toolbarModel(use);
+  return {
+    lead: m.lead === 'reply' ? null : m.lead,
+    triage: m.labelled,
+    snooze: m.snooze,
+    reply: m.lead === 'reply' || m.icons.includes('reply'),
+  };
+}
+
 export const ACTION_LABEL = {
   reply: 'Reply',
   replyAll: 'Reply all',
   forward: 'Forward',
   archive: 'Archive',
   delete: 'Delete',
+  move: 'Move',
+  prev: 'Previous message',
+  next: 'Next message',
   notJunk: 'Not junk',
   rescue: 'Rescue',
   editDraft: 'Edit draft',
@@ -63,6 +97,9 @@ export const ACTION_KEY: Partial<Record<keyof typeof ACTION_LABEL | 'star' | 'ma
   forward: 'f',
   archive: 'e',
   delete: '#',
+  move: 'v',
+  prev: 'k',
+  next: 'j',
   star: 's',
   markUnread: '⇧U',
   inspect: 'i',
@@ -71,6 +108,36 @@ export const ACTION_KEY: Partial<Record<keyof typeof ACTION_LABEL | 'star' | 'ma
 /** "Reply all (a)" — a tooltip names the action and its key; the accessible name stays the action. */
 export function tooltipText(label: string, key: string | undefined): string {
   return key === undefined ? label : `${label} (${key})`;
+}
+
+/** Where the open message sits in the list it was opened from. `more`: the list has further pages. */
+export interface ListPosition {
+  index: number;
+  total: number;
+  more: boolean;
+}
+
+/**
+ * "3 of 48" — the open message's place in the loaded list, with a "+" when more pages wait behind
+ * it (the count is what is loaded, never a guess). Null when the message is not in the list at all
+ * (opened from a link or a search result that has since left it).
+ */
+export function positionLabel(p: ListPosition | null | undefined): string | null {
+  if (p === null || p === undefined || p.index < 0 || p.index >= p.total) return null;
+  return `${String(p.index + 1)} of ${String(p.total)}${p.more ? '+' : ''}`;
+}
+
+/** Whether up (the newer neighbour) and down (the older one) have somewhere to go. */
+export function positionMoves(p: ListPosition | null | undefined): { prev: boolean; next: boolean } {
+  if (positionLabel(p) === null || p === null || p === undefined) return { prev: false, next: false };
+  return { prev: p.index > 0, next: p.index < p.total - 1 };
+}
+
+/** The quick-reply field's words: "Reply to Priya Shah…", or plain "Reply…" to your own message. */
+export function quickReplyLabel(from: string | null | undefined, me: string | null): string {
+  if (from === null || from === undefined || from.trim() === '') return 'Reply…';
+  if (me !== null && addressOf(from) === me.toLowerCase()) return 'Reply…';
+  return `Reply to ${displayName(from)}…`;
 }
 
 // --- The one-line header ---------------------------------------------------------------------------

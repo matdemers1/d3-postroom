@@ -1,76 +1,395 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Card, CardBody, CardTitle, EmptyState, Grid, Page, PageHeader } from '@d3cloud/ui';
-import { api, type HealthTile, type HealthTileState } from '../api';
+import { Link as RouterLink } from 'react-router-dom';
+import {
+  Button,
+  Card,
+  DescriptionItem,
+  DescriptionList,
+  EmptyState,
+  Link,
+  Page,
+  PageHeader,
+  Section,
+  Stat,
+  StatGroup,
+  StatusDot,
+  Table,
+  type TableColumn,
+} from '@d3cloud/ui';
+import { api, DNS_STATUS, type AdminQueueRecipient, type DnsCheckRow, type DnsReport, type HealthTile } from '../api';
 import { Loading, LoadFailed } from './states';
-import type { StatusKind } from '../status/status';
-import { StatusBadge } from '../status/StatusBadge';
+import {
+  TILE_TONE,
+  certificateValue,
+  durationShort,
+  healthSummary,
+  inboundQueueCounts,
+  lastRunFootnote,
+  lastRunStat,
+  queueMeta,
+  queueState,
+  relativeTime,
+  servicesMeta,
+  sinceText,
+  tileById,
+} from '../admin/health/model';
+import '../admin/admin.css';
 
 const REFRESH_MS = 30_000;
+/** The Outbound queue card shows the first few rows; the Queue screen has the rest. */
+const QUEUE_PREVIEW = 3;
+const QUEUE_FETCH_LIMIT = 100;
 
-const when = (iso: string): string =>
-  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+interface QueueRow extends AdminQueueRecipient {
+  createdAt: string;
+}
 
-/** Each tile state as a status (status.ts holds the tones): Unknown is quiet, Warning asks. */
-export const TILE_STATUS: Record<HealthTileState, { label: string; kind: StatusKind }> = {
-  ok: { label: 'OK', kind: 'good' },
-  warn: { label: 'Warning', kind: 'warning' },
-  down: { label: 'Down', kind: 'bad' },
-  unknown: { label: 'Unknown', kind: 'unknown' },
-};
-
-function Tile({ tile }: { tile: HealthTile }) {
-  const { label, kind } = TILE_STATUS[tile.state];
+function TileDot({ tile }: { tile: HealthTile }) {
+  const { label, tone } = TILE_TONE[tile.state];
   return (
-    <Card as="li" className="pr-health__tile" data-tile-id={tile.id} data-tile-state={tile.state}>
-      <CardBody>
-        <CardTitle as="h2">{tile.label}</CardTitle>
-        <p>
-          <StatusBadge kind={kind}>{label}</StatusBadge>
-        </p>
-        <p>{tile.detail}</p>
-        {/* A tile never checked says so in its detail; "Since never" under it said it twice. */}
-        {tile.since === null ? null : <p className="pr-health__since">Since {when(tile.since)}</p>}
-      </CardBody>
+    <StatusDot tone={tone} size="sm">
+      {label}
+    </StatusDot>
+  );
+}
+
+/** A Stat for one tile, or a quiet placeholder when the server sent no such tile. */
+function TileStat({
+  tile,
+  label,
+  value,
+  unit,
+  footnote,
+}: {
+  tile: HealthTile | undefined;
+  label: string;
+  value: string;
+  unit?: string | undefined;
+  footnote: string;
+}) {
+  return (
+    <Stat
+      data-stat={tile?.id}
+      label={label}
+      value={value}
+      {...(unit === undefined ? {} : { unit })}
+      footnote={footnote}
+      status={
+        tile === undefined ? (
+          <StatusDot tone="idle" size="sm">
+            Not reported
+          </StatusDot>
+        ) : (
+          <TileDot tile={tile} />
+        )
+      }
+    />
+  );
+}
+
+function SummaryStats({ tiles, now }: { tiles: HealthTile[]; now: Date }) {
+  const queue = tileById(tiles, 'queue');
+  const cert = tileById(tiles, 'cert-expiry');
+  const backup = tileById(tiles, 'backup');
+  const drill = tileById(tiles, 'drill');
+  const q = queue === undefined ? null : inboundQueueCounts(queue);
+  const backupStat = backup === undefined ? { value: '—' } : lastRunStat(backup, now);
+  const drillStat = drill === undefined ? { value: '—' } : lastRunStat(drill, now);
+  return (
+    <Card as="section" aria-label="Summary" className="pr-admin-card pr-admin-stats">
+      <StatGroup>
+        <TileStat
+          tile={queue}
+          label="Inbound queue"
+          value={q === null ? (queue === undefined ? '—' : TILE_TONE[queue.state].label) : String(q.dead)}
+          unit={q === null ? undefined : q.dead === 1 ? 'dead job' : 'dead jobs'}
+          footnote={q === null ? (queue?.detail ?? 'Not reported') : `${String(q.failed)} failed ${q.failed === 1 ? 'message' : 'messages'}`}
+        />
+        <TileStat tile={cert} label="Certificates" value={cert === undefined ? '—' : certificateValue(cert)} footnote={cert?.detail ?? 'Not reported'} />
+        <TileStat
+          tile={backup}
+          label="Backups"
+          value={backupStat.value}
+          unit={backupStat.unit}
+          footnote={backup === undefined ? 'Not reported' : lastRunFootnote(backup, 'backup')}
+        />
+        <TileStat
+          tile={drill}
+          label="Restore drill"
+          value={drillStat.value}
+          unit={drillStat.unit}
+          footnote={drill === undefined ? 'Not reported' : lastRunFootnote(drill, 'drill')}
+        />
+      </StatGroup>
     </Card>
   );
 }
 
+function Services({ tiles, now }: { tiles: HealthTile[]; now: Date }) {
+  const columns: TableColumn<HealthTile>[] = [
+    {
+      key: 'label',
+      header: 'Service',
+      width: '11rem',
+      cell: (t) => (
+        <span className="pr-health__svc" data-tile-id={t.id} data-tile-state={t.state}>
+          {t.label}
+        </span>
+      ),
+    },
+    { key: 'detail', header: 'Detail', cell: (t) => <span className="pr-muted pr-wrap">{t.detail}</span> },
+    {
+      key: 'state',
+      header: 'Status',
+      align: 'end',
+      width: '14rem',
+      cell: (t) => {
+        const since = sinceText(t, now);
+        return (
+          <span className="pr-health__state">
+            <TileDot tile={t} />
+            {since === null ? null : <span className="pr-muted pr-small">· {since}</span>}
+          </span>
+        );
+      },
+    },
+  ];
+  return (
+    <Section title="Services" description={servicesMeta(tiles)} className="pr-admin-card" data-section="services">
+      <Table className="pr-admin-table" caption="Services" captionHidden columns={columns} rows={tiles} rowKey={(t) => t.id} />
+    </Section>
+  );
+}
+
+/** Tunnel and blocklist: the two checks that look at Postroom from outside. */
+function Edge({ tiles }: { tiles: HealthTile[] }) {
+  const rows = [tileById(tiles, 'tunnel'), tileById(tiles, 'blocklist')].filter((t): t is HealthTile => t !== undefined);
+  return (
+    <Section title="Edge" className="pr-admin-card">
+      {rows.length === 0 ? (
+        <p className="pr-muted pr-small">No edge checks reported.</p>
+      ) : (
+        <DescriptionList>
+          {rows.map((t) => (
+            <DescriptionItem key={t.id} term={t.label}>
+              <span className="pr-health__kv">
+                <TileDot tile={t} />
+                <span className="pr-muted">{t.detail}</span>
+              </span>
+            </DescriptionItem>
+          ))}
+        </DescriptionList>
+      )}
+    </Section>
+  );
+}
+
+const AUTH_RECORDS = ['SPF', 'DKIM', 'DMARC'] as const;
+
+/** The worst row of one record kind (a domain can have several DKIM selectors). */
+function worstRow(rows: readonly DnsCheckRow[], record: string): DnsCheckRow | undefined {
+  const order = ['fail', 'missing', 'unknown', 'pending', 'pass'];
+  return rows.filter((r) => r.record === record).sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status))[0];
+}
+
+/** SPF, DKIM and DMARC as the DNS & DKIM screen checks them, plus the blocklist tile. */
+function Deliverability({ dns, dnsFailed, tiles }: { dns: DnsReport | null; dnsFailed: boolean; tiles: HealthTile[] }) {
+  const blocklist = tileById(tiles, 'blocklist');
+  return (
+    <Section
+      title="Deliverability"
+      {...(dns === null ? {} : { description: dns.domain })}
+      className="pr-admin-card"
+      actions={
+        <Link asChild>
+          <RouterLink to="/admin/dns">DNS &amp; DKIM</RouterLink>
+        </Link>
+      }
+    >
+      {dnsFailed ? (
+        <p className="pr-muted pr-small">Could not check DNS just now.</p>
+      ) : dns === null ? (
+        <Loading label="Checking DNS" height={96} />
+      ) : (
+        <DescriptionList>
+          {AUTH_RECORDS.map((record) => {
+            const row = worstRow(dns.rows, record);
+            if (row === undefined) return null;
+            const s = DNS_STATUS[row.status];
+            return (
+              <DescriptionItem key={record} term={record}>
+                <span className="pr-health__kv">
+                  <StatusDot tone={row.status === 'pending' ? 'idle' : s.tone} size="sm">
+                    {s.label}
+                  </StatusDot>
+                  <span className="pr-muted" title={row.reason}>
+                    {row.reason}
+                  </span>
+                </span>
+              </DescriptionItem>
+            );
+          })}
+          {blocklist === undefined ? null : (
+            <DescriptionItem term="Blocklists">
+              <TileDot tile={blocklist} />
+            </DescriptionItem>
+          )}
+        </DescriptionList>
+      )}
+    </Section>
+  );
+}
+
+function OutboundQueue({ rows, limited, failed, now }: { rows: QueueRow[] | null; limited: boolean; failed: boolean; now: Date }) {
+  const columns: TableColumn<QueueRow>[] = [
+    { key: 'address', header: 'Recipient', cell: (r) => <span className="pr-mono" title={r.address}>{r.address}</span> },
+    {
+      key: 'state',
+      header: 'State',
+      width: '7rem',
+      cell: (r) => {
+        const s = queueState(r.state);
+        return (
+          <StatusDot tone={s.tone} size="sm">
+            {s.label}
+          </StatusDot>
+        );
+      },
+    },
+    {
+      key: 'age',
+      header: 'Age',
+      align: 'end',
+      numeric: true,
+      width: '5.5rem',
+      cell: (r) => <span className="pr-mono pr-muted">{durationShort(now.getTime() - Date.parse(r.createdAt))}</span>,
+    },
+  ];
+  return (
+    <Section
+      title="Outbound queue"
+      {...(rows === null ? {} : { description: queueMeta(rows, limited) })}
+      className="pr-admin-card"
+      actions={
+        <Link asChild>
+          <RouterLink to="/admin/queue">
+            View queue <span aria-hidden="true">→</span>
+          </RouterLink>
+        </Link>
+      }
+    >
+      {failed ? (
+        <p className="pr-muted pr-small">Could not load the queue just now.</p>
+      ) : rows === null ? (
+        <Loading label="Loading the queue" height={96} />
+      ) : rows.length === 0 ? null : (
+        <Table
+          className="pr-admin-table pr-admin-table--fixed"
+          caption="First recipients in the outbound queue"
+          captionHidden
+          columns={columns}
+          rows={rows.slice(0, QUEUE_PREVIEW)}
+          rowKey={(r) => r.id}
+        />
+      )}
+    </Section>
+  );
+}
+
 /**
- * PST-REQ-127: tunnel, daemons, certificates, disk, queue, backup, drill and NTP, as one grid of
- * tiles that refreshes on its own — every incident this screen exists for is something nobody is
- * staring at when it starts. Auto-refreshes every 30 s while the tab is open.
+ * PST-REQ-127: tunnel, daemons, certificates, disk, queue, backup, drill and NTP — the header says in
+ * one line whether anything needs you, four Stats answer the questions asked most, the Services list
+ * has every check, and the side cards pull in the edge, DNS authentication and the outbound queue
+ * from the endpoints their own screens use. Auto-refreshes every 30 s while the tab is open.
+ *
+ * There is no "Run drill" button: no API triggers a restore drill (the worker runs it on its own
+ * schedule), so the Restore drill Stat reports the last run and nothing more.
  */
 export function AdminHealth() {
   const [tiles, setTiles] = useState<HealthTile[] | null>(null);
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [queue, setQueue] = useState<{ rows: QueueRow[]; limited: boolean } | null>(null);
+  const [queueFailed, setQueueFailed] = useState(false);
+  const [dns, setDns] = useState<DnsReport | null>(null);
+  const [dnsFailed, setDnsFailed] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = useCallback(async () => {
+  const loadQueue = useCallback(async () => {
     try {
-      setTiles((await api.adminHealth()).tiles);
-      setLoadError(null);
-    } catch (caught) {
-      setLoadError(caught);
+      const result = await api.adminQueue({ limit: QUEUE_FETCH_LIMIT });
+      const rows = result.messages.flatMap((m) => m.recipients.map((r) => ({ ...r, createdAt: m.createdAt })));
+      rows.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+      setQueue({ rows, limited: rows.length >= QUEUE_FETCH_LIMIT });
+      setQueueFailed(false);
+    } catch {
+      setQueueFailed(true);
     }
   }, []);
 
+  const loadDns = useCallback(async () => {
+    try {
+      setDns(await api.dnsCheck());
+      setDnsFailed(false);
+    } catch {
+      setDnsFailed(true);
+    }
+  }, []);
+
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      setTiles((await api.adminHealth()).tiles);
+      setCheckedAt(new Date());
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(caught);
+    } finally {
+      setRefreshing(false);
+    }
+    await loadQueue();
+  }, [loadQueue]);
+
   useEffect(() => {
     void load();
+    // DNS is looked up live through the resolver, so it is checked on arrival and on Refresh, not
+    // every 30 s.
+    void loadDns();
     timer.current = setInterval(() => {
       void load();
     }, REFRESH_MS);
     return () => {
       if (timer.current !== null) clearInterval(timer.current);
     };
-  }, [load]);
+  }, [load, loadDns]);
+
+  const now = checkedAt ?? new Date();
+  const summary = tiles === null ? null : healthSummary(tiles);
 
   return (
     <Page>
       <PageHeader
         title="Health"
-        description="Tunnel, daemons, certificates, disk, the inbound queue, backups and the restore drill."
+        description={
+          summary === null || checkedAt === null ? (
+            'Tunnel, daemons, certificates, disk, the inbound queue, backups and the restore drill.'
+          ) : (
+            <span className="pr-health__summary">
+              <StatusDot tone={summary.tone}>{summary.text}</StatusDot>
+              <span>· checked {relativeTime(checkedAt.toISOString(), new Date())}</span>
+            </span>
+          )
+        }
         actions={
-          <Button variant="secondary" onClick={() => void load()}>
+          <Button
+            variant="secondary"
+            loading={refreshing}
+            onClick={() => {
+              void load();
+              void loadDns();
+            }}
+          >
             Refresh
           </Button>
         }
@@ -84,11 +403,19 @@ export function AdminHealth() {
           The server answered, but with nothing to check. Refresh once the daemons are up.
         </EmptyState>
       ) : (
-        <Grid as="ul" minItemWidth="sm" aria-label="Health tiles">
-          {tiles.map((tile) => (
-            <Tile key={tile.id} tile={tile} />
-          ))}
-        </Grid>
+        <>
+          <SummaryStats tiles={tiles} now={now} />
+          <div className="pr-health__cols">
+            <div className="pr-health__stack">
+              <Services tiles={tiles} now={now} />
+            </div>
+            <div className="pr-health__stack">
+              <Edge tiles={tiles} />
+              <Deliverability dns={dns} dnsFailed={dnsFailed} tiles={tiles} />
+              <OutboundQueue rows={queue?.rows ?? null} limited={queue?.limited ?? false} failed={queueFailed} now={now} />
+            </div>
+          </div>
+        </>
       )}
     </Page>
   );

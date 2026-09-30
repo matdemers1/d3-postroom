@@ -7,7 +7,10 @@
 // row with 409 ("revoked, never deleted") by design (mail already encrypted to it must still open),
 // so once any spec generates one for the shared e2e account it stays for the life of the database.
 // This asserts the empty case when the account happens to hold none yet, and otherwise still checks
-// the populated table never doubles its caption (the same fix, the other branch).
+// the populated list never doubles its caption (the same fix, the other branch). PST-T-15.6: the
+// keys are rows of a DataList in the 680px settings column now, not a seven-column table — so there
+// is no table and no column header in either branch, and the list is named by an aria-label rather
+// than a second visible caption.
 import { expect, test, type APIRequestContext, type BrowserContext } from '@playwright/test';
 import { ensureOperator, signInCookies } from './support.js';
 
@@ -62,21 +65,11 @@ test('empty is one caption, no table header, and Generate reaches the form', asy
   }
 
   // Either freshly generated above, or already there from an earlier spec: "Your keys" now has a
-  // row, and its Table does not double the Section's own caption on screen (captionHidden keeps
-  // one accessible name — a visually-hidden <caption>, not a second visible "Your keys" heading).
-  await expect(page.getByRole('table')).toHaveCount(1);
-  await expect(page.getByRole('columnheader').first()).toBeVisible();
-  // The e2e project has no DOM lib (see support.ts's note): describe the element structurally.
-  interface EvalRect {
-    width: number;
-    height: number;
-  }
-  interface EvalElement {
-    getBoundingClientRect(): EvalRect;
-  }
-  const captionArea = await page.locator('table caption', { hasText: 'Your keys' }).evaluate((el: unknown) => {
-    const r = (el as EvalElement).getBoundingClientRect();
-    return r.width * r.height;
-  });
-  expect(captionArea, 'the Table caption is captionHidden (visually hidden), not a second on-screen "Your keys"').toBeLessThan(4);
+  // row, in a list named by aria-label — one visible "Your keys" (the Section heading), no table.
+  const ownList = page.getByRole('list', { name: 'Your keys' });
+  await expect(ownList).toBeVisible();
+  await expect(ownList.getByRole('listitem').first()).toBeVisible();
+  await expect(page.getByText('Your keys', { exact: true })).toHaveCount(1);
+  await expect(page.getByRole('table')).toHaveCount(0);
+  await expect(page.getByRole('columnheader')).toHaveCount(0);
 });

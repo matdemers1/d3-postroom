@@ -41,7 +41,7 @@ test('the Mail sidebar is mailboxes and the Calendar and Contacts places — not
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   const nav = mainNav(page);
-  await expect(nav.getByRole('button', { name: 'Compose' })).toBeVisible();
+  await expect(nav.getByRole('button', { name: 'New message' })).toBeVisible();
   for (const name of [/^Inbox/, /^Sent/, /^Drafts/, /^Archive/, /^Junk/, /^Rejects/, /^Calendar$/, /^Contacts$/]) {
     await expect(nav.getByRole('link', { name })).toBeVisible();
   }
@@ -85,7 +85,7 @@ test('the account menu opens Settings and the Admin console; each has its own na
   const settings = page.getByRole('navigation', { name: 'Settings' });
   await expect(mainNav(page)).toHaveCount(0);
   const settingsLinks = settings.getByRole('group', { name: 'Settings' }).getByRole('link');
-  await expect(settingsLinks).toHaveText(['Account', 'Security & devices', 'Addresses', 'Rules', 'Templates', 'Import & export', 'Encryption keys']);
+  await expect(settingsLinks).toHaveText(['Account', 'Security & devices', 'Addresses', 'Rules & sorting', 'Templates', 'Import & export', 'Encryption keys']);
   await settings.getByRole('link', { name: 'Security & devices' }).click();
   await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
   // One vocabulary: the section's own links name Browser sessions and Devices.
@@ -146,7 +146,7 @@ test('the palette lists every place from the route table, grouped, with keycaps'
   await page.keyboard.press('Control+k');
   const palette = page.getByRole('dialog', { name: 'Command palette' });
   await expect(palette).toBeVisible();
-  for (const group of ['Message actions', 'Go to', 'Settings', 'Admin']) {
+  for (const group of ['Actions', 'Go to', 'Settings', 'Admin']) {
     await expect(palette.getByRole('group', { name: group })).toBeVisible();
   }
   const settings = palette.getByRole('group', { name: 'Settings' });
@@ -169,7 +169,7 @@ test('the palette lists every place from the route table, grouped, with keycaps'
   // Outside Mail, ⌘K still opens the palette — with places, not message actions.
   await page.keyboard.press('Control+k');
   await expect(palette).toBeVisible();
-  await expect(palette.getByRole('group', { name: 'Message actions' })).toHaveCount(0);
+  await expect(palette.getByRole('group', { name: 'Actions' })).toHaveCount(0);
   await expect(palette.getByRole('group', { name: 'Settings' })).toBeVisible();
   await page.keyboard.press('Escape');
 });

@@ -9,6 +9,7 @@ import { Contacts } from './contacts/Contacts';
 import { Keys } from './keys/Keys';
 import { MailProvider } from './mail/MailContext';
 import { TemplatesScreen } from './compose/TemplatesScreen';
+import { AccountScreen } from './screens/ChangePassword';
 import { AdminDeliverability } from './screens/AdminDeliverability';
 import { AdminHealth } from './screens/AdminHealth';
 import { AdminJobs } from './screens/AdminJobs';
@@ -19,7 +20,6 @@ import { AdminSessions } from './screens/AdminSessions';
 import { AdminSmtpViewer } from './admin/smtp-viewer/AdminSmtpViewer';
 import { AppPasswords } from './screens/AppPasswords';
 import { Aliases } from './screens/Aliases';
-import { ChangePassword } from './screens/ChangePassword';
 import { DeviceSetup } from './screens/DeviceSetup';
 import { Import } from './screens/Import';
 import { Mail } from './screens/Mail';
@@ -44,7 +44,7 @@ const SCREENS: Readonly<Record<ShellRouteId, ReactElement>> = {
   contactCard: <Contacts />,
   // PST-T-5.6: the sender profile, linked from the reading pane's From line.
   sender: <SenderProfile />,
-  settingsAccount: <ChangePassword />,
+  settingsAccount: <AccountScreen />,
   settingsBrowsers: <Sessions />,
   settingsDevices: <AppPasswords />,
   settingsDeviceSetup: <DeviceSetup />,

@@ -4,18 +4,38 @@
 // delivery row are rendered to a string with react-dom/server and plain @d3cloud/ui stand-ins. The
 // browser behaviour (tooltips on hover and focus, the ⋯ menu, the drawer, axe) is
 // e2e/tests/thread-and-delivery.spec.ts, inspect.spec.ts and phish-banner.spec.ts.
+//
+// PST-T-15.3 (PST-REQ-194) drew the pane to the redesign canvas: the toolbar is ghost icon buttons
+// (Archive, Delete, Move, Snooze), "n of m" with up/down, and ⋯; the subject block, the header's Star
+// and Reply, the attachment card and the quick-reply bar are rendered here the same way.
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { DeliveryRecipient, Mailbox, MessageDetail, PhishWarning, SpecialUse } from '../../src/api';
 
 vi.mock('@d3cloud/ui', () => {
-  type P = { children?: ReactNode; label?: string; content?: string; className?: string; variant?: string; disabled?: boolean; 'aria-label'?: string; 'data-tone'?: string };
-  const box = (tag: string) => (p: P) => createElement(tag, { className: p.className, 'data-variant': p.variant, 'aria-label': p['aria-label'], disabled: p.disabled, 'data-tone': p['data-tone'] }, p.children);
+  type P = {
+    children?: ReactNode;
+    label?: string;
+    content?: string;
+    className?: string;
+    variant?: string;
+    disabled?: boolean;
+    pressed?: boolean;
+    name?: string;
+    tint?: string;
+    tone?: string;
+    'aria-label'?: string;
+    'aria-keyshortcuts'?: string;
+    'data-tone'?: string;
+  };
+  const box = (tag: string) => (p: P) =>
+    createElement(tag, { className: p.className, 'data-variant': p.variant, 'aria-label': p['aria-label'], 'aria-keyshortcuts': p['aria-keyshortcuts'], disabled: p.disabled, 'data-tone': p['data-tone'] ?? p.tone }, p.children);
   return {
+    Avatar: (p: P) => createElement('span', { className: p.className, 'data-avatar': p.name, 'data-tint': p.tint }),
     Badge: box('span'),
     Button: box('button'),
-    IconButton: (p: P) => createElement('button', { 'aria-label': p.label, 'data-icon': 'true' }),
+    IconButton: (p: P) => createElement('button', { 'aria-label': p.label, 'aria-keyshortcuts': p['aria-keyshortcuts'], 'aria-pressed': p.pressed, 'data-icon': 'true', disabled: p.disabled }),
     Tooltip: (p: P) => createElement('span', { 'data-tooltip': p.content }, p.children),
     Menu: box('div'),
     MenuTrigger: box('span'),
@@ -39,8 +59,25 @@ vi.mock('../../src/mail/MailContext', () => ({
   useMail: () => ({ mailboxes: MAILBOXES, me: 'operator@d3cloud.io', refreshMailboxes: () => Promise.resolve(), subscribe: () => () => undefined, live: true, mailboxesFailed: false }),
 }));
 
-const { toolbarModel, recipientSummary, relativeDate, senderName, phishChip, phishLead, phishAdvice, deliveryChipTone, deliverySentence, tooltipText } = await import('../../src/mail/thread/view');
+const {
+  toolbarModel,
+  readingToolbar,
+  positionLabel,
+  positionMoves,
+  quickReplyLabel,
+  recipientSummary,
+  relativeDate,
+  senderName,
+  phishChip,
+  phishLead,
+  phishAdvice,
+  deliveryChipTone,
+  deliverySentence,
+  tooltipText,
+} = await import('../../src/mail/thread/view');
 const { ThreadToolbar } = await import('../../src/mail/thread/ThreadToolbar');
+const { SubjectBlock, QuickReply, HeaderActions } = await import('../../src/mail/thread/ReadingParts');
+const { AttachmentCard, AttachmentList, fileTypeLabel } = await import('../../src/mail/AttachmentCard');
 const { PhishChip } = await import('../../src/mail/thread/ExceptionChip');
 const { DeliveryRecipientRow } = await import('../../src/mail/DeliveryRows');
 
@@ -67,7 +104,7 @@ function detail(use: SpecialUse, over: Partial<MessageDetail> = {}): MessageDeta
   };
 }
 
-const toolbar = (use: SpecialUse, extra: { onMoveTo?: boolean; onEditDraft?: boolean } = {}) =>
+const toolbar = (use: SpecialUse, extra: { onMoveTo?: boolean; onEditDraft?: boolean; position?: { index: number; total: number; more: boolean } | null } = {}) =>
   renderToStaticMarkup(
     createElement(ThreadToolbar, {
       detail: detail(use),
@@ -77,10 +114,11 @@ const toolbar = (use: SpecialUse, extra: { onMoveTo?: boolean; onEditDraft?: boo
       onMoveTo: extra.onMoveTo === false ? undefined : () => undefined,
       onEditDraft: extra.onEditDraft === true ? () => undefined : undefined,
       snooze: createElement('button', { 'aria-label': 'Snooze' }),
+      position: extra.position,
     }),
   );
 
-/** The visible order of labelled buttons and icon buttons' names in the toolbar markup. */
+/** The visible order of labelled buttons and icon buttons' names in the markup. */
 function controls(html: string): string[] {
   const out: string[] = [];
   const re = /<button([^>]*)>([^<]*)<\/button>/g;
@@ -91,48 +129,142 @@ function controls(html: string): string[] {
   return out;
 }
 
-describe('the reading toolbar (VIS-06, INT-I7)', () => {
-  it('in Inbox: Reply is the one primary, Archive and Delete labelled, the rest icons, then ⋯', () => {
+describe('the reading toolbar (VIS-06, INT-I7; the canvas, PST-T-15.3)', () => {
+  it('in Inbox: ghost icon buttons — Archive, Delete, Move, Snooze — then ⋯, and nothing filled', () => {
     const html = toolbar('inbox');
-    expect(controls(html)).toEqual(['Reply', 'Archive', 'Delete', '[Reply all]', '[Forward]', '[Snooze]', '[More actions]']);
-    expect(html).toMatch(/data-variant="primary"[^>]*>Reply</);
-    expect(html.match(/data-variant="primary"/g)).toHaveLength(1);
+    expect(controls(html)).toEqual(['[Archive]', '[Delete]', '[Move]', '[Snooze]', '[More actions]']);
+    expect(html).not.toContain('data-variant="primary"');
+    expect(html).toContain('class="pr-toolbar"');
+    expect(html).toContain('role="toolbar" aria-label="Message actions"');
   });
 
-  it('gives every icon button a tooltip that names it and its key', () => {
+  it('gives every icon button a tooltip that names it and its key, and keeps the keys announced', () => {
     const html = toolbar('inbox');
-    expect(html).toContain('data-tooltip="Reply all (a)"');
-    expect(html).toContain('data-tooltip="Forward (f)"');
+    expect(html).toContain('data-tooltip="Archive (e)"');
+    expect(html).toContain('data-tooltip="Delete (#)"');
+    expect(html).toContain('data-tooltip="Move (v)"');
+    expect(html).toMatch(/aria-label="Archive" aria-keyshortcuts="e"/);
     expect(html).toContain('More actions');
     expect(tooltipText('Forward', undefined)).toBe('Forward');
   });
 
-  it('puts the rare actions in ⋯: Move to…, Mark unread, Star, Inspect message (i), Show original, Print', () => {
+  it('shows "n of m" with up/down wired to k/j, disabled at the ends, and hides it off the list', () => {
+    const mid = toolbar('inbox', { position: { index: 2, total: 48, more: false } });
+    expect(mid).toContain('data-testid="list-position">3 of 48<');
+    expect(controls(mid)).toEqual(['[Archive]', '[Delete]', '[Move]', '[Snooze]', '[Previous message]', '[Next message]', '[More actions]']);
+    expect(mid).toContain('data-tooltip="Previous message (k)"');
+    expect(mid).toContain('data-tooltip="Next message (j)"');
+    expect(mid).not.toMatch(/aria-label="(Previous|Next) message"[^>]*disabled/);
+    const first = toolbar('inbox', { position: { index: 0, total: 3, more: false } });
+    expect(first).toMatch(/aria-label="Previous message"[^>]*disabled/);
+    expect(first).not.toMatch(/aria-label="Next message"[^>]*disabled/);
+    expect(toolbar('inbox', { position: { index: -1, total: 3, more: false } })).not.toContain('list-position');
+    expect(toolbar('inbox')).not.toContain('list-position');
+
+    expect(positionLabel({ index: 0, total: 50, more: true })).toBe('1 of 50+');
+    expect(positionLabel({ index: 4, total: 3, more: false })).toBeNull();
+    expect(positionLabel(null)).toBeNull();
+    expect(positionMoves({ index: 2, total: 3, more: false })).toEqual({ prev: true, next: false });
+    expect(positionMoves({ index: -1, total: 3, more: false })).toEqual({ prev: false, next: false });
+  });
+
+  it('puts the rare actions in ⋯: Mark unread, Star, Inspect message (i), Show original, Print', () => {
     const html = toolbar('inbox');
     const items = [...html.matchAll(/role="menuitem">(.*?)<\/div>/g)].map((m) => (m[1] ?? '').replace(/<kbd[^>]*>[^<]*<\/kbd>/g, '').replace(/<[^>]+>/g, ''));
-    expect(items).toEqual(['Move to…', 'Mark unread', 'Star', 'Inspect message', 'Show original', 'Print']);
+    expect(items).toEqual(['Mark unread', 'Star', 'Inspect message', 'Show original', 'Print']);
     expect(html).toMatch(/Inspect message<\/span><kbd[^>]*aria-hidden="true"[^>]*>i<\/kbd>/);
     expect(html).toContain('href="/api/messages/m-1/raw"');
   });
 
-  it('in Sent: nothing is filled and Reply joins the icons', () => {
-    expect(controls(toolbar('sent'))).toEqual(['Archive', 'Delete', '[Reply]', '[Reply all]', '[Forward]', '[More actions]']);
+  it('in Sent: no Snooze; Reply, Reply all and Forward are not toolbar buttons any more', () => {
+    expect(controls(toolbar('sent'))).toEqual(['[Archive]', '[Delete]', '[Move]', '[More actions]']);
     expect(toolbar('sent')).not.toContain('data-variant="primary"');
+    for (const use of ['inbox', 'sent', 'junk'] as const) expect(controls(toolbar(use))).not.toContain('[Reply]');
   });
 
   it('in Junk leads with Not junk, in Rejected with Rescue, in Drafts with Edit draft', () => {
     expect(controls(toolbar('junk'))[0]).toBe('Not junk');
+    expect(controls(toolbar('junk'))).toEqual(['Not junk', '[Delete]', '[Move]', '[More actions]']);
     expect(controls(toolbar('rejects'))[0]).toBe('Rescue');
     expect(controls(toolbar('drafts', { onEditDraft: true }))[0]).toBe('Edit draft');
-    expect(toolbarModel('junk').lead).toBe('notJunk');
-    expect(toolbarModel('rejects').lead).toBe('rescue');
-    expect(toolbarModel('drafts').lead).toBe('editDraft');
+    expect(readingToolbar('junk').lead).toBe('notJunk');
+    expect(readingToolbar('rejects').lead).toBe('rescue');
+    expect(readingToolbar('drafts').lead).toBe('editDraft');
+    expect(readingToolbar(null).lead).toBeNull();
+    expect(readingToolbar('drafts').reply).toBe(false);
+    expect(readingToolbar('sent').reply).toBe(true);
+    // The phone's bottom bar still reads the mailbox's actions as they were.
     expect(toolbarModel(null).lead).toBe('reply');
+    expect(toolbarModel('sent').icons).toContain('reply');
   });
 
-  it('never shows Not junk or Rescue it cannot carry out', () => {
+  it('never shows Not junk, Rescue or Move it cannot carry out', () => {
     expect(controls(toolbar('junk', { onMoveTo: false }))).not.toContain('Not junk');
+    expect(controls(toolbar('inbox', { onMoveTo: false }))).not.toContain('[Move]');
     expect(controls(toolbar('drafts'))).not.toContain('Edit draft');
+  });
+});
+
+describe('the subject block, the header actions and the quick-reply bar (the canvas, PST-T-15.3)', () => {
+  it('titles the pane; Priority is the header chip, never repeated beside the subject', () => {
+    const plain = renderToStaticMarkup(createElement(SubjectBlock, { subject: 'Acadia?', headingRef: null, participants: null }));
+    expect(plain).toMatch(/<h2 id="pr-reader-subject" class="pr-reader__subject" tabindex="-1">Acadia\?<\/h2>/);
+    expect(plain).not.toContain('pr-subject__meta');
+    const full = renderToStaticMarkup(createElement(SubjectBlock, { subject: 'Acadia?', headingRef: null, participants: '3 messages · Priya Shah, you' }));
+    expect(full).not.toContain('Priority');
+    expect(full).toContain('3 messages · Priya Shah, you');
+  });
+
+  it('draws Star (pressed when starred) and Reply on the open message, with keys', () => {
+    const html = renderToStaticMarkup(createElement(HeaderActions, { detail: detail('inbox', { flags: ['\\Flagged'] }), onAction: () => undefined }));
+    expect(html).toMatch(/aria-label="Star" aria-keyshortcuts="s" aria-pressed="true"/);
+    expect(html).toContain('data-tooltip="Unstar (s)"');
+    expect(html).toContain('data-tooltip="Reply (r)"');
+    const draft = renderToStaticMarkup(createElement(HeaderActions, { detail: detail('drafts'), onAction: () => undefined }));
+    expect(draft).toMatch(/aria-label="Star" aria-keyshortcuts="s" aria-pressed="false"/);
+    expect(draft).not.toContain('aria-label="Reply"');
+  });
+
+  it('offers "Reply to <name>…" with its R hint, then Reply all and Forward — never in Drafts', () => {
+    const body = { id: 'm-1', headers: [{ name: 'From', value: 'Priya Shah <priya.shah@gmail.com>' }], text: 'x', textTruncated: false, html: null, htmlTruncated: false, attachments: [], warnings: [] };
+    const html = renderToStaticMarkup(createElement(QuickReply, { detail: detail('inbox'), body, onAction: () => undefined }));
+    expect(html).toMatch(/<button type="button" class="pr-quickreply__field" aria-keyshortcuts="r">/);
+    expect(html).toContain('Reply to Priya Shah…');
+    expect(html).toMatch(/<kbd class="d3-kbd pr-quickreply__key" aria-hidden="true">R<\/kbd>/);
+    expect(controls(html)).toEqual(['Reply all', 'Forward']);
+    expect(renderToStaticMarkup(createElement(QuickReply, { detail: detail('drafts'), body, onAction: () => undefined }))).toBe('');
+    expect(quickReplyLabel('Operator <OPERATOR@d3cloud.io>', 'operator@d3cloud.io')).toBe('Reply…');
+    expect(quickReplyLabel(null, null)).toBe('Reply…');
+    expect(quickReplyLabel('jonah.reyes@fastmail.com', null)).toBe('Reply to jonah.reyes@fastmail.com…');
+  });
+});
+
+describe('the attachment card (the canvas\'s .pr-file, PST-T-15.3)', () => {
+  const pdf = { partId: '2', contentType: 'application/pdf', filename: 'Blackwoods-B22-confirmation.pdf', disposition: 'attachment', contentId: null, size: 98_304, sha256: 'x', inMessage: null };
+
+  it('is one real download link to the attachment\'s own URL: type tile, name, size', () => {
+    const html = renderToStaticMarkup(createElement(AttachmentCard, { messageId: 'm-1', attachment: pdf }));
+    expect(html).toContain('href="/api/messages/m-1/attachments/2"');
+    expect(html).toContain('download="Blackwoods-B22-confirmation.pdf"');
+    expect(html).toContain('aria-label="Download Blackwoods-B22-confirmation.pdf, 96 KB"');
+    expect(html).toMatch(/class="pr-file__tile" aria-hidden="true">PDF</);
+    expect(html).toContain('>96 KB<');
+    expect(html.match(/<a /g)).toHaveLength(1);
+  });
+
+  it('names the file type from the extension, else the content type, else FILE', () => {
+    expect(fileTypeLabel('photo.jpeg', 'image/jpeg')).toBe('JPEG');
+    expect(fileTypeLabel(null, 'image/png')).toBe('PNG');
+    expect(fileTypeLabel('README', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe('FILE');
+    expect(fileTypeLabel('.hidden', 'text/calendar; method=REQUEST')).toBe('FILE');
+  });
+
+  it('lists only real attachments, and nothing at all when there are none', () => {
+    const inline = { ...pdf, partId: '3', filename: null, disposition: 'inline' };
+    const html = renderToStaticMarkup(createElement(AttachmentList, { messageId: 'm-1', attachments: [pdf, inline] }));
+    expect(html).toContain('aria-label="Attachments"');
+    expect(html.match(/class="pr-file"/g)).toHaveLength(1);
+    expect(renderToStaticMarkup(createElement(AttachmentList, { messageId: 'm-1', attachments: [inline] }))).toBe('');
   });
 });
 

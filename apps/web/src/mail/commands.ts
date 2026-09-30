@@ -2,7 +2,9 @@
 // the palette can never list one that does nothing, the same guarantee ShortcutsOverlay makes), a
 // "Move to <bucket>" command per mailbox for the message under the cursor, "Go to <mailbox>" for
 // every mailbox, and — since PST-T-14.3 — every place in the route table (routes.ts), grouped as
-// Message actions, Go to, Settings and Admin, with keycaps from keys.ts where a binding exists.
+// Actions, Go to, Settings and Admin, with keycaps from keys.ts where a binding exists. PST-T-15.5
+// renamed "Message actions" to "Actions" (the redesign's group) and leads it, with a message in hand,
+// with the three things the palette is opened for: Archive, Snooze and Move.
 // Pure and DOM-free, so the registry and the fuzzy matcher are unit-tested without a browser.
 import type { Mailbox, MessageSummary } from '../api';
 import { snoozeChoices } from './compose';
@@ -12,7 +14,7 @@ import { mailPath } from './route';
 import { paletteRoutes } from '../routes';
 
 /** The palette's groups, in the order it shows them (PST-T-14.3). */
-export const COMMAND_GROUPS = ['Message actions', 'Go to', 'Settings', 'Admin'] as const;
+export const COMMAND_GROUPS = ['Actions', 'Go to', 'Settings', 'Admin'] as const;
 export type CommandGroup = (typeof COMMAND_GROUPS)[number];
 
 export interface Command {
@@ -25,6 +27,8 @@ export interface Command {
   keycaps?: string[];
   /** A one-line hint beside the label. */
   hint?: string;
+  /** The mailbox a "Go to <mailbox>" command opens — the palette draws its icon. */
+  mailbox?: Mailbox;
   run: () => void;
 }
 
@@ -54,6 +58,17 @@ function shortcutKeys(action: MailAction): string[] | undefined {
   return s === undefined ? undefined : keycapsFor(s.keys);
 }
 
+/** Keycaps as the library's CommandPalette draws them (one key cap per entry): the first of several
+ * alternatives ('o or Enter' → o), and a sequence without its connective ('g then i' → g, i). */
+export function paletteShortcut(keycaps: readonly string[]): string[] {
+  const orAt = keycaps.indexOf('or');
+  const first = orAt < 0 ? keycaps : keycaps.slice(0, orAt);
+  return first.filter((k) => k !== 'then');
+}
+
+/** With a message in hand, the Actions group leads with these, in this order (PST-T-15.5). */
+export const LEAD_ACTIONS: readonly MailAction[] = ['archive', 'snooze', 'moveTo'];
+
 const PLACE_GROUP: Readonly<Record<'mail' | 'settings' | 'admin', CommandGroup>> = { mail: 'Go to', settings: 'Settings', admin: 'Admin' };
 
 /** Builds the full command list for the current context, in COMMAND_GROUPS order. */
@@ -62,14 +77,20 @@ export function buildCommands(ctx: CommandContext, isAdmin = false): Command[] {
   const perform = ctx.perform;
 
   if (perform !== undefined) {
-    for (const s of SHORTCUTS) {
+    const lead = (a: MailAction): number => (ctx.target === null ? -1 : LEAD_ACTIONS.indexOf(a));
+    const shortcuts = [...SHORTCUTS].sort((a, b) => {
+      const la = lead(a.action);
+      const lb = lead(b.action);
+      return (la < 0 ? LEAD_ACTIONS.length : la) - (lb < 0 ? LEAD_ACTIONS.length : lb);
+    });
+    for (const s of shortcuts) {
       // The palette opens itself; a command that opens the thing it is already inside of is noise.
       // Go to Inbox is listed with the mailboxes below, carrying g then i as its keycaps.
       if (s.action === 'commandPalette' || (s.action === 'goInbox' && ctx.mailboxes !== null)) continue;
       commands.push({
         id: `action:${s.action}`,
         label: s.description,
-        group: s.action === 'goInbox' ? 'Go to' : 'Message actions',
+        group: s.action === 'goInbox' ? 'Go to' : 'Actions',
         keywords: s.keys,
         keycaps: keycapsFor(s.keys),
         run: () => {
@@ -88,7 +109,7 @@ export function buildCommands(ctx: CommandContext, isAdmin = false): Command[] {
       commands.push({
         id: `move:${mailbox.id}`,
         label: `Move to ${mailboxLabel(mailbox)}`,
-        group: 'Message actions',
+        group: 'Actions',
         keywords: 'move file bucket',
         run: () => {
           ctx.move(target, mailbox);
@@ -104,7 +125,7 @@ export function buildCommands(ctx: CommandContext, isAdmin = false): Command[] {
       commands.push({
         id: `snooze:${choice.label}`,
         label: `Snooze until ${choice.label.toLowerCase()}`,
-        group: 'Message actions',
+        group: 'Actions',
         keywords: 'snooze later remind',
         run: () => {
           snooze(target, choice.until);
@@ -122,6 +143,7 @@ export function buildCommands(ctx: CommandContext, isAdmin = false): Command[] {
         label: `Go to ${mailboxLabel(mailbox)}`,
         group: 'Go to',
         keywords: 'mailbox folder',
+        mailbox,
         ...(keycaps === undefined ? {} : { keycaps }),
         run: () => {
           ctx.navigate(mailPath(mailbox.id));

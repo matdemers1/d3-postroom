@@ -177,23 +177,37 @@ test('doneWhen: opening a message with replies shows the conversation in order, 
   await expect(collapsedButton).toHaveAttribute('aria-expanded', 'false');
   await expectNoAxeViolations(page, 'thread (collapsed)');
 
-  // PST-T-14.6: the toolbar leads with Reply, labels Archive and Delete, draws the rest as icon
-  // buttons with names and tooltips, and keeps the rare actions in ⋯.
+  // PST-T-15.3 (the redesign canvas): the toolbar is ghost icon buttons with names and tooltips —
+  // Archive, Delete, Move, Snooze — then "n of m" with up/down, then ⋯ for the rare actions. Reply,
+  // Reply all and Forward moved to the message header and the quick-reply bar.
   const toolbar = page.getByRole('toolbar', { name: 'Message actions' });
-  for (const name of ['Reply', 'Archive', 'Delete', 'Reply all', 'Forward', 'More actions']) {
+  for (const name of ['Archive', 'Delete', 'Move', 'Snooze', 'Previous message', 'Next message', 'More actions']) {
     await expect(toolbar.getByRole('button', { name, exact: true })).toBeVisible();
   }
-  await expect(toolbar.getByRole('button', { name: 'Mark unread' })).toHaveCount(0);
+  await expect(toolbar.getByTestId('list-position')).toHaveText(/^\d+ of \d+\+?$/);
+  for (const name of ['Reply', 'Reply all', 'Forward', 'Mark unread']) {
+    await expect(toolbar.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
   await expect(toolbar.getByRole('button', { name: 'Inspect', exact: true })).toHaveCount(0);
-  await toolbar.getByRole('button', { name: 'Reply all', exact: true }).focus();
-  await expect(page.getByRole('tooltip')).toContainText('Reply all');
+  expect((await toolbar.boundingBox())?.height).toBe(52);
+  await toolbar.getByRole('button', { name: 'Archive', exact: true }).focus();
+  await expect(page.getByRole('tooltip')).toContainText('Archive (e)');
   await toolbar.getByRole('button', { name: 'More actions' }).click();
   const menu = page.getByRole('menu');
-  for (const name of ['Move to…', 'Mark unread', 'Star', 'Inspect message', 'Show original', 'Print']) {
+  for (const name of ['Mark unread', 'Star', 'Inspect message', 'Show original', 'Print']) {
     await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
   }
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
+  // The subject block says how many messages and who wrote them.
+  await expect(page.getByTestId('thread-participants')).toHaveText(/^3 messages · /);
+  // The open message's header carries Star and Reply; the others do not.
+  const openHeader = items.nth(0).getByTestId('message-header');
+  await expect(openHeader.getByRole('button', { name: 'Star', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect(openHeader.getByRole('button', { name: 'Reply', exact: true })).toBeVisible();
+  await expect(items.nth(2).getByTestId('message-header').getByRole('button', { name: 'Star', exact: true })).toHaveCount(0);
+  // The body reads at 16px.
+  await expect(items.nth(2).getByTestId('message-text')).toHaveCSS('font-size', '16px');
   // Each message header is one line — no From/To/Cc/Date table until "to …" opens it — and a
   // normal message carries no status chip, positive or otherwise.
   const newestHeader = items.nth(2).getByTestId('message-header');
@@ -213,11 +227,18 @@ test('doneWhen: opening a message with replies shows the conversation in order, 
   await expect(items.nth(1).locator('.pr-thread__message')).toHaveAttribute('data-open', 'true');
   await expect(items.nth(1).locator('.pr-thread__message')).toHaveCSS('opacity', '1');
 
-  // r on the open thread replies to the message that was opened (the root); Send closes the composer
-  // back to it, and the new reply shows up in the SAME open thread — no navigation, no reload.
-  await page.keyboard.press('r');
+  // The quick-reply bar at the foot replies to the message that was opened (the root), exactly as r
+  // does, and steps aside while the composer is open. Send closes the composer back to it, and the
+  // new reply shows up in the SAME open thread — no navigation, no reload.
+  const quick = page.getByTestId('quick-reply');
+  await expect(quick.getByRole('button', { name: 'Reply to Alice Example…', exact: true })).toHaveAttribute('aria-keyshortcuts', 'r');
+  await expect(quick.getByRole('button', { name: 'Reply all', exact: true })).toBeVisible();
+  await expect(quick.getByRole('button', { name: 'Forward', exact: true })).toBeVisible();
+  await quick.getByRole('button', { name: 'Reply to Alice Example…', exact: true }).click();
   const composer = page.getByRole('region', { name: 'Reply', exact: true });
   await expect(composer).toBeVisible();
+  await expect(quick).toHaveCount(0);
+  await composer.getByRole('textbox', { name: 'Message' }).focus();
   await page.keyboard.type(`Friday it is ${t}.`);
   await composer.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(composer).toBeHidden();
@@ -231,7 +252,7 @@ test('doneWhen: opening a message with replies shows the conversation in order, 
   await remember(`Re: ${subject}`);
 });
 
-test('the thread view has no axe violations at every width', async ({ page }) => {
+test('the thread view has no axe violations at every width, in both themes', async ({ page, isMobile }) => {
   const t = tag();
   const subject = `Budget approvals ${t}`;
   const [original] = await seedMail(api, [{ subject, from: 'Alice Example <alice@example.org>', text: 'Ready for a look?' }]);
@@ -248,6 +269,31 @@ test('the thread view has no axe violations at every width', async ({ page }) =>
   await openFromInbox(page, subject);
   await expect(page.getByRole('list', { name: 'Conversation' }).locator('> li')).toHaveCount(2);
   await expectNoAxeViolations(page, 'thread');
+
+  // The same thread in the dark theme.
+  await page.addInitScript(() => {
+    (globalThis as unknown as { localStorage: { setItem: (k: string, v: string) => void } }).localStorage.setItem('postroom-theme', 'dark');
+  });
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.getByRole('list', { name: 'Conversation' }).locator('> li')).toHaveCount(2);
+  await expectNoAxeViolations(page, 'thread [dark]');
+
+  // Up/down in the toolbar walk the list, as k/j do (the toolbar is the phone's bottom bar there).
+  if (!isMobile) {
+    const toolbar = page.getByRole('toolbar', { name: 'Message actions' });
+    const position = toolbar.getByTestId('list-position');
+    const before = await position.textContent();
+    const next = toolbar.getByRole('button', { name: 'Next message', exact: true });
+    if (await next.isEnabled()) {
+      await next.click();
+      await expect(page.getByRole('heading', { name: subject, level: 2 })).toHaveCount(0);
+      await expect(position).not.toHaveText(before ?? '');
+      await toolbar.getByRole('button', { name: 'Previous message', exact: true }).click();
+      await expect(page.getByRole('heading', { name: subject, level: 2 })).toBeVisible();
+      await expect(position).toHaveText(before ?? '');
+    }
+  }
 });
 
 async function remember(subject: string): Promise<void> {

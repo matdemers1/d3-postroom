@@ -3,7 +3,7 @@
 // the manual toggle, and a collapsed row's summary line.
 import { describe, expect, it } from 'vitest';
 import type { MessageSummary } from '../../src/api';
-import { collapsedSummary, isConversation, mightJoinThread, snippetOf, threadRows, toggleRow } from '../../src/mail/thread';
+import { collapsedSummary, isConversation, mightJoinThread, participantsLine, snippetOf, threadRows, toggleRow } from '../../src/mail/thread';
 
 function summary(id: string, over: Partial<MessageSummary> = {}): MessageSummary {
   return {
@@ -136,5 +136,30 @@ describe('snippetOf (PST-T-11.4)', () => {
   it('is null with no text, or only a quote', () => {
     expect(snippetOf(null)).toBeNull();
     expect(snippetOf('> only a quote')).toBeNull();
+  });
+});
+
+// PST-T-15.3: the line under a conversation's subject on the redesign canvas.
+describe('participantsLine', () => {
+  const me = 'operator@d3cloud.io';
+
+  it('counts the messages and names who wrote, in order, with me as "you" and last', () => {
+    const messages = [
+      summary('a', { from: 'priya.shah@gmail.com', fromName: 'Priya Shah' }),
+      summary('b', { from: 'Operator@D3cloud.io', fromName: 'Matt' }),
+      summary('c', { from: 'jonah.reyes@fastmail.com', fromName: 'Jonah Reyes' }),
+      summary('d', { from: 'priya.shah@gmail.com', fromName: 'Priya Shah' }),
+    ];
+    expect(participantsLine(messages, me)).toBe('4 messages · Priya Shah, Jonah Reyes, you');
+  });
+
+  it('falls back to the address, and folds a long cast into "n more"', () => {
+    const messages = ['a', 'b', 'c', 'd', 'e'].map((x) => summary(x, { from: `${x}@x.test`, fromName: x === 'a' ? '' : null }));
+    expect(participantsLine(messages, null)).toBe('5 messages · a@x.test, b@x.test, c@x.test, 2 more');
+  });
+
+  it('says nothing for a lone message: its header already says who', () => {
+    expect(participantsLine([summary('a')], me)).toBeNull();
+    expect(participantsLine([summary('a', { from: null }), summary('b', { from: null })], me)).toBe('2 messages');
   });
 });

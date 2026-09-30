@@ -12,6 +12,15 @@
 //     (PST-REQ-192; none under reduced motion, PST-REQ-193);
 //   - chips appear only for exceptions (./thread/ExceptionChip.tsx) — never a "Verified" one.
 //
+// PST-T-15.3 (PST-REQ-194) drew it to the redesign canvas: the 52px toolbar row on top (ghost icon
+// buttons, "3 of 48" with up/down, ⋯); then, in the one scroller, the subject block (24px title, a
+// Priority badge when the message is filed there, "3 messages · Priya Shah, Jonah Reyes, you"),
+// earlier messages as one-line hairline cards, the expanded messages (36px tinted avatar, "to me, …",
+// time, Star and Reply on the open one; the body at 16px with a 65ch measure, indented under the
+// name), attachments as cards (./AttachmentCard.tsx), and a quick-reply bar at the foot — a quiet
+// field-like "Reply to Priya Shah…" button with its R hint that opens the same inline composer r
+// does, and Reply all / Forward beside it. The bar steps aside while a composer is open.
+//
 // A message with replies shows the whole conversation (GET /api/threads/:id): older messages
 // collapsed, the newest expanded, and whichever message was opened expanded too. It follows the
 // server live over SSE (PST-REQ-083) — a reply filed anywhere joins the open thread without a
@@ -37,8 +46,9 @@
 //
 // When the server has no usercontent origin configured (503), the text/plain part is shown instead
 // and an HTML-only message says so.
-import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type ForwardedRef, type ReactNode } from 'react';
 import { Alert, Avatar, Button, EmptyState, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
+import { AttachmentList } from './AttachmentCard';
 import { deliveryPhase, isPending, NO_DELIVERY_RECORD_TEXT } from './delivery';
 import { DeliveryEvidence, DeliveryRecipientRow } from './DeliveryRows';
 import { InspectDrawer } from './InspectDrawer';
@@ -46,12 +56,11 @@ import { InviteSection } from '../invites/InviteSection';
 import { ReceiptPrompt } from './ReceiptPrompt';
 import { wantsReceipt } from './receipt';
 import { useMail } from './MailContext';
-import { collapsedSummary, isConversation, mightJoinThread, threadRows, toggleRow } from './thread';
+import { collapsedSummary, isConversation, mightJoinThread, participantsLine, threadRows, toggleRow } from './thread';
 import { trackersBlockedNote } from './trackers';
 import {
   api,
   ApiError,
-  attachmentUrl,
   type DeliveryDetail,
   type Mailbox,
   type MessageBody,
@@ -60,15 +69,15 @@ import {
   type RenderTicket,
   serverUnreachable,
 } from '../api';
-import { byteSize, displayName, header, listDate } from './format';
-import { PaperclipIcon } from './icons';
+import { displayName, header, listDate } from './format';
 import { requestInspect } from './keys';
 import { snippetOf } from './thread';
 import { SessionEnded } from '../screens/states';
 import { PhishChip } from './thread/ExceptionChip';
 import { MessageHeader } from './thread/MessageHeader';
-import { ThreadToolbar } from './thread/ThreadToolbar';
-import { absoluteDate } from './thread/view';
+import { HeaderActions, QuickReply, SubjectBlock } from './thread/ReadingParts';
+import { ThreadToolbar, type ToolbarAction } from './thread/ThreadToolbar';
+import { absoluteDate, type ListPosition } from './thread/view';
 import './thread/thread.css';
 
 export interface OpenMessage {
@@ -84,7 +93,9 @@ export interface ReadingPaneProps {
   back?: ReactNode;
   canArchive: boolean;
   canTrash: boolean;
-  onAction: (action: 'reply' | 'replyAll' | 'forward' | 'archive' | 'delete' | 'markUnread' | 'star') => void;
+  onAction: (action: ToolbarAction) => void;
+  /** The open message's place in the list ("3 of 48", with up/down); absent or off-list: hidden. */
+  position?: ListPosition | null | undefined;
   onRetry: () => void;
   /** Snooze/Unsnooze, placed in the toolbar's icon group (PST-T-11.4, PST-T-14.6). */
   snooze?: ReactNode;
@@ -100,7 +111,7 @@ export interface ReadingPaneProps {
 }
 
 export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(function ReadingPane(
-  { open, back, canArchive, canTrash, onAction, onRetry, snooze, onMoveToJunk, onMoveTo, onEditDraft, composer, children },
+  { open, back, canArchive, canTrash, onAction, onRetry, snooze, onMoveToJunk, onMoveTo, onEditDraft, composer, position, children },
   headingRef,
 ) {
   if (open === null) {
@@ -159,12 +170,7 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
   return (
     <article className="pr-reader pr-reader--open" aria-labelledby="pr-reader-subject" data-message-id={detail.id}>
       {back}
-      <div className="pr-reader__top">
-        <h2 id="pr-reader-subject" className="pr-reader__subject" tabIndex={-1} ref={headingRef}>
-          {subject}
-        </h2>
-        <ThreadToolbar detail={detail} canArchive={canArchive} canTrash={canTrash} onAction={onAction} onMoveTo={onMoveTo} onEditDraft={onEditDraft} snooze={snooze} />
-      </div>
+      <ThreadToolbar detail={detail} canArchive={canArchive} canTrash={canTrash} onAction={onAction} onMoveTo={onMoveTo} onEditDraft={onEditDraft} snooze={snooze} position={position} />
       <InspectDrawer messageId={detail.id} />
       {/* One scroller. Keyed by message so j/k gives a short (--dur-1) opacity fade and nothing more. */}
       <div key={detail.id} className="pr-reader__scroll" data-testid="reader-scroll">
@@ -175,9 +181,14 @@ export const ReadingPane = forwardRef<HTMLHeadingElement, ReadingPaneProps>(func
           bodyStatus={bodyStatus}
           onRetry={onRetry}
           onMoveToJunk={onMoveToJunk}
-          fallback={<MessageContent detail={detail} body={body} bodyStatus={bodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} isOpen fill={body !== null && body.html !== null} />}
+          onAction={onAction}
+          subject={subject}
+          headingRef={headingRef}
+          fallback={
+            <MessageContent detail={detail} body={body} bodyStatus={bodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} onAction={onAction} isOpen fill={body !== null && body.html !== null} />
+          }
         />
-        {composer}
+        {composer === undefined || composer === null ? <QuickReply detail={detail} body={body} onAction={onAction} /> : composer}
       </div>
     </article>
   );
@@ -206,6 +217,9 @@ function ThreadConversation({
   bodyStatus,
   onRetry,
   onMoveToJunk,
+  onAction,
+  subject,
+  headingRef,
   fallback,
 }: {
   detail: MessageDetail;
@@ -213,9 +227,13 @@ function ThreadConversation({
   bodyStatus: OpenMessage['bodyStatus'];
   onRetry: () => void;
   onMoveToJunk?: ((message: MessageDetail) => void) | undefined;
+  onAction: (action: ToolbarAction) => void;
+  /** The open message's subject, for the heading. */
+  subject: string;
+  headingRef: ForwardedRef<HTMLHeadingElement>;
   fallback: ReactNode;
 }): ReactNode {
-  const { subscribe } = useMail();
+  const { subscribe, me } = useMail();
   // `detail.threadId` is whatever MailView last fetched, which can be stale: a message's very first
   // reply backfills ITS threadId server-side (packages/threading's orphan step) at the moment the
   // reply is sent, but nothing forces MailView to refetch the still-open original afterwards. This
@@ -329,47 +347,65 @@ function ThreadConversation({
     // collapsedKey (a joined string) is the real dependency, as with expandedKey above.
   }, [collapsedKey]);
 
-  if (thread === null || !isConversation(thread)) return fallback;
+  const conversation = thread !== null && isConversation(thread);
+  const heading = (
+    <SubjectBlock
+      subject={subject}
+      headingRef={headingRef}
+      participants={conversation ? participantsLine(thread, me) : null}
+    />
+  );
+  if (!conversation) {
+    return (
+      <>
+        {heading}
+        {fallback}
+      </>
+    );
+  }
 
   const threadSubject = thread[thread.length - 1]?.subject ?? null;
   const newestId = thread[thread.length - 1]?.id ?? null;
 
   return (
-    <ol aria-label="Conversation" className="pr-thread">
-      {rows.map(({ message, expanded }) => {
-        const isOpen = message.id === detail.id;
-        const rowDetail = isOpen ? detail : (extra.get(message.id)?.detail ?? null);
-        const rowBody = isOpen ? body : (extra.get(message.id)?.body ?? null);
-        const rowBodyStatus = isOpen ? bodyStatus : (extra.get(message.id)?.bodyStatus ?? 'loading');
-        // Only an HTML message fills: a text one is as tall as its words (see the header comment).
-        const fill = message.id === newestId && rowBody !== null && rowBody.html !== null;
-        // Only a row the reader opened by hand animates in; the rows that start open do not, so
-        // moving with j/k never plays an entrance (PST-REQ-192's calm).
-        const byHand = toggled.has(message.id);
-        return (
-          <li key={message.id} className="pr-thread__item" data-message-id={message.id} data-expanded={expanded} data-fill={fill}>
-            {expanded ? (
-              <Reveal animate={byHand}>
-                {rowDetail === null ? (
-                  <Skeleton variant="text" lines={3} />
-                ) : (
-                  <MessageContent detail={rowDetail} body={rowBody} bodyStatus={rowBodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} isOpen={isOpen} fill={fill} />
-                )}
-              </Reveal>
-            ) : (
-              <button
-                type="button"
-                className="pr-thread__collapsed"
-                aria-expanded={false}
-                onClick={() => { setToggled((t) => toggleRow(t, message.id)); }}
-              >
-                <CollapsedRow message={message} threadSubject={threadSubject} preview={previews.get(message.id) ?? null} />
-              </button>
-            )}
-          </li>
-        );
-      })}
-    </ol>
+    <>
+      {heading}
+      <ol aria-label="Conversation" className="pr-thread">
+        {rows.map(({ message, expanded }) => {
+          const isOpen = message.id === detail.id;
+          const rowDetail = isOpen ? detail : (extra.get(message.id)?.detail ?? null);
+          const rowBody = isOpen ? body : (extra.get(message.id)?.body ?? null);
+          const rowBodyStatus = isOpen ? bodyStatus : (extra.get(message.id)?.bodyStatus ?? 'loading');
+          // Only an HTML message fills: a text one is as tall as its words (see the header comment).
+          const fill = message.id === newestId && rowBody !== null && rowBody.html !== null;
+          // Only a row the reader opened by hand animates in; the rows that start open do not, so
+          // moving with j/k never plays an entrance (PST-REQ-192's calm).
+          const byHand = toggled.has(message.id);
+          return (
+            <li key={message.id} className="pr-thread__item" data-message-id={message.id} data-expanded={expanded} data-fill={fill}>
+              {expanded ? (
+                <Reveal animate={byHand}>
+                  {rowDetail === null ? (
+                    <Skeleton variant="text" lines={3} />
+                  ) : (
+                    <MessageContent detail={rowDetail} body={rowBody} bodyStatus={rowBodyStatus} onRetry={onRetry} onMoveToJunk={onMoveToJunk} onAction={onAction} isOpen={isOpen} fill={fill} />
+                  )}
+                </Reveal>
+              ) : (
+                <button
+                  type="button"
+                  className="pr-thread__collapsed"
+                  aria-expanded={false}
+                  onClick={() => { setToggled((t) => toggleRow(t, message.id)); }}
+                >
+                  <CollapsedRow message={message} threadSubject={threadSubject} preview={previews.get(message.id) ?? null} />
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </>
   );
 }
 
@@ -412,11 +448,12 @@ function Reveal({ animate, children }: { animate: boolean; children: ReactNode }
 /** A collapsed thread row, one line: avatar, sender name, the first words they wrote, the date. */
 function CollapsedRow({ message, threadSubject, preview }: { message: MessageSummary; threadSubject: string | null; preview: MessageBody | null }) {
   const from = header(preview, 'From');
-  const name = from === null ? collapsedSummary(message, threadSubject) : collapsedSummary({ from: displayName(from), subject: message.subject }, threadSubject);
-  const snippet = snippetOf(preview?.text);
+  const sender = from === null ? (message.fromName ?? message.from) : displayName(from);
+  const name = collapsedSummary({ from: sender, subject: message.subject }, threadSubject);
+  const snippet = snippetOf(preview?.text) ?? message.snippet ?? null;
   return (
     <>
-      <Avatar name={from === null ? (message.from ?? '?') : displayName(from)} size="sm" />
+      <Avatar name={sender ?? '?'} size="sm" tint="auto" className="pr-thread__avatar" />
       <span className="pr-thread__collapsed-main">
         <span className="pr-thread__collapsed-summary">{name}</span>
         {snippet === null ? null : <span className="pr-thread__snippet">{snippet}</span>}
@@ -430,32 +467,13 @@ function CollapsedRow({ message, threadSubject, preview }: { message: MessageSum
 
 // --- One message's content: header, exception chips, body, attachments, delivery -----------------
 
-function Attachments({ messageId, body }: { messageId: string; body: MessageBody | null }) {
-  const attachments = body?.attachments.filter((a) => a.disposition === 'attachment' || a.filename !== null) ?? [];
-  if (attachments.length === 0) return null;
-  return (
-    <section aria-label="Attachments" className="pr-reader__attachments">
-      <ul className="pr-attachments">
-        {attachments.map((a) => (
-          <li key={a.partId}>
-            <a className="pr-attachment" href={attachmentUrl(messageId, a.partId)} download={a.filename ?? `part-${a.partId}`}>
-              <PaperclipIcon />
-              <span className="pr-attachment__name">{a.filename ?? `Part ${a.partId}`}</span>
-              <span className="pr-attachment__size">{byteSize(a.size)}</span>
-            </a>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 function MessageContent({
   detail,
   body,
   bodyStatus,
   onRetry,
   onMoveToJunk,
+  onAction,
   isOpen,
   fill,
 }: {
@@ -464,6 +482,8 @@ function MessageContent({
   bodyStatus: OpenMessage['bodyStatus'];
   onRetry: () => void;
   onMoveToJunk?: ((message: MessageDetail) => void) | undefined;
+  /** The toolbar's actions, which act on the open message: its header's Star and Reply. */
+  onAction: (action: ToolbarAction) => void;
   /** The open message: the one the Inspect drawer belongs to, so its chips' Details can open it. */
   isOpen: boolean;
   /** This message's HTML frame fills the rest of the pane (a lone message, or a thread's newest). */
@@ -474,7 +494,8 @@ function MessageContent({
   const ownMailbox = use === 'sent' || use === 'drafts';
   return (
     <div className="pr-msg" data-fill={fill}>
-      <MessageHeader detail={detail} body={body} />
+      {/* Star and Reply act on the open message (MailView's target), so only its header has them. */}
+      <MessageHeader detail={detail} body={body} actions={isOpen ? <HeaderActions detail={detail} onAction={onAction} /> : undefined} />
       <PhishChip
         phish={detail.phish}
         inJunk={use === 'junk'}
@@ -487,7 +508,7 @@ function MessageContent({
       <div className="pr-msg__body">
         <MessageText body={body} status={bodyStatus} onRetry={onRetry} fill={fill} />
       </div>
-      <Attachments messageId={detail.id} body={body} />
+      <AttachmentList messageId={detail.id} attachments={body?.attachments} />
       <DeliverySection messageId={detail.id} mailboxId={detail.mailboxId} />
     </div>
   );

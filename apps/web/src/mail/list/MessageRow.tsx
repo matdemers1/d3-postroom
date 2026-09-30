@@ -1,20 +1,27 @@
-// PST-T-14.5: one message in the list — who (initials avatar and display name; the address beside
-// it only for a first-time sender or a phishing warning), when, what (subject), and a one-line
-// snippet; unread is bold AND a dot, never weight alone. The row is an `option` of the list's
-// listbox and holds nothing focusable: its actions live in RowActions, a sibling toolbar, so the
-// list never nests one interactive control in another (axe `nested-interactive`).
+// PST-T-14.5: one message in the list — who, when, what (subject), and a one-line snippet; unread is
+// bold AND a dot, never weight alone. The row is an `option` of the list's listbox and holds nothing
+// focusable: its actions live in RowActions, a sibling toolbar, so the list never nests one
+// interactive control in another (axe `nested-interactive`).
 //
-// The height is fixed (ROW_HEIGHT) so the list can be virtualised. A leaving row keeps that height
-// — its slot is the placeholder — while its content fades and slides out; the list then drops the
-// slot in one frame, so nothing inside the virtual window animates its layout.
+// PST-T-15.2 (PST-REQ-194): drawn to the redesign canvas — a tinted D3 Avatar (`tint="auto"`, size
+// lg: 40 px, the library size nearest the canvas's 36 px), sender and time, the thread count beside
+// the name, subject, and a third line that leads with the row's Badges (Priority is `attention`,
+// New sender `neutral`) before the snippet. One fixed height still, so the list stays virtual.
+//
+// A leaving row keeps its height — its slot is the placeholder — while its content fades and slides
+// out; the list then drops the slot in one frame, so nothing inside the virtual window animates its
+// layout.
 import { memo } from 'react';
+import { Avatar, Badge } from '@d3cloud/ui';
 import { listDate } from '../format';
 import { PaperclipIcon, StarIcon } from '../icons';
 import { isStarred, isUnread } from '../list';
-import { initials, senderLine, snippetLine, type RowSummary } from './triage';
+import { avatarName, senderLine, snippetLine, type RowSummary } from './triage';
 
 /** Must match .pr-mrow's height in list.css. */
 export const ROW_HEIGHT = 80;
+
+export const PRIORITY = '$Priority';
 
 export const rowId = (id: string): string => `pr-msg-${id}`;
 
@@ -47,14 +54,34 @@ export interface MessageRowProps {
   chip?: string | null;
   /** PST-T-14.11: the action cluster sits on this row — its first two lines leave room for it. */
   acting?: boolean;
+  /** PST-T-15.2: how many listed messages share this one's conversation; shown from 2. */
+  threadCount?: number;
+  /** PST-T-15.2: draw the Priority badge for a $Priority message (not where the list is Priority). */
+  showPriority?: boolean;
 }
 
-export const MessageRow = memo(function MessageRow({ message: m, index, count, cursor, open, checked, leaving, warned, now, chip = null, acting = false }: MessageRowProps) {
+export const MessageRow = memo(function MessageRow({
+  message: m,
+  index,
+  count,
+  cursor,
+  open,
+  checked,
+  leaving,
+  warned,
+  now,
+  chip = null,
+  acting = false,
+  threadCount = 1,
+  showPriority = true,
+}: MessageRowProps) {
   const unread = isUnread(m);
   const starred = isStarred(m);
   const sender = senderLine(m, warned);
   const snippet = snippetLine(m.snippet);
   const expiry = deletesIn(m.expiresAt, now);
+  // One Priority label per row: where the bucket chip already says Priority, the badge would repeat it.
+  const priority = showPriority && m.flags.includes(PRIORITY) && chip === null;
   const classes = ['pr-mrow'];
   if (unread) classes.push('pr-mrow--unread', 'pr-row--unread');
   if (checked === true) classes.push('pr-mrow--checked');
@@ -76,15 +103,15 @@ export const MessageRow = memo(function MessageRow({ message: m, index, count, c
       <span className="pr-mrow__inner">
         <span className="pr-mrow__dot" aria-hidden="true" />
         {/* The avatar is the pointer's way into selection: a click on it toggles the row (x does
-            the same from the keyboard). It is part of the option, not a control of its own. */}
+            the same from the keyboard). It is part of the option, not a control of its own; the
+            check lies over it on hover and while the row is selected. */}
         <span className="pr-mrow__avatar" data-select="true" aria-hidden="true" title={checked === true ? 'Deselect' : 'Select'}>
-          {checked === true ? (
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+          <Avatar name={avatarName(m.fromName, m.from)} size="lg" tint="auto" />
+          <span className="pr-mrow__check">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" focusable="false">
               <path d="m5 12 5 5 9-10" />
             </svg>
-          ) : (
-            initials(m.fromName, m.from)
-          )}
+          </span>
         </span>
         <span className="pr-mrow__body">
           <span className="pr-mrow__line">
@@ -98,14 +125,12 @@ export const MessageRow = memo(function MessageRow({ message: m, index, count, c
                 {sender.address}
               </span>
             )}
-            {sender.warned ? (
-              <span className="pr-mrow__tag pr-mrow__tag--warn">
-                <span className="pr-vh">, </span>Check sender
-              </span>
-            ) : sender.firstTime ? (
-              <span className="pr-mrow__tag">
-                <span className="pr-vh">, </span>First message
-              </span>
+            {threadCount > 1 ? (
+              <Badge size="sm" tone="neutral" className="pr-mrow__count">
+                <span className="pr-vh">, </span>
+                {threadCount}
+                <span className="pr-vh"> messages in this conversation</span>
+              </Badge>
             ) : null}
             <span className="pr-mrow__meta">
               {m.hasAttachments === true ? (
@@ -137,18 +162,31 @@ export const MessageRow = memo(function MessageRow({ message: m, index, count, c
             {m.subject === null || m.subject === '' ? '(no subject)' : m.subject}
           </span>
           <span className="pr-mrow__snippet">
+            {sender.warned ? (
+              <Badge size="sm" tone="attention" className="pr-mrow__badge">
+                <span className="pr-vh">, </span>Check sender
+              </Badge>
+            ) : sender.firstTime ? (
+              <Badge size="sm" tone="neutral" className="pr-mrow__badge">
+                <span className="pr-vh">, </span>New sender
+              </Badge>
+            ) : null}
+            {priority ? (
+              <Badge size="sm" tone="attention" className="pr-mrow__badge">
+                <span className="pr-vh">, </span>Priority
+              </Badge>
+            ) : null}
             {expiry === null ? null : (
               <span className="pr-mrow__expires" title={`Permanently deleted from Trash on ${new Date(m.expiresAt ?? '').toLocaleDateString()}`}>
                 <span className="pr-vh">, </span>
                 {expiry}
-                {snippet === '' ? null : ' · '}
               </span>
             )}
             {snippet === '' ? null : (
-              <>
+              <span className="pr-mrow__text">
                 <span className="pr-vh">, </span>
                 {snippet}
-              </>
+              </span>
             )}
           </span>
         </span>

@@ -242,7 +242,7 @@ const NAV_ICONS: Readonly<Record<string, () => ReactNode>> = {
   Account: PersonIcon,
   'Security & devices': LockIcon,
   Addresses: MaskIcon,
-  Rules: FilterIcon,
+  'Rules & sorting': FilterIcon,
   Templates: TemplatesIcon,
   'Import & export': ImportIcon,
   'Encryption keys': SealIcon,
@@ -424,7 +424,7 @@ function MailNav({ isAdmin }: { isAdmin: boolean }) {
               void navigate(mailPath(mailRoute?.mailboxId ?? null, mailRoute?.messageId ?? null, 'new'));
             }}
           >
-            Compose
+            New message
           </Button>
         </li>
       ) : null}
@@ -451,7 +451,7 @@ function MailNav({ isAdmin }: { isAdmin: boolean }) {
           {groups.safetyNet.length > 0 ? (
             // The sorter's safety net: one click away, and a quiet count of what is new since you
             // last looked — never a loud pill for mail you meant not to see.
-            <SideNavGroup title="Junk and rejects" hideTitle className="pr-nav-quiet">
+            <SideNavGroup title="Filtered out" className="pr-nav-quiet">
               {groups.safetyNet.map((m) => (
                 <MailboxItem key={m.id} mailbox={m} current={currentMailbox === m.id} count={newSinceVisit(m, visits)} countNoun="new since your last visit" />
               ))}

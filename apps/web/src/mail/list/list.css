@@ -14,15 +14,44 @@
   flex: 1;
 }
 
+/* --- Day groups (PST-T-15.2) ---------------------------------------------------------------------- */
+
+/* The listbox's rows sit inset from the column's edges, as rounded pads (the canvas's .pr-rows). */
+.pr-tlist__box {
+  padding-inline: var(--space-8);
+}
+
+/* An ARIA group of the listbox; it draws nothing itself. */
+.pr-group {
+  display: block;
+}
+
+/* Today / Yesterday / Earlier this week / a month: decorative (the group's aria-label names it).
+   The height is GROUP_HEAD_HEIGHT in TriageList.tsx. */
+.pr-group__head {
+  box-sizing: border-box;
+  height: 36px;
+  padding: var(--space-16) var(--space-8) var(--space-4);
+  font-size: var(--text-11);
+  line-height: var(--leading-11);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  color: var(--color-fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
 /* --- MessageRow --------------------------------------------------------------------------------- */
 
 /* The slot: fixed height (ROW_HEIGHT in MessageRow.tsx), and the placeholder a leaving row's
-   content slides off. */
+   content slides off. A rounded pad with no hairline between rows (the canvas's .pr-row). */
 .pr-mrow {
   position: relative;
   box-sizing: border-box;
   height: 80px;
-  border-bottom: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--text-14);
   color: var(--color-fg-muted);
@@ -30,13 +59,15 @@
 }
 
 .pr-mrow__inner {
+  position: relative;
   display: grid;
-  grid-template-columns: var(--space-12) var(--space-32) minmax(0, 1fr);
-  column-gap: var(--space-8);
+  grid-template-columns: var(--space-40) minmax(0, 1fr);
+  column-gap: var(--space-12);
   align-items: start;
   box-sizing: border-box;
   height: 100%;
-  padding: var(--space-12) var(--space-16) var(--space-12) var(--space-6);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-md);
   transition: background-color var(--motion-hover);
 }
 
@@ -44,19 +75,10 @@
   background: var(--color-surface-hover);
 }
 
-/* The open message: a leading accent bar (a border — shadows are not part of the system). */
+/* The open message, and a selected one: the accent-muted fill (the canvas's .pr-row--on). */
 .pr-mrow[aria-current='true'] .pr-mrow__inner,
 .pr-mrow--checked .pr-mrow__inner {
   background: var(--color-accent-muted);
-}
-
-.pr-mrow[aria-current='true']::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: calc(var(--focus-width) * 2);
-  background: var(--color-accent);
-  z-index: 1;
 }
 
 /* The keyboard cursor shows only while the list has keyboard focus — no grey box on row 1 of a
@@ -66,11 +88,13 @@
   outline-offset: calc(var(--focus-width) * -1);
 }
 
+/* Unread: a dot in the row's leading gutter, level with the avatar's middle — and weight, below. */
 .pr-mrow__dot {
-  width: var(--space-8);
-  height: var(--space-8);
-  margin-top: var(--space-12);
-  justify-self: center;
+  position: absolute;
+  top: calc(var(--space-8) + var(--space-20) - var(--space-6) / 2);
+  left: var(--space-2);
+  width: var(--space-6);
+  height: var(--space-6);
   border-radius: var(--radius-full);
 }
 
@@ -78,27 +102,35 @@
   background: var(--color-accent);
 }
 
+/* The avatar (a D3 Avatar, tint="auto") and the check that lies over it: shown on hover, as the
+   way into selection, and while the row is selected. */
 .pr-mrow__avatar {
+  position: relative;
+  display: flex;
+  width: var(--space-40);
+  height: var(--space-40);
+  border-radius: var(--radius-full);
+}
+
+.pr-mrow__check {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--space-32);
-  height: var(--space-32);
-  margin-top: var(--space-2);
   border-radius: var(--radius-full);
-  background: var(--color-accent-muted);
-  color: var(--color-accent);
-  font-size: var(--text-12);
-  font-weight: var(--weight-semibold);
-  transition: background-color var(--motion-hover);
+  background: var(--color-surface-raised);
+  color: var(--color-fg-muted);
+  opacity: 0;
+  transition: opacity var(--motion-hover);
 }
 
-.pr-mrow__avatar:hover {
-  background: var(--color-accent);
-  color: var(--color-accent-contrast);
+.pr-mrow__avatar:hover .pr-mrow__check {
+  opacity: 1;
 }
 
-.pr-mrow--checked .pr-mrow__avatar {
+.pr-mrow--checked .pr-mrow__check {
+  opacity: 1;
   background: var(--color-accent);
   color: var(--color-accent-contrast);
 }
@@ -106,12 +138,13 @@
 .pr-mrow__body {
   display: flex;
   flex-direction: column;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .pr-mrow__line {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-6);
   min-width: 0;
   height: var(--space-20);
@@ -120,7 +153,7 @@
 .pr-mrow__name,
 .pr-mrow__addr,
 .pr-mrow__subject,
-.pr-mrow__snippet {
+.pr-mrow__text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -130,7 +163,8 @@
   flex: 0 0 auto;
   max-width: 70%;
   min-width: 0;
-  color: var(--color-fg-muted);
+  font-weight: var(--weight-medium);
+  color: var(--color-fg);
 }
 
 /* The address gives way first: a first-time sender's name is read whole ("Sam Whitaker") and the
@@ -142,20 +176,10 @@
   color: var(--color-fg-faint);
 }
 
-.pr-mrow__tag {
+/* The thread count and the third line's badges never shrink; the text beside them does. */
+.pr-mrow__count,
+.pr-mrow__badge {
   flex: none;
-  padding: 0 var(--space-6);
-  border-radius: var(--radius-full);
-  background: var(--color-info-muted);
-  color: var(--color-info);
-  font-size: var(--text-11);
-  font-weight: var(--weight-semibold);
-  white-space: nowrap;
-}
-
-.pr-mrow__tag--warn {
-  background: var(--color-warning-muted);
-  color: var(--color-warning);
 }
 
 .pr-mrow__meta {
@@ -180,30 +204,49 @@
 
 .pr-mrow__subject {
   height: var(--space-20);
-  color: var(--color-fg-muted);
+  line-height: var(--space-20);
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+  color: var(--color-fg);
 }
 
+/* The third line: the badges first (Priority, New sender, Check sender), then the snippet. */
 .pr-mrow__snippet {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-width: 0;
   height: var(--space-20);
   font-size: var(--text-13);
   color: var(--color-fg-faint);
 }
 
+.pr-mrow__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .pr-mrow__expires {
+  flex: none;
   color: var(--color-danger);
 }
 
-.pr-mrow--unread .pr-mrow__name,
-.pr-mrow--unread .pr-mrow__subject,
-.pr-mrow--unread .pr-mrow__date {
-  color: var(--color-fg);
+.pr-mrow--unread .pr-mrow__name {
+  font-weight: var(--weight-title);
+}
+
+.pr-mrow--unread .pr-mrow__subject {
   font-weight: var(--weight-semibold);
+}
+
+.pr-mrow--unread .pr-mrow__date {
+  color: var(--color-fg-muted);
+  font-weight: var(--weight-medium);
 }
 
 /* Leaving: the content fades and slides over its fixed slot; the list removes the slot in one
    frame when this ends (MailView's EXIT_MS matches --motion-row-exit). */
 .pr-mrow--leaving {
-  background: var(--color-bg);
   pointer-events: none;
 }
 
@@ -218,18 +261,65 @@
   }
 }
 
+/* --- On a phone (PST-T-15.8, the canvas's PhoneInbox) ---------------------------------------------- */
+
+/* The rows run edge to edge: 16 px either side, square, with a hairline under each that starts at the
+   text column (16 + the 40 px avatar + 12), as a phone list draws it. The unread dot sits in the
+   gutter. The day headings line up with the text's 16 px edge. */
+.pr-mail[data-layout='push'] .pr-tlist__box {
+  padding-inline: 0;
+}
+
+.pr-mail[data-layout='push'] .pr-mrow,
+.pr-mail[data-layout='push'] .pr-mrow__inner {
+  border-radius: 0;
+}
+
+.pr-mail[data-layout='push'] .pr-mrow__inner {
+  padding-inline: var(--space-16);
+}
+
+.pr-mail[data-layout='push'] .pr-mrow::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--space-16) + var(--space-40) + var(--space-12));
+  right: 0;
+  bottom: 0;
+  height: var(--border-width);
+  background: var(--color-border);
+  pointer-events: none;
+}
+
+.pr-mail[data-layout='push'] .pr-mrow__dot {
+  left: var(--space-4);
+}
+
+.pr-mail[data-layout='push'] .pr-group__head {
+  padding-inline: var(--space-16);
+}
+
 /* --- The action cluster ----------------------------------------------------------------------------- */
 
 .pr-rowacts {
   position: absolute;
-  right: var(--space-12);
+  right: var(--space-16);
   z-index: 3;
   display: flex;
   gap: var(--space-2);
   padding: var(--space-2);
-  border: var(--border-width) solid var(--color-border-float);
+  border: var(--border-width) solid transparent;
+  box-shadow: var(--shadow-float);
   border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
+}
+
+/* D-075: a floating layer is surface-raised on the float shadow; the 3:1 edge returns when the
+   shadow cannot carry it (forced colours, more contrast). */
+@media (forced-colors: active), (prefers-contrast: more) {
+  .pr-rowacts {
+    border-color: var(--color-border-float);
+    box-shadow: none;
+  }
 }
 
 .pr-rowacts[data-visible='false'] {
@@ -370,7 +460,7 @@
 /* Reduced motion is a mode, not a downgrade: nothing moves, and a leaving row just goes. */
 @media (prefers-reduced-motion: reduce) {
   .pr-mrow__inner,
-  .pr-mrow__avatar {
+  .pr-mrow__check {
     transition: none;
   }
 

@@ -1,10 +1,15 @@
-/* The composer (PST-T-14.7, PST-REQ-191/192/193; design audit D-04). Borderless header rows with
-   their labels beside them, a body with no box that fills the pane, one footer everywhere. Motion:
-   the composer rises 12px and fades in over --dur-3; a revealed row opens height + opacity over
-   --dur-2; under reduced motion nothing moves. RecipientField's suggestion list is not portalled,
-   so nothing that holds a row clips its overflow once the row has opened. */
+/* The composer (PST-T-14.7, PST-REQ-191/192/193; design audit D-04), drawn to the redesign canvas
+   (PST-T-15.4, PST-REQ-194; Compose.dc.html's .pr-cmp*): a header with its own hairline, borderless
+   rows with their labels beside them and hairlines between them, a body with no box that fills the
+   pane, and one quiet action bar. Hairlines, not boxes; no shadows. The rows, the header and the bar
+   reach the pane's edges (pulling out over its padding, --pr-compose-pad); the text of every row and
+   of the body starts on one line. Motion: the composer rises 12px and fades in over --dur-3; a
+   revealed row opens height + opacity over --dur-2; under reduced motion nothing moves.
+   RecipientField's suggestion list is not portalled, so nothing that holds a row clips its overflow
+   once the row has opened. */
 
 .pr-compose {
+  --pr-compose-pad: var(--space-24);
   animation: pr-compose-in var(--dur-3) var(--ease-out) backwards;
 }
 
@@ -22,37 +27,96 @@
   flex-direction: column;
 }
 
-.pr-compose--pane .pr-compose__form {
+.pr-mail[data-layout='push'] .pr-compose--pane {
+  --pr-compose-pad: var(--space-16);
+}
+
+/* The form fills the pane down to its bottom edge, so the action bar rests there. */
+.pr-compose--pane .pr-compose__form,
+.pr-compose--expanded .pr-compose__form {
   flex: 1;
   min-height: 0;
+  margin-bottom: calc(var(--pr-compose-pad) * -1);
 }
 
 .pr-compose__form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
+}
+
+.pr-compose__sheet {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pr-compose__sheet[hidden] {
+  display: none;
+}
+
+/* --- The header: the title, Minimise, Open full screen, Close ------------------------------------ */
+
+.pr-compose__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 52px;
+  margin: calc(var(--pr-compose-pad) * -1) calc(var(--pr-compose-pad) * -1) 0;
+  padding: 0 var(--space-16) 0 var(--pr-compose-pad);
+  border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .pr-compose__title {
-  margin: 0 0 var(--space-8);
-  font-size: var(--text-20);
-  font-weight: var(--weight-title);
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
 }
 
-/* Inline under the thread: a card below the last message (TF-08). */
+/* Minimise and full screen are a desktop view: the phone's composer already has the whole screen. */
+.pr-mail[data-layout='push'] .pr-compose__view {
+  display: none;
+}
+
+/* Inline under the thread: no card — a hairline above it, the same header, rows and bar (TF-08). */
 .pr-compose--inline {
+  --pr-compose-pad: 0px;
   margin-top: var(--space-16);
-  padding: var(--space-12) var(--space-16);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.pr-compose--inline .pr-compose__head {
+  margin-top: 0;
+  padding-right: 0;
 }
 
 .pr-compose__title--inline {
-  margin: 0;
   font-size: var(--text-13);
-  font-weight: var(--weight-semibold);
   color: var(--color-fg-muted);
+}
+
+/* Minimised: the header alone, its hairline the composer's last line. */
+.pr-compose--minimised .pr-compose__form {
+  flex: none;
+  margin-bottom: 0;
+}
+
+/* Open full screen: the composer over the whole window, the same sheet at a reading width. */
+.pr-compose--expanded {
+  --pr-compose-pad: var(--space-24);
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: var(--space-24);
+  overflow-y: auto;
+  border: 0;
+  background: var(--color-bg);
 }
 
 /* --- Header rows -------------------------------------------------------------------------------- */
@@ -60,6 +124,37 @@
 .pr-compose__rows {
   display: flex;
   flex-direction: column;
+  margin-inline: calc(var(--pr-compose-pad) * -1);
+}
+
+/* RecipientField's row, and ours: text from the pane's padding line, a hairline across the pane. */
+.pr-compose__rows .d3-rcp--row,
+.pr-compose__row {
+  padding-inline: var(--pr-compose-pad) var(--space-16);
+}
+
+.pr-compose--inline .pr-compose__rows .d3-rcp--row,
+.pr-compose--inline .pr-compose__row {
+  padding-right: 0;
+}
+
+/* Focus on a header row is the row's own line turning accent and thickening to the focus width, with
+   its label in the accent — the way a mail header shows where you are typing. A 2px box around a
+   borderless row read as a highlight around nothing (the operator's words: "highlights around odd
+   things"). The inset line is a boundary, not a shadow; forced colours fall back to the outline. */
+.pr-compose__rows .d3-rcp--row:has(.d3-rcp__input:focus-visible),
+.pr-compose__row:focus-within {
+  outline: none;
+  border-bottom-color: var(--color-accent);
+  box-shadow: inset 0 calc(var(--focus-width) * -1) 0 var(--color-accent);
+}
+
+@media (forced-colors: active) {
+  .pr-compose__rows .d3-rcp--row:has(.d3-rcp__input:focus-visible),
+  .pr-compose__row:focus-within {
+    outline: var(--focus-width) solid CanvasText;
+    outline-offset: calc(var(--focus-width) * -1);
+  }
 }
 
 .pr-compose__reveals {
@@ -67,8 +162,10 @@
   gap: var(--space-2);
 }
 
+/* "Cc  Bcc": quiet text buttons at the row's end. */
 .pr-compose__reveal-link {
   color: var(--color-fg-muted);
+  font-weight: var(--weight-medium);
 }
 
 /* A borderless row like RecipientField's: the label beside the value, a 3:1 hairline under both. */
@@ -79,8 +176,10 @@
   gap: var(--space-8);
   min-height: 44px;
   border-bottom: var(--border-width) solid var(--color-border-field);
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
 }
 
+/* The label as RecipientField draws its own, so every row's label reads the same. */
 .pr-compose__row:focus-within .pr-compose__label {
   color: var(--color-accent);
   font-weight: var(--weight-medium);
@@ -97,14 +196,19 @@
 }
 
 /* Subject and the other rows' inputs sit in the row, not in a box of their own: the row's hairline
-   and label identify them; focus keeps its outline. */
-.pr-compose__row .d3-input,
-.pr-compose__row input,
-.pr-compose__row .pr-compose__subject {
+   and label identify them, and the row carries the focus outline. */
+.pr-compose__row .d3-inp {
   flex: 1;
   min-width: 0;
+  padding-inline: 0;
   background: transparent;
   border-color: transparent;
+  outline: none;
+}
+
+.pr-compose__subject {
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
 }
 
 .pr-compose__from {
@@ -130,11 +234,15 @@
   }
 }
 
-/* --- The body ------------------------------------------------------------------------------------- */
+.pr-compose__alert {
+  margin-top: var(--space-12);
+}
+
+/* --- The body: no box, the pane's remaining height ------------------------------------------------ */
 
 .pr-compose__body {
   flex: 1;
-  /* The wrapper is a flex row: the textarea fills it, so the focus ring and the text area are one
+  /* The wrapper is a flex row: the textarea fills it, so the focus line and the text area are one
    box, with no resize grip halfway down the pane (PST-T-14.11). */
   align-items: stretch;
   width: 100%;
@@ -144,6 +252,26 @@
   border-color: transparent;
   font-size: var(--text-14);
   line-height: var(--leading-14);
+}
+
+/* Its text starts on the rows' line, a row's height below the last one. */
+.pr-compose__sheet .pr-compose__body {
+  width: auto;
+  margin: var(--space-8) calc(var(--space-12) * -1) 0;
+  border-radius: 0;
+}
+
+/* Inline, it lines up with the rows without reaching past the thread's padding. */
+.pr-compose--inline .pr-compose__sheet .pr-compose__body {
+  margin-inline: 0;
+  padding-inline: 0;
+}
+
+/* Focused, the body shows no box: a hairline in the accent under the text (not a ring around the pane). */
+.pr-compose__sheet .pr-compose__body:focus-within {
+  border-color: transparent;
+  border-bottom-color: var(--color-accent);
+  outline: none;
 }
 
 .pr-compose__body.d3-inp--area .d3-inp__control {
@@ -179,40 +307,45 @@
   color: var(--color-fg-muted);
 }
 
-/* --- The footer: Send ▾, Aa, ⋯ … status, Discard ---------------------------------------------------- */
+.pr-compose__note {
+  padding-block: var(--space-8);
+}
+
+/* --- The action bar: Send ▾ · Formatting · Insert link · More … Draft saved · Discard ------------- */
 
 .pr-compose__footer {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-8);
-  padding-top: var(--space-12);
+  gap: var(--space-4);
+  margin-top: auto;
+  padding: var(--space-12) 0 0;
   border-top: var(--border-width) solid var(--color-border);
   background: var(--color-bg);
 }
 
-.pr-compose--pane .pr-compose__footer {
+.pr-compose--pane .pr-compose__footer,
+.pr-compose--expanded .pr-compose__footer {
   position: sticky;
-  bottom: calc(var(--space-24) * -1);
+  bottom: calc(var(--pr-compose-pad) * -1);
   z-index: 1;
-  margin-inline: calc(var(--space-24) * -1);
-  padding: var(--space-12) var(--space-24);
-}
-
-.pr-mail[data-layout='push'] .pr-compose--pane .pr-compose__footer {
-  bottom: calc(var(--space-16) * -1);
-  margin-inline: calc(var(--space-16) * -1);
-  padding-inline: var(--space-16);
+  margin-inline: calc(var(--pr-compose-pad) * -1);
+  padding: var(--space-12) var(--space-16) var(--space-12) var(--pr-compose-pad);
 }
 
 .pr-compose--inline .pr-compose__footer {
   background: transparent;
 }
 
-/* Send and its ▾ read as one control. */
 .pr-compose__send {
+  margin-right: var(--space-8);
+}
+
+.pr-compose__tools {
   display: inline-flex;
-  gap: var(--border-width);
+  align-items: center;
+  gap: var(--space-4);
 }
 
 .pr-compose__status {
@@ -220,11 +353,23 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
   gap: var(--space-8);
   min-width: 8rem;
   margin: 0;
-  font-size: var(--text-13);
+  font-size: var(--text-12);
   color: var(--color-fg-muted);
+}
+
+.pr-compose__saved {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.pr-compose__saved svg {
+  width: 13px;
+  height: 13px;
 }
 
 .pr-compose__summary {
@@ -246,15 +391,85 @@
     align-content: center;
   }
 
-  /* Send ▾ · Aa · ⋯ · Discard fit on one line: the status gives up its reserved width. */
+  /* Send ▾ · Formatting · Insert link · More · Discard fit on one line: the status gives up its reserved width. */
   .pr-compose__status {
     flex: 1 1 0;
     min-width: 0;
   }
 
+  .pr-compose__send {
+    margin-right: 0;
+  }
+
   .pr-compose__discard {
     margin-left: auto;
   }
+}
+
+/* --- The phone's sheet (PST-T-15.8, the canvas's PhoneCompose) -------------------------------------- */
+
+/* A new message or a resumed draft is the whole screen, with one bar at its top: Cancel on the left,
+   the title centred, a round Send on the right. It sticks at the pane's padding edge like the header
+   it replaces, and pulls out over the pane's padding to span it. */
+.pr-mail[data-layout='push'] .pr-compose__sheetbar {
+  position: sticky;
+  top: calc(var(--pr-compose-pad) * -1);
+  z-index: 2;
+  display: grid;
+  flex: none;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 56px;
+  margin: calc(var(--pr-compose-pad) * -1) calc(var(--pr-compose-pad) * -1) 0;
+  padding: var(--space-4) var(--space-8);
+  border-bottom: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.pr-mail[data-layout='push'] .pr-compose__cancel {
+  justify-self: start;
+  color: var(--color-accent);
+  font-size: var(--text-16);
+  font-weight: var(--weight-regular);
+}
+
+.pr-mail[data-layout='push'] .pr-compose__title--sheet {
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-16);
+  line-height: var(--leading-16);
+}
+
+/* The 44 px target, and in it the 32 px accent disc that carries the arrow. */
+.pr-mail[data-layout='push'] .pr-compose__sheetsend {
+  justify-self: end;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+}
+
+.pr-mail[data-layout='push'] .pr-compose__sheetsend > span {
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  transition: background-color var(--motion-hover);
+}
+
+.pr-mail[data-layout='push'] .pr-compose__sheetsend:hover:not(:disabled) {
+  background: transparent;
+}
+
+.pr-mail[data-layout='push'] .pr-compose__sheetsend:hover:not(:disabled) > span {
+  background: var(--color-accent-hover);
 }
 
 @media (prefers-reduced-motion: reduce) {

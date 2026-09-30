@@ -3,12 +3,15 @@
 // verifies against. Generate an OpenPGP key (Ed25519 + X25519), import an armored key or a PEM
 // certificate (with its private key, it is yours), export either half (the private half after a
 // fresh step-up), revoke your own, remove a contact's. Every change is audited on the server.
-import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
+import '../settings/settings.css';
+import { type ReactNode, type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
   Button,
   Cluster,
+  DataList,
+  DataListRow,
   EmptyState,
   FormActions,
   FormField,
@@ -21,9 +24,7 @@ import {
   Section,
   Select,
   Stack,
-  Table,
   Textarea,
-  type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, api, describeError } from '../api';
 import { useOptionalMail } from '../mail/MailContext';
@@ -236,70 +237,64 @@ export function Keys() {
       });
   };
 
-  const base: TableColumn<CryptoKeyJson>[] = [
-    { key: 'address', header: 'Address', cell: (k) => k.address },
-    { key: 'kind', header: 'Kind', cell: (k) => KIND_LABEL[k.kind] },
-    { key: 'algorithm', header: 'Algorithm', cell: (k) => k.algorithm },
-    { key: 'fingerprint', header: 'Fingerprint', cell: (k) => <code>{formatFingerprint(k.fingerprint)}</code> },
-    { key: 'status', header: 'Status', cell: (k) => <StatusBadge keyRow={k} /> },
-    { key: 'created', header: 'Added', cell: (k) => when(k.createdAt) },
-  ];
+  // PST-T-15.6: a key is a row — address, what it is and its fingerprint, its status, its actions —
+  // rather than a seven-column table squeezed into the 680px settings column.
+  const keyRow = (k: CryptoKeyJson, actions: ReactNode) => (
+    <DataListRow
+      key={k.id}
+      truncate={false}
+      title={k.address}
+      description={
+        <>
+          {`${KIND_LABEL[k.kind]} · ${k.algorithm} · added ${when(k.createdAt)}`}
+          <code className="pr-key-fpr">{formatFingerprint(k.fingerprint)}</code>
+        </>
+      }
+      meta={<StatusBadge keyRow={k} />}
+      actions={actions}
+    />
+  );
 
-  const ownColumns: TableColumn<CryptoKeyJson>[] = [
-    ...base,
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'end',
-      cell: (k) => (
-        <Cluster gap="4">
-          <Button size="sm" variant="ghost" aria-label={`Export the public key for ${k.address}`} onClick={() => { exportPublic(k); }}>
-            Export public
-          </Button>
-          {k.hasPrivate ? (
-            <Button size="sm" variant="ghost" aria-label={`Export the private key for ${k.address}`} onClick={() => { setExportPass(''); setExportError(null); setStepUp(false); setExporting(k); }}>
-              Export private
-            </Button>
-          ) : null}
-          {k.revokedAt === null ? (
-            <Button size="sm" variant="danger-ghost" aria-label={`Revoke the key for ${k.address}`} onClick={() => { setReason('none'); setRevoking(k); }}>
-              Revoke
-            </Button>
-          ) : null}
-        </Cluster>
-      ),
-    },
-  ];
+  const ownActions = (k: CryptoKeyJson) => (
+    <Cluster gap="4">
+      <Button size="sm" variant="ghost" aria-label={`Export the public key for ${k.address}`} onClick={() => { exportPublic(k); }}>
+        Export public
+      </Button>
+      {k.hasPrivate ? (
+        <Button size="sm" variant="ghost" aria-label={`Export the private key for ${k.address}`} onClick={() => { setExportPass(''); setExportError(null); setStepUp(false); setExporting(k); }}>
+          Export private
+        </Button>
+      ) : null}
+      {k.revokedAt === null ? (
+        <Button size="sm" variant="danger-ghost" aria-label={`Revoke the key for ${k.address}`} onClick={() => { setReason('none'); setRevoking(k); }}>
+          Revoke
+        </Button>
+      ) : null}
+    </Cluster>
+  );
 
-  const contactColumns: TableColumn<CryptoKeyJson>[] = [
-    ...base,
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'end',
-      cell: (k) => (
-        <Cluster gap="4">
-          <Button size="sm" variant="ghost" aria-label={`Export the key for ${k.address}`} onClick={() => { exportPublic(k); }}>
-            Export
-          </Button>
-          {k.revokedAt === null ? (
-            <Button size="sm" variant="ghost" aria-label={`Mark the key for ${k.address} revoked`} onClick={() => { setReason('none'); setRevoking(k); }}>
-              Mark revoked
-            </Button>
-          ) : null}
-          <Button size="sm" variant="danger-ghost" aria-label={`Remove the key for ${k.address}`} onClick={() => { remove(k); }}>
-            Remove
-          </Button>
-        </Cluster>
-      ),
-    },
-  ];
+  const contactActions = (k: CryptoKeyJson) => (
+    <Cluster gap="4">
+      <Button size="sm" variant="ghost" aria-label={`Export the key for ${k.address}`} onClick={() => { exportPublic(k); }}>
+        Export
+      </Button>
+      {k.revokedAt === null ? (
+        <Button size="sm" variant="ghost" aria-label={`Mark the key for ${k.address} revoked`} onClick={() => { setReason('none'); setRevoking(k); }}>
+          Mark revoked
+        </Button>
+      ) : null}
+      <Button size="sm" variant="danger-ghost" aria-label={`Remove the key for ${k.address}`} onClick={() => { remove(k); }}>
+        Remove
+      </Button>
+    </Cluster>
+  );
 
   const own = rows?.filter((k) => k.owner === 'own') ?? [];
   const contacts = rows?.filter((k) => k.owner === 'contact') ?? [];
 
   return (
-    <Page>
+    // PST-T-15.6: the settings grid — a 680px column of Section cards.
+    <Page width="narrow">
       <PageHeader
         title="Keys"
         description="OpenPGP keys and S/MIME certificates: yours sign and decrypt, your contacts’ are what mail to them is encrypted with."
@@ -328,7 +323,7 @@ export function Keys() {
                 Generate an OpenPGP key below to sign what you send and decrypt mail encrypted to you.
               </EmptyState>
             ) : (
-              <Table captionHidden caption="Your keys" columns={ownColumns} rows={own} rowKey={(k) => k.id} />
+              <DataList aria-label="Your keys">{own.map((k) => keyRow(k, ownActions(k)))}</DataList>
             )}
           </Section>
           <Section title="Contacts’ keys" description="Mail to these addresses can be encrypted; their signatures verify as a known key.">
@@ -337,7 +332,7 @@ export function Keys() {
                 A contact's key appears here once you import it or receive signed mail from them.
               </EmptyState>
             ) : (
-              <Table captionHidden caption="Contacts’ keys" columns={contactColumns} rows={contacts} rowKey={(k) => k.id} />
+              <DataList aria-label="Contacts’ keys">{contacts.map((k) => keyRow(k, contactActions(k)))}</DataList>
             )}
           </Section>
         </Stack>
@@ -346,10 +341,10 @@ export function Keys() {
       <Section title="Generate an OpenPGP key" description="An Ed25519 signing key with an X25519 encryption subkey. The private half is kept sealed on the server.">
         <form onSubmit={generate}>
           <Stack gap="16">
-            <FormField label="Address" help="One of your own addresses.">
+            <FormField label="Address" width="lg" help="One of your own addresses.">
               <Input appearance="filled" ref={genAddressRef} name="address" type="email" required value={genAddress} onChange={(e) => { setGenAddress(e.target.value); }} />
             </FormField>
-            <FormField label="Name" optional help="Shown in the key’s user ID; default your display name.">
+            <FormField label="Name" width="lg" optional help="Shown in the key’s user ID; default your display name.">
               <Input appearance="filled" name="name" maxLength={200} value={genName} onChange={(e) => { setGenName(e.target.value); }} />
             </FormField>
             <FormActions>
@@ -373,11 +368,11 @@ export function Keys() {
               </FormField>
             ) : null}
             {kindOfImport === 'pgp-secret' || (kindOfImport === 'certificate' && importKey.trim() !== '') ? (
-              <FormField label="Passphrase" optional help="If the private key is protected. Postroom stores it sealed instead, without the passphrase.">
+              <FormField label="Passphrase" width="lg" optional help="If the private key is protected. Postroom stores it sealed instead, without the passphrase.">
                 <PasswordInput value={importPass} autoComplete="off" onChange={(e) => { setImportPass(e.target.value); }} />
               </FormField>
             ) : null}
-            <FormField label="Address" optional help="Which of the key’s addresses this is for, when it has several.">
+            <FormField label="Address" width="lg" optional help="Which of the key’s addresses this is for, when it has several.">
               <Input appearance="filled" value={importAddress} type="email" onChange={(e) => { setImportAddress(e.target.value); }} />
             </FormField>
             <FormActions>

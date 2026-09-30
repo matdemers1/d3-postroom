@@ -10,12 +10,12 @@ import {
   ModalClose,
   Page,
   PageHeader,
-  Stack,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, type AdminSession } from '../api';
 import { Loading, LoadFailed } from './states';
+import '../admin/admin.css';
 
 const when = (iso: string): string =>
   new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -87,15 +87,15 @@ export function AdminSessions() {
       key: 'displayName',
       header: 'Account',
       cell: (s) => (
-        <Stack gap="4">
+        <span className="pr-inline">
           <span>{s.displayName}</span>
           {s.current ? <Badge size="sm">This session</Badge> : null}
-        </Stack>
+        </span>
       ),
     },
     { key: 'method', header: 'Signed in with', cell: (s) => (s.method === 'oidc' ? 'D3 Auth' : 'Password') },
     { key: 'createdAt', header: 'Since', cell: (s) => when(s.createdAt) },
-    { key: 'ip', header: 'From', cell: (s) => s.ip ?? 'Unknown' },
+    { key: 'ip', header: 'From', cell: (s) => (s.ip === null ? <span className="pr-muted">Unknown</span> : <span className="pr-mono">{s.ip}</span>) },
     {
       key: 'actions',
       header: 'Actions',
@@ -135,6 +135,7 @@ export function AdminSessions() {
         <Loading label="Loading sessions" />
       ) : (
         <Table
+          className="pr-admin-table"
           caption="Live sessions"
           captionHidden
           columns={columns}

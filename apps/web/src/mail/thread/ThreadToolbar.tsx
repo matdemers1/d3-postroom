@@ -1,16 +1,18 @@
-// The reading toolbar (PST-T-14.6; design audit VIS-06, MOD-I4, INT-I7). Nine equal text buttons
-// became: one lead (Reply, or Not junk / Rescue / Edit draft where that is the point of the mailbox),
-// the two triage moves labelled (Archive, Delete), the replies and Snooze as icon buttons — each
-// with an accessible name AND a visible tooltip on hover and focus — and a ⋯ menu for the rare ones:
-// Move to…, Mark unread, Star, Inspect message (i), Show original, Print.
+// The reading toolbar (PST-T-14.6; design audit VIS-06, MOD-I4, INT-I7), drawn to the redesign
+// canvas in PST-T-15.3: one 52px row of ghost icon buttons — Archive, Delete, Move, Snooze — each
+// with an accessible name AND a visible tooltip naming its key; then the open message's place in
+// the list ("3 of 48") with up/down to its neighbours (k/j); then ⋯ for the rare ones: Mark unread,
+// Star, Inspect message (i), Show original, Print. Reply, Reply all and Forward left the toolbar for
+// the message header and the quick-reply bar under the thread. Junk, Rejected and Drafts still lead
+// with the one labelled move that is the point of that mailbox: Not junk, Rescue, Edit draft.
 //
 // Inspect stays the modal drawer it always was (InspectDrawer: focus trap, Escape, `i`); only its
 // trigger moved. The ⋯ item and a chip's "Details" call keys.ts's requestInspect(), which the open
 // message's drawer listens for, naming the button that focus goes back to when it closes.
 //
-// A dialog opened from a menu item (Inspect, Move to…) is opened only once the menu has closed: the
-// menu hands focus back to ⋯ as it goes, and a dialog already open would be fighting it for focus.
-// Move to… is a controlled Modal with no trigger; focus returns to ⋯ explicitly (../focusReturn.ts).
+// A dialog opened from a menu item (Inspect) is opened only once the menu has closed: the menu hands
+// focus back to ⋯ as it goes, and a dialog already open would be fighting it for focus. Move is a
+// controlled Modal with no trigger; focus returns to the Move button explicitly (../focusReturn.ts).
 //
 // Two library components cannot nest: Tooltip and MenuTrigger both wrap their one child with a
 // Radix Slot and neither forwards props, so an icon button that opens a menu (⋯, Snooze) gets
@@ -26,28 +28,30 @@ import { requestInspect } from '../keys';
 import { isStarred } from '../list';
 import { useMail } from '../MailContext';
 import { attemptSnooze } from '../Scheduled';
-import { ClockIcon, ForwardIcon, MoreIcon, ReplyAllIcon, ReplyIcon } from './icons';
-import { ACTION_KEY, ACTION_LABEL, toolbarModel, tooltipText, type IconAction } from './view';
+import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, ClockIcon, MoreIcon, MoveIcon, TrashIcon } from './icons';
+import { ACTION_KEY, ACTION_LABEL, positionLabel, positionMoves, readingToolbar, tooltipText, type ListPosition, type TriageAction } from './view';
 
-export type ToolbarAction = 'reply' | 'replyAll' | 'forward' | 'archive' | 'delete' | 'markUnread' | 'star';
+export type ToolbarAction = 'reply' | 'replyAll' | 'forward' | 'archive' | 'delete' | 'markUnread' | 'star' | 'next' | 'prev';
 
 export interface ThreadToolbarProps {
   detail: MessageDetail;
   canArchive: boolean;
   canTrash: boolean;
   onAction: (action: ToolbarAction) => void;
-  /** Moves the open message to another mailbox — Not junk, Rescue and Move to… (absent: hidden). */
+  /** Moves the open message to another mailbox — Not junk, Rescue and Move (absent: hidden). */
   onMoveTo?: ((message: MessageDetail, to: Mailbox) => void) | undefined;
   /** Opens a draft in the composer (absent: Drafts has no Edit draft to lead with). */
   onEditDraft?: ((message: MessageDetail) => void) | undefined;
-  /** The Snooze control, rendered in the icon group where snoozing makes sense. */
+  /** The Snooze control, rendered in the triage group where snoozing makes sense. */
   snooze?: ReactNode;
+  /** The open message's place in the list it was opened from ("3 of 48"); absent or off-list: hidden. */
+  position?: ListPosition | null | undefined;
 }
 
 /** A tooltip for an icon button that is also a menu trigger (see the header comment). */
-export function HintTip({ text, children }: { text: string; children: ReactNode }) {
+export function HintTip({ text, align, children }: { text: string; align?: 'end'; children: ReactNode }) {
   return (
-    <span className="pr-hint">
+    <span className="pr-hint" data-align={align}>
       {children}
       <span className="pr-hint__tip" aria-hidden="true">
         {text}
@@ -56,26 +60,23 @@ export function HintTip({ text, children }: { text: string; children: ReactNode 
   );
 }
 
-const ICON: Record<IconAction, ReactNode> = { reply: <ReplyIcon />, replyAll: <ReplyAllIcon />, forward: <ForwardIcon /> };
+const TRIAGE_ICON: Record<TriageAction, ReactNode> = { archive: <ArchiveIcon />, delete: <TrashIcon /> };
 
-export function ThreadToolbar({ detail, canArchive, canTrash, onAction, onMoveTo, onEditDraft, snooze }: ThreadToolbarProps) {
+export function ThreadToolbar({ detail, canArchive, canTrash, onAction, onMoveTo, onEditDraft, snooze, position }: ThreadToolbarProps) {
   const { mailboxes } = useMail();
   const current = mailboxes?.find((m) => m.id === detail.mailboxId) ?? null;
   const inbox = mailboxes?.find((m) => m.specialUse === 'inbox' || m.name.toUpperCase() === 'INBOX') ?? null;
-  const model = toolbarModel(current?.specialUse);
+  const model = readingToolbar(current?.specialUse);
   const starred = isStarred(detail);
   const [moveOpen, setMoveOpen] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
-  const moveReturn = useFocusReturn(moveOpen, () => moreRef.current);
+  const moveRef = useRef<HTMLButtonElement>(null);
+  const moveReturn = useFocusReturn(moveOpen, () => moveRef.current);
+  const where = positionLabel(position);
+  const moves = positionMoves(position);
 
   let lead: ReactNode = null;
-  if (model.lead === 'reply') {
-    lead = (
-      <Button size="sm" variant="primary" aria-keyshortcuts="r" onClick={() => { onAction('reply'); }}>
-        {ACTION_LABEL.reply}
-      </Button>
-    );
-  } else if ((model.lead === 'notJunk' || model.lead === 'rescue') && onMoveTo !== undefined && inbox !== null) {
+  if ((model.lead === 'notJunk' || model.lead === 'rescue') && onMoveTo !== undefined && inbox !== null) {
     lead = (
       <Button size="sm" variant="primary" onClick={() => { onMoveTo(detail, inbox); }}>
         {ACTION_LABEL[model.lead]}
@@ -90,82 +91,96 @@ export function ThreadToolbar({ detail, canArchive, canTrash, onAction, onMoveTo
   }
 
   const targets = (mailboxes ?? []).filter((m) => m.id !== detail.mailboxId && m.specialUse !== 'drafts' && m.specialUse !== 'sent' && m.name !== 'Snoozed');
+  const canMove = onMoveTo !== undefined && targets.length > 0;
 
   return (
     <div role="toolbar" aria-label="Message actions" className="pr-toolbar" data-lead={model.lead ?? 'none'}>
       <div className="pr-toolbar__group">
         {lead}
-        {model.labelled.map((a) => (
-          <Button
-            key={a}
-            size="sm"
-            variant="ghost"
-            aria-keyshortcuts={a === 'archive' ? 'e' : '#'}
-            disabled={a === 'archive' ? !canArchive : !canTrash}
-            onClick={() => { onAction(a); }}
-          >
-            {ACTION_LABEL[a]}
-          </Button>
-        ))}
-      </div>
-      <div className="pr-toolbar__group pr-toolbar__group--icons">
-        {model.icons.map((a) => (
-          <Tooltip key={a} content={tooltipText(ACTION_LABEL[a], ACTION_KEY[a])}>
-            <IconButton size="sm" variant="ghost" label={ACTION_LABEL[a]} aria-keyshortcuts={ACTION_KEY[a]} icon={ICON[a]} onClick={() => { onAction(a); }} />
+        {model.triage.map((a) => (
+          <Tooltip key={a} side="bottom" content={tooltipText(ACTION_LABEL[a], ACTION_KEY[a])}>
+            <IconButton
+              size="md"
+              variant="ghost"
+              label={ACTION_LABEL[a]}
+              aria-keyshortcuts={ACTION_KEY[a]}
+              icon={TRIAGE_ICON[a]}
+              disabled={a === 'archive' ? !canArchive : !canTrash}
+              onClick={() => { onAction(a); }}
+            />
           </Tooltip>
         ))}
+        {canMove ? (
+          <Tooltip side="bottom" content={tooltipText(ACTION_LABEL.move, ACTION_KEY.move)}>
+            <IconButton
+              ref={moveRef}
+              size="md"
+              variant="ghost"
+              label={ACTION_LABEL.move}
+              icon={<MoveIcon />}
+              aria-haspopup="dialog"
+              onClick={() => {
+                moveReturn.current = moveRef.current;
+                setMoveOpen(true);
+              }}
+            />
+          </Tooltip>
+        ) : null}
         {model.snooze ? snooze : null}
-        <Menu>
-          <HintTip text="More actions">
-            <MenuTrigger>
-              <IconButton ref={moreRef} size="sm" variant="ghost" label="More actions" icon={<MoreIcon />} />
-            </MenuTrigger>
-          </HintTip>
-          <MenuContent align="end">
-            {onMoveTo !== undefined && targets.length > 0 ? (
-              <MenuItem
-                onSelect={() => {
-                  afterMenu(() => {
-                    moveReturn.current = moreRef.current;
-                    setMoveOpen(true);
-                  });
-                }}
-              >
-                Move to…
-              </MenuItem>
-            ) : null}
-            <MenuItem onSelect={() => { onAction('markUnread'); }}>
-              <MenuRow label="Mark unread" hint={ACTION_KEY.markUnread} />
-            </MenuItem>
-            <MenuItem onSelect={() => { onAction('star'); }}>
-              <MenuRow label={starred ? 'Unstar' : 'Star'} hint={ACTION_KEY.star} />
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem
-              onSelect={() => {
-                afterMenu(() => {
-                  requestInspect(moreRef.current);
-                });
-              }}
-            >
-              <MenuRow label="Inspect message" hint={ACTION_KEY.inspect} />
-            </MenuItem>
-            <MenuItem asChild>
-              <a href={rawMessageUrl(detail.id)} download>
-                Show original
-              </a>
-            </MenuItem>
-            <MenuItem
-              onSelect={() => {
-                window.print();
-              }}
-            >
-              Print
-            </MenuItem>
-          </MenuContent>
-        </Menu>
       </div>
-      {onMoveTo !== undefined ? (
+      <span className="pr-toolbar__spacer" />
+      {where === null ? null : (
+        <div className="pr-toolbar__group pr-toolbar__nav">
+          <span className="pr-toolbar__pos" data-testid="list-position">
+            {where}
+          </span>
+          <Tooltip side="bottom" content={tooltipText(ACTION_LABEL.prev, ACTION_KEY.prev)}>
+            <IconButton size="md" variant="ghost" label={ACTION_LABEL.prev} aria-keyshortcuts={ACTION_KEY.prev} icon={<ChevronUpIcon />} disabled={!moves.prev} onClick={() => { onAction('prev'); }} />
+          </Tooltip>
+          <Tooltip side="bottom" content={tooltipText(ACTION_LABEL.next, ACTION_KEY.next)}>
+            <IconButton size="md" variant="ghost" label={ACTION_LABEL.next} aria-keyshortcuts={ACTION_KEY.next} icon={<ChevronDownIcon />} disabled={!moves.next} onClick={() => { onAction('next'); }} />
+          </Tooltip>
+          <span className="pr-toolbar__divider" aria-hidden="true" />
+        </div>
+      )}
+      <Menu>
+        <HintTip text="More actions" align="end">
+          <MenuTrigger>
+            <IconButton ref={moreRef} size="md" variant="ghost" label="More actions" icon={<MoreIcon />} />
+          </MenuTrigger>
+        </HintTip>
+        <MenuContent align="end">
+          <MenuItem onSelect={() => { onAction('markUnread'); }}>
+            <MenuRow label="Mark unread" hint={ACTION_KEY.markUnread} />
+          </MenuItem>
+          <MenuItem onSelect={() => { onAction('star'); }}>
+            <MenuRow label={starred ? 'Unstar' : 'Star'} hint={ACTION_KEY.star} />
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            onSelect={() => {
+              afterMenu(() => {
+                requestInspect(moreRef.current);
+              });
+            }}
+          >
+            <MenuRow label="Inspect message" hint={ACTION_KEY.inspect} />
+          </MenuItem>
+          <MenuItem asChild>
+            <a href={rawMessageUrl(detail.id)} download>
+              Show original
+            </a>
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              window.print();
+            }}
+          >
+            Print
+          </MenuItem>
+        </MenuContent>
+      </Menu>
+      {canMove ? (
         <Modal
           open={moveOpen}
           onOpenChange={setMoveOpen}
@@ -251,8 +266,8 @@ export function SnoozeIconControl({ threadId, snoozed, inInbox, onDone }: { thre
   if (snoozed) {
     return (
       <span className="pr-snooze">
-        <Tooltip content="Unsnooze">
-          <IconButton size="sm" variant="ghost" label="Unsnooze" icon={<ClockIcon />} loading={busy} onClick={() => void run(() => api.unsnoozeThread(threadId), 'Back in Inbox.')} />
+        <Tooltip side="bottom" content="Unsnooze">
+          <IconButton size="md" variant="ghost" label="Unsnooze" icon={<ClockIcon />} loading={busy} onClick={() => void run(() => api.unsnoozeThread(threadId), 'Back in Inbox.')} />
         </Tooltip>
         {failure}
       </span>
@@ -263,7 +278,7 @@ export function SnoozeIconControl({ threadId, snoozed, inInbox, onDone }: { thre
       <Menu>
         <HintTip text="Snooze">
           <MenuTrigger>
-            <IconButton size="sm" variant="ghost" label="Snooze" icon={<ClockIcon />} loading={busy} />
+            <IconButton size="md" variant="ghost" label="Snooze" icon={<ClockIcon />} loading={busy} />
           </MenuTrigger>
         </HintTip>
         <MenuContent aria-label="Snooze until">

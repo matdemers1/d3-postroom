@@ -1,20 +1,7 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
-import {
-  Alert,
-  Badge,
-  Button,
-  EmptyState,
-  FormField,
-  Input,
-  Modal,
-  ModalClose,
-  Page,
-  PageHeader,
-  Stack,
-  Table,
-  type TableColumn,
-} from '@d3cloud/ui';
+import { Alert, Badge, Button, DataList, DataListRow, EmptyState, FormField, Input, Modal, ModalClose, Page, PageHeader, Section } from '@d3cloud/ui';
 import { ApiError, api, describeError, type AccountSession } from '../api';
+import { describeAgent } from './agent';
 import { Loading, LoadFailed } from './states';
 import { SubNav } from './SubNav';
 
@@ -87,42 +74,9 @@ export function Sessions() {
       });
   };
 
-  const columns: TableColumn<AccountSession>[] = [
-    {
-      key: 'device',
-      header: 'Session',
-      cell: (s) => (
-        <Stack gap="4">
-          <span>{s.userAgent ?? 'Unknown device'}</span>
-          {s.current ? <Badge size="sm">This session</Badge> : null}
-        </Stack>
-      ),
-    },
-    { key: 'createdAt', header: 'Signed in', cell: (s) => when(s.createdAt) },
-    { key: 'ip', header: 'From', cell: (s) => s.ip ?? 'Unknown' },
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'end',
-      cell: (s) =>
-        s.current ? null : (
-          <Button
-            variant="danger-ghost"
-            size="sm"
-            data-session-id={s.id}
-            aria-label={`Sign out the session from ${s.ip ?? 'an unknown address'}`}
-            onClick={() => {
-              setConfirming(s);
-            }}
-          >
-            Sign out
-          </Button>
-        ),
-    },
-  ];
-
   return (
-    <Page>
+    // PST-T-15.6: the settings grid — a 680px column, the sessions as rows in one Section card.
+    <Page width="narrow">
       <PageHeader
         title="Browser sessions"
         description="Every browser signed in to Postroom as you, right now. Mail apps are under Devices."
@@ -139,14 +93,33 @@ export function Sessions() {
       ) : sessions === null ? (
         <Loading label="Loading your sessions" />
       ) : (
-        <Table
-          caption="Your live sessions"
-          captionHidden
-          columns={columns}
-          rows={sessions}
-          rowKey={(s) => s.id}
-          empty={<EmptyState kind="empty" heading="No live sessions" size="row" />}
-        />
+        <Section title="Signed in now" description="Signing a session out needs a fresh code from your authenticator.">
+          <DataList aria-label="Your live sessions" empty={<EmptyState kind="empty" heading="No live sessions" headingLevel={3} size="inline" />}>
+            {sessions.map((s) => (
+              <DataListRow
+                key={s.id}
+                title={describeAgent(s.userAgent)}
+                description={`Signed in ${when(s.createdAt)} · from ${s.ip ?? 'an unknown address'}`}
+                meta={s.current ? <Badge size="sm">This session</Badge> : null}
+                actions={
+                  s.current ? null : (
+                    <Button
+                      variant="danger-ghost"
+                      size="sm"
+                      data-session-id={s.id}
+                      aria-label={`Sign out the session from ${s.ip ?? 'an unknown address'}`}
+                      onClick={() => {
+                        setConfirming(s);
+                      }}
+                    >
+                      Sign out
+                    </Button>
+                  )
+                }
+              />
+            ))}
+          </DataList>
+        </Section>
       )}
 
       <Modal
@@ -156,7 +129,7 @@ export function Sessions() {
         }}
         destructive
         title="Sign out this session?"
-        description={confirming === null ? '' : `${confirming.userAgent ?? 'This device'} is signed out immediately.`}
+        description={confirming === null ? '' : `${describeAgent(confirming.userAgent)} is signed out immediately.`}
         footer={
           <>
             <ModalClose>

@@ -1,8 +1,11 @@
-/* The calm thread view (PST-T-14.6, PST-ADR-011). System tokens only (d3-check-usage): no raw
-   colours, no shadows. Motion uses the library's --dur-* / --ease-* tokens; under
-   prefers-reduced-motion the library's global rule zeroes every duration (PST-REQ-193). */
+/* The calm thread view (PST-T-14.6, PST-ADR-011), drawn to the redesign canvas in PST-T-15.3 (Main
+   artboard's right column: .pr-read, .pr-toolbar, .pr-readbody, .pr-subject, .pr-msghead, .pr-prose,
+   .pr-collapsed, .pr-file, .pr-quickreply). System tokens only (d3-check-usage): no raw colours, no
+   shadows except a floating layer's own var(--shadow-float); hairlines instead of boxes. Motion uses
+   the library's --dur-* / --ease-* tokens; under prefers-reduced-motion the library's global rule
+   zeroes every duration (PST-REQ-193). */
 
-/* --- The pane: a flex column with one scroller ------------------------------------------------- */
+/* --- The pane: the toolbar row, then one scroller ------------------------------------------------ */
 
 .pr-reader.pr-reader--open {
   display: flex;
@@ -16,23 +19,15 @@
   margin: var(--space-16) var(--space-24) 0;
 }
 
-.pr-reader__top {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-  padding: var(--space-20) var(--space-24) var(--space-12);
-  border-bottom: var(--border-width) solid var(--color-border);
-}
-
+/* The canvas's .pr-readbody: 32px above, 40px either side, 20px between its blocks. */
 .pr-reader__scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-16);
-  padding: var(--space-16) var(--space-24) var(--space-24);
+  gap: var(--space-20);
+  padding: var(--space-32) var(--space-40) var(--space-24);
   /* j/k: a short fade and nothing more — no entrance (PST-REQ-192). */
   animation: pr-fade var(--dur-1) var(--ease-out) backwards;
 }
@@ -47,27 +42,53 @@
   margin: var(--space-12) var(--space-16) 0;
 }
 
-.pr-mail[data-layout='push'] .pr-reader__top {
-  padding: var(--space-12) var(--space-16) var(--space-8);
-}
-
 .pr-mail[data-layout='push'] .pr-reader__scroll {
+  gap: var(--space-16);
   padding: var(--space-12) var(--space-16) var(--space-16);
 }
 
-/* --- The toolbar ------------------------------------------------------------------------------- */
+/* --- The toolbar: one 52px row of ghost icon buttons --------------------------------------------- */
 
 .pr-toolbar {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-8) var(--space-12);
+  gap: var(--space-4);
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: var(--space-8) var(--space-16);
+  border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .pr-toolbar__group {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-2);
+}
+
+/* Not junk / Rescue / Edit draft: the one labelled move, a little apart from the icons. */
+.pr-toolbar__group > .d3-btn {
+  margin-right: var(--space-8);
+}
+
+.pr-toolbar__spacer {
+  flex: 1;
+}
+
+.pr-toolbar__pos {
+  margin-right: var(--space-8);
+  font-size: var(--text-12);
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pr-toolbar__divider {
+  width: var(--border-width);
+  height: 20px;
+  margin: 0 var(--space-8);
+  background: var(--color-border);
 }
 
 /* A CSS tooltip for an icon button that also opens a menu (ThreadToolbar.tsx's HintTip): the same
@@ -84,7 +105,8 @@
   translate: -50% 0;
   z-index: 60;
   padding: var(--space-6) var(--space-8);
-  border: var(--border-width) solid var(--color-border-float);
+  border: var(--border-width) solid transparent;
+  box-shadow: var(--shadow-float);
   border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
   color: var(--color-fg);
@@ -97,6 +119,15 @@
   transition:
     opacity var(--dur-2) var(--ease-out),
     visibility 0s linear var(--dur-2);
+}
+
+/* D-075: a floating layer is surface-raised on the float shadow; the 3:1 edge returns when the
+   shadow cannot carry it (forced colours, more contrast). */
+@media (forced-colors: active), (prefers-contrast: more) {
+  .pr-hint__tip {
+    border-color: var(--color-border-float);
+    box-shadow: none;
+  }
 }
 
 .pr-hint:hover .pr-hint__tip {
@@ -115,6 +146,19 @@
 
 .pr-hint:has([aria-expanded='true']) .pr-hint__tip {
   display: none;
+}
+
+/* The toolbar is the pane's top row, and the pane clips: its hints open downwards, and ⋯'s (at the
+   right edge) lines up with the button's right edge rather than centring past it. */
+.pr-toolbar .pr-hint__tip {
+  top: calc(100% + var(--space-6));
+  bottom: auto;
+}
+
+.pr-hint[data-align='end'] .pr-hint__tip {
+  left: auto;
+  right: 0;
+  translate: none;
 }
 
 /* A ⋯ row: the action, then its key. */
@@ -146,12 +190,33 @@
   justify-content: flex-start;
 }
 
-/* --- One message ------------------------------------------------------------------------------- */
+/* --- The subject block ---------------------------------------------------------------------------- */
+
+.pr-subject {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.pr-subject__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  margin: 0;
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  color: var(--color-fg-muted);
+}
+
+/* --- One message ---------------------------------------------------------------------------------- */
 
 .pr-msg {
   display: flex;
   flex-direction: column;
-  gap: var(--space-12);
+  gap: var(--space-16);
   min-width: 0;
 }
 
@@ -169,30 +234,55 @@
   min-width: 0;
 }
 
-/* The one-line header. */
+/* Beside the list, everything under a header lines up under the sender's name, not the avatar:
+   36px avatar + 12px gap (the canvas's 52px on its 40px avatar). */
+.pr-mail[data-layout='split'] .pr-msg > :not(.pr-mhead),
+.pr-mail[data-layout='split'] .pr-quickreply {
+  margin-left: var(--space-48);
+}
+
+/* The header: avatar, the name over "to me, …", the time, and Star / Reply on the open message. */
 .pr-mhead__line {
   display: flex;
   align-items: center;
   gap: var(--space-12);
-  min-height: var(--space-32);
   min-width: 0;
+}
+
+/* The library's Avatar comes in 32 and 40; the canvas's header avatar is 36. */
+.pr-mhead__avatar.d3-avt {
+  width: 36px;
+  height: 36px;
+  font-size: var(--text-12);
 }
 
 .pr-mhead__who {
   display: flex;
   flex: 1;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.pr-mhead__nameline {
+  display: flex;
+  align-items: center;
   gap: var(--space-8);
+  max-width: 100%;
   min-width: 0;
 }
 
 .pr-mhead__name {
-  flex: none;
-  max-width: 50%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-14);
+  /* 24px tall: the name opens the person card, and a pointer target is at least 24px (WCAG 2.5.8).
+     inline-block, because an inline box is as tall as its font, whatever its line-height. */
+  display: inline-block;
+  min-height: 24px;
+  line-height: 24px;
   font-weight: var(--weight-semibold);
 }
 
@@ -200,14 +290,19 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  max-width: 100%;
   min-width: 0;
+  margin-left: calc(var(--space-4) * -1);
   padding: 0 var(--space-4);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-fg-muted);
   font: inherit;
-  font-size: var(--text-13);
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  /* The recipients toggle is a target too: 24px tall, however small its text (WCAG 2.5.8). */
+  min-height: 24px;
   cursor: pointer;
 }
 
@@ -234,6 +329,11 @@
   transition: rotate var(--dur-2) var(--ease-out);
 }
 
+.pr-mhead__caret svg {
+  width: 12px;
+  height: 12px;
+}
+
 .pr-mhead__to[aria-expanded='true'] .pr-mhead__caret {
   rotate: 180deg;
 }
@@ -241,10 +341,17 @@
 .pr-mhead__date {
   flex: none;
   border-radius: var(--radius-sm);
-  font-size: var(--text-13);
+  font-size: var(--text-12);
   color: var(--color-fg-muted);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+.pr-mhead__actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .pr-mhead__block {
@@ -252,7 +359,7 @@
   grid-template-columns: max-content 1fr;
   gap: var(--space-4) var(--space-12);
   margin: 0;
-  padding: var(--space-8) var(--space-4) var(--space-4) var(--space-40);
+  padding: var(--space-8) var(--space-4) var(--space-4) var(--space-48);
   font-size: var(--text-13);
 }
 
@@ -327,13 +434,7 @@
   height: auto;
 }
 
-/* Attachments as cards: type tile, name, size. */
-.pr-reader__attachments .pr-attachment {
-  padding: var(--space-8) var(--space-12);
-  background: var(--color-surface);
-}
-
-/* --- The thread: earlier messages as one-line cards ---------------------------------------------- */
+/* --- The thread: earlier messages as one-line hairline cards ------------------------------------ */
 
 .pr-thread {
   list-style: none;
@@ -342,21 +443,25 @@
   display: flex;
   flex: 1 0 auto;
   flex-direction: column;
-  gap: var(--space-8);
+  gap: var(--space-6);
 }
 
-.pr-thread .pr-thread__item {
-  padding: 0;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
+.pr-thread__item {
+  min-width: 0;
 }
 
-.pr-thread .pr-thread__item[data-expanded='true'] {
-  padding: var(--space-12) var(--space-16) var(--space-16);
+/* An expanded message sits apart from the cards around it; two open in a row get a hairline. */
+.pr-thread__item[data-expanded='true']:not(:first-child),
+.pr-thread__item[data-expanded='true'] + .pr-thread__item {
+  margin-top: var(--space-12);
 }
 
-.pr-thread .pr-thread__item[data-fill='true'] {
+.pr-thread__item[data-expanded='true'] + .pr-thread__item[data-expanded='true'] {
+  padding-top: var(--space-20);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.pr-thread__item[data-fill='true'] {
   display: flex;
   flex: 1 0 auto;
   flex-direction: column;
@@ -375,15 +480,16 @@
   flex: 1 0 auto;
 }
 
-.pr-thread .pr-thread__collapsed {
+.pr-thread__collapsed {
   display: flex;
   align-items: center;
   gap: var(--space-12);
+  box-sizing: border-box;
   width: 100%;
   min-height: 44px;
-  padding: 0 var(--space-12);
-  border: 0;
-  border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-12);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-fg);
   font: inherit;
@@ -392,38 +498,124 @@
   transition: background var(--motion-hover);
 }
 
-.pr-thread .pr-thread__collapsed:hover {
+.pr-thread__collapsed:hover {
   background: var(--color-surface-hover);
 }
 
-.pr-thread .pr-thread__collapsed-main {
+.pr-thread__collapsed:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* The library's Avatar comes in 24 and 32; the canvas's collapsed-card avatar is 28. */
+.pr-thread__avatar.d3-avt {
+  width: 28px;
+  height: 28px;
+  font-size: var(--text-11);
+}
+
+.pr-thread__collapsed-main {
   display: flex;
   flex: 1;
-  flex-direction: row;
   align-items: baseline;
   gap: var(--space-8);
   min-width: 0;
   overflow: hidden;
 }
 
-.pr-thread .pr-thread__collapsed-summary {
+.pr-thread__collapsed-summary {
   flex: none;
   /* The name before the snippet: a phone row cut "Priya Shah" at 40% (PST-T-14.11). */
   max-width: 65%;
-  font-size: var(--text-14);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-13);
   font-weight: var(--weight-semibold);
 }
 
-.pr-thread .pr-thread__snippet {
+.pr-thread__snippet {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
 }
 
 .pr-thread__date {
   flex: none;
-  font-size: var(--text-13);
+  font-size: var(--text-12);
   color: var(--color-fg-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- The quick-reply bar ----------------------------------------------------------------------------- */
+
+/* Pushed to the foot of a short thread (the canvas's spacer); a field-like hairline bar holding a
+   quiet "Reply to …" button with its R hint, then Reply all and Forward. */
+.pr-quickreply {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-8);
+  box-sizing: border-box;
+  max-width: 42rem;
+  min-height: 48px;
+  margin-top: auto;
+  padding-right: var(--space-8);
+  border: var(--border-width) solid var(--color-border-field);
+  border-radius: var(--radius-lg);
+}
+
+.pr-quickreply__field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  align-self: stretch;
+  gap: var(--space-12);
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 var(--space-8) 0 var(--space-16);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--color-fg-muted);
+  font: inherit;
+  font-size: var(--text-14);
+  text-align: left;
+  cursor: text;
+  transition: color var(--motion-hover);
+}
+
+.pr-quickreply__field:hover {
+  color: var(--color-fg);
+}
+
+.pr-quickreply__field:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+.pr-quickreply__icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.pr-quickreply__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The library's key cap, in the muted ink so the hint reads in both themes. */
+.pr-quickreply__key.d3-kbd {
+  flex: none;
+  color: var(--color-fg-muted);
 }
 
 /* --- Exception chips (only ever for something wrong) --------------------------------------------- */
@@ -509,13 +701,6 @@
 
 /* At phone width every control owns a 44px target (mobile-targets.css, e2e/tests/mobile.spec.ts). */
 @media (max-width: 767px) {
-  /* The recipient summary drops under the name and chip rather than truncating to "to …". */
-  .pr-mhead__who {
-    flex-wrap: wrap;
-    align-items: center;
-    row-gap: 0;
-  }
-
   .pr-mhead__to,
   .pr-mhead__date {
     display: inline-flex;
@@ -523,6 +708,36 @@
     min-height: 44px;
     min-width: 44px;
   }
+
+  /* The time sits beside the name, not between rows: its 44px box may reach over empty space, never
+     over another control, so only it is pulled up (the recipients toggle stays in its own row — its
+     box overlapping the name's is exactly what the tap-target check refuses). */
+  .pr-mhead__date {
+    margin-block: -10px;
+  }
+
+  .pr-mhead__line {
+    align-items: flex-start;
+  }
+}
+
+/* On the phone the thread's actions are the bottom bar (MobileActionBar.tsx): the header's Star and
+   Reply and the quick-reply bar would only repeat it. */
+.pr-mail[data-layout='push'] .pr-mhead__actions,
+.pr-mail[data-layout='push'] .pr-quickreply {
+  display: none;
+}
+
+/* PST-T-15.8 (the canvas's PhoneThread): on a phone the subject is a 20 px title, then the Priority
+   badge and "N messages" on the line under it. */
+.pr-mail[data-layout='push'] .pr-reader__subject {
+  font-size: var(--text-20);
+  line-height: var(--leading-20);
+}
+
+.pr-mail[data-layout='push'] .pr-subject__meta {
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
 }
 
 /* --- Print: the message, not the app around it ---------------------------------------------------- */
@@ -530,6 +745,8 @@
 @media print {
   .pr-mail__list,
   .pr-toolbar,
+  .pr-mhead__actions,
+  .pr-quickreply,
   .pr-back {
     display: none;
   }
