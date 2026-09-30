@@ -206,13 +206,12 @@ describe('the reading toolbar (VIS-06, INT-I7; the canvas, PST-T-15.3)', () => {
 });
 
 describe('the subject block, the header actions and the quick-reply bar (the canvas, PST-T-15.3)', () => {
-  it('titles the pane, with a Priority badge only when the message is filed there', () => {
-    const plain = renderToStaticMarkup(createElement(SubjectBlock, { subject: 'Acadia?', headingRef: null, priority: false, participants: null }));
+  it('titles the pane; Priority is the header chip, never repeated beside the subject', () => {
+    const plain = renderToStaticMarkup(createElement(SubjectBlock, { subject: 'Acadia?', headingRef: null, participants: null }));
     expect(plain).toMatch(/<h2 id="pr-reader-subject" class="pr-reader__subject" tabindex="-1">Acadia\?<\/h2>/);
-    expect(plain).not.toContain('Priority');
     expect(plain).not.toContain('pr-subject__meta');
-    const full = renderToStaticMarkup(createElement(SubjectBlock, { subject: 'Acadia?', headingRef: null, priority: true, participants: '3 messages · Priya Shah, you' }));
-    expect(full).toContain('data-tone="neutral">Priority</span>');
+    const full = renderToStaticMarkup(createElement(SubjectBlock, { subject: 'Acadia?', headingRef: null, participants: '3 messages · Priya Shah, you' }));
+    expect(full).not.toContain('Priority');
     expect(full).toContain('3 messages · Priya Shah, you');
   });
 

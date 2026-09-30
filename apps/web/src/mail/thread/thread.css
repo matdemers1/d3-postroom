@@ -701,6 +701,13 @@
     align-items: center;
     min-height: 44px;
     min-width: 44px;
+    /* The target is 44px; the line it sits on is not. Pull the box over its neighbours so the name,
+       the recipients and the time keep the header's rhythm rather than stacking 44px rows. */
+    margin-block: -12px;
+  }
+
+  .pr-mhead__line {
+    align-items: flex-start;
   }
 }
 

@@ -2,7 +2,7 @@
 // ReadingPane.tsx so they render to a string in unit tests: the subject block, the quick-reply bar at
 // the foot of the thread, and the open message header's Star and Reply.
 import type { ForwardedRef } from 'react';
-import { Badge, Button, IconButton, Tooltip } from '@d3cloud/ui';
+import { Button, IconButton, Tooltip } from '@d3cloud/ui';
 import type { MessageBody, MessageDetail } from '../../api';
 import { header } from '../format';
 import { isStarred } from '../list';
@@ -13,19 +13,18 @@ import { ACTION_KEY, ACTION_LABEL, quickReplyLabel, readingToolbar, tooltipText 
 
 /**
  * The subject block (the canvas's `.pr-subject`): the heading focus lands on when a message opens,
- * then one quiet line — a Priority badge when the message is filed in Priority (its own `bucket`,
- * never guessed), and for a conversation how many messages and who wrote them.
+ * then one quiet line: for a conversation, how many messages and who wrote them. The Priority label
+ * is the header's bucket chip (with its "why"), so it is not repeated here.
  */
-export function SubjectBlock({ subject, headingRef, priority, participants }: { subject: string; headingRef: ForwardedRef<HTMLHeadingElement>; priority: boolean; participants: string | null }) {
+export function SubjectBlock({ subject, headingRef, participants }: { subject: string; headingRef: ForwardedRef<HTMLHeadingElement>; participants: string | null }) {
   return (
     <header className="pr-subject">
       <h2 id="pr-reader-subject" className="pr-reader__subject" tabIndex={-1} ref={headingRef}>
         {subject}
       </h2>
-      {priority || participants !== null ? (
+      {participants !== null ? (
         <p className="pr-subject__meta">
-          {priority ? <Badge tone="neutral">Priority</Badge> : null}
-          {participants === null ? null : <span data-testid="thread-participants">{participants}</span>}
+          <span data-testid="thread-participants">{participants}</span>
         </p>
       ) : null}
     </header>

@@ -137,7 +137,7 @@ function Services({ tiles, now }: { tiles: HealthTile[]; now: Date }) {
         </span>
       ),
     },
-    { key: 'detail', header: 'Detail', cell: (t) => <span className="pr-mono pr-muted pr-wrap">{t.detail}</span> },
+    { key: 'detail', header: 'Detail', cell: (t) => <span className="pr-muted pr-wrap">{t.detail}</span> },
     {
       key: 'state',
       header: 'Status',
@@ -174,7 +174,7 @@ function Edge({ tiles }: { tiles: HealthTile[] }) {
             <DescriptionItem key={t.id} term={t.label}>
               <span className="pr-health__kv">
                 <TileDot tile={t} />
-                <span className="pr-mono pr-muted">{t.detail}</span>
+                <span className="pr-muted">{t.detail}</span>
               </span>
             </DescriptionItem>
           ))}
@@ -222,7 +222,7 @@ function Deliverability({ dns, dnsFailed, tiles }: { dns: DnsReport | null; dnsF
                   <StatusDot tone={row.status === 'pending' ? 'idle' : s.tone} size="sm">
                     {s.label}
                   </StatusDot>
-                  <span className="pr-mono pr-muted" title={row.reason}>
+                  <span className="pr-muted" title={row.reason}>
                     {row.reason}
                   </span>
                 </span>

@@ -352,7 +352,6 @@ function ThreadConversation({
     <SubjectBlock
       subject={subject}
       headingRef={headingRef}
-      priority={detail.bucket === 'priority'}
       participants={conversation ? participantsLine(thread, me) : null}
     />
   );
