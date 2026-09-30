@@ -30,8 +30,17 @@
 // draft), the title, and a round Send — the same submit as the split button, which the sheet does not
 // draw. Send later…, the reminder and the undo window move into ⋯ More there, so none is lost.
 //
-// There is no Attach: the compose API takes no uploads (a forward attaches the original whole), so
-// the canvas's paperclip is not drawn.
+// PST-T-15.11 (PST-REQ-195, PST-ADR-013) adds attachments: the canvas's paperclip, Attach files,
+// before Formatting in the action bar (on the phone's sheet too — the same bar, its targets 44 px),
+// opening a multi-file picker; files dropped anywhere on the composer (a "Drop to attach" target
+// shows while they are dragged over it) or pasted into the body attach the same way. Each file
+// uploads on its own with progress and becomes a chip under the body — where the reading pane shows
+// a message's attachments, under its text — with Remove, and Retry when it failed. A file past the
+// limit, or one that would take the set past the total or the count (GET /api/compose/limits), is
+// refused before any request. Draft saves and the send carry the held uploads' ids; a draft opened
+// again shows its attachments. Send is DISABLED while a file is uploading (⌘↵ says why), and a failed
+// upload blocks it with a message until it is retried or removed. The rules are pure, in
+// compose/attachments/state.ts; the XHR is compose/attachments/upload.ts.
 //
 // A draft is picked up again when the same composer reopens: a reply, reply-all or forward finds the
 // draft it left for the same message; a draft opened from Drafts (`?compose=draft`, or Edit draft on
@@ -40,7 +49,7 @@
 // After sending, the composer closes back to the message it answered (PST-T-3.15): the server has
 // already filed and threaded the reply by the time send() resolves, so the open thread there shows
 // it without a reload. The mailbox list updates over SSE.
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Alert,
@@ -60,7 +69,7 @@ import {
   useToast,
   type RecipientLoader,
 } from '@d3cloud/ui';
-import { api, ApiError, contactsApi, type Alias, type ComposeKind, type DraftInput, type SavedDraft } from '../api';
+import { api, ApiError, contactsApi, type Alias, type ComposeKind, type ComposeLimits, type DraftInput, type SavedDraft } from '../api';
 import { templatesApi, type TemplateJson } from '../compose/api';
 import { discardDraft, draftsOf, restoreDraft, trashOf, type DiscardOutcome } from './discard';
 import { keysApi, type CryptoKeyJson, type KeyKind } from '../keys/api';
@@ -108,7 +117,31 @@ import {
 } from './compose/fields';
 import { contactSuggestions, fromChoices, fromRecipients, hasFromChoice, toRecipients } from './compose/recipients';
 import { composerKey, forgetDrafts, linkSavedDraft } from './compose/session';
-import { CheckIcon, CloseIcon, CollapseIcon, ExpandIcon, FormatIcon, LinkIcon, MinimiseIcon, RestoreIcon, TrashIcon } from './compose/icons';
+import { CheckIcon, CloseIcon, CollapseIcon, ExpandIcon, FormatIcon, LinkIcon, MinimiseIcon, PaperclipIcon, RestoreIcon, TrashIcon } from './compose/icons';
+import { AttachmentChips } from './compose/attachments/AttachmentChips';
+import {
+  admit,
+  announceDone,
+  announceFailed,
+  announceStart,
+  attachmentRefusalText,
+  DEFAULT_LIMITS,
+  dragHasFiles,
+  failed as uploadFailed,
+  fromSaved,
+  newKey,
+  progressed,
+  removed,
+  retrying,
+  sendBlock,
+  started,
+  succeeded,
+  uploadErrorText,
+  uploadIds,
+  uploading,
+  type AttachmentItem,
+} from './compose/attachments/state';
+import { UploadAborted, uploadAttachment, type UploadHandle } from './compose/attachments/upload';
 import { SecurityModal } from './compose/SecurityModal';
 import { MoreIcon } from './thread/icons';
 import { useMail } from './MailContext';
@@ -205,6 +238,22 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
   const toRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLElement>(null);
+
+  // PST-T-15.11 (PST-REQ-195): attachments. The chips' state is changed only through applyItems(),
+  // which keeps the ref (read by saves, sends and upload callbacks) and the render in step.
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  const attachmentsRef = useRef<AttachmentItem[]>([]);
+  const [limits, setLimits] = useState<ComposeLimits>(DEFAULT_LIMITS);
+  const limitsRef = useRef(limits);
+  limitsRef.current = limits;
+  const [attachNote, setAttachNote] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const [dropping, setDropping] = useState(false);
+  const dragDepth = useRef(0);
+  const fileByKey = useRef(new Map<string, File>());
+  const handles = useRef(new Map<string, UploadHandle>());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachRef = useRef<HTMLButtonElement>(null);
 
   // PST-T-9.2: saved templates via the ; shortcut (PST-REQ-144).
   const [templates, setTemplates] = useState<TemplateJson[] | null>(null);
@@ -341,6 +390,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
 
   const draftInput = (s: ComposeState): DraftInput => ({
     ...fieldsOf(s),
+    attachments: uploadIds(attachmentsRef.current),
     ...(senderRef.current === null ? {} : { from: senderRef.current }),
     mode: identity.current.mode,
     sourceId: identity.current.sourceId,
@@ -393,7 +443,9 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
     timer.current = null;
   };
 
-  // Autosave: a few seconds after the last change.
+  // Autosave: a few seconds after the last change — an attachment held or removed is a change;
+  // upload progress is not.
+  const heldIds = uploadIds(attachments).join(' ');
   useEffect(() => {
     if (version.current === savedVersion.current || finished.current) return;
     cancelTimer();
@@ -402,18 +454,159 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
       void save();
     }, AUTOSAVE_MS);
     return cancelTimer;
-  }, [state, from, save]);
+  }, [state, from, heldIds, save]);
 
   // Closing the composer any way but Discard or Send keeps what was typed.
   useEffect(() => {
     mounted.current = true;
+    const inFlight = handles.current;
     return () => {
       mounted.current = false;
       forgetDrafts(ownKey);
       cancelTimer();
+      // An upload still going when the composer closes is dropped; what was held is saved below.
+      for (const h of inFlight.values()) h.abort();
+      inFlight.clear();
       if (!finished.current && version.current !== savedVersion.current) void save();
     };
   }, [save, ownKey]);
+
+  // The server's limits, for refusing before an upload (PST-REQ-195); its defaults if it cannot say.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .composeLimits()
+      .then((l) => {
+        if (!cancelled) setLimits(l);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const applyItems = (f: (items: AttachmentItem[]) => AttachmentItem[]) => {
+    const next = f(attachmentsRef.current);
+    if (next === attachmentsRef.current) return;
+    attachmentsRef.current = next;
+    setAttachments(next);
+  };
+  const applyItemsRef = useRef(applyItems);
+  applyItemsRef.current = applyItems;
+
+  /** Upload the file behind chip `key`; the chip follows its progress, and holds the id at the end. */
+  const runUpload = (key: string) => {
+    const file = fileByKey.current.get(key);
+    if (file === undefined) return;
+    const handle = uploadAttachment(file, (loaded) => {
+      if (mounted.current) applyItemsRef.current((items) => progressed(items, key, loaded));
+    });
+    handles.current.set(key, handle);
+    handle.done.then(
+      (upload) => {
+        handles.current.delete(key);
+        // Removed while it uploaded, or the composer closed: nothing will send it, so let it go.
+        if (!mounted.current || !attachmentsRef.current.some((a) => a.key === key)) {
+          void api.deleteUpload(upload.id).catch(() => undefined);
+          return;
+        }
+        fileByKey.current.delete(key);
+        version.current += 1;
+        applyItemsRef.current((items) => succeeded(items, key, upload));
+        setAnnouncement(announceDone(upload.filename === '' ? file.name : upload.filename));
+      },
+      (e: unknown) => {
+        handles.current.delete(key);
+        if (e instanceof UploadAborted || !mounted.current) return;
+        const reason = uploadErrorText(e);
+        applyItemsRef.current((items) => uploadFailed(items, key, reason));
+        setAnnouncement(announceFailed(file.name, reason));
+      },
+    );
+  };
+
+  /** Files from the picker, a drop or a paste: what fits is uploaded, what does not is refused first. */
+  const addFiles = (list: FileList | readonly File[] | null | undefined) => {
+    const files = Array.from(list ?? []);
+    if (files.length === 0) return;
+    const { admitted, refusal } = admit(attachmentsRef.current, files, limitsRef.current);
+    setAttachNote(refusal);
+    if (admitted.length === 0) return;
+    setAnnouncement(announceStart(admitted));
+    const keys: string[] = [];
+    applyItems((items) => {
+      let next = items;
+      for (const f of admitted) {
+        const key = newKey();
+        fileByKey.current.set(key, f);
+        keys.push(key);
+        next = started(next, key, f);
+      }
+      return next;
+    });
+    for (const key of keys) runUpload(key);
+  };
+
+  const removeAttachment = (key: string) => {
+    const item = attachmentsRef.current.find((a) => a.key === key);
+    if (item === undefined) return;
+    handles.current.get(key)?.abort();
+    handles.current.delete(key);
+    fileByKey.current.delete(key);
+    applyItems((items) => removed(items, key));
+    setAttachNote(null);
+    setAnnouncement(`${item.name} removed.`);
+    if (item.kind === 'done') {
+      version.current += 1;
+      // After any save in flight that still names it, so that save never finds it gone.
+      const id = item.id;
+      void chain.current.then(() => api.deleteUpload(id)).catch(() => undefined);
+    }
+    // Its Remove button is gone: focus goes back to Attach files, not to the page.
+    requestAnimationFrame(() => {
+      attachRef.current?.focus();
+    });
+  };
+
+  const retryAttachment = (key: string) => {
+    const item = attachmentsRef.current.find((a) => a.key === key);
+    if (item?.kind !== 'failed') return;
+    applyItems((items) => retrying(items, key));
+    setAnnouncement(announceStart([{ name: item.name, size: item.size, type: item.contentType }]));
+    runUpload(key);
+  };
+
+  // Files dragged over the composer: one drop target over the whole of it while they are.
+  const onDragEnter = (e: DragEvent) => {
+    if (!dragHasFiles(e.dataTransfer.types)) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDropping(true);
+  };
+  const onDragOver = (e: DragEvent) => {
+    if (!dragHasFiles(e.dataTransfer.types)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+  const onDragLeave = (e: DragEvent) => {
+    if (!dragHasFiles(e.dataTransfer.types)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDropping(false);
+  };
+  const onDrop = (e: DragEvent) => {
+    if (!dragHasFiles(e.dataTransfer.types)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDropping(false);
+    setView((v) => (v.minimised ? { ...v, minimised: false } : v));
+    addFiles(e.dataTransfer.files);
+  };
+  // Files pasted into the body attach; pasted text is left to the textarea.
+  const onBodyPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (e.clipboardData.files.length === 0) return;
+    e.preventDefault();
+    addFiles(e.clipboardData.files);
+  };
 
   // Pick up a draft this composer left before, or the one it was opened for.
   useEffect(() => {
@@ -423,6 +616,8 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
       draftId.current = saved.id;
       const next = stateFromSaved(saved);
       setState(next);
+      // PST-REQ-195: the draft's attachments, held again as uploads by the server.
+      applyItemsRef.current((items) => [...fromSaved(saved.attachments), ...items]);
       setRows((r) => {
         const opened = initialReveal(next, saved.from, me);
         return { cc: r.cc || opened.cc, bcc: r.bcc || opened.bcc, from: r.from || opened.from };
@@ -459,7 +654,16 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
         .drafts(draft.inReplyTo === null ? {} : { inReplyTo: draft.inReplyTo })
         .then(({ drafts }) => {
           const found = resumableDraft(drafts, draft);
-          if (found !== null) apply(found);
+          if (found === null) return;
+          // The list does not carry attachments; the draft itself does, so a save never drops them.
+          if (found.attachments !== undefined) apply(found);
+          else
+            api
+              .draft(found.id)
+              .then(apply)
+              .catch(() => {
+                apply(found);
+              });
         })
         .catch(() => undefined);
     }
@@ -496,6 +700,12 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
       setError(timed.error);
       return;
     }
+    // PST-REQ-195: never send without a file the person attached.
+    const blocked = sendBlock(attachmentsRef.current);
+    if (blocked !== null) {
+      setError(blocked);
+      return;
+    }
     setSending(true);
     cancelTimer();
     // Let a save in flight land first, so the draft it made is the one the send removes.
@@ -506,6 +716,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
         ...fieldsOf(latest.current),
         from: sender,
         draftId: draftId.current,
+        attachments: uploadIds(attachmentsRef.current),
         ...timed.options,
         ...sendExtra(latest.current),
         ...(crypto === undefined ? {} : { crypto }),
@@ -521,7 +732,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
       onDiscard();
       return;
     } catch (e) {
-      setError(sendErrorText(e));
+      setError(attachmentRefusalText(e, limitsRef.current) ?? sendErrorText(e));
     } finally {
       setSending(false);
     }
@@ -533,6 +744,8 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
     const hasContent = s.to.trim() !== '' || s.cc.trim() !== '' || s.bcc.trim() !== '' || s.subject.trim() !== '' || s.text.trim() !== '';
     finished.current = true;
     cancelTimer();
+    for (const h of handles.current.values()) h.abort();
+    handles.current.clear();
     const trash = trashOf(mailboxes);
     const drafts = draftsOf(mailboxes);
     // What was typed and not yet saved is saved first, so Undo has something to bring back; then
@@ -568,6 +781,8 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
   const summary = optionsSummary({ markdown: state.format === 'markdown', receipt: state.requestReceipt, sign: signOn, encrypt: encryptOn, remind: remind !== null });
 
   const title = loadingDraft ? 'Draft' : TITLES[kind];
+  // Send waits for every upload to land (PST-REQ-195): disabled while one is in flight.
+  const busyUploading = uploading(attachments);
   const titleId = `${uid}-title`;
   const subjectId = `${uid}-subject`;
   const fromId = `${uid}-from`;
@@ -616,8 +831,12 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
   return (
     <section
       ref={rootRef}
-      className={composerClass(placement, view)}
+      className={dropping ? `${composerClass(placement, view)} pr-compose--dropping` : composerClass(placement, view)}
       aria-labelledby={titleId}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       data-compose-mode={kind}
       data-placement={placement}
       data-in-reply-to={state.inReplyTo ?? ''}
@@ -660,7 +879,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
             <HeadingTag id={titleId} className="pr-compose__title pr-compose__title--sheet">
               {title}
             </HeadingTag>
-            <IconButton type="submit" label={sendWord} icon={<SendArrow />} loading={sending} disabled={loadingDraft} className="pr-compose__sheetsend" />
+            <IconButton type="submit" label={sendWord} icon={<SendArrow />} loading={sending} disabled={loadingDraft || busyUploading} className="pr-compose__sheetsend" />
           </div>
         ) : (
         /* The header (PST-T-15.4): the title, then Minimise, Open full screen and Close. */
@@ -778,6 +997,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
             rows={placement === 'inline' ? 6 : 12}
             value={shownBody}
             onChange={(e) => { onBodyChange(e.target.value, e.target.selectionStart); }}
+            onPaste={onBodyPaste}
           />
           {picker !== null && templateMatches.length > 0 ? (
             <ul className="pr-compose__templates" role="listbox" aria-label="Matching templates">
@@ -800,6 +1020,12 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
             </div>
           ) : null}
           {state.forwardOf !== null ? <p className="pr-compose__hint pr-compose__note">The original message is attached in full.</p> : null}
+          <AttachmentChips items={attachments} limits={limits} onRemove={removeAttachment} onRetry={retryAttachment} />
+          {attachNote !== null ? (
+            <Alert tone="warning" dynamic className="pr-attach__refusal">
+              {attachNote}
+            </Alert>
+          ) : null}
           {timing.kind === 'later' ? (
             <div className="pr-compose__row pr-compose__reveal" data-row="send-at">
               <label className="pr-compose__label" htmlFor={`${uid}-at`}>
@@ -858,7 +1084,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
                 label={sendWord}
                 menuLabel="More send options"
                 loading={sending}
-                disabled={loadingDraft}
+                disabled={loadingDraft || busyUploading}
                 title={`${sendWord} (${SEND_CHORD_HINT})`}
                 className="pr-compose__send"
               >
@@ -866,6 +1092,23 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
               </SplitButton>
             )}
             <span className="pr-compose__tools">
+              <Tooltip content="Attach files">
+                <IconButton ref={attachRef} variant="ghost" label="Attach files" icon={<PaperclipIcon />} onClick={() => { fileInputRef.current?.click(); }} />
+              </Tooltip>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                tabIndex={-1}
+                className="pr-attach__input"
+                data-testid="compose-file-input"
+                onChange={(e) => {
+                  addFiles(e.target.files);
+                  // The same file chosen again is a new change.
+                  e.target.value = '';
+                }}
+              />
               <Tooltip content="Formatting">
                 <IconButton variant="ghost" label="Formatting" icon={<FormatIcon />} pressed={formatBar} onClick={() => { setFormatBar((on) => !on); }} />
               </Tooltip>
@@ -910,6 +1153,15 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
           </div>
         </div>
       </form>
+      {/* Upload starts and ends, said once each — never every percent. */}
+      <p className="pr-vh" role="status" aria-live="polite" data-testid="compose-attachment-announce">
+        {announcement}
+      </p>
+      {dropping ? (
+        <div className="pr-attach__drop" aria-hidden="true">
+          Drop to attach
+        </div>
+      ) : null}
       <SecurityModal
         open={securityOpen}
         onOpenChange={setSecurityOpen}

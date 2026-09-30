@@ -1,0 +1,146 @@
+/* The composer's attachments (PST-T-15.11, PST-REQ-195): chips drawn like the reading pane's
+   .pr-file cards (their tile is reused as is), under the body and above the action bar — where the
+   reading pane shows a message's attachments, under its text. System tokens only (d3-check-usage):
+   hairlines, not shadows; the library's focus outline on every control; the progress bar's motion
+   from tokens and none under reduced motion. */
+
+.pr-attach {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-block: var(--space-12);
+}
+
+.pr-attach__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.pr-attach__chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  box-sizing: border-box;
+  min-width: 16rem;
+  max-width: 100%;
+  padding: var(--space-6) var(--space-6) var(--space-6) var(--space-8);
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+}
+
+/* A failed upload is marked by its boundary and says why in words; the colour is not the message. */
+.pr-attach__chip[data-state='failed'] {
+  border-color: var(--color-danger);
+}
+
+.pr-attach__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pr-attach__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+  font-weight: var(--weight-medium);
+}
+
+.pr-attach__meta {
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-attach__chip[data-state='failed'] .pr-attach__meta {
+  color: var(--color-fg);
+  white-space: normal;
+}
+
+/* Uploading: a thin bar along the chip's foot, filled to the share sent. */
+.pr-attach__bar {
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: var(--color-accent-muted);
+}
+
+.pr-attach__bar::after {
+  content: '';
+  display: block;
+  width: var(--pr-attach-progress, 0%);
+  height: 100%;
+  background: var(--color-accent);
+  transition: width var(--dur-1) var(--ease-linear);
+}
+
+.pr-attach__total {
+  margin: 0;
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-attach__refusal {
+  margin-top: var(--space-8);
+}
+
+/* The hidden file input: reached only through Attach files. */
+.pr-attach__input {
+  display: none;
+}
+
+/* --- Dragging files over the composer: one drop target over the whole sheet ------------------------- */
+
+.pr-compose--dropping:not(.pr-compose--expanded) {
+  position: relative;
+}
+
+.pr-attach__drop {
+  position: absolute;
+  inset: var(--space-8);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: calc(var(--border-width) * 2) dashed var(--color-accent);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  color: var(--color-fg);
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
+  pointer-events: none;
+}
+
+/* At phone width the chips stack, each a full-width row with 44px targets (mobile-targets.css grows
+   the Retry and Remove buttons themselves). */
+@media (max-width: 767px) {
+  .pr-attach__list > li {
+    flex: 1 1 100%;
+  }
+
+  .pr-attach__chip {
+    min-width: 0;
+    width: 100%;
+    min-height: 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pr-attach__bar::after {
+    transition: none;
+  }
+}
