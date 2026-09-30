@@ -12,7 +12,8 @@
 // PST-T-15.4 (PST-REQ-194): the composer drawn to the redesign canvas — a "New message" header with
 // Minimise, Open full screen and Close; Send as the library's SplitButton (▾ More send options: Send
 // later…); Formatting, Insert link and More; "Draft saved" and Discard draft on the right — and
-// nothing else by default, axe-clean in both themes.
+// nothing else by default, axe-clean in both themes. PST-T-15.11 adds Attach files before Formatting;
+// its flows are e2e/tests/attachments.spec.ts.
 //
 // Sending needs DKIM keys (submission never sends unsigned), and the e2e stack has no operator step
 // that makes them, so the suite asks for them through the e2e-only POST /api/compose/dev/dkim-keys
@@ -399,7 +400,8 @@ test('the canvas composer: a header with Minimise, full screen and Close; one qu
   await expect(fresh.getByRole('heading', { name: 'New message', level: 2 })).toBeVisible();
 
   // Exactly these controls, and no others, are on screen by default (the To field's own combobox aside).
-  const names = ['Minimise', 'Open full screen', 'Close', 'Cc', 'Bcc', 'Send', 'More send options', 'Formatting', 'Insert link', 'More options', 'Discard draft'];
+  // PST-T-15.11: Attach files (the canvas's paperclip) sits before Formatting.
+  const names = ['Minimise', 'Open full screen', 'Close', 'Cc', 'Bcc', 'Send', 'More send options', 'Attach files', 'Formatting', 'Insert link', 'More options', 'Discard draft'];
   for (const name of names) await expect(fresh.getByRole('button', { name, exact: true })).toBeVisible();
   // The e2e project has no DOM lib: the elements are described structurally, as mobile.spec.ts does.
   type Shown = { checkVisibility(): boolean; getAttribute(name: string): string | null; textContent: string | null };

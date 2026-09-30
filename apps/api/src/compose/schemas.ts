@@ -44,6 +44,14 @@ const Fields = {
   references: z.array(MsgId).max(100).default([]),
   forwardOf: Uuid.nullable().optional().describe('Forward: the id of one of the caller’s messages, attached whole as message/rfc822.'),
   format: ComposeFormat.default('plain').describe('markdown: text is Markdown, sent multipart/alternative with sanitized HTML (PST-REQ-145).'),
+  // PST-T-15.10 (PST-REQ-195, PST-ADR-013): files uploaded with POST /api/compose/uploads.
+  attachments: z
+    .array(Uuid)
+    .max(1000)
+    .optional()
+    .describe(
+      'Upload ids (POST /api/compose/uploads), attached in this order; an id given twice attaches the file twice, and every occurrence counts toward the limits. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits); an upload removed while the message is built is 409 attachment_gone.',
+    ),
 };
 
 /**
@@ -132,6 +140,39 @@ export const Draft = z.object({
 });
 
 export const DraftList = z.object({ drafts: z.array(Draft) });
+
+// PST-T-15.10 (PST-REQ-195, PST-ADR-013): composer attachments.
+
+export const ComposeUpload = z.object({
+  id: Uuid.describe('Pass it in `attachments` of a send or a draft save.'),
+  filename: z.string().describe('The name as given (any path stripped), UTF-8.'),
+  contentType: z.string().describe('type/subtype, lowercased; application/octet-stream when none usable was given.'),
+  size: z.number().int().describe('Bytes, before any transfer encoding.'),
+});
+
+export const OmittedAttachment = z.object({
+  filename: z.string(),
+  size: z.number().int().describe('Decoded bytes.'),
+  reason: z.enum(['too_large', 'too_many']).describe('too_large: over maxAttachmentBytes; too_many: past maxAttachments.'),
+});
+
+export const DraftDetail = Draft.extend({
+  attachments: z.array(ComposeUpload).describe('The draft’s attachments, registered as the caller’s uploads (existing ones reused), in message order. A file the draft holds twice is listed twice.'),
+  omittedAttachments: z
+    .array(OmittedAttachment)
+    .describe('Attachment parts of the draft that were NOT registered (and so cannot be sent on): larger than the per-file limit, or past the most a message may carry.'),
+});
+
+export const UploadParams = z.object({ id: Uuid });
+
+export const ComposeLimits = z.object({
+  maxAttachmentBytes: z.number().int().describe('The largest total of all attachments in one message (and so of one file), in bytes before encoding.'),
+  maxAttachments: z.number().int().describe('The most attachments one message may carry.'),
+});
+
+export type ComposeUploadJson = z.infer<typeof ComposeUpload>;
+export type DraftDetailJson = z.infer<typeof DraftDetail>;
+export type ComposeLimitsJson = z.infer<typeof ComposeLimits>;
 
 // PST-T-9.1: held (undo / scheduled) sends.
 

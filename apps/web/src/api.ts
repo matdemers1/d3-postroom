@@ -20,6 +20,30 @@ export class ApiError extends Error {
   }
 }
 
+/** The header the API requires on every state-changing request (its CSRF guard). `call()` sends it,
+ *  and so does anything that has to go around `call()` — the compose upload, which needs
+ *  XMLHttpRequest for its progress events (PST-T-15.11). */
+export const CSRF_HEADER = { name: 'x-postroom-csrf', value: '1' } as const;
+
+/** An answer's text as JSON when it is JSON, else the text itself; null for an empty body. */
+export function parseBody(text: string): unknown {
+  if (text === '') return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+/** A refusal as an ApiError: the body's `error` code when it has one, else `http_<status>`. */
+export function apiErrorOf(status: number, parsed: unknown): ApiError {
+  const code =
+    typeof parsed === 'object' && parsed !== null && typeof (parsed as { error?: unknown }).error === 'string'
+      ? (parsed as { error: string }).error
+      : `http_${String(status)}`;
+  return new ApiError(status, code, parsed);
+}
+
 export async function call<T>(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
   path: string,
@@ -27,7 +51,7 @@ export async function call<T>(
   extraHeaders: Record<string, string> = {},
 ): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json', ...extraHeaders };
-  if (method !== 'GET') headers['x-postroom-csrf'] = '1';
+  if (method !== 'GET') headers[CSRF_HEADER.name] = CSRF_HEADER.value;
   if (body !== undefined) headers['content-type'] = 'application/json';
   const res = await fetch(path, {
     method,
@@ -35,22 +59,8 @@ export async function call<T>(
     credentials: 'same-origin',
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  const text = await res.text();
-  let parsed: unknown = null;
-  if (text !== '') {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-  if (!res.ok) {
-    const code =
-      typeof parsed === 'object' && parsed !== null && typeof (parsed as { error?: unknown }).error === 'string'
-        ? (parsed as { error: string }).error
-        : `http_${String(res.status)}`;
-    throw new ApiError(res.status, code, parsed);
-  }
+  const parsed = parseBody(await res.text());
+  if (!res.ok) throw apiErrorOf(res.status, parsed);
   return parsed as T;
 }
 
@@ -190,6 +200,10 @@ export const api = {
   drafts: (opts: { inReplyTo?: string } = {}) =>
     call<{ drafts: SavedDraft[] }>('GET', `/api/compose/drafts${opts.inReplyTo === undefined ? '' : `?${new URLSearchParams({ inReplyTo: opts.inReplyTo }).toString()}`}`),
   deleteDraft: (id: string) => call<null>('DELETE', `/api/compose/drafts/${encodeURIComponent(id)}`),
+  // PST-T-15.11 (PST-REQ-195, PST-ADR-013): attachments. The upload itself is uploadAttachment()
+  // in mail/compose/attachments/upload.ts — XMLHttpRequest, for its progress events.
+  composeLimits: () => call<ComposeLimits>('GET', '/api/compose/limits'),
+  deleteUpload: (id: string) => call<null>('DELETE', `${COMPOSE_UPLOADS_PATH}/${encodeURIComponent(id)}`),
 
   // --- Held sends and snooze (PST-T-9.1) ------------------------------------------------------------
   /** With undoSeconds > 0 or sendAt the answer is a held send (202), not a SendResult. */
@@ -399,8 +413,34 @@ export interface ComposeFields {
   forwardOf: string | null;
 }
 
+/** Where a compose attachment is uploaded: the raw file bytes as the request body (PST-ADR-013). */
+export const COMPOSE_UPLOADS_PATH = '/api/compose/uploads';
+
+/** An uploaded attachment, held encrypted until a draft or a send takes it (PST-REQ-195). */
+export interface ComposeUpload {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+}
+
+/** A saved draft's part the composer cannot carry on (too large to send from here). */
+export interface OmittedAttachment {
+  filename: string;
+  size: number;
+  reason: string;
+}
+
+/** The server's attachment limits: bytes across one message's attachments, and how many. */
+export interface ComposeLimits {
+  maxAttachmentBytes: number;
+  maxAttachments: number;
+}
+
 export interface SendInput extends ComposeFields {
   from: string;
+  /** PST-REQ-195: upload ids, in the order they are shown. */
+  attachments?: string[];
   /** The draft this send replaces; removed from Drafts with the send. */
   draftId: string | null;
   /** Undo send: hold this many seconds (0–30) before queueing (PST-T-9.1). */
@@ -445,6 +485,8 @@ export interface SendResult {
 
 export interface DraftInput extends ComposeFields {
   from?: string;
+  /** PST-REQ-195: upload ids, in the order they are shown; the draft keeps them. */
+  attachments?: string[];
   mode: ComposeKind | null;
   sourceId: string | null;
 }
@@ -460,6 +502,10 @@ export interface SavedDraft extends ComposeFields {
   id: string;
   mailboxId: string;
   from: string;
+  /** PST-REQ-195: the draft's attachments, registered again as uploads (GET /drafts/:id only). */
+  attachments?: ComposeUpload[];
+  /** Draft parts too large to carry on: they stay in the saved draft, and are not sent from here. */
+  omittedAttachments?: OmittedAttachment[];
   mode: ComposeKind | null;
   sourceId: string | null;
   savedAt: string;

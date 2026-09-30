@@ -74,6 +74,10 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/compose/pending',
         'POST /api/compose/pending/{id}/undo',
         'PATCH /api/compose/pending/{id}',
+        // PST-T-15.10: composer attachments.
+        'GET /api/compose/limits',
+        'POST /api/compose/uploads',
+        'DELETE /api/compose/uploads/{id}',
         'POST /api/threads/{id}/snooze',
         'DELETE /api/threads/{id}/snooze',
         // PST-T-8.6: the signed .mobileconfig.

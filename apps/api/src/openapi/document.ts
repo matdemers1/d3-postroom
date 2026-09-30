@@ -49,6 +49,8 @@ export interface RouteSpec {
   params?: z.ZodObject;
   query?: z.ZodObject;
   body?: z.ZodType;
+  /** A non-JSON request body, by media type (e.g. a raw file upload, PST-T-15.10). */
+  rawBody?: { description: string; content: Record<string, Json> };
   headers?: { name: string; required: boolean; description: string }[];
   responses: Record<string, ResponseSpec>;
 }
@@ -448,6 +450,7 @@ export function buildOpenApiDocument(routes: readonly RouteSpec[] = ROUTES, comp
     const params = parameters(route);
     if (params.length > 0) op['parameters'] = params;
     if (route.body !== undefined) op['requestBody'] = { required: true, content: { 'application/json': { schema: inputSchema(route.body) } } };
+    else if (route.rawBody !== undefined) op['requestBody'] = { required: true, description: route.rawBody.description, content: route.rawBody.content };
     op['responses'] = responses(route);
     (paths[route.path] ??= {})[route.method] = op;
   }

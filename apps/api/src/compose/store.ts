@@ -37,6 +37,8 @@ export interface Denorm {
   readonly bodyText: string;
   /** The From display name for the list (PST-T-14.2); null or absent when there is none. */
   readonly fromName?: string | null;
+  /** PST-T-15.10: the attached files' names, so the list shows the paperclip and search finds them. */
+  readonly attachmentNames?: readonly string[];
 }
 
 async function writeDenorm(tx: Tx, accountId: string, messageId: string, d: Denorm): Promise<void> {
@@ -53,7 +55,16 @@ async function writeDenorm(tx: Tx, accountId: string, messageId: string, d: Deno
       references: d.references.map(normalizeMsgId).filter((r) => r !== ''),
     },
   });
-  await indexMessage(tx, { messageId, accountId, subject: d.subject, from: d.fromAddress, to: d.to, bodyText: d.bodyText, fromName: d.fromName ?? null });
+  await indexMessage(tx, {
+    messageId,
+    accountId,
+    subject: d.subject,
+    from: d.fromAddress,
+    to: d.to,
+    bodyText: d.bodyText,
+    fromName: d.fromName ?? null,
+    ...(d.attachmentNames === undefined || d.attachmentNames.length === 0 ? {} : { attachmentNames: [...d.attachmentNames] }),
+  });
 }
 
 export interface FiledCopy {

@@ -145,7 +145,7 @@ describe('the composer’s sheet (PhoneCompose)', () => {
 
   it('has Cancel, the title and a round Send that submits the same form as the split button', () => {
     expect(composer).toMatch(/<div className="pr-compose__sheetbar">\s*<Button type="button" variant="ghost" className="pr-compose__cancel" onClick=\{onDiscard\}>\s*Cancel\s*<\/Button>\s*<HeadingTag id=\{titleId\}/);
-    expect(composer).toContain('<IconButton type="submit" label={sendWord} icon={<SendArrow />} loading={sending} disabled={loadingDraft} className="pr-compose__sheetsend" />');
+    expect(composer).toContain('<IconButton type="submit" label={sendWord} icon={<SendArrow />} loading={sending} disabled={loadingDraft || busyUploading} className="pr-compose__sheetsend" />');
     expect(read('mail/MailView.tsx')).toContain('sheet={!split && composesInPane(route.compose)}');
   });
 

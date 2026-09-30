@@ -12,6 +12,11 @@
 // Drafts are real messages in the account's Drafts mailbox (\Draft \Seen), so IMAP clients see them
 // too. Saving again REPLACES the draft: a new message is filed and the old one expunged in the same
 // transaction (a message's bytes are immutable; that is how IMAP clients do it as well).
+//
+// Attachments (PST-T-15.10, PST-REQ-195, PST-ADR-013): files are uploaded first (uploads.ts) and
+// named by id in `attachments` of a send or a draft save. Every path that builds the message — send
+// now, a held send and its Drafts copy, a draft save, and the sign/encrypt path — builds it with the
+// files inside, so the queued blob, the Sent copy, the held blob and the draft each own their bytes.
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { audited, getAuditContext, recordAudit } from '@postroom/audit';
@@ -33,7 +38,8 @@ import { updateMessage } from '../mail/store.js';
 import { renderMarkdownDocument } from './markdown.js';
 import { CryptoRefusal, protectMessage, type BccCopy } from './crypto.js';
 import { buildMdn } from './mdn.js';
-import { bracketMsgId, buildOutgoingStream, buildTextMessage, parseRecipients, type OutgoingMessage } from './message.js';
+import { bracketMsgId, buildOutgoingStream, buildTextMessage, parseRecipients, type OutgoingAttachment, type OutgoingMessage } from './message.js';
+import { AttachmentRefusal, limitsFromEnv, mountUploadRoutes, outgoingAttachments, registerDraftAttachments, resolveAttachments } from './uploads.js';
 import {
   DraftParams,
   DraftQuery,
@@ -44,6 +50,7 @@ import {
   PendingParams,
   PendingPatch,
   SendRequest,
+  type DraftDetailJson,
   type DraftJson,
   type DraftSavedJson,
   type MdnResponseJson,
@@ -171,6 +178,10 @@ export function composeRoutes(deps: ApiDeps): Router {
     return storage;
   };
 
+  // PST-T-15.10: uploads, their limits, and GET /limits.
+  const limits = limitsFromEnv(deps.env);
+  mountUploadRoutes(router, { db, limits, now: rt.now, storageFor });
+
   const reap = async (blobs: BlobStore, shas: readonly (string | null)[]): Promise<void> => {
     for (const sha of shas) if (sha !== null) await blobs.reap(sha).catch(() => undefined);
   };
@@ -208,6 +219,10 @@ export function composeRoutes(deps: ApiDeps): Router {
       res.status(error.status).json({ error: error.code, message: error.message, ...(error.recipients === null ? {} : { recipients: error.recipients }) });
       return true;
     }
+    if (error instanceof AttachmentRefusal) {
+      res.status(error.status).json({ error: error.code, message: error.message });
+      return true;
+    }
     return false;
   };
 
@@ -241,6 +256,9 @@ export function composeRoutes(deps: ApiDeps): Router {
 
         const now = rt.now();
         const hold = holdOf(body, now);
+        // PST-T-15.10: the account's own uploads, within the limits, before anything is opened.
+        const uploads = await resolveAttachments(db, me.accountId, body.attachments, limits, now);
+        const attachments = outgoingAttachments(store.blobs, uploads);
 
         let original: Readable | null = null;
         if (body.forwardOf !== null && body.forwardOf !== undefined) {
@@ -288,6 +306,7 @@ export function composeRoutes(deps: ApiDeps): Router {
           references,
           // An encrypted message's text is not kept in the clear beside its ciphertext (PST-T-12.2).
           bodyText: body.crypto?.encrypt === undefined ? body.text : '',
+          attachmentNames: uploads.map((u) => u.filename),
         };
 
         // PST-T-12.2 (PST-REQ-161): the composed message, signed and/or encrypted; null = as composed.
@@ -296,7 +315,9 @@ export function composeRoutes(deps: ApiDeps): Router {
         let protectedRaw: Buffer | null = null;
         let bccCopies: BccCopy[] = [];
         if (body.crypto !== undefined && (body.crypto.sign !== undefined || body.crypto.encrypt !== undefined)) {
-          const composed = buildOutgoingStream(message, original);
+          // The one place the composed message is collected in memory, attachments included: signing
+          // and encrypting (@postroom/pgp) work on a whole MIME entity. Every other path streams.
+          const composed = buildOutgoingStream(message, original, undefined, attachments);
           const chunks: Buffer[] = [];
           for await (const c of composed) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c as Uint8Array));
           const done = await protectMessage(db, rt.kek, Buffer.concat(chunks), {
@@ -310,7 +331,7 @@ export function composeRoutes(deps: ApiDeps): Router {
           protectedRaw = done.main;
           bccCopies = done.bccCopies;
         }
-        const outgoing = (): Readable => (protectedRaw === null ? buildOutgoingStream(message, original) : Readable.from([protectedRaw]));
+        const outgoing = (): Readable => (protectedRaw === null ? buildOutgoingStream(message, original, undefined, attachments) : Readable.from([protectedRaw]));
         // With Bcc copies, the main copy goes to To/Cc only and each copy to its one address.
         const copyTo = new Set(bccCopies.map((c) => c.address));
         const mainEnvelope = envelope.filter((address) => !copyTo.has(address.toLowerCase()));
@@ -325,7 +346,7 @@ export function composeRoutes(deps: ApiDeps): Router {
                   ...bccCopies.map((c) => ({ role: 'bcc' as const, recipients: [c.address], raw: c.raw })),
                 ];
           try {
-            await holdSend(req, res, { store, message, original, denorm, hold, envelope, forwardOf: body.forwardOf ?? null, draftId: body.draftId ?? null, remindAfterSeconds: body.remindAfterSeconds ?? null, now, outgoing: outgoing(), copies: heldCopies });
+            await holdSend(req, res, { store, message, original, denorm, hold, envelope, forwardOf: body.forwardOf ?? null, draftId: body.draftId ?? null, remindAfterSeconds: body.remindAfterSeconds ?? null, now, outgoing: outgoing(), copies: heldCopies, attachments, attachmentIds: uploads.map((u) => u.id) });
           } finally {
             original?.destroy();
           }
@@ -386,7 +407,7 @@ export function composeRoutes(deps: ApiDeps): Router {
                 entityType: 'message',
                 entityId: copy.id,
                 before: draftRemoved === null ? null : { draftId: draftRemoved },
-                after: { outboundId: accepted.outboundId, messageId: accepted.messageId, sentMailboxId: copy.mailboxId, uid: copy.uid, forwardOf: body.forwardOf ?? null, reminderId },
+                after: { outboundId: accepted.outboundId, messageId: accepted.messageId, sentMailboxId: copy.mailboxId, uid: copy.uid, forwardOf: body.forwardOf ?? null, reminderId, attachments: uploads.map((u) => u.id) },
                 context: ctx,
               });
             },
@@ -489,6 +510,9 @@ export function composeRoutes(deps: ApiDeps): Router {
       outgoing?: Readable;
       /** PST-T-12.7: the separate copies of an encrypted send with Bcc (empty otherwise). */
       copies?: readonly HeldCopy[];
+      /** PST-T-15.10: the files, for the Drafts copy (and the held blob when `outgoing` is absent). */
+      attachments?: readonly OutgoingAttachment[];
+      attachmentIds?: readonly string[];
     },
   ): Promise<void> => {
     const me = currentSession(req);
@@ -502,9 +526,12 @@ export function composeRoutes(deps: ApiDeps): Router {
       { kind: 'account', accountId: me.accountId },
       { action: hold.kind === 'undo' ? 'compose.hold' : 'compose.schedule', entityType: 'pending_send', context: getAuditContext(req) },
       async (tx) => {
-        const held = await store.blobs.put(input.outgoing ?? buildOutgoingStream(message, input.original), { tx });
+        const attachments = input.attachments ?? [];
+        const held = await store.blobs.put(input.outgoing ?? buildOutgoingStream(message, input.original, undefined, attachments), { tx });
         const extra: [string, string][] = input.forwardOf === null ? [] : [[X_FORWARD, input.forwardOf]];
-        const draftRaw = buildTextMessage({ ...message, includeBcc: true, extraHeaders: extra });
+        const draftMessage: OutgoingMessage = { ...message, includeBcc: true, extraHeaders: extra };
+        // The Drafts copy carries the files too, so an undo leaves a draft that reopens with them.
+        const draftRaw = attachments.length === 0 ? buildTextMessage(draftMessage) : buildOutgoingStream(draftMessage, null, undefined, attachments);
         const draftBlob = await store.blobs.put(draftRaw, { tx });
         const copy = await fileCopy(tx, { accountId: me.accountId, use: 'drafts', blobSha256: draftBlob.sha256, size: draftBlob.size, flags: DRAFT_FLAGS, denorm, now, takeReference: false });
         let replaced: string | null = null;
@@ -553,6 +580,7 @@ export function composeRoutes(deps: ApiDeps): Router {
             messageId: message.messageId,
             remindAfterSeconds: input.remindAfterSeconds,
             copies: copies.map((c) => ({ role: c.role, recipients: c.recipients.length })),
+            attachments: input.attachmentIds ?? [],
           },
           result: created,
         };
@@ -665,7 +693,10 @@ export function composeRoutes(deps: ApiDeps): Router {
         date,
         extraHeaders: extra,
       };
-      const raw = buildTextMessage(message);
+      // PST-T-15.10: the draft carries the real attachment parts, so IMAP clients see them too.
+      const uploads = await resolveAttachments(db, me.accountId, body.attachments, limits, date);
+      const attachments = outgoingAttachments(store.blobs, uploads);
+      const raw = attachments.length === 0 ? buildTextMessage(message) : buildOutgoingStream(message, null, undefined, attachments);
       let reaped: string | null = null;
       let heldReaped: string[] = [];
       const saved = await audited(
@@ -695,6 +726,7 @@ export function composeRoutes(deps: ApiDeps): Router {
               inReplyTo,
               references,
               bodyText: body.text,
+              attachmentNames: uploads.map((u) => u.filename),
             },
             now: date,
             takeReference: false,
@@ -707,7 +739,7 @@ export function composeRoutes(deps: ApiDeps): Router {
           return {
             entityId: copy.id,
             before: old === null ? null : { id: old.id, uid: old.uid },
-            after: { id: copy.id, mailboxId: copy.mailboxId, uid: copy.uid, subject: body.subject },
+            after: { id: copy.id, mailboxId: copy.mailboxId, uid: copy.uid, subject: body.subject, attachments: uploads.map((u) => u.id) },
             result: copy,
           };
         },
@@ -797,13 +829,27 @@ export function composeRoutes(deps: ApiDeps): Router {
       if (params === null) return;
       const store = storageFor(res);
       if (store === null) return;
-      const draft = await findOwnDraft(db, currentSession(req).accountId, params.id);
+      const me = currentSession(req);
+      const draft = await findOwnDraft(db, me.accountId, params.id);
       if (draft === null) {
         notFound(res);
         return;
       }
+      const json = await draftJson(store, draft);
+      // PST-T-15.10: the draft's files, registered as uploads so a send or the next save names them by id.
+      const { attachments, omitted } = await registerDraftAttachments({
+        db,
+        blobs: store.blobs,
+        accountId: me.accountId,
+        draftId: draft.id,
+        source: await store.blobs.get(draft.blobSha256),
+        context: getAuditContext(req),
+        now: rt.now(),
+        limits,
+      });
+      const detail: DraftDetailJson = { ...json, attachments, omittedAttachments: omitted };
       res.setHeader('Cache-Control', 'private, no-store');
-      res.json(await draftJson(store, draft));
+      res.json(detail);
     }),
   );
 

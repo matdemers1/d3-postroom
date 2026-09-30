@@ -26,6 +26,7 @@ import { startSesFeedback } from './ses-feedback/index.js';
 import { startReportLoop } from './reports/index.js';
 import { createSummarySweeper, drainSummaries } from './sweep/summary-sweep.js';
 import { createThreadSweeper } from './sweep/thread-sweep.js';
+import { createUploadSweeper, DEFAULT_UPLOAD_MAX_AGE_MS } from './sweep/upload-sweep.js';
 import { startTrainingLoop } from './training/index.js';
 import { startRetentionLoop } from './retention/index.js';
 import { startScheduledLoop } from './scheduled/index.js';
@@ -179,6 +180,29 @@ await runDaemon({
     ctx.onShutdown(async () => {
       clearInterval(exportSweepTimer);
       await exportWorker.stop();
+    });
+
+    // PST-T-15.10 (PST-REQ-195, PST-ADR-013): composer uploads unused for 24 h (COMPOSE_UPLOAD_MAX_AGE_MS)
+    // are deleted and their blob references released. Sends, holds and drafts own their bytes in
+    // their own blobs, so this never loses mail. Its own block and its own shutdown hook.
+    const uploadSweepMs = envInt(ctx.env, 'COMPOSE_UPLOAD_SWEEP_MS', 3_600_000);
+    const uploadSweep = createUploadSweeper({ db, blobs: lazyBlobs, maxAgeMs: envInt(ctx.env, 'COMPOSE_UPLOAD_MAX_AGE_MS', DEFAULT_UPLOAD_MAX_AGE_MS), log: ctx.log });
+    let uploadSweeping = false;
+    const runUploadSweep = (): void => {
+      if (uploadSweeping) return;
+      uploadSweeping = true;
+      uploadSweep()
+        .catch((err: unknown) => {
+          ctx.log('upload-sweep-error', { error: err instanceof Error ? err.message : String(err) });
+        })
+        .finally(() => {
+          uploadSweeping = false;
+        });
+    };
+    runUploadSweep();
+    const uploadSweepTimer = setInterval(runUploadSweep, uploadSweepMs);
+    ctx.onShutdown(() => {
+      clearInterval(uploadSweepTimer);
     });
 
     // PST-T-10.2 (PST-REQ-152): IMAP import from another server, on its own queue and worker (an

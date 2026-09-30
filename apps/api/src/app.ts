@@ -116,7 +116,18 @@ export function createApp(deps: ApiDeps): Express {
   // neither; its authentication is the message signature, checked in the route — and its own body
   // parser, because SNS posts JSON as text/plain. Ahead of the /api chain below, which it never reaches.
   app.use('/api/ses', noStore, auditContext(), mutationAuditGuard(deps.db), sesSnsRoutes(deps));
-  app.use('/api', noStore, auditContext(), express.json({ limit: '1mb' }), mutationAuditGuard(deps.db), csrfGuard(deps));
+  // PST-T-15.10 (PST-ADR-013): a composer upload's body is the file itself, whatever its type — a
+  // .json file arrives as application/json — so the JSON parser never touches it; the route streams it.
+  const jsonBody = express.json({ limit: '1mb' });
+  const json = (req: Request, res: Response, next: NextFunction): void => {
+    // As the router matches it: case-insensitive, a trailing slash allowed.
+    if (req.method === 'POST' && req.path.toLowerCase().replace(/\/+$/, '') === '/compose/uploads') {
+      next();
+      return;
+    }
+    jsonBody(req, res, next);
+  };
+  app.use('/api', noStore, auditContext(), json, mutationAuditGuard(deps.db), csrfGuard(deps));
   app.use('/api/auth', authRoutes(deps));
   if (adminDevEnabled(deps.env)) app.use('/api/admin/dev', requireAdmin(deps), adminDevRoutes(deps));
   app.use('/api/admin/health', requireAdmin(deps), adminHealthRoutes(deps));
