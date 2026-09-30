@@ -7,11 +7,12 @@
 //
 // The File objects themselves are not state: the composer keeps them beside it, by key, so a failed
 // upload can be retried without asking for the file again.
-import { ApiError, serverUnreachable, type ComposeLimits, type ComposeUpload } from '../../../api';
+import { ApiError, serverUnreachable, type ComposeLimits, type ComposeUpload, type DraftInput, type DraftSaved, type OmittedAttachment, type SavedDraft } from '../../../api';
 import { byteSize } from '../../format';
 
-/** What the server says when it cannot be asked (PST-ADR-013's defaults): 20 MiB, 20 files. */
-export const DEFAULT_LIMITS: ComposeLimits = { maxAttachmentBytes: 20 * 1024 * 1024, maxAttachments: 20 };
+/** What the server says when it cannot be asked (PST-ADR-013's defaults): 17 MiB, 20 files. The
+ *  composer always asks (GET /api/compose/limits); this is only its fallback. */
+export const DEFAULT_LIMITS: ComposeLimits = { maxAttachmentBytes: 17 * 1024 * 1024, maxAttachments: 20 };
 
 /** The total line shows from this share of the limit on. */
 export const NEAR_LIMIT = 0.7;
@@ -34,7 +35,9 @@ interface Base {
 export type AttachmentItem =
   | (Base & { kind: 'uploading'; loaded: number })
   | (Base & { kind: 'done'; id: string })
-  | (Base & { kind: 'failed'; reason: string });
+  /** `retryable`: the file is still in hand to upload again. A held upload the server has since
+   *  swept is not — it can only be removed and attached again. */
+  | (Base & { kind: 'failed'; reason: string; retryable: boolean });
 
 export type Attachments = readonly AttachmentItem[];
 
@@ -77,7 +80,7 @@ export function admit<F extends FileFacts>(items: Attachments, files: readonly F
   if (tooBig.length > 0) {
     parts.push(
       tooBig.length === 1
-        ? `${quoteName(tooBig[0])} is ${byteSize(tooBig[0]?.size ?? 0)}, more than the ${max} a message can carry, so it was not attached.`
+        ? `${quoteName(tooBig[0])} is ${distinctSizes(tooBig[0]?.size ?? 0, limits.maxAttachmentBytes)[0]}, more than the ${distinctSizes(tooBig[0]?.size ?? 0, limits.maxAttachmentBytes)[1]} a message can carry, so it was not attached.`
         : `${names(tooBig)} are each more than the ${max} a message can carry, so they were not attached.`,
     );
   }
@@ -88,6 +91,19 @@ export function admit<F extends FileFacts>(items: Attachments, files: readonly F
     parts.push(`A message can carry at most ${String(limits.maxAttachments)} files, so ${names(overCount)} ${overCount.length === 1 ? 'was' : 'were'} not attached.`);
   }
   return { admitted, refusal: parts.length === 0 ? null : parts.join(' ') };
+}
+
+/**
+ * Two sizes that must not read the same when they differ ("20.0 MB, more than the 20.0 MB"): the
+ * usual wording, else two decimals, else exact bytes.
+ */
+export function distinctSizes(a: number, b: number): [string, string] {
+  const plain: [string, string] = [byteSize(a), byteSize(b)];
+  if (a === b || plain[0] !== plain[1]) return plain;
+  const mb = (n: number): string => `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  if (a >= 1024 * 1024 && b >= 1024 * 1024 && mb(a) !== mb(b)) return [mb(a), mb(b)];
+  const exact = (n: number): string => `${n.toLocaleString('en-US')} bytes`;
+  return [exact(a), exact(b)];
 }
 
 function quoteName(f: { name: string } | undefined): string {
@@ -125,12 +141,26 @@ export function succeeded(items: Attachments, key: string, upload: ComposeUpload
 
 /** It could not be uploaded: the chip says why, and offers Retry. */
 export function failed(items: Attachments, key: string, reason: string): AttachmentItem[] {
-  return update(items, key, (a) => (a.kind === 'uploading' ? { key: a.key, name: a.name, size: a.size, contentType: a.contentType, kind: 'failed', reason } : a));
+  return update(items, key, (a) => (a.kind === 'uploading' ? { key: a.key, name: a.name, size: a.size, contentType: a.contentType, kind: 'failed', reason, retryable: true } : a));
 }
+
+/** Held uploads the server no longer has (swept after a day): the chips say so, with no Retry. */
+export function gone(items: Attachments, keys: readonly string[]): AttachmentItem[] {
+  const set = new Set(keys);
+  let next = items as AttachmentItem[];
+  for (const k of set) {
+    next = update(next, k, (a) =>
+      a.kind === 'done' ? { key: a.key, name: a.name, size: a.size, contentType: a.contentType, kind: 'failed', reason: GONE_REASON, retryable: false } : a,
+    );
+  }
+  return next;
+}
+
+export const GONE_REASON = 'No longer on the server. Remove it and attach it again.';
 
 /** Retry: the failed chip is uploading again, from 0. */
 export function retrying(items: Attachments, key: string): AttachmentItem[] {
-  return update(items, key, (a) => (a.kind === 'failed' ? { key: a.key, name: a.name, size: a.size, contentType: a.contentType, kind: 'uploading', loaded: 0 } : a));
+  return update(items, key, (a) => (a.kind === 'failed' && a.retryable ? { key: a.key, name: a.name, size: a.size, contentType: a.contentType, kind: 'uploading', loaded: 0 } : a));
 }
 
 /** Remove: the chip goes, whatever state it was in. */
@@ -156,15 +186,17 @@ export function uploading(items: Attachments): boolean {
 export function sendBlock(items: Attachments): string | null {
   const busy = items.filter((a) => a.kind === 'uploading');
   if (busy.length > 0) return busy.length === 1 ? `Wait for ${quoteName(busy[0])} to finish uploading.` : `Wait for ${String(busy.length)} files to finish uploading.`;
+  const lost = items.filter((a) => a.kind === 'failed' && !a.retryable);
+  if (lost.length > 0) return `${names(lost)} ${lost.length === 1 ? 'is' : 'are'} no longer on the server. Remove ${lost.length === 1 ? 'it' : 'them'} and attach ${lost.length === 1 ? 'it' : 'them'} again before sending.`;
   const bad = items.filter((a) => a.kind === 'failed');
   if (bad.length > 0) return `${names(bad)} could not be uploaded. Retry ${bad.length === 1 ? 'it' : 'them'} or remove ${bad.length === 1 ? 'it' : 'them'} before sending.`;
   return null;
 }
 
-/** Whole percent uploaded, 0–100. An empty file is done as soon as it starts. */
+/** Whole percent uploaded, 0–100. An empty file has nothing left to send: 100. */
 export function percent(item: AttachmentItem): number {
   if (item.kind !== 'uploading') return 100;
-  if (item.size <= 0) return 0;
+  if (item.size <= 0) return 100;
   return Math.max(0, Math.min(100, Math.floor((item.loaded / item.size) * 100)));
 }
 
@@ -172,7 +204,8 @@ export function percent(item: AttachmentItem): number {
 export function totalLine(items: Attachments, limits: ComposeLimits): string | null {
   const total = totalBytes(items);
   if (items.length === 0 || total < limits.maxAttachmentBytes * NEAR_LIMIT) return null;
-  return `${byteSize(total)} of ${byteSize(limits.maxAttachmentBytes)}`;
+  const [used, max] = distinctSizes(total, limits.maxAttachmentBytes);
+  return `${used} of ${max}`;
 }
 
 /** An upload refused or lost, in words for the chip. */
@@ -185,6 +218,9 @@ export function uploadErrorText(error: unknown): string {
       return 'The server refused this file name. Rename the file and attach it again.';
     case 'blobstore_not_configured':
       return 'Postroom is not set up to store files yet.';
+    // The account's outstanding uploads, across every unsent draft (PST-ADR-013).
+    case 'upload_quota_exceeded':
+      return 'Too many attachments waiting — send or remove some first.';
     default:
       if (error.status === 401) return 'You were signed out. Sign in again, then retry.';
       if (error.status === 403) return 'The server refused this upload.';
@@ -200,6 +236,9 @@ export function attachmentRefusalText(error: unknown, limits: ComposeLimits): st
       return `The attachments are more than the ${byteSize(limits.maxAttachmentBytes)} a message can carry. Remove something, then send.`;
     case 'too_many_attachments':
       return `A message can carry at most ${String(limits.maxAttachments)} files. Remove some, then send.`;
+    // An upload vanished between the send being checked and being sent: nothing went.
+    case 'attachment_gone':
+      return 'An attachment was removed — attach it again. Nothing was sent.';
     default:
       return null;
   }
@@ -223,4 +262,136 @@ export function announceFailed(name: string, reason: string): string {
 export function dragHasFiles(types: readonly string[] | DOMStringList | null | undefined): boolean {
   if (types === null || types === undefined) return false;
   return Array.from(types as ArrayLike<string>).includes('Files');
+}
+
+/** A draft part too large to carry on, which stays in the saved draft on the server (PST-ADR-013). */
+export function omittedText(o: Pick<OmittedAttachment, 'filename' | 'size'>): string {
+  return `${o.filename} (${byteSize(o.size)}) stays in the draft on the server but is too large to send from here.`;
+}
+
+/** Whether a paste should attach its files: only when it carries no text. Copying from a spreadsheet,
+ *  a document or a web page puts the text AND a picture of it on the clipboard — that is a text paste. */
+export function pasteAttaches(types: readonly string[] | DOMStringList | null | undefined, fileCount: number): boolean {
+  if (fileCount === 0) return false;
+  const list = types === null || types === undefined ? [] : Array.from(types as ArrayLike<string>);
+  return !list.includes('text/plain') && !list.includes('text/html');
+}
+
+// --- A draft save whose held uploads were swept (PST-T-15.11) ---------------------------------------
+
+/**
+ * The server keeps an upload a day; a draft's parts are registered again as fresh uploads whenever
+ * the draft is read (GET /api/compose/drafts/:id). So a chip saved into the draft can be re-pointed at
+ * its part's fresh upload, matched by name and size, in order. A chip that matches nothing (attached
+ * since the last save) keeps its id.
+ */
+export function remapIds(items: Attachments, fresh: readonly ComposeUpload[]): Map<string, string> {
+  const pool = [...fresh];
+  const out = new Map<string, string>();
+  for (const a of items) {
+    if (a.kind !== 'done') continue;
+    const i = pool.findIndex((u) => u.filename === a.name && u.size === a.size);
+    if (i < 0) continue;
+    const [u] = pool.splice(i, 1);
+    if (u !== undefined) out.set(a.key, u.id);
+  }
+  return out;
+}
+
+/** Re-point held chips at new upload ids, by key (chips removed meanwhile are left out). */
+export function withIds(items: Attachments, ids: ReadonlyMap<string, string>): AttachmentItem[] {
+  let next = items as AttachmentItem[];
+  for (const [key, id] of ids) next = update(next, key, (a) => (a.kind === 'done' && a.id !== id ? { ...a, id } : a));
+  return next;
+}
+
+export interface DraftSaveApi {
+  createDraft(input: DraftInput): Promise<DraftSaved>;
+  replaceDraft(id: string, input: DraftInput): Promise<DraftSaved>;
+  draft(id: string): Promise<SavedDraft>;
+}
+
+export type DraftSaveOutcome =
+  | { ok: true; saved: DraftSaved; ids: Map<string, string>; omitted: OmittedAttachment[] | null }
+  | { ok: false; error: unknown; ids: Map<string, string>; omitted: OmittedAttachment[] | null; goneKeys: string[]; goneText: string | null };
+
+const is404 = (e: unknown): boolean => e instanceof ApiError && e.status === 404;
+
+/** The upload id a refusal names, when it names one. */
+function namedUpload(error: unknown): string | null {
+  if (!(error instanceof ApiError) || typeof error.body !== 'object' || error.body === null) return null;
+  const b = error.body as { id?: unknown; uploadId?: unknown };
+  if (typeof b.uploadId === 'string') return b.uploadId;
+  if (typeof b.id === 'string') return b.id;
+  return null;
+}
+
+/**
+ * Save the draft: create it, or replace `draftId`. A 404 is either the draft gone (sent or discarded
+ * in another tab: a new one is made, as before) or a held upload swept: then the draft is read again,
+ * which registers its parts afresh, the chips are re-pointed at them, and the save is tried once more.
+ * If it still fails, the chips that could be the missing upload are named.
+ */
+export async function saveDraft(api: DraftSaveApi, draftId: string | null, inputFor: (ids: string[]) => DraftInput, items: Attachments): Promise<DraftSaveOutcome> {
+  const ids = new Map<string, string>();
+  let omitted: OmittedAttachment[] | null = null;
+  const current = (): string[] => items.flatMap((a) => (a.kind === 'done' ? [ids.get(a.key) ?? a.id] : []));
+  const put = (id: string | null): Promise<DraftSaved> => (id === null ? api.createDraft(inputFor(current())) : api.replaceDraft(id, inputFor(current())));
+  const fail = (error: unknown, goneKeys: string[] = [], goneText: string | null = null): DraftSaveOutcome => ({ ok: false, error, ids, omitted, goneKeys, goneText });
+  const done = (saved: DraftSaved): DraftSaveOutcome => ({ ok: true, saved, ids, omitted });
+  const held = items.filter((a) => a.kind === 'done');
+
+  let first: unknown;
+  try {
+    return done(await put(draftId));
+  } catch (e) {
+    if (!is404(e)) return fail(e);
+    first = e;
+  }
+
+  /** The chips not re-pointed are the ones that can be missing; name them, or the one the server named. */
+  const missing = (error: unknown): DraftSaveOutcome => {
+    const named = namedUpload(error);
+    const byName = named === null ? undefined : held.find((a) => (ids.get(a.key) ?? a.id) === named);
+    const suspects = byName !== undefined ? [byName] : held.filter((a) => !ids.has(a.key));
+    if (suspects.length === 0) return fail(error);
+    const text =
+      suspects.length === 1
+        ? `The draft was not saved: ${quoteName(suspects[0])} is no longer on the server (an attachment is kept a day before it is saved). Remove it and attach it again.`
+        : `The draft was not saved: ${names(suspects)} are no longer on the server (an attachment is kept a day before it is saved). Remove them and attach them again.`;
+    return fail(error, suspects.map((a) => a.key), text);
+  };
+
+  // No held uploads: the 404 can only be the draft, gone elsewhere — start a new one.
+  if (held.length === 0) {
+    if (draftId === null) return fail(first);
+    try {
+      return done(await api.createDraft(inputFor([])));
+    } catch (e) {
+      return fail(e);
+    }
+  }
+
+  // A new draft that was never saved has no parts to register again.
+  if (draftId === null) return missing(first);
+
+  let fresh: SavedDraft;
+  try {
+    fresh = await api.draft(draftId);
+  } catch (e) {
+    if (!is404(e)) return fail(first);
+    // The draft is gone elsewhere: a new one, with what is held.
+    try {
+      return done(await put(null));
+    } catch (e2) {
+      return is404(e2) ? missing(e2) : fail(e2);
+    }
+  }
+  omitted = fresh.omittedAttachments ?? null;
+  for (const [k, v] of remapIds(items, fresh.attachments ?? [])) ids.set(k, v);
+  try {
+    return done(await put(draftId));
+  } catch (e) {
+    return is404(e) ? missing(e) : fail(e);
+  }
 }
