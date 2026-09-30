@@ -171,6 +171,9 @@ model Account {
   templates  ComposeTemplate[]
   cryptoKeys CryptoKey[]
 
+  // PST-T-15.10: files uploaded in the composer, waiting to be attached (PST-ADR-013).
+  composeUploads ComposeUpload[]
+
   @@map("account")
 }
 
@@ -1439,6 +1442,32 @@ model ComposeTemplate {
 
   @@unique([accountId, shortcut])
   @@map("compose_template")
+}
+
+/// A file uploaded in the composer (PST-T-15.10, PST-REQ-195, PST-ADR-013), waiting to be attached
+/// to a send or a draft by id. Its bytes are an encrypted blob; the row holds one reference on it.
+/// A send, a hold and a draft each build their own message blob with the file inside, so deleting
+/// the row (DELETE /api/compose/uploads/:id, or the worker's sweep once it is untouched for 24 h)
+/// never loses mail. Reopening a draft re-registers its attachments as uploads.
+model ComposeUpload {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String   @map("account_id") @db.Uuid
+  blobSha256  String   @map("blob_sha256")
+  /// The name as the browser gave it (path stripped), UTF-8.
+  filename    String
+  /// `type/subtype`, lowercased; application/octet-stream when the browser gave nothing usable.
+  contentType String   @map("content_type")
+  /// Plaintext bytes (before any transfer encoding).
+  size        Int
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Set when uploaded and each time a send or draft save uses it; the sweep keys on it.
+  lastUsedAt  DateTime @default(now()) @map("last_used_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, blobSha256])
+  @@index([lastUsedAt])
+  @@map("compose_upload")
 }
 
 /// A PGP or S/MIME key (PST-T-12.1/12.2, PST-REQ-160/161). Own keys carry the private half sealed

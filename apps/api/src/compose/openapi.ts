@@ -15,6 +15,10 @@ export const COMPOSE_COMPONENTS: Record<string, z.ZodType> = {
   PendingSendList: C.PendingSendList,
   // PST-T-9.2: RFC 8098 read receipts.
   MdnResponse: C.MdnResponse,
+  // PST-T-15.10: composer attachments.
+  ComposeUpload: C.ComposeUpload,
+  ComposeLimits: C.ComposeLimits,
+  DraftDetail: C.DraftDetail,
   ...SNOOZE_COMPONENTS,
 };
 
@@ -37,11 +41,11 @@ export const COMPOSE_ROUTES: RouteSpec[] = [
       '201': { description: 'Queued and filed in Sent.', schema: 'SendResponse' },
       '202': { description: 'Held (undoSeconds > 0 or sendAt): a copy is in Drafts and the worker queues it at releaseAt, unless it is undone first.', schema: 'PendingSend' },
       ...COMMON,
-      '400': err('Invalid request, including crypto_mixed (sign and encrypt must use the same scheme).'),
+      '400': err('Invalid request, including crypto_mixed (sign and encrypt must use the same scheme) and too_many_attachments (more than maxAttachments).'),
       '403': err('Missing CSRF header, or From is not one of the caller’s addresses.'),
-      '404': err('forwardOf is not a message of the caller.'),
+      '404': err('forwardOf is not a message of the caller, or an attachments id is not one of the caller’s uploads (not_found).'),
       '409': err('Sign/encrypt could not be done (PST-T-12.2): recipient_keys_missing (the `recipients` without a key; nothing is sent in plaintext), signing_key_missing, own_key_missing, or recipient_key_unusable.'),
-      '413': err('The header block is too large, or the Markdown body is over 256 KiB.'),
+      '413': err('The header block is too large, the Markdown body is over 256 KiB, or the attachments total more than maxAttachmentBytes (attachments_too_large).'),
       '422': { description: 'A recipient is on the suppression list (PST-REQ-179): nothing was sent or held; `addresses` names them.', schema: 'SuppressedRefusal' },
       '429': err('recipient_cap: the webmail’s recipient cap is reached; account_cap: the account-wide outbound cap across every sending path is reached (PST-REQ-177). Nothing was sent.'),
       '503': err('No DKIM keys for the sender domain (never sent unsigned), or POSTROOM_KEK is not set.'),
@@ -106,7 +110,14 @@ export const COMPOSE_ROUTES: RouteSpec[] = [
     summary: 'Save a new draft in the Drafts mailbox (\\Draft \\Seen).',
     body: C.DraftRequest,
     headers: CSRF,
-    responses: { '201': { description: 'Saved.', schema: 'DraftSaved' }, ...COMMON, '403': err('Missing CSRF header, or From is not one of the caller’s addresses.') },
+    responses: {
+      '201': { description: 'Saved.', schema: 'DraftSaved' },
+      ...COMMON,
+      '400': err('The request failed validation, or too_many_attachments.'),
+      '403': err('Missing CSRF header, or From is not one of the caller’s addresses.'),
+      '404': err('An attachments id is not one of the caller’s uploads (not_found).'),
+      '413': err('attachments_too_large: the attachments total more than maxAttachmentBytes.'),
+    },
   },
   {
     method: 'get',
@@ -114,8 +125,9 @@ export const COMPOSE_ROUTES: RouteSpec[] = [
     operationId: 'getDraft',
     tag: 'Compose',
     summary: 'One draft, as the composer edits it.',
+    description: 'Each attachment part of the draft is registered as one of the caller’s uploads (an existing upload with the same bytes and name is reused; a new one is audited), so the composer sends or saves it again by id.',
     params: C.DraftParams,
-    responses: { '200': { description: 'The draft.', schema: 'Draft' }, '400': COMMON['400'], '401': COMMON['401'], '404': err('Not a draft of the caller.'), '503': COMMON['503'] },
+    responses: { '200': { description: 'The draft, with its attachments as uploads.', schema: 'DraftDetail' }, '400': COMMON['400'], '401': COMMON['401'], '404': err('Not a draft of the caller.'), '503': COMMON['503'] },
   },
   {
     method: 'put',
@@ -127,7 +139,13 @@ export const COMPOSE_ROUTES: RouteSpec[] = [
     params: C.DraftParams,
     body: C.DraftRequest,
     headers: CSRF,
-    responses: { '200': { description: 'Saved under a new id.', schema: 'DraftSaved' }, ...COMMON, '404': err('Not a draft of the caller.') },
+    responses: {
+      '200': { description: 'Saved under a new id.', schema: 'DraftSaved' },
+      ...COMMON,
+      '400': err('The request failed validation, or too_many_attachments.'),
+      '404': err('Not a draft of the caller, or an attachments id is not one of the caller’s uploads.'),
+      '413': err('attachments_too_large: the attachments total more than maxAttachmentBytes.'),
+    },
   },
   {
     method: 'delete',
@@ -138,6 +156,47 @@ export const COMPOSE_ROUTES: RouteSpec[] = [
     params: C.DraftParams,
     headers: CSRF,
     responses: { '204': { description: 'Removed.' }, ...COMMON, '404': err('Not a draft of the caller.') },
+  },
+  // PST-T-15.10 (PST-REQ-195, PST-ADR-013): composer attachments.
+  {
+    method: 'get',
+    path: '/api/compose/limits',
+    operationId: 'getComposeLimits',
+    tag: 'Compose',
+    summary: 'The attachment limits: total bytes per message (also the per-file cap) and the most files.',
+    responses: { '200': { description: 'The limits.', schema: 'ComposeLimits' }, '401': COMMON['401'] },
+  },
+  {
+    method: 'post',
+    path: '/api/compose/uploads',
+    operationId: 'uploadAttachment',
+    tag: 'Compose',
+    summary: 'Upload one file to encrypted storage, to attach to a send or a draft by id.',
+    description:
+      'The request body is the file itself — not multipart/form-data, not JSON. Content-Type is the file’s type (reduced to a lowercase type/subtype; anything else, and multipart/* or message/*, is stored as application/octet-stream). The upload is streamed into the blob store; past maxAttachmentBytes it is refused with 413 and nothing is stored. An upload unused for 24 hours is removed by the worker. Audited.',
+    rawBody: { description: 'The file’s bytes.', content: { '*/*': { schema: { type: 'string', contentEncoding: 'binary' } } } },
+    headers: [
+      ...CSRF,
+      { name: 'x-postroom-filename', required: true, description: 'The file name, percent-encoded UTF-8 (encodeURIComponent). Any path is dropped; empty, . or .., control characters, or more than 255 characters is 400 invalid_filename.' },
+    ],
+    responses: {
+      '201': { description: 'Stored.', schema: 'ComposeUpload' },
+      '400': err('invalid_filename.'),
+      '401': COMMON['401'],
+      '403': COMMON['403'],
+      '413': err('attachment_too_large: the file is larger than maxAttachmentBytes. Nothing was stored.'),
+      '503': COMMON['503'],
+    },
+  },
+  {
+    method: 'delete',
+    path: '/api/compose/uploads/{id}',
+    operationId: 'deleteUpload',
+    tag: 'Compose',
+    summary: 'Remove one of the caller’s uploads (messages already built with it keep their copy).',
+    params: C.UploadParams,
+    headers: CSRF,
+    responses: { '204': { description: 'Removed.' }, '401': COMMON['401'], '403': COMMON['403'], '404': err('Not an upload of the caller.'), '503': COMMON['503'] },
   },
   {
     method: 'post',

@@ -252,6 +252,60 @@
         ],
         "additionalProperties": false
       },
+      "ComposeLimits": {
+        "type": "object",
+        "properties": {
+          "maxAttachmentBytes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "The largest total of all attachments in one message (and so of one file), in bytes before encoding."
+          },
+          "maxAttachments": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "The most attachments one message may carry."
+          }
+        },
+        "required": [
+          "maxAttachmentBytes",
+          "maxAttachments"
+        ],
+        "additionalProperties": false
+      },
+      "ComposeUpload": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "Pass it in `attachments` of a send or a draft save."
+          },
+          "filename": {
+            "type": "string",
+            "description": "The name as given (any path stripped), UTF-8."
+          },
+          "contentType": {
+            "type": "string",
+            "description": "type/subtype, lowercased; application/octet-stream when none usable was given."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Bytes, before any transfer encoding."
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "contentType",
+          "size"
+        ],
+        "additionalProperties": false
+      },
       "Contact": {
         "type": "object",
         "properties": {
@@ -870,6 +924,130 @@
           "mode",
           "sourceId",
           "savedAt"
+        ],
+        "additionalProperties": false
+      },
+      "DraftDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "mailboxId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "inReplyTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forwardOf": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "reply",
+                  "replyall",
+                  "forward"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "savedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComposeUpload"
+            },
+            "description": "The draft’s attachments, registered as the caller’s uploads (existing ones reused), in message order."
+          }
+        },
+        "required": [
+          "id",
+          "mailboxId",
+          "from",
+          "to",
+          "cc",
+          "bcc",
+          "subject",
+          "text",
+          "inReplyTo",
+          "references",
+          "forwardOf",
+          "mode",
+          "sourceId",
+          "savedAt",
+          "attachments"
         ],
         "additionalProperties": false
       },
@@ -7799,6 +7977,16 @@
                       "markdown"
                     ]
                   },
+                  "attachments": {
+                    "description": "Upload ids (POST /api/compose/uploads), attached in this order. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits).",
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
                   "mode": {
                     "anyOf": [
                       {
@@ -7845,7 +8033,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "The request failed validation, or too_many_attachments.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7866,6 +8054,26 @@
           },
           "403": {
             "description": "Missing CSRF header, or From is not one of the caller’s addresses.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "An attachments id is not one of the caller’s uploads (not_found).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "attachments_too_large: the attachments total more than maxAttachmentBytes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7977,6 +8185,7 @@
           "Compose"
         ],
         "summary": "One draft, as the composer edits it.",
+        "description": "Each attachment part of the draft is registered as one of the caller’s uploads (an existing upload with the same bytes and name is reused; a new one is audited), so the composer sends or saves it again by id.",
         "parameters": [
           {
             "name": "id",
@@ -7991,11 +8200,11 @@
         ],
         "responses": {
           "200": {
-            "description": "The draft.",
+            "description": "The draft, with its attachments as uploads.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Draft"
+                  "$ref": "#/components/schemas/DraftDetail"
                 }
               }
             }
@@ -8174,6 +8383,16 @@
                       "markdown"
                     ]
                   },
+                  "attachments": {
+                    "description": "Upload ids (POST /api/compose/uploads), attached in this order. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits).",
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
                   "mode": {
                     "anyOf": [
                       {
@@ -8220,7 +8439,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "The request failed validation, or too_many_attachments.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8250,7 +8469,17 @@
             }
           },
           "404": {
-            "description": "Not a draft of the caller.",
+            "description": "Not a draft of the caller, or an attachments id is not one of the caller’s uploads.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "attachments_too_large: the attachments total more than maxAttachmentBytes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8261,6 +8490,37 @@
           },
           "503": {
             "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/compose/limits": {
+      "get": {
+        "operationId": "getComposeLimits",
+        "tags": [
+          "Compose"
+        ],
+        "summary": "The attachment limits: total bytes per message (also the per-file cap) and the most files.",
+        "responses": {
+          "200": {
+            "description": "The limits.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComposeLimits"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8641,6 +8901,16 @@
                       "markdown"
                     ]
                   },
+                  "attachments": {
+                    "description": "Upload ids (POST /api/compose/uploads), attached in this order. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits).",
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
                   "draftId": {
                     "description": "The draft this send replaces; it is removed from Drafts in the same transaction.",
                     "anyOf": [
@@ -8729,7 +8999,7 @@
             }
           },
           "400": {
-            "description": "Invalid request, including crypto_mixed (sign and encrypt must use the same scheme).",
+            "description": "Invalid request, including crypto_mixed (sign and encrypt must use the same scheme) and too_many_attachments (more than maxAttachments).",
             "content": {
               "application/json": {
                 "schema": {
@@ -8759,7 +9029,7 @@
             }
           },
           "404": {
-            "description": "forwardOf is not a message of the caller.",
+            "description": "forwardOf is not a message of the caller, or an attachments id is not one of the caller’s uploads (not_found).",
             "content": {
               "application/json": {
                 "schema": {
@@ -8779,7 +9049,7 @@
             }
           },
           "413": {
-            "description": "The header block is too large, or the Markdown body is over 256 KiB.",
+            "description": "The header block is too large, the Markdown body is over 256 KiB, or the attachments total more than maxAttachmentBytes (attachments_too_large).",
             "content": {
               "application/json": {
                 "schema": {
@@ -8810,6 +9080,185 @@
           },
           "503": {
             "description": "No DKIM keys for the sender domain (never sent unsigned), or POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/compose/uploads": {
+      "post": {
+        "operationId": "uploadAttachment",
+        "tags": [
+          "Compose"
+        ],
+        "summary": "Upload one file to encrypted storage, to attach to a send or a draft by id.",
+        "description": "The request body is the file itself — not multipart/form-data, not JSON. Content-Type is the file’s type (reduced to a lowercase type/subtype; anything else, and multipart/* or message/*, is stored as application/octet-stream). The upload is streamed into the blob store; past maxAttachmentBytes it is refused with 413 and nothing is stored. An upload unused for 24 hours is removed by the worker. Audited.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-postroom-filename",
+            "in": "header",
+            "required": true,
+            "description": "The file name, percent-encoded UTF-8 (encodeURIComponent). Any path is dropped; empty, . or .., control characters, or more than 255 characters is 400 invalid_filename.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The file’s bytes.",
+          "content": {
+            "*/*": {
+              "schema": {
+                "type": "string",
+                "contentEncoding": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComposeUpload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_filename.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "attachment_too_large: the file is larger than maxAttachmentBytes. Nothing was stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/compose/uploads/{id}": {
+      "delete": {
+        "operationId": "deleteUpload",
+        "tags": [
+          "Compose"
+        ],
+        "summary": "Remove one of the caller’s uploads (messages already built with it keep their copy).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not an upload of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "POSTROOM_KEK is not set.",
             "content": {
               "application/json": {
                 "schema": {
