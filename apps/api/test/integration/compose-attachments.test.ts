@@ -9,8 +9,12 @@
 //   · a raw body of any type, application/json included, is stored byte for byte;
 //   · DELETE releases the reference; every mutation is audited;
 //   · holds (undo → the draft reopens with its files; released by the worker → Sent has them),
-//     forwards (the original last), and a signed send all carry the files.
-import { randomBytes, randomInt, randomUUID } from 'node:crypto';
+//     forwards (the original last), and a signed send all carry the files;
+//   · verifier round 2: a file held twice is sent twice; concurrent DELETEs are one 204 and one
+//     404 with one release; the outstanding-upload quota (413 upload_quota_exceeded); a draft part
+//     too large or past the count is not registered but listed in omittedAttachments; an upload
+//     gone mid-build is 409 attachment_gone with nothing sent or saved; bidi controls stripped.
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { readdir, mkdtemp, rm } from 'node:fs/promises';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -149,6 +153,12 @@ describe.skipIf(!baseUrl)('composer attachments (PST-T-15.10, PST-REQ-195)', () 
   };
   const blobBytes = async (sha: string): Promise<Buffer> => blobs.getBuffer(sha);
   const refcount = async (sha: string): Promise<number> => (await db.blob.findUnique({ where: { sha256: sha } }))?.refcount ?? 0;
+  /** A draft as any IMAP client might have saved it: filed straight into Drafts, \\Draft \\Seen. */
+  const fileDraft = async (who: Person, raw: Buffer): Promise<string> => {
+    const put = await blobs.put(raw);
+    const filed = await db.$transaction((tx) => fileLocalMessage(tx, { accountId: who.id, mailbox: 'Drafts', blobSha256: put.sha256, size: put.size, internalDate: new Date(), flags: ['\\Draft', '\\Seen'] }));
+    return filed.id;
+  };
   const releaseDeps = (): ReleaseDeps => ({ db, blobs, kek: () => kek, caps: () => Promise.resolve(), now: () => clock.now() });
 
   beforeAll(async () => {
@@ -284,7 +294,7 @@ describe.skipIf(!baseUrl)('composer attachments (PST-T-15.10, PST-REQ-195)', () 
     const limits = await request(smallApp).get('/api/compose/limits').set('cookie', me.cookie);
     expect(limits.status).toBe(200);
     expect(ComposeLimits.parse(limits.body)).toEqual({ maxAttachmentBytes: 1000, maxAttachments: 2 });
-    expect(ComposeLimits.parse((await request(app).get('/api/compose/limits').set('cookie', me.cookie)).body)).toEqual({ maxAttachmentBytes: 20_971_520, maxAttachments: 20 });
+    expect(ComposeLimits.parse((await request(app).get('/api/compose/limits').set('cookie', me.cookie)).body)).toEqual({ maxAttachmentBytes: 17_825_792, maxAttachments: 20 });
 
     const blobsBefore = await db.blob.count();
     // Declared: Content-Length over the limit, refused before a byte is read.
@@ -429,5 +439,163 @@ describe.skipIf(!baseUrl)('composer attachments (PST-T-15.10, PST-REQ-195)', () 
     const parts = await attachmentsOf(raw);
     const signedFile = parts.find((p) => p.filename === 'signed.bin');
     expect(signedFile?.data.equals(file)).toBe(true);
+  });
+  it('a file attached twice is sent twice: draft with the same upload twice → reopen → send → Sent has both', async () => {
+    const me = await person();
+    const file = randomBytes(4000);
+    const up = await uploaded(me, 'twice.bin', file);
+    const saved = await saveDraft(me, { to: ['alice@example.org'], subject: 'Twice', text: 'Two copies.', attachments: [up.id, up.id] });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(201);
+    const draft = DraftSaved.parse(saved.body);
+    expect((await attachmentsOf(await rawOf(me, draft.id))).map((a) => a.filename)).toEqual(['twice.bin', 'twice.bin']);
+    const detail = DraftDetail.parse((await request(app).get(`/api/compose/drafts/${draft.id}`).set('cookie', me.cookie)).body);
+    expect(detail.attachments.map((a) => a.id)).toEqual([up.id, up.id]);
+    expect(detail.omittedAttachments).toEqual([]);
+    const res = await send(me, { to: ['alice@example.org'], subject: 'Twice', text: 'Two copies.', draftId: draft.id, attachments: detail.attachments.map((a) => a.id) });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const inSent = await attachmentsOf(await rawOf(me, SendResponse.parse(res.body).sentMessageId));
+    expect(inSent).toHaveLength(2);
+    for (const a of inSent) expect(a.data.equals(file)).toBe(true);
+    // Every occurrence counts toward the limits.
+    const small = await person(smallApp);
+    const six = await uploaded(small, 'six.bin', randomBytes(600), undefined, smallApp);
+    const tiny = await uploaded(small, 'tiny.bin', randomBytes(10), undefined, smallApp);
+    expect((await send(small, { to: ['a@example.org'], text: 'x', attachments: [six.id, six.id] }, smallApp)).body).toMatchObject({ error: 'attachments_too_large' });
+    expect((await send(small, { to: ['a@example.org'], text: 'x', attachments: [tiny.id, tiny.id, tiny.id] }, smallApp)).body).toMatchObject({ error: 'too_many_attachments' });
+  });
+
+  it('two DELETEs of the same upload at once: one 204, one 404, one release', async () => {
+    const me = await person();
+    const bytes = Buffer.from(`race ${randomUUID()}`);
+    const keep = await uploaded(me, 'keep.txt', bytes);
+    const target = await uploaded(me, 'target.txt', bytes);
+    const sha = (await db.composeUpload.findUniqueOrThrow({ where: { id: keep.id } })).blobSha256;
+    expect(await refcount(sha)).toBe(2);
+    const del = () => request(app).delete(`/api/compose/uploads/${target.id}`).set(CSRF).set('cookie', me.cookie);
+    const results = await Promise.all([del(), del(), del()]);
+    expect(results.map((r) => r.status).sort()).toEqual([204, 404, 404]);
+    expect(await refcount(sha)).toBe(1);
+    expect(await db.auditEvent.count({ where: { action: 'compose.upload.delete', entityId: target.id } })).toBe(1);
+  });
+
+  it('the outstanding-upload quota: 413 upload_quota_exceeded by count or bytes (declared or streamed), nothing kept; draft re-registration is exempt', async () => {
+    const byCount = createApp({ db, env: { DATABASE_URL: testDb.url, BLOB_ROOT: blobRoot, COMPOSE_MAX_OUTSTANDING_UPLOADS: '2' }, config: baseConfig(clock) });
+    const me = await person(byCount);
+    const first = await uploaded(me, '1.bin', randomBytes(10), undefined, byCount);
+    await uploaded(me, '2.bin', randomBytes(10), undefined, byCount);
+    const third = await upload(me, '3.bin', randomBytes(10), 'application/octet-stream', byCount);
+    expect(third.status).toBe(413);
+    expect(third.body).toMatchObject({ error: 'upload_quota_exceeded', message: expect.stringMatching(/Remove attachments you no longer need, or send/) as unknown });
+    expect(await db.composeUpload.count({ where: { accountId: me.id } })).toBe(2);
+    // Removing one makes room.
+    expect((await request(byCount).delete(`/api/compose/uploads/${first.id}`).set(CSRF).set('cookie', me.cookie)).status).toBe(204);
+    await uploaded(me, '3.bin', randomBytes(10), undefined, byCount);
+
+    // At the count quota, reopening a draft still registers its files (they are mail already).
+    const inDraft = randomBytes(50);
+    const draftRaw = Buffer.from(
+      ['From: me@d3cloud.io', 'Subject: old draft', 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="Q"', '', '--Q', 'Content-Type: text/plain', '', 'x', '--Q', 'Content-Type: application/octet-stream', 'Content-Disposition: attachment; filename="old.bin"', 'Content-Transfer-Encoding: base64', '', inDraft.toString('base64'), '--Q--', ''].join('\r\n'),
+    );
+    const draftId = await fileDraft(me, draftRaw);
+    const reopened = DraftDetail.parse((await request(byCount).get(`/api/compose/drafts/${draftId}`).set('cookie', me.cookie)).body);
+    expect(reopened.attachments.map((a) => a.filename)).toEqual(['old.bin']);
+    expect(await db.composeUpload.count({ where: { accountId: me.id } })).toBe(3);
+
+    const byBytes = createApp({ db, env: { DATABASE_URL: testDb.url, BLOB_ROOT: blobRoot, COMPOSE_MAX_OUTSTANDING_BYTES: '1500' }, config: baseConfig(clock) });
+    const other = await person(byBytes);
+    await uploaded(other, 'k.bin', randomBytes(1000), undefined, byBytes);
+    const blobsBefore = await db.blob.count();
+    // Declared: refused before reading.
+    const declared = await upload(other, 'd.bin', randomBytes(600), 'application/octet-stream', byBytes);
+    expect(declared.status).toBe(413);
+    expect(declared.body).toMatchObject({ error: 'upload_quota_exceeded' });
+    // Streamed (no Content-Length): stored, then refused under the lock, and its reference given back.
+    const streamed = await rawPost(
+      byBytes,
+      '/api/compose/uploads',
+      { ...CSRF, cookie: other.cookie, 'content-type': 'application/octet-stream', 'x-postroom-filename': 's.bin', 'transfer-encoding': 'chunked' },
+      [randomBytes(300), randomBytes(300)],
+    );
+    expect(streamed.status).toBe(413);
+    expect(streamed.body).toMatchObject({ error: 'upload_quota_exceeded' });
+    expect(await db.composeUpload.count({ where: { accountId: other.id } })).toBe(1);
+    expect(await db.blob.count()).toBe(blobsBefore);
+    // Within it, fine.
+    await uploaded(other, 'fits.bin', randomBytes(500), undefined, byBytes);
+  });
+
+  it('reopening a draft registers only what a send can carry: too large or past the count is listed in omittedAttachments, not stored', async () => {
+    const me = await person(smallApp);
+    const big = randomBytes(1500);
+    const smalls = [randomBytes(100), randomBytes(200), randomBytes(300)];
+    const part = (name: string, data: Buffer): string[] => ['--P', 'Content-Type: application/octet-stream', `Content-Disposition: attachment; filename="${name}"`, 'Content-Transfer-Encoding: base64', '', data.toString('base64').replace(/.{76}/g, '$&\r\n')];
+    const raw = Buffer.from(
+      [
+        'From: me@d3cloud.io',
+        'Subject: a big draft',
+        'MIME-Version: 1.0',
+        'Content-Type: multipart/mixed; boundary="P"',
+        '',
+        '--P',
+        'Content-Type: text/plain',
+        '',
+        'Files.',
+        ...part('big.bin', big),
+        ...part('s1.bin', smalls[0] ?? Buffer.alloc(0)),
+        ...part('s2.bin', smalls[1] ?? Buffer.alloc(0)),
+        ...part('s3.bin', smalls[2] ?? Buffer.alloc(0)),
+        '--P--',
+        '',
+      ].join('\r\n'),
+    );
+    const draftId = await fileDraft(me, raw);
+    const res = await request(smallApp).get(`/api/compose/drafts/${draftId}`).set('cookie', me.cookie);
+    expect(res.status).toBe(200);
+    const detail = DraftDetail.parse(res.body);
+    expect(detail.attachments.map((a) => [a.filename, a.size])).toEqual([
+      ['s1.bin', 100],
+      ['s2.bin', 200],
+    ]);
+    expect(detail.omittedAttachments).toEqual([
+      { filename: 'big.bin', size: 1500, reason: 'too_large' },
+      { filename: 's3.bin', size: 300, reason: 'too_many' },
+    ]);
+    // Neither omitted file was stored.
+    expect(await db.composeUpload.count({ where: { accountId: me.id } })).toBe(2);
+    for (const data of [big, smalls[2] ?? Buffer.alloc(0)]) expect(await db.blob.findUnique({ where: { sha256: createHash('sha256').update(data).digest('hex') } })).toBeNull();
+    expect(await readdir(tmpDir(blobRoot)).catch(() => [])).toEqual([]);
+  });
+
+  it('an upload gone between the check and the build: 409 attachment_gone, nothing sent, nothing saved, the draft untouched', async () => {
+    const me = await person();
+    const up = await uploaded(me, 'vanishing.bin', Buffer.from(`gone ${randomUUID()}`));
+    const draft = DraftSaved.parse((await saveDraft(me, { to: ['alice@example.org'], text: 'Keep me.' })).body);
+    // The row survives but its blob is gone: what a DELETE or the sweep leaves for an in-flight send.
+    await blobs.release((await db.composeUpload.findUniqueOrThrow({ where: { id: up.id } })).blobSha256);
+
+    const now = await send(me, { to: ['alice@example.org'], text: 'x', draftId: draft.id, attachments: [up.id] });
+    expect(now.status, JSON.stringify(now.body)).toBe(409);
+    expect(now.body).toMatchObject({ error: 'attachment_gone', message: expect.stringContaining('vanishing.bin') as unknown });
+    const held = await send(me, { to: ['alice@example.org'], text: 'x', draftId: draft.id, attachments: [up.id], undoSeconds: 10 });
+    expect(held.status).toBe(409);
+    expect(held.body).toMatchObject({ error: 'attachment_gone' });
+    const saved = await saveDraft(me, { text: 'x', attachments: [up.id] });
+    expect(saved.status).toBe(409);
+    const replaced = await request(app).put(`/api/compose/drafts/${draft.id}`).set(CSRF).set('cookie', me.cookie).send({ text: 'x', attachments: [up.id] });
+    expect(replaced.status).toBe(409);
+
+    expect(await db.outboundMessage.count({ where: { accountId: me.id } })).toBe(0);
+    expect(await db.pendingSend.count({ where: { accountId: me.id } })).toBe(0);
+    expect(await db.message.count({ where: { mailboxId: me.sent } })).toBe(0);
+    expect((await db.message.findMany({ where: { mailboxId: me.drafts } })).map((m) => m.id)).toEqual([draft.id]);
+  });
+
+  it('bidirectional controls are stripped from an uploaded name', async () => {
+    const me = await person();
+    expect((await uploaded(me, '‮fdp.exe', Buffer.from('MZ'))).filename).toBe('fdp.exe');
+    expect((await uploaded(me, 'in⁦voice⁩‏.pdf', Buffer.from('x'))).filename).toBe('invoice.pdf');
+    const only = await upload(me, '‮‎', Buffer.from('x'));
+    expect(only.status).toBe(400);
+    expect(only.body).toMatchObject({ error: 'invalid_filename' });
   });
 });

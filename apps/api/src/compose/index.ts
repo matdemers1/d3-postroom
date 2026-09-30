@@ -837,7 +837,7 @@ export function composeRoutes(deps: ApiDeps): Router {
       }
       const json = await draftJson(store, draft);
       // PST-T-15.10: the draft's files, registered as uploads so a send or the next save names them by id.
-      const attachments = await registerDraftAttachments({
+      const { attachments, omitted } = await registerDraftAttachments({
         db,
         blobs: store.blobs,
         accountId: me.accountId,
@@ -845,8 +845,9 @@ export function composeRoutes(deps: ApiDeps): Router {
         source: await store.blobs.get(draft.blobSha256),
         context: getAuditContext(req),
         now: rt.now(),
+        limits,
       });
-      const detail: DraftDetailJson = { ...json, attachments };
+      const detail: DraftDetailJson = { ...json, attachments, omittedAttachments: omitted };
       res.setHeader('Cache-Control', 'private, no-store');
       res.json(detail);
     }),

@@ -11,7 +11,7 @@ import { parseMessage } from '@postroom/mime';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { asciiFilename, attachmentHeaders, buildOutgoingStream, buildTextMessage, rfc2231Encode, sanitizeContentType, type OutgoingAttachment, type OutgoingMessage } from '../../src/compose/message.js';
-import { AttachmentTooLarge, countingTransform, parseUploadFilename, repairFilename } from '../../src/compose/uploads.js';
+import { AttachmentTooLarge, countingTransform, DEFAULT_MAX_ATTACHMENT_BYTES, limitsFromEnv, MAX_INT_COLUMN, parseUploadFilename, perFileCap, repairFilename, stripBidi } from '../../src/compose/uploads.js';
 
 async function collect(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -239,6 +239,27 @@ describe('the upload path’s pure pieces (PST-T-15.10)', () => {
     expect(parseUploadFilename('%FF.txt')).toBeNull(); // not UTF-8
     expect(parseUploadFilename(encodeURIComponent('é'.repeat(255)))).toBe('é'.repeat(255));
     expect(parseUploadFilename('x'.repeat(256))).toBeNull();
+  });
+
+  it('strips bidirectional controls, which would spoof an extension', () => {
+    // U+202E RIGHT-TO-LEFT OVERRIDE: "\u202Efdp.exe" renders as "exe.pdf".
+    expect(parseUploadFilename(encodeURIComponent('\u202Efdp.exe'))).toBe('fdp.exe');
+    for (const c of ['\u202A', '\u202B', '\u202C', '\u202D', '\u202E', '\u2066', '\u2067', '\u2068', '\u2069', '\u200E', '\u200F']) {
+      expect(parseUploadFilename(encodeURIComponent(`a${c}b.txt`))).toBe('ab.txt');
+    }
+    expect(parseUploadFilename(encodeURIComponent('\u202E\u2066'))).toBeNull();
+    expect(repairFilename('report\u202Etxt.exe', 'x')).toBe('reporttxt.exe');
+    expect(stripBidi('שלום.txt')).toBe('שלום.txt'); // right-to-left text itself is kept
+  });
+
+  it('defaults: 17 MiB per message (under Gmail’s 25 MB once base64-encoded), quotas of 100 uploads and 5 messages’ worth', () => {
+    expect(DEFAULT_MAX_ATTACHMENT_BYTES).toBe(17_825_792);
+    const encoded = Math.ceil(DEFAULT_MAX_ATTACHMENT_BYTES / 3) * 4;
+    expect(encoded + Math.ceil(encoded / 76) * 2).toBeLessThan(25_000_000 - 500_000);
+    expect(limitsFromEnv({})).toEqual({ maxAttachmentBytes: 17_825_792, maxAttachments: 20, maxOutstandingUploads: 100, maxOutstandingBytes: 5 * 17_825_792 });
+    expect(limitsFromEnv({ COMPOSE_MAX_ATTACHMENT_BYTES: '1000' }).maxOutstandingBytes).toBe(5000);
+    // The size column is a PostgreSQL integer: no file past it, whatever the env says.
+    expect(perFileCap(limitsFromEnv({ COMPOSE_MAX_ATTACHMENT_BYTES: String(2 ** 33) }))).toBe(MAX_INT_COLUMN);
   });
 
   it('repairs a filename read back from a draft instead of refusing it', () => {

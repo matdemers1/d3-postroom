@@ -50,7 +50,7 @@ const Fields = {
     .max(1000)
     .optional()
     .describe(
-      'Upload ids (POST /api/compose/uploads), attached in this order. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits).',
+      'Upload ids (POST /api/compose/uploads), attached in this order; an id given twice attaches the file twice, and every occurrence counts toward the limits. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits); an upload removed while the message is built is 409 attachment_gone.',
     ),
 };
 
@@ -150,8 +150,17 @@ export const ComposeUpload = z.object({
   size: z.number().int().describe('Bytes, before any transfer encoding.'),
 });
 
+export const OmittedAttachment = z.object({
+  filename: z.string(),
+  size: z.number().int().describe('Decoded bytes.'),
+  reason: z.enum(['too_large', 'too_many']).describe('too_large: over maxAttachmentBytes; too_many: past maxAttachments.'),
+});
+
 export const DraftDetail = Draft.extend({
-  attachments: z.array(ComposeUpload).describe('The draft’s attachments, registered as the caller’s uploads (existing ones reused), in message order.'),
+  attachments: z.array(ComposeUpload).describe('The draft’s attachments, registered as the caller’s uploads (existing ones reused), in message order. A file the draft holds twice is listed twice.'),
+  omittedAttachments: z
+    .array(OmittedAttachment)
+    .describe('Attachment parts of the draft that were NOT registered (and so cannot be sent on): larger than the per-file limit, or past the most a message may carry.'),
 });
 
 export const UploadParams = z.object({ id: Uuid });

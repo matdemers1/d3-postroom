@@ -1029,7 +1029,14 @@
             "items": {
               "$ref": "#/components/schemas/ComposeUpload"
             },
-            "description": "The draft’s attachments, registered as the caller’s uploads (existing ones reused), in message order."
+            "description": "The draft’s attachments, registered as the caller’s uploads (existing ones reused), in message order. A file the draft holds twice is listed twice."
+          },
+          "omittedAttachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OmittedAttachment"
+            },
+            "description": "Attachment parts of the draft that were NOT registered (and so cannot be sent on): larger than the per-file limit, or past the most a message may carry."
           }
         },
         "required": [
@@ -1047,7 +1054,8 @@
           "mode",
           "sourceId",
           "savedAt",
-          "attachments"
+          "attachments",
+          "omittedAttachments"
         ],
         "additionalProperties": false
       },
@@ -3833,6 +3841,34 @@
           "expiresAt",
           "newSender",
           "hasAttachments"
+        ],
+        "additionalProperties": false
+      },
+      "OmittedAttachment": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Decoded bytes."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "too_large",
+              "too_many"
+            ],
+            "description": "too_large: over maxAttachmentBytes; too_many: past maxAttachments."
+          }
+        },
+        "required": [
+          "filename",
+          "size",
+          "reason"
         ],
         "additionalProperties": false
       },
@@ -7978,7 +8014,7 @@
                     ]
                   },
                   "attachments": {
-                    "description": "Upload ids (POST /api/compose/uploads), attached in this order. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits).",
+                    "description": "Upload ids (POST /api/compose/uploads), attached in this order; an id given twice attaches the file twice, and every occurrence counts toward the limits. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits); an upload removed while the message is built is 409 attachment_gone.",
                     "maxItems": 1000,
                     "type": "array",
                     "items": {
@@ -8064,6 +8100,16 @@
           },
           "404": {
             "description": "An attachments id is not one of the caller’s uploads (not_found).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "attachment_gone: an upload was removed while the draft was built; nothing was saved.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8384,7 +8430,7 @@
                     ]
                   },
                   "attachments": {
-                    "description": "Upload ids (POST /api/compose/uploads), attached in this order. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits).",
+                    "description": "Upload ids (POST /api/compose/uploads), attached in this order; an id given twice attaches the file twice, and every occurrence counts toward the limits. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits); an upload removed while the message is built is 409 attachment_gone.",
                     "maxItems": 1000,
                     "type": "array",
                     "items": {
@@ -8470,6 +8516,16 @@
           },
           "404": {
             "description": "Not a draft of the caller, or an attachments id is not one of the caller’s uploads.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "attachment_gone: an upload was removed while the draft was built; nothing was saved.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8902,7 +8958,7 @@
                     ]
                   },
                   "attachments": {
-                    "description": "Upload ids (POST /api/compose/uploads), attached in this order. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits).",
+                    "description": "Upload ids (POST /api/compose/uploads), attached in this order; an id given twice attaches the file twice, and every occurrence counts toward the limits. Each must be one of the caller’s uploads (else 404 not_found); more than maxAttachments is 400 too_many_attachments; a total over maxAttachmentBytes is 413 attachments_too_large (GET /api/compose/limits); an upload removed while the message is built is 409 attachment_gone.",
                     "maxItems": 1000,
                     "type": "array",
                     "items": {
@@ -9039,7 +9095,7 @@
             }
           },
           "409": {
-            "description": "Sign/encrypt could not be done (PST-T-12.2): recipient_keys_missing (the `recipients` without a key; nothing is sent in plaintext), signing_key_missing, own_key_missing, or recipient_key_unusable.",
+            "description": "Sign/encrypt could not be done (PST-T-12.2): recipient_keys_missing (the `recipients` without a key; nothing is sent in plaintext), signing_key_missing, own_key_missing, or recipient_key_unusable; or attachment_gone (an upload was removed while the message was built; nothing was sent).",
             "content": {
               "application/json": {
                 "schema": {
@@ -9173,7 +9229,7 @@
             }
           },
           "413": {
-            "description": "attachment_too_large: the file is larger than maxAttachmentBytes. Nothing was stored.",
+            "description": "attachment_too_large: the file is larger than maxAttachmentBytes; or upload_quota_exceeded: the caller already holds COMPOSE_MAX_OUTSTANDING_UPLOADS uploads or COMPOSE_MAX_OUTSTANDING_BYTES bytes of them (remove or send attachments first). Nothing was stored.",
             "content": {
               "application/json": {
                 "schema": {
