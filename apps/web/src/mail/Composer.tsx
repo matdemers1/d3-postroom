@@ -41,6 +41,10 @@
 // again shows its attachments. Send is DISABLED while a file is uploading (⌘↵ says why), and a failed
 // upload blocks it with a message until it is retried or removed. The rules are pure, in
 // compose/attachments/state.ts; the XHR is compose/attachments/upload.ts.
+// A paste that carries text is a text paste even with a picture of it on the clipboard (Excel, Word,
+// a web page). A draft save refused for an upload the server swept (a day old) re-reads the draft,
+// re-points the chips at its parts and tries once more, else names the chip that is gone; a
+// reopened draft's parts too large to carry on are named under the chips, never counted as attached.
 //
 // A draft is picked up again when the same composer reopens: a reply, reply-all or forward finds the
 // draft it left for the same message; a draft opened from Drafts (`?compose=draft`, or Edit draft on
@@ -69,7 +73,7 @@ import {
   useToast,
   type RecipientLoader,
 } from '@d3cloud/ui';
-import { api, ApiError, contactsApi, type Alias, type ComposeKind, type ComposeLimits, type DraftInput, type SavedDraft } from '../api';
+import { api, contactsApi, type Alias, type ComposeKind, type ComposeLimits, type DraftInput, type OmittedAttachment, type SavedDraft } from '../api';
 import { templatesApi, type TemplateJson } from '../compose/api';
 import { discardDraft, draftsOf, restoreDraft, trashOf, type DiscardOutcome } from './discard';
 import { keysApi, type CryptoKeyJson, type KeyKind } from '../keys/api';
@@ -129,6 +133,11 @@ import {
   dragHasFiles,
   failed as uploadFailed,
   fromSaved,
+  gone as markGone,
+  omittedText,
+  pasteAttaches,
+  saveDraft,
+  withIds,
   newKey,
   progressed,
   removed,
@@ -247,6 +256,8 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
   const limitsRef = useRef(limits);
   limitsRef.current = limits;
   const [attachNote, setAttachNote] = useState<string | null>(null);
+  // A resumed draft's parts too large to carry on: named, never counted as attached.
+  const [omitted, setOmitted] = useState<OmittedAttachment[]>([]);
   const [announcement, setAnnouncement] = useState('');
   const [dropping, setDropping] = useState(false);
   const dragDepth = useRef(0);
@@ -409,17 +420,20 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
       const input = draftInputRef.current(latest.current);
       setSaveStatus({ kind: 'saving' });
       try {
-        let saved;
-        if (draftId.current === null) saved = await api.createDraft(input);
-        else {
-          try {
-            saved = await api.replaceDraft(draftId.current, input);
-          } catch (e) {
-            // Gone (sent or discarded in another tab): start a new one.
-            if (!(e instanceof ApiError && e.status === 404)) throw e;
-            saved = await api.createDraft(input);
+        // A draft gone elsewhere starts a new one; a held upload swept by the server is re-pointed at
+        // the draft's part and the save tried again once; else the chip that is gone says so.
+        const outcome = await saveDraft(api, draftId.current, (ids) => ({ ...input, attachments: ids }), attachmentsRef.current);
+        if (outcome.ids.size > 0) applyItemsRef.current((items) => withIds(items, outcome.ids));
+        if (outcome.omitted !== null) setOmitted(outcome.omitted);
+        if (!outcome.ok) {
+          setSaveStatus({ kind: 'failed' });
+          if (outcome.goneKeys.length > 0 && mounted.current) {
+            applyItemsRef.current((items) => markGone(items, outcome.goneKeys));
+            setError(outcome.goneText);
           }
+          return;
         }
+        const saved = outcome.saved;
         draftId.current = saved.id;
         savedVersion.current = at;
         setSaveStatus({ kind: 'saved', at: saved.savedAt });
@@ -601,9 +615,10 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
     setView((v) => (v.minimised ? { ...v, minimised: false } : v));
     addFiles(e.dataTransfer.files);
   };
-  // Files pasted into the body attach; pasted text is left to the textarea.
+  // Files pasted into the body attach; a paste that carries text (a spreadsheet's cells come with a
+  // picture of them) is left to the textarea, picture and all.
   const onBodyPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (e.clipboardData.files.length === 0) return;
+    if (!pasteAttaches(e.clipboardData.types, e.clipboardData.files.length)) return;
     e.preventDefault();
     addFiles(e.clipboardData.files);
   };
@@ -618,6 +633,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
       setState(next);
       // PST-REQ-195: the draft's attachments, held again as uploads by the server.
       applyItemsRef.current((items) => [...fromSaved(saved.attachments), ...items]);
+      setOmitted(saved.omittedAttachments ?? []);
       setRows((r) => {
         const opened = initialReveal(next, saved.from, me);
         return { cc: r.cc || opened.cc, bcc: r.bcc || opened.bcc, from: r.from || opened.from };
@@ -1020,7 +1036,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
             </div>
           ) : null}
           {state.forwardOf !== null ? <p className="pr-compose__hint pr-compose__note">The original message is attached in full.</p> : null}
-          <AttachmentChips items={attachments} limits={limits} onRemove={removeAttachment} onRetry={retryAttachment} />
+          <AttachmentChips items={attachments} limits={limits} omitted={omitted.map(omittedText)} onRemove={removeAttachment} onRetry={retryAttachment} />
           {attachNote !== null ? (
             <Alert tone="warning" dynamic className="pr-attach__refusal">
               {attachNote}

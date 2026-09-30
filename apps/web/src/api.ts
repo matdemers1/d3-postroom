@@ -424,6 +424,13 @@ export interface ComposeUpload {
   size: number;
 }
 
+/** A saved draft's part the composer cannot carry on (too large to send from here). */
+export interface OmittedAttachment {
+  filename: string;
+  size: number;
+  reason: string;
+}
+
 /** The server's attachment limits: bytes across one message's attachments, and how many. */
 export interface ComposeLimits {
   maxAttachmentBytes: number;
@@ -497,6 +504,8 @@ export interface SavedDraft extends ComposeFields {
   from: string;
   /** PST-REQ-195: the draft's attachments, registered again as uploads (GET /drafts/:id only). */
   attachments?: ComposeUpload[];
+  /** Draft parts too large to carry on: they stay in the saved draft, and are not sent from here. */
+  omittedAttachments?: OmittedAttachment[];
   mode: ComposeKind | null;
   sourceId: string | null;
   savedAt: string;
