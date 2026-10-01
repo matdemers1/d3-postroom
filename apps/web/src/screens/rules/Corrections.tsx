@@ -23,10 +23,24 @@ export function correctionTitle(c: Pick<SortingCorrection, 'subject' | 'target' 
   return c.subject === null || c.subject === '' ? `(no subject) · ${preferenceTarget(c)}` : c.subject;
 }
 
-/** One line: where it went, and what the sorter learned. "People → Updates · New mail from pat@… goes to Updates." */
-export function correctionLine(c: Pick<SortingCorrection, 'moved' | 'fromBucket' | 'toBucket' | 'target' | 'scope'>): string {
+const SOURCE_LABEL: Record<SortingCorrection['source'], string> = {
+  chip: 'from the bucket chip',
+  card: 'from the Person card',
+};
+
+/**
+ * One muted line under the subject: where it went, who sent it, where you corrected it, and — when
+ * the preference covers a whole domain — that it does.
+ * "People → Updates · pat@example.net · from the bucket chip".
+ */
+export function correctionLine(c: Pick<SortingCorrection, 'moved' | 'fromBucket' | 'toBucket' | 'target' | 'scope' | 'fromAddress' | 'source'>): string {
   const move = c.moved ? `${bucketLabel(c.fromBucket)} → ${bucketLabel(c.toBucket)}` : `Kept in ${bucketLabel(c.toBucket)}`;
-  return `${move} · New mail from ${preferenceTarget(c)} goes to ${bucketLabel(c.toBucket)}.`;
+  const parts = [move];
+  if (c.fromAddress !== null && c.fromAddress !== '') parts.push(c.fromAddress);
+  parts.push(SOURCE_LABEL[c.source]);
+  // A sender preference is the address already shown; a domain one says how far it reaches.
+  if (c.scope === 'domain') parts.push(`learned for ${preferenceTarget(c)}`);
+  return parts.join(' · ');
 }
 
 /** What Undo did, said in one sentence. */

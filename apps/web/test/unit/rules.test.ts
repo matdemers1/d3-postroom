@@ -167,7 +167,7 @@ describe('the rule destination picker (PST-T-16.9)', () => {
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MODES } from '../../src/screens/Rules';
-import { runningState, scriptActions, showsScripts } from '../../src/screens/rules/scripts';
+import { createRunGuard, runningState, scriptActions, showsScripts } from '../../src/screens/rules/scripts';
 import { correctionLine, correctionTitle, undoneMessage } from '../../src/screens/rules/Corrections';
 
 const script = (name: string, active = false) => ({ name, active, size: 10, updatedAt: '2026-10-01T00:00:00Z' });
@@ -200,14 +200,65 @@ describe('the Rules & sorting page (PST-T-17.11)', () => {
     expect(MODES(true)[0]?.disabled).toBe(true);
   });
 
-  it('puts a correction on one line: where it went and what the sorter learned', () => {
-    const c = { moved: true, fromBucket: 'people', toBucket: 'updates', target: 'pat@example.net', scope: 'sender' as const, subject: 'Hi' };
-    expect(correctionLine(c)).toBe('People → Updates · New mail from pat@example.net goes to Updates.');
-    expect(correctionLine({ ...c, moved: false })).toBe('Kept in Updates · New mail from pat@example.net goes to Updates.');
+  it('puts a correction on one line: where it went, who sent it, and where you corrected it', () => {
+    const c = { moved: true, fromBucket: 'people', toBucket: 'updates', target: 'pat@example.net', scope: 'sender' as const, subject: 'Hi', fromAddress: 'pat@example.net', source: 'chip' as const };
+    expect(correctionLine(c)).toBe('People → Updates · pat@example.net · from the bucket chip');
+    expect(correctionLine({ ...c, moved: false, source: 'card' })).toBe('Kept in Updates · pat@example.net · from the Person card');
+    // No sender on record: the line still says where it went and where it was corrected.
+    expect(correctionLine({ ...c, fromAddress: null })).toBe('People → Updates · from the bucket chip');
+    // A domain preference says how far it reaches.
+    expect(correctionLine({ ...c, target: '@example.net', scope: 'domain' })).toBe('People → Updates · pat@example.net · from the bucket chip · learned for example.net (the whole domain)');
     expect(correctionTitle(c)).toBe('Hi');
     expect(correctionTitle({ ...c, subject: null, target: '@example.net', scope: 'domain' })).toBe('(no subject) · example.net (the whole domain)');
     expect(undoneMessage(c, { preferenceRestored: true, movedBack: true })).toBe('Undone: pat@example.net is sorted as before; the message is back in People.');
     expect(undoneMessage({ ...c, moved: false }, { preferenceRestored: false, movedBack: false })).toBe('Undone: a later choice for pat@example.net was kept.');
+  });
+
+  it('runs one write at a time: a second run while one is in flight never starts', async () => {
+    const guard = createRunGuard();
+    let release: () => void = () => undefined;
+    const first = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
+    const second = vi.fn(() => Promise.resolve());
+    const running = guard.run(first);
+    expect(running).not.toBeNull();
+    expect(guard.running).toBe(true);
+    // Save without turning on, Turn rules off, Enter — all refused while the first (or its step-up) waits.
+    expect(guard.run(second)).toBeNull();
+    expect(guard.run(second)).toBeNull();
+    expect(second).not.toHaveBeenCalled();
+    release();
+    await running;
+    expect(guard.running).toBe(false);
+    await guard.run(second);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the guard when a write fails, even one that throws before its first await', async () => {
+    const guard = createRunGuard();
+    await expect(guard.run(() => Promise.reject(new Error('409')))).rejects.toThrow('409');
+    expect(guard.running).toBe(false);
+    await expect(guard.run(() => { throw new Error('sync'); })).rejects.toThrow('sync');
+    expect(guard.running).toBe(false);
+    const ok = vi.fn(() => Promise.resolve());
+    await guard.run(ok);
+    expect(ok).toHaveBeenCalledTimes(1);
+  });
+
+  it('wires the guard and the busy state into every way to write', () => {
+    const rules = source('screens/Rules.tsx');
+    // run() goes through the guard; save and check bail out while one is running.
+    expect(rules).toMatch(/const run = \(work: \(\) => Promise<void>\) => \{\s*(\/\/[^\n]*\n\s*)*void guard\.run\(/);
+    expect(rules).toMatch(/const save = [\s\S]*?if \(guard\.running \|\| !validRows\(\)\) return;/);
+    // The SplitButton is the form's submit, disabled (both halves) while busy, and Enter saves the same way.
+    const split = rules.slice(rules.indexOf('<SplitButton'), rules.indexOf('</SplitButton>'));
+    expect(split).toContain('type="submit"');
+    expect(split).toContain('disabled={busy}');
+    expect(split).not.toContain('onClick');
+    expect(rules).toContain('<form onSubmit={save(true)} noValidate>');
+    // Delete: the confirm closes only once the delete went through or failed — a cancelled step-up keeps it.
+    const remove = rules.slice(rules.indexOf('const remove = '), rules.indexOf('const errorLine'));
+    expect(remove.indexOf('withStepUp(() => sieveApi.remove(target))')).toBeLessThan(remove.indexOf('setConfirming(null);'));
+    expect(remove).toMatch(/=== null\) return;/);
   });
 
   it('is the canvas: titled as the nav, centred, the editor first, one action row, no page-size empty state', () => {

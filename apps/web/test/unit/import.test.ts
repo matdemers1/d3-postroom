@@ -109,7 +109,11 @@ describe('the Import page (PST-T-17.11)', () => {
     expect(page).toMatch(/<FormActions className="pr-setform__actions">\s*<Button type="submit" variant="primary"/);
     // The second factor is asked when the import starts, in the shared step-up modal.
     expect(page).not.toMatch(/label="Authentication code"|one-time-code|api\.stepUp/);
-    expect(page).toContain('withStepUp(() => importApi.start(input()))');
+    expect(page).toContain('startImport(withStepUp, () => importApi.start(input()))');
+    // A cancelled step-up leaves the form as it was: only a started import clears the password.
+    const submit = page.slice(page.indexOf('const submit = '), page.indexOf('const cancel = '));
+    expect(submit).toMatch(/if \(outcome\.kind === 'cancelled'\) return;/);
+    expect(submit.indexOf("setPassword('')")).toBeGreaterThan(submit.indexOf("outcome.kind === 'failed'"));
     expect(page).not.toMatch(/<EmptyState\b/);
     expect(page).not.toMatch(/<Badge\b/);
   });
