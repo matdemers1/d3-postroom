@@ -158,8 +158,10 @@ function FramedBody({ ticket, size, subject, readPath }: { ticket: RenderTicket;
       {size.capped ? (
         <div className="pr-feed__more">
           <Link asChild variant="standalone">
-            <RouterLink to={readPath} data-testid="feed-read-in-full">
-              Read in full<span className="pr-vh">: {subject}</span>
+            {/* aria-label, not a visually hidden span: a hidden span is its own box, so the name read
+                "Read in full : subject" with a stray space. The label starts with the visible words. */}
+            <RouterLink to={readPath} data-testid="feed-read-in-full" aria-label={`Read in full: ${subject}`}>
+              Read in full
             </RouterLink>
           </Link>
         </div>

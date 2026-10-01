@@ -160,7 +160,7 @@ test('the palette lists every place from the route table, grouped, with keycaps'
   for (const name of ['Account', 'Browser sessions', 'App passwords', 'Connect a device', 'Addresses', 'Rules & sorting', 'Templates', 'Import', 'Encryption keys']) {
     await expect(settings.getByRole('option', { name: new RegExp(`^${name.replace(/[/]/g, '\\/')}`) })).toHaveCount(1);
   }
-  await expect(palette.getByRole('group', { name: 'Admin' }).getByRole('option')).toHaveCount(9);
+  await expect(palette.getByRole('group', { name: 'Admin' }).getByRole('option')).toHaveCount(10);
   // Keycaps from keys.ts: "Go to Inbox" carries g then i; Reply carries r.
   const inbox = palette.getByRole('option', { name: /^Go to Inbox/ });
   await expect(inbox.locator('kbd')).toHaveText(['g', 'i']);
