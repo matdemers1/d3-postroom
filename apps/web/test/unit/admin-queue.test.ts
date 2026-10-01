@@ -104,6 +104,6 @@ describe('AdminQueue layout (source)', () => {
   it('keeps its filters in the URL, and renders cards below 640px', () => {
     expect(screen).toContain('useSearchParams');
     expect(screen).toContain('<DataListRow');
-    expect(QUEUE_PHONE_QUERY).toBe('(max-width: 639px)');
+    expect(QUEUE_PHONE_QUERY).toBe('(max-width: 767px), (max-height: 499px)');
   });
 });

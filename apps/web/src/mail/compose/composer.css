@@ -378,7 +378,7 @@
 
 /* --- At phone width (PST-T-14.11, PST-REQ-155) -------------------------------------------------------- */
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 499px) {
   /* A chipped recipient and the 44 px input share one line: the input may shrink to a short
    * target rather than wrap under the chip, which left the chip riding above the "To" label in a
    * row twice as tall as it needed to be. */

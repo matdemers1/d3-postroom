@@ -136,7 +136,7 @@
 
 /* At phone width the chips stack, each a full-width row with 44px targets (mobile-targets.css grows
    the Retry and Remove buttons themselves). */
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 499px) {
   .pr-attach__list > li {
     flex: 1 1 100%;
   }

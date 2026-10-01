@@ -102,7 +102,7 @@
 
 /* At phone width every tap target is 44×44 of its own (PST-T-11.2, mobile-targets.css): grown for
  * real, since the chips wrap into rows where an invisible extension would reach the next one. */
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 499px) {
   .pr-subnav {
     gap: var(--space-8);
   }

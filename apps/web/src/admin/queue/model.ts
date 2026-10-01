@@ -4,7 +4,8 @@
 import type { AdminQueueRecipient, QueueStateFilter } from '../../api';
 
 /** Below 640px the queue is a list of cards (a DataList), not a table. */
-export const QUEUE_PHONE_QUERY = '(max-width: 639px)';
+// A phone in either orientation: the complement of mail/useMedia.ts SPLIT_QUERY (PST-T-16.18).
+export const QUEUE_PHONE_QUERY = '(max-width: 767px), (max-height: 499px)';
 
 export type QueueActionKind = 'retry' | 'force-ses' | 'bounce' | 'delete';
 

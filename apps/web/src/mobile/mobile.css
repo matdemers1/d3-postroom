@@ -4,7 +4,7 @@
 
 /* --- No drawer on a phone ------------------------------------------------------------------------ */
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 499px) {
   /* The shell's top bar holds only the hamburger and the brand; the push stack replaces both (the
    * Mailboxes root is the way to every place). One navigation model, not two (IA-14, RSP-04). */
   .d3-shell__bar {
@@ -276,7 +276,7 @@
 
 /* PST-T-14.11: while the bar is on screen a toast (the triage Undo) rises above it rather than
  * covering Archive / Delete / Move / Reply / More — and above the list's bottom bar the same way. */
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 499px) {
   :root:has(.pr-abar) .d3-toast-region {
     bottom: calc(var(--pr-abar-height) + var(--space-8));
   }
