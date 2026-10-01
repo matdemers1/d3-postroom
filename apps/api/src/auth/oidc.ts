@@ -150,11 +150,37 @@ export class OidcProvider {
     return inflight;
   }
 
-  /** Forget the client, so the next request rediscovers (used when a call to the issuer fails). */
-  reset(now: number = Date.now()): void {
+  /** Bumped by every {@link replace}: which settings a snapshot was taken under. */
+  get currentGeneration(): number {
+    return this.generation;
+  }
+
+  /**
+   * The client together with the settings it was discovered for, taken in one synchronous step after
+   * discovery, so a caller never pairs a client with settings a replace has since swapped in.
+   */
+  async snapshot(now: number = Date.now()): Promise<OidcSnapshot | null> {
+    const client = await this.get(now);
+    if (client === null || this.client !== client || this.current === null) return null;
+    return { client, settings: this.current, generation: this.generation };
+  }
+
+  /**
+   * Forget the client, so the next request rediscovers (used when a call to the issuer fails). With
+   * `generation`, only if the settings are still those: a failure under settings a save has since
+   * replaced says nothing about the new ones.
+   */
+  reset(now: number = Date.now(), generation?: number): void {
+    if (generation !== undefined && generation !== this.generation) return;
     this.client = null;
     this.lastFailureAt = now;
   }
+}
+
+export interface OidcSnapshot {
+  client: AuthClient;
+  settings: OidcSettings;
+  generation: number;
 }
 
 /** What went wrong with a fetch, in words: undici's "fetch failed" hides the reason in `cause`. */
@@ -167,6 +193,28 @@ function fetchErrorMessage(error: unknown): string {
     return `${error.message}: ${typeof code === 'string' ? code : cause.message}`;
   }
   return error.message;
+}
+
+/** A discovery document past this is refused unread (the admin Test button, PST-T-17.6). */
+export const MAX_DISCOVERY_BYTES = 256 * 1024;
+
+/** The body as text, or null (and the stream cancelled) as soon as it passes `max` bytes. */
+async function readCapped(res: Response, max: number): Promise<string | null> {
+  const declared = Number(res.headers.get('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > max) {
+    await res.body?.cancel();
+    return null;
+  }
+  if (res.body === null) return '';
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  // Leaving a for-await early cancels the stream: nothing past the cap is read.
+  for await (const value of res.body as unknown as AsyncIterable<Uint8Array>) {
+    total += value.byteLength;
+    if (total > max) return null;
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 export interface DiscoveryResult {
@@ -184,8 +232,15 @@ export interface DiscoveryResult {
 export async function discoverIssuer(issuer: string, fetcher: typeof fetch = timedFetch): Promise<DiscoveryResult> {
   try {
     const res = await fetcher(`${issuer}/.well-known/openid-configuration`, { headers: { accept: 'application/json' }, redirect: 'error' });
-    if (!res.ok) return { ok: false, issuer, error: `Discovery answered HTTP ${res.status}.` };
-    const doc = (await res.json()) as Record<string, unknown>;
+    if (!res.ok) {
+      await res.body?.cancel();
+      return { ok: false, issuer, error: `Discovery answered HTTP ${res.status}.` };
+    }
+    const text = await readCapped(res, MAX_DISCOVERY_BYTES);
+    if (text === null) return { ok: false, issuer, error: `The discovery document is larger than ${MAX_DISCOVERY_BYTES / 1024} KiB.` };
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return { ok: false, issuer, error: 'The discovery document is not a JSON object.' };
+    const doc = parsed as Record<string, unknown>;
     const named = typeof doc['issuer'] === 'string' ? doc['issuer'].replace(/\/+$/, '') : null;
     if (named !== issuer) return { ok: false, issuer, error: `The discovery document names a different issuer (${String(named).slice(0, 200)}).` };
     const authorizationEndpoint = doc['authorization_endpoint'];
@@ -222,6 +277,12 @@ export interface OidcTransaction {
   exp: number;
   /** Set when a signed-in account started this to link a D3 Auth identity to itself. */
   linkAccountId?: string;
+  /**
+   * The issuer and client ID the sign-in started with. The callback refuses it if the settings have
+   * changed since, before anything is sent to a token endpoint (PST-T-17.6).
+   */
+  iss: string;
+  cid: string;
 }
 
 function txKey(sessionSecret: string): Buffer {
@@ -248,7 +309,9 @@ export function openTransaction(sessionSecret: string, sealed: string): OidcTran
       typeof parsed.verifier !== 'string' ||
       typeof parsed.state !== 'string' ||
       typeof parsed.nonce !== 'string' ||
-      typeof parsed.exp !== 'number'
+      typeof parsed.exp !== 'number' ||
+      typeof parsed.iss !== 'string' ||
+      typeof parsed.cid !== 'string'
     ) {
       return null;
     }
@@ -257,6 +320,8 @@ export function openTransaction(sessionSecret: string, sealed: string): OidcTran
       state: parsed.state,
       nonce: parsed.nonce,
       exp: parsed.exp,
+      iss: parsed.iss,
+      cid: parsed.cid,
       ...(typeof parsed.linkAccountId === 'string' ? { linkAccountId: parsed.linkAccountId } : {}),
     };
   } catch {

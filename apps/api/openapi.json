@@ -767,6 +767,10 @@
               "roles"
             ],
             "additionalProperties": false
+          },
+          "signedOut": {
+            "description": "PUT and DELETE only: the change ended D3 Auth sessions and the caller’s own was one of them; its cookie is cleared.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -5797,6 +5801,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "last_sign_in_method: the account has no password and this is its only identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -5808,7 +5822,7 @@
           "Admin"
         ],
         "summary": "Turn Sign in with D3 Auth off, over the server file as well (PST-REQ-201).",
-        "description": "Needs a fresh step-up. The saved row wins over the D3AUTH_* server file, and the live provider is replaced in-process, so /api/auth/state reflects it on the next request with no restart. Saves { enabled: false } and removes the provider, so the button is disabled. Audited as auth.d3auth.disable.",
+        "description": "Needs a fresh step-up. The saved row wins over the D3AUTH_* server file, and the live provider is replaced in-process, so /api/auth/state reflects it on the next request with no restart. Saves { enabled: false }, which wins over the server file with or without the server key, and removes the provider, so the button is disabled. Ends every D3 Auth session (auth.session.revoke-d3auth); signedOut says whether the caller's own was one. Audited as auth.d3auth.disable.",
         "parameters": [
           {
             "name": "x-postroom-csrf",
@@ -5899,7 +5913,7 @@
           "Admin"
         ],
         "summary": "Save the issuer, client ID and (sealed under the server key) client secret, and use them now (PST-REQ-201).",
-        "description": "Needs a fresh step-up. The saved row wins over the D3AUTH_* server file, and the live provider is replaced in-process, so /api/auth/state reflects it on the next request with no restart. Audited as auth.d3auth.configure, before and after without the secret.",
+        "description": "Needs a fresh step-up. The saved row wins over the D3AUTH_* server file, and the live provider is replaced in-process, so /api/auth/state reflects it on the next request with no restart. Audited as auth.d3auth.configure, before and after without the secret. The saved secret is kept only for the same issuer and client ID. A changed issuer or client ID ends every D3 Auth session (audited as auth.session.revoke-d3auth); signedOut says whether the caller's own was one, and its cookie is cleared.",
         "parameters": [
           {
             "name": "x-postroom-csrf",
@@ -5959,7 +5973,7 @@
             }
           },
           "400": {
-            "description": "Invalid issuer or client ID, or no secret given while none is saved.",
+            "description": "Invalid issuer or client ID, or no secret given while none is saved or while the issuer or client ID changes (fields[].path clientSecret).",
             "content": {
               "application/json": {
                 "schema": {
@@ -5988,6 +6002,16 @@
               }
             }
           },
+          "409": {
+            "description": "Another save changed the settings between the check and the commit; reload and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "The server key (POSTROOM_KEK) is not loaded, so a secret cannot be sealed.",
             "content": {
@@ -6008,7 +6032,7 @@
           "Admin"
         ],
         "summary": "Fetch an issuer’s discovery document, the one given or the one in force, and say whether it answers.",
-        "description": "No secret involved and nothing saved; the attempt is audited as auth.d3auth.test. Admin only.",
+        "description": "No secret involved and nothing saved; the attempt is audited as auth.d3auth.test. The discovery document is read up to 256 KiB. Ten a minute per account. Admin only.",
         "parameters": [
           {
             "name": "x-postroom-csrf",
@@ -6071,6 +6095,16 @@
           },
           "403": {
             "description": "Not an admin, missing CSRF header, or (writes) no fresh step-up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "More than ten tests in a minute.",
             "content": {
               "application/json": {
                 "schema": {

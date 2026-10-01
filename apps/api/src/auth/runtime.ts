@@ -5,7 +5,7 @@ import { kekFromBase64, type Kek } from '@postroom/crypto';
 import type { Db } from '@postroom/db';
 import type { ApiDeps } from '../deps.js';
 import { WindowLimiter } from '../mobileconfig/link.js';
-import { readStored, resolveD3Auth, type D3AuthState } from './d3auth-settings.js';
+import { normalizeIssuer, readStored, resolveD3Auth, type D3AuthState } from './d3auth-settings.js';
 import { OidcProvider, type OidcSettings } from './oidc.js';
 import { isSecureOrigin } from './sessions.js';
 import { SignInThrottle } from './throttle.js';
@@ -145,8 +145,14 @@ export function oidcSettings(deps: ApiDeps): OidcSettings | null {
   const clientId = blank(deps.config.d3authClientId);
   const clientSecret = blank(deps.config.d3authClientSecret);
   if (issuer === null || clientId === null || clientSecret === null) return null;
+  // The same normalisation the console applies; a value it refuses is still used as the server file
+  // gives it (trailing slashes stripped), and said so, rather than failing the boot.
+  const normalized = normalizeIssuer(issuer);
+  if (normalized === null) {
+    process.stderr.write(`${JSON.stringify({ event: 'd3auth-env-issuer-unnormalized', issuer })}\n`);
+  }
   return {
-    issuer: issuer.replace(/\/+$/, ''),
+    issuer: normalized ?? issuer.replace(/\/+$/, ''),
     clientId,
     clientSecret,
     redirectUri: redirectUriFor(deps.config.webOrigin),

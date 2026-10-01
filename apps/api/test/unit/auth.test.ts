@@ -18,7 +18,7 @@ describe('auth pieces', () => {
   });
 
   it('seals the OIDC transaction so it can be neither read nor forged', () => {
-    const tx = { verifier: 'v', state: 's', nonce: 'n', exp: 123 };
+    const tx = { verifier: 'v', state: 's', nonce: 'n', exp: 123, iss: 'https://i.example', cid: 'c' };
     const sealed = sealTransaction('secret-one', tx);
     expect(sealed).not.toContain('verifier');
     expect(openTransaction('secret-one', sealed)).toEqual(tx);
