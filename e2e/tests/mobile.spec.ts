@@ -13,7 +13,8 @@
 //
 // This test skips itself outside the 'mobile' Playwright project — the desktop project's exit demo
 // is the other specs' 1280 px assertions.
-import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
+import { AxeBuilder } from '@axe-core/playwright';
+import { expect, test, type APIRequestContext, type BrowserContext, type Locator, type Page } from '@playwright/test';
 
 import { ensureOperator, seedMail, signInCookies, tag, type Operator } from './support.js';
 
@@ -333,7 +334,7 @@ test.describe('signed in', () => {
     // menu — where the list's Back goes.
     await page.getByTestId('context-bar').getByRole('link', { name: 'Inbox', exact: true }).click();
     await page.getByTestId('context-bar').getByRole('link', { name: 'Mailboxes', exact: true }).click();
-    await expect(page).toHaveURL(/\/mail$/);
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Mailboxes' }).getByRole('link', { name: /^Inbox/ })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Places' }).getByRole('link')).toHaveText(['Calendar', 'Contacts']);
     await assertMobileFriendly(page, '/mail (mailbox list)');
@@ -659,5 +660,166 @@ test.describe('Outbound queue as cards (PST-T-16.13)', () => {
     const drawer = page.getByRole('dialog', { name: 'Delivery details' });
     await expect(drawer.getByTestId('queue-last-response')).toContainText('greylisted (seeded for e2e)');
     await assertMobileFriendly(page, '/admin/queue (details drawer)');
+  });
+});
+
+// PST-T-16.15 (PST-DA-066, PST-DA-035, PST-REQ-190, PST-REQ-155): triage by swipe on a phone. A row
+// dragged left past 40% of its width archives through the triage path (so the Undo toast appears and
+// Undo restores it); dragged right it toggles read/unread; a short drag snaps back; reduced motion
+// still commits without the slide; axe is clean with the swipe surfaces drawn and mid-drag. The
+// gesture is driven as Pointer Events with pointerType "touch" dispatched on the row (Playwright has
+// no drag-by-finger), which is exactly what a touch screen delivers to the handlers.
+test.describe('Swipe triage (PST-T-16.15)', () => {
+  test.beforeAll(async () => {
+    if (cookies.length === 0) {
+      operator = await ensureOperator(api);
+      cookies = await signInCookies(api, operator);
+    }
+  });
+
+  const rowFor = (page: Page, subject: string): Locator =>
+    page.getByRole('listbox', { name: 'Messages in Inbox' }).getByRole('option', { name: new RegExp(subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
+  const toasts = (page: Page): Locator => page.getByRole('region', { name: 'Notifications' });
+
+  /**
+   * One touch drag across a row: `fraction` of the row's width (negative: leftwards), in six moves,
+   * with `dy` of vertical drift. `release: false` stops mid-drag (no pointerup) for a look at the
+   * revealed surface; `finish()` then lets go.
+   */
+  async function drag(row: Locator, fraction: number, options: { dy?: number; release?: boolean } = {}): Promise<void> {
+    await row.evaluate(
+      (el, input) => {
+        const g = globalThis as unknown as { PointerEvent: new (type: string, init: Record<string, unknown>) => unknown };
+        const node = el as unknown as {
+          getBoundingClientRect(): { left: number; top: number; width: number; height: number };
+          dispatchEvent(e: unknown): boolean;
+        };
+        const r = node.getBoundingClientRect();
+        const x0 = r.left + r.width * (input.fraction < 0 ? 0.85 : 0.15);
+        const y0 = r.top + r.height / 2;
+        const fire = (type: string, x: number, y: number): void => {
+          node.dispatchEvent(
+            new g.PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y, buttons: type === 'pointerup' ? 0 : 1 }),
+          );
+        };
+        fire('pointerdown', x0, y0);
+        for (let i = 1; i <= 6; i++) fire('pointermove', x0 + (input.fraction * r.width * i) / 6, y0 + (input.dy * i) / 6);
+        if (input.release) fire('pointerup', x0 + input.fraction * r.width, y0 + input.dy);
+      },
+      { fraction, dy: options.dy ?? 0, release: options.release ?? true },
+    );
+  }
+
+  /** Lets go of a drag left open by `release: false`, back where it started (a cancel). */
+  async function cancelDrag(row: Locator): Promise<void> {
+    await row.evaluate((el) => {
+      const g = globalThis as unknown as { PointerEvent: new (type: string, init: Record<string, unknown>) => unknown };
+      (el as unknown as { dispatchEvent(e: unknown): boolean }).dispatchEvent(new g.PointerEvent('pointercancel', { bubbles: true, pointerId: 7, pointerType: 'touch', isPrimary: true }));
+    });
+  }
+
+  async function seedOne(label: string): Promise<{ id: string; mailboxId: string; subject: string }> {
+    const t = tag();
+    const [m] = await seedMail(api, [{ subject: `${label} ${t}`, from: `Grace Hopper <grace.${t}@example.org>`, text: `Swipe me ${t}.` }]);
+    if (m === undefined) throw new Error('seed returned nothing');
+    return m;
+  }
+
+  async function archivedSubjects(): Promise<string[]> {
+    const { mailboxes } = (await (await api.get('/api/mailboxes')).json()) as { mailboxes: { id: string; specialUse: string | null }[] };
+    const archive = mailboxes.find((b) => b.specialUse === 'archive');
+    if (archive === undefined) throw new Error('no Archive mailbox');
+    const res = await api.get(`/api/mailboxes/${archive.id}/messages?limit=200`);
+    return ((await res.json()) as { messages: { subject: string }[] }).messages.map((m) => m.subject);
+  }
+
+  test('a left swipe past 40% archives the row, shows the Undo toast, and Undo restores it', async ({ page }) => {
+    const m = await seedOne('Swipe archive');
+    await page.goto('/');
+    const row = rowFor(page, m.subject);
+    await expect(row).toBeVisible();
+
+    await drag(row, -0.6);
+    await expect(row).toHaveCount(0);
+    await expect(toasts(page)).toContainText(`Moved to Archive · ${m.subject}`);
+    await expect.poll(async () => (await archivedSubjects()).includes(m.subject)).toBe(true);
+    // It did not open: a swipe is not a tap.
+    await expect(page).toHaveURL(/\/mail\/inbox\/?$|\/$/);
+
+    await toasts(page).getByRole('button', { name: 'Undo' }).click();
+    await expect(rowFor(page, m.subject)).toHaveCount(1);
+    await expect.poll(async () => (await archivedSubjects()).includes(m.subject)).toBe(false);
+  });
+
+  test('a short drag snaps back and does nothing; a vertical drag is left to the list', async ({ page }) => {
+    const m = await seedOne('Swipe short');
+    await page.goto('/');
+    const row = rowFor(page, m.subject);
+    await expect(row).toBeVisible();
+
+    await drag(row, -0.2);
+    await drag(row, -0.7, { dy: 120 });
+    await expect(row).toHaveCount(1);
+    await expect(row).not.toHaveAttribute('data-swipe', /.+/);
+    await expect(toasts(page)).not.toContainText(m.subject);
+    expect(await archivedSubjects()).not.toContain(m.subject);
+  });
+
+  test('a right swipe past 40% toggles read/unread', async ({ page }) => {
+    const m = await seedOne('Swipe read');
+    await page.goto('/');
+    const row = rowFor(page, m.subject);
+    await expect(row).toHaveClass(/pr-mrow--unread/);
+
+    await drag(row, 0.6);
+    await expect(row).not.toHaveClass(/pr-mrow--unread/);
+    await drag(row, 0.6);
+    await expect(row).toHaveClass(/pr-mrow--unread/);
+  });
+
+  test('the swipe surfaces are decorative: axe is clean at rest and mid-drag, and the row gains no focus stop', async ({ page }) => {
+    const m = await seedOne('Swipe axe');
+    await page.goto('/');
+    const row = rowFor(page, m.subject);
+    await expect(row).toBeVisible();
+    await expect(row.locator('button, a, [tabindex]')).toHaveCount(0);
+
+    const check = async (label: string): Promise<void> => {
+      const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).include('[role="listbox"]').analyze();
+      expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`), label).toEqual([]);
+    };
+    await check('at rest');
+    await drag(row, -0.25, { release: false });
+    await expect(row).toHaveAttribute('data-swipe', 'reveal-archive');
+    await check('revealing Archive');
+    await cancelDrag(row);
+    await expect(row).not.toHaveAttribute('data-swipe', /.+/);
+    await drag(row, 0.25, { release: false });
+    await expect(row).toHaveAttribute('data-swipe', 'reveal-read');
+    await check('revealing Read');
+    await cancelDrag(row);
+  });
+
+  test.describe('with reduced motion', () => {
+    test.use({ reducedMotion: 'reduce' });
+
+    test('the row does not slide, and the action still commits', async ({ page }) => {
+      const m = await seedOne('Swipe reduced');
+      await page.goto('/');
+      const row = rowFor(page, m.subject);
+      await expect(row).toBeVisible();
+
+      await drag(row, -0.6, { release: false });
+      await expect(row).toHaveAttribute('data-swipe', 'commit-archive');
+      const moved = await row.locator('.pr-mrow__inner').evaluate((el) => (globalThis as unknown as { getComputedStyle(e: unknown): { translate: string } }).getComputedStyle(el).translate);
+      expect(moved === 'none' || moved === '0px' || moved === '0px 0px').toBe(true);
+      await cancelDrag(row);
+
+      await drag(row, -0.6);
+      await expect(row).toHaveCount(0);
+      await expect(toasts(page)).toContainText(`Moved to Archive · ${m.subject}`);
+      await toasts(page).getByRole('button', { name: 'Undo' }).click();
+      await expect(rowFor(page, m.subject)).toHaveCount(1);
+    });
   });
 });

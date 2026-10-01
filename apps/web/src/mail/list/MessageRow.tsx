@@ -12,6 +12,10 @@
 // (+1)") and the avatar follows the first of them; the mailbox's specialUse comes from the row's own
 // mailbox in the mail context, so a Sent message reads the same in a search result.
 //
+// PST-T-16.15 (PST-DA-066): on a touch screen two decorative surfaces sit under the row's content —
+// Archive on the trailing side, Read/Unread on the leading — which a sideways drag uncovers
+// (../../mobile/swipe.ts decides, useRowSwipe moves; list.css draws).
+//
 // A leaving row keeps its height — its slot is the placeholder — while its content fades and slides
 // out; the list then drops the slot in one frame, so nothing inside the virtual window animates its
 // layout.
@@ -22,6 +26,7 @@ import { listDate } from '../format';
 import { PaperclipIcon, StarIcon } from '../icons';
 import { isStarred, isUnread } from '../list';
 import { useOptionalMail } from '../MailContext';
+import { readLabel } from '../../mobile/swipe';
 import { rowAvatarName, senderLine, snippetLine, type RowSummary } from './triage';
 
 /** Must match .pr-mrow's height in list.css. */
@@ -67,6 +72,11 @@ export interface MessageRowProps {
   /** PST-T-16.12: the specialUse of the row's mailbox; when absent it is looked up from the mail
    *  context by the message's mailboxId. Sent and Drafts rows name the recipients. */
   specialUse?: SpecialUse | null;
+  /** PST-T-16.15: draw the swipe surfaces under the row (a touch screen). Decorative: the row's own
+   *  actions stay the way in for the keyboard and for screen readers. */
+  swipeable?: boolean;
+  /** PST-T-16.15: the trailing (Archive) surface exists; false where the mailbox cannot be archived from. */
+  swipeArchive?: boolean;
 }
 
 export const MessageRow = memo(function MessageRow({
@@ -84,6 +94,8 @@ export const MessageRow = memo(function MessageRow({
   threadCount = 1,
   showPriority = true,
   specialUse,
+  swipeable = false,
+  swipeArchive = true,
 }: MessageRowProps) {
   const mail = useOptionalMail();
   const use = specialUse !== undefined ? specialUse : (mail?.mailboxes?.find((b) => b.id === m.mailboxId)?.specialUse ?? null);
@@ -112,6 +124,18 @@ export const MessageRow = memo(function MessageRow({
       data-index={index}
       className={classes.join(' ')}
     >
+      {swipeable ? (
+        <>
+          <span className="pr-mrow__swipe pr-mrow__swipe--read" aria-hidden="true">
+            {readLabel(unread)}
+          </span>
+          {swipeArchive ? (
+            <span className="pr-mrow__swipe pr-mrow__swipe--archive" aria-hidden="true">
+              Archive
+            </span>
+          ) : null}
+        </>
+      ) : null}
       <span className="pr-mrow__inner">
         <span className="pr-mrow__dot" aria-hidden="true" />
         {/* The avatar is the pointer's way into selection: a click on it toggles the row (x does
