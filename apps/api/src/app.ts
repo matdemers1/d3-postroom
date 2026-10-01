@@ -36,7 +36,7 @@ import { sortingRoutes } from './sorting/index.js';
 import { sesSnsRoutes } from './ses/index.js';
 import { importRoutes } from './import/index.js';
 import { mobileconfigOnceRoutes, mobileconfigRoutes } from './mobileconfig/index.js';
-import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
+import { accountIdentityRoutes, adminRoutes, authRoutes, csrfGuard, d3authAdminRoutes, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import { isSecureOrigin } from './auth/sessions.js';
 import type { ApiDeps } from './deps.js';
 
@@ -139,7 +139,11 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/admin/smtp', requireAdmin(deps), adminSmtpRoutes(deps));
   app.use('/api/admin/dns', requireAdmin(deps), adminDnsRoutes(deps));
   app.use('/api/admin/setup-wizard', requireAdmin(deps), setupWizardRoutes(deps));
+  // PST-T-17.6 (PST-ADR-014): Sign in with D3 Auth configured from the console.
+  app.use('/api/admin/auth/d3auth', requireAdmin(deps), d3authAdminRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
+  // PST-T-17.6 (PST-REQ-202): the caller's linked D3 Auth identities.
+  app.use('/api/account', requireSession(deps), accountIdentityRoutes(deps));
   app.use('/api/app-passwords', requireSession(deps), appPasswordRoutes(deps));
   app.use('/api/aliases', requireSession(deps), aliasRoutes(deps));
   app.use('/api/senders', requireSession(deps), senderRoutes(deps));

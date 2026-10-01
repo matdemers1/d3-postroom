@@ -18,6 +18,7 @@ import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import type { Express } from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
+import { runtimeFor } from '../../src/auth/runtime.js';
 import { onceLinkStats, OPENS_PER_LINK } from '../../src/mobileconfig/index.js';
 import { LINK_TTL_MS } from '../../src/mobileconfig/link.js';
 import { request } from '../loopback.js';
@@ -339,7 +340,7 @@ describe.skipIf(!baseUrl)('one-time profile links (PST-T-16.16)', () => {
      * A second app over the same database whose client counts every query it runs, raw ones (the
      * advisory lock) included. Its own limiters, so the replays below start from a clean count.
      */
-    const counted = (): { app: Express; stats: { queries: number; locks: number } } => {
+    const counted = async (): Promise<{ app: Express; stats: { queries: number; locks: number } }> => {
       const stats = { queries: 0, locks: 0 };
       const client = db.$extends({
         query: {
@@ -350,11 +351,17 @@ describe.skipIf(!baseUrl)('one-time profile links (PST-T-16.16)', () => {
           },
         },
       });
-      return { app: createApp({ db: client as unknown as Db, env: {}, config: baseConfig(clock) }), stats };
+      const deps = { db: client as unknown as Db, env: {}, config: baseConfig(clock) };
+      const counting = createApp(deps);
+      // The runtime reads the saved D3 Auth settings at boot (PST-T-17.6); that read is not an open's.
+      await runtimeFor(deps).oidc.ready();
+      stats.queries = 0;
+      stats.locks = 0;
+      return { app: counting, stats };
     };
 
     const replay = async (path: string): Promise<void> => {
-      const { app: replayApp, stats } = counted();
+      const { app: replayApp, stats } = await counted();
       const locksBefore = onceLinkStats.locks;
       const perOpen: number[] = [];
       const results = [];
@@ -395,7 +402,7 @@ describe.skipIf(!baseUrl)('one-time profile links (PST-T-16.16)', () => {
     it('the first open still goes through the lock', async () => {
       const me = await person();
       const link = await createLink(me);
-      const { app: replayApp, stats } = counted();
+      const { app: replayApp, stats } = await counted();
       const locksBefore = onceLinkStats.locks;
       expect((await open(replayApp, pathOf(link))).status).toBe(200);
       expect(stats.locks).toBe(1);

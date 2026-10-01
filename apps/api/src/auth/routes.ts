@@ -1252,6 +1252,8 @@ export function authRoutes(deps: ApiDeps): Router {
     '/oidc/backchannel-logout',
     express.urlencoded({ extended: false, limit: '64kb' }),
     handle(async (req, res) => {
+      // Read through the runtime each time: the console may have replaced the settings (PST-ADR-014).
+      await rt.oidc.ready();
       const settings = rt.oidc.settings;
       if (settings === null) {
         res.status(404).json({ error: 'not_configured' });
