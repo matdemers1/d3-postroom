@@ -4,6 +4,9 @@ import { Alert, AuthLayout, Button, Card, FormActions, FormField, Input, Passwor
 import { PostroomMark } from '../brand/PostroomMark';
 import { api, describeError, type AuthState } from '../api';
 import { describeRecoveryError, USE_AUTHENTICATOR_LABEL, USE_RECOVERY_LABEL } from './recovery/codes';
+import { reenrolApi } from './reenrol/api';
+import { ReEnrol } from './reenrol/ReEnrol';
+import { needsReenrol } from './reenrol/reenrolment';
 
 /**
  * Two ways in, side by side (PST-REQ-005). The password form is always here; the D3 Auth button
@@ -20,6 +23,11 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
   const [error, setError] = useState<string | null>(null);
   const [linkAfter, setLinkAfter] = useState(false);
   const [busy, setBusy] = useState(false);
+  /**
+   * PST-REQ-200: a recovery code signed this session in, so it sets up a new authenticator here
+   * before going on — the auth state is refreshed only once that is done.
+   */
+  const [reenrol, setReenrol] = useState(false);
 
   // A refused D3 Auth sign-in comes back as a redirect carrying its reason. Read once, then
   // cleared from the URL so a reload does not re-announce it.
@@ -51,20 +59,29 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
       });
   };
 
+  /** Signed in (and re-enrolled, when that was needed): on to D3 Auth linking, or into the app. */
+  const carryOn = async () => {
+    if (linkAfter) {
+      // A real navigation: the server answers with a redirect to D3 Auth.
+      window.location.assign('/api/auth/oidc/start?link=1');
+      return;
+    }
+    await onSignedIn();
+  };
+
   const submitCode = (event: SyntheticEvent) => {
     event.preventDefault();
     if (challenge === null) return;
     setError(null);
     setBusy(true);
-    api
+    reenrolApi
       .signInTotp({ challenge, code })
-      .then(async () => {
-        if (linkAfter) {
-          // A real navigation: the server answers with a redirect to D3 Auth.
-          window.location.assign('/api/auth/oidc/start?link=1');
+      .then(async (result) => {
+        if (needsReenrol(result)) {
+          setReenrol(true);
           return;
         }
-        await onSignedIn();
+        await carryOn();
       })
       .catch((caught: unknown) => {
         setCode('');
@@ -75,6 +92,8 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
         setBusy(false);
       });
   };
+
+  if (reenrol) return <ReEnrol onDone={carryOn} />;
 
   return (
     <AuthLayout

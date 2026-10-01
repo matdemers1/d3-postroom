@@ -335,6 +335,9 @@ model Session {
   /// For an OIDC session: the identity it came from, so back-channel logout can find it.
   oidcIssuer  String?   @map("oidc_issuer")
   oidcSubject String?   @map("oidc_subject")
+  /// How a password session's second factor was satisfied: "totp" or "recovery_code" (PST-REQ-200).
+  /// A recovery-code session must enrol a new authenticator before any step-up action. Null for OIDC.
+  secondFactor String? @map("second_factor")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 

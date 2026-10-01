@@ -8,7 +8,7 @@ import { AddressKind, normalizeLocalPart, parseAddress, type Account, type Db, t
 import express, { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { ApiDeps } from '../deps.js';
-import { currentSession, handle, requireSession, requireStepUp, sessionOf } from './middleware.js';
+import { currentSession, handle, refuseUntilReenrolled, requireSession, requireStepUp, sessionOf } from './middleware.js';
 import {
   IdentityCollision,
   openTransaction,
@@ -23,6 +23,7 @@ import { checkPassword, MAX_PASSWORD_LENGTH, type PasswordProblem } from './pass
 import {
   CHALLENGE_TTL_MS,
   MAX_CODE_ATTEMPTS,
+  REENROL_TTL_MS,
   runtimeFor,
   SETUP_TTL_MS,
   STEP_UP_MS,
@@ -36,6 +37,7 @@ import {
   readCookie,
   sessionCookieName,
   setSessionCookie,
+  type SecondFactor,
 } from './sessions.js';
 import {
   formatRecoveryCode,
@@ -49,7 +51,7 @@ import {
 } from './recovery.js';
 import { completeSetup, isSetupRequired, SetupConflict } from './setup.js';
 import { checkSetupGate } from './setup-gate.js';
-import { burnStep, generateTotpSecret, matchStep, openTotpSecret, provisioningUri } from './totp.js';
+import { burnStep, generateTotpSecret, matchStep, openTotpSecret, provisioningUri, sealTotpSecret } from './totp.js';
 
 const Login = z.string().trim().min(1).max(320);
 const Password = z.string().min(1).max(1024);
@@ -122,8 +124,12 @@ async function endPresentedSession(rt: AuthRuntime, tx: Prisma.TransactionClient
   return row.id;
 }
 
-/** Signed in or stepped up within the step-up window: fresh enough to change how the account signs in. */
-function freshlyAuthenticated(rt: AuthRuntime, session: { createdAt: Date; stepUpAt: Date | null }): boolean {
+/**
+ * Signed in or stepped up within the step-up window: fresh enough to change how the account signs
+ * in. A recovery-code session never is until it re-enrols its authenticator (PST-REQ-200).
+ */
+function freshlyAuthenticated(rt: AuthRuntime, session: { createdAt: Date; stepUpAt: Date | null; reenrolRequired: boolean }): boolean {
+  if (session.reenrolRequired) return false;
   const now = rt.now().getTime();
   const at = Math.max(session.createdAt.getTime(), session.stepUpAt?.getTime() ?? -Infinity);
   const age = now - at;
@@ -243,6 +249,8 @@ export function authRoutes(deps: ApiDeps): Router {
                 address: await primaryAddress(db, session.accountId),
               },
               method: session.meta.method,
+              // Signed in with a recovery code: 'Set up a new authenticator' comes first (PST-REQ-200).
+              reenrolRequired: session.reenrolRequired,
             }),
       });
     }),
@@ -433,7 +441,7 @@ export function authRoutes(deps: ApiDeps): Router {
       }
 
       const challenge = randomBytes(32).toString('base64url');
-      rt.challenges.set(challenge, { accountId: account.id, login, exp: nowMs() + CHALLENGE_TTL_MS, attempts: 0 });
+      rt.challenges.set(challenge, { accountId: account.id, login, exp: nowMs() + CHALLENGE_TTL_MS, attempts: 0, checking: false });
       await recordAudit(db, {
         actor: asAccount(account.id),
         action: 'auth.signin.password_accepted',
@@ -459,7 +467,8 @@ export function authRoutes(deps: ApiDeps): Router {
         badRequest(res, parsed.error);
         return;
       }
-      const pending = rt.challenges.get(parsed.data.challenge, nowMs());
+      const challengeId = parsed.data.challenge;
+      const pending = rt.challenges.get(challengeId, nowMs());
       if (pending === undefined) {
         res.status(401).json({ error: 'challenge_expired' });
         return;
@@ -472,75 +481,96 @@ export function authRoutes(deps: ApiDeps): Router {
         res.status(429).json({ error: 'too_many_attempts', retryAfterSeconds: Math.ceil(wait / 1000) });
         return;
       }
-      const account = await db.account.findUnique({ where: { id: pending.accountId } });
+      // One code check in flight per challenge (PST-T-16.26). A recovery-code check is up to ten
+      // Argon2id verifies; N guesses fired at once on one challenge would otherwise all pass the
+      // checks above and each run them. Refused here, before anything is hashed.
+      if (pending.checking) {
+        logThrottled(req);
+        res.setHeader('Retry-After', '1');
+        res.status(429).json({ error: 'too_many_attempts', retryAfterSeconds: 1, reason: 'check_in_flight' });
+        return;
+      }
+      // Claim the attempt BEFORE checking the code: the attempt cap, the challenge's burn at the cap
+      // and the (login, IP) throttle all count this guess now, synchronously, so no request that
+      // arrives while it is being checked sees a stale count. A success clears the throttle again.
+      pending.checking = true;
+      pending.attempts += 1;
+      if (pending.attempts >= MAX_CODE_ATTEMPTS) rt.challenges.delete(challengeId);
+      rt.throttle.recordFailure(pending.login, ip, nowMs());
+
       // A recovery code in place of the TOTP code (PST-REQ-197): same challenge, same throttle and
       // attempt cap (PST-REQ-075), and spent in the transaction that issues the session.
       const recoveryCode = normalizeRecoveryCode(parsed.data.code);
-      const factor = recoveryCode === null ? 'totp' : 'recovery_code';
+      const factor: SecondFactor = recoveryCode === null ? 'totp' : 'recovery_code';
       const pepper = rt.pepper;
 
+      let account: Account | null;
       let issued: Awaited<ReturnType<typeof issueSession>> | null = null;
-      if (account !== null && recoveryCode !== null) {
-        const unused = await db.recoveryCode.findMany({
-          where: { accountId: account.id, usedAt: null },
-          select: { id: true, codeHash: true },
-          orderBy: { createdAt: 'asc' },
-        });
-        const codeId = await matchRecoveryCode(unused, recoveryCode, pepper);
-        issued =
-          codeId === null
-            ? null
-            : await db.$transaction(async (tx) => {
-                const at = rt.now();
-                if (!(await spendRecoveryCode(tx, account.id, codeId, at))) return null;
-                const remaining = await tx.recoveryCode.count({ where: { accountId: account.id, usedAt: null } });
-                await recordAudit(tx, {
-                  actor: asAccount(account.id),
-                  action: 'auth.recovery-code.use',
-                  entityType: 'recovery_code',
-                  entityId: codeId,
-                  before: { usedAt: null },
-                  after: { usedAt: at, remaining },
-                  context: getAuditContext(req),
+      try {
+        account = await db.account.findUnique({ where: { id: pending.accountId } });
+        const found = account;
+        if (found !== null && recoveryCode !== null) {
+          const unused = await db.recoveryCode.findMany({
+            where: { accountId: found.id, usedAt: null },
+            select: { id: true, codeHash: true },
+            orderBy: { createdAt: 'asc' },
+          });
+          const codeId = await matchRecoveryCode(unused, recoveryCode, pepper);
+          issued =
+            codeId === null
+              ? null
+              : await db.$transaction(async (tx) => {
+                  const at = rt.now();
+                  if (!(await spendRecoveryCode(tx, found.id, codeId, at))) return null;
+                  const remaining = await tx.recoveryCode.count({ where: { accountId: found.id, usedAt: null } });
+                  await recordAudit(tx, {
+                    actor: asAccount(found.id),
+                    action: 'auth.recovery-code.use',
+                    entityType: 'recovery_code',
+                    entityId: codeId,
+                    before: { usedAt: null },
+                    after: { usedAt: at, remaining },
+                    context: getAuditContext(req),
+                  });
+                  const replaced = await endPresentedSession(rt, tx, req);
+                  // Marked, so it must enrol a new authenticator before any step-up (PST-REQ-200).
+                  const session = await issueSession(tx, found.id, { method: 'password', roles: [], secondFactor: factor }, req, at);
+                  await recordAudit(tx, {
+                    actor: asAccount(found.id),
+                    action: 'auth.signin',
+                    entityType: 'session',
+                    entityId: session.id,
+                    after: { method: 'password', factor, accountId: found.id, replacedSessionId: replaced, reenrolRequired: true },
+                    context: getAuditContext(req),
+                  });
+                  return session;
                 });
-                const replaced = await endPresentedSession(rt, tx, req);
-                const session = await issueSession(tx, account.id, { method: 'password', roles: [] }, req, at);
-                await recordAudit(tx, {
-                  actor: asAccount(account.id),
-                  action: 'auth.signin',
-                  entityType: 'session',
-                  entityId: session.id,
-                  after: { method: 'password', factor, accountId: account.id, replacedSessionId: replaced },
-                  context: getAuditContext(req),
+        } else if (found !== null) {
+          const secret = found.totpSecret === null ? null : openTotpSecret(kek, found.totpSecret, found.id);
+          const step = secret === null ? null : matchStep(secret, parsed.data.code, rt.now());
+          issued =
+            step === null
+              ? null
+              : await db.$transaction(async (tx) => {
+                  if (!(await burnStep(tx, found.id, step))) return null;
+                  const replaced = await endPresentedSession(rt, tx, req);
+                  const session = await issueSession(tx, found.id, { method: 'password', roles: [], secondFactor: factor }, req, rt.now());
+                  await recordAudit(tx, {
+                    actor: asAccount(found.id),
+                    action: 'auth.signin',
+                    entityType: 'session',
+                    entityId: session.id,
+                    after: { method: 'password', factor, accountId: found.id, replacedSessionId: replaced },
+                    context: getAuditContext(req),
+                  });
+                  return session;
                 });
-                return session;
-              });
-      } else if (account !== null) {
-        const secret = account.totpSecret === null ? null : openTotpSecret(kek, account.totpSecret, account.id);
-        const step = secret === null ? null : matchStep(secret, parsed.data.code, rt.now());
-        issued =
-          step === null
-            ? null
-            : await db.$transaction(async (tx) => {
-                if (!(await burnStep(tx, account.id, step))) return null;
-                const replaced = await endPresentedSession(rt, tx, req);
-                const session = await issueSession(tx, account.id, { method: 'password', roles: [] }, req, rt.now());
-                await recordAudit(tx, {
-                  actor: asAccount(account.id),
-                  action: 'auth.signin',
-                  entityType: 'session',
-                  entityId: session.id,
-                  after: { method: 'password', factor, accountId: account.id, replacedSessionId: replaced },
-                  context: getAuditContext(req),
-                });
-                return session;
-              });
+        }
+      } finally {
+        pending.checking = false;
       }
 
       if (issued === null || account === null) {
-        pending.attempts += 1;
-        if (pending.attempts >= MAX_CODE_ATTEMPTS) rt.challenges.delete(parsed.data.challenge);
-        rt.throttle.recordFailure(pending.login, ip, nowMs());
         await recordAudit(db, {
           actor: anonymous,
           action: 'auth.signin.rejected',
@@ -552,11 +582,16 @@ export function authRoutes(deps: ApiDeps): Router {
         res.status(401).json({ error: 'invalid_code' });
         return;
       }
-      rt.challenges.delete(parsed.data.challenge);
+      rt.challenges.delete(challengeId);
       rt.throttle.clear(pending.login, ip);
       rt.ipThrottle.clear(ANY_LOGIN, ip);
       setSessionCookie(res, issued.token, rt.secure);
-      res.json({ next: 'done', account: { id: account.id, displayName: account.displayName, isAdmin: account.isAdmin } });
+      res.json({
+        next: 'done',
+        account: { id: account.id, displayName: account.displayName, isAdmin: account.isAdmin },
+        // The web app shows 'Set up a new authenticator' next (PST-REQ-200).
+        reenrolRequired: factor === 'recovery_code',
+      });
     }),
   );
 
@@ -596,6 +631,8 @@ export function authRoutes(deps: ApiDeps): Router {
         return;
       }
       const session = currentSession(req);
+      // The authenticator this account had is the one a recovery code stood in for (PST-REQ-200).
+      if (await refuseUntilReenrolled(rt, req, res, session)) return;
       const parsed = StepUp.safeParse(req.body);
       if (!parsed.success) {
         badRequest(res, parsed.error);
@@ -779,6 +816,164 @@ export function authRoutes(deps: ApiDeps): Router {
     }),
   );
 
+  // ─── TOTP re-enrolment after a recovery-code sign-in (PST-REQ-200) ────────
+  // A recovery code stands in for a lost authenticator, so the session it signed in replaces that
+  // authenticator before anything that needs a fresh second factor. Begin makes a new secret bound
+  // to this session; Complete proves it with a code, replaces the account's secret (the old one stops
+  // working in the same commit), issues a fresh set of recovery codes and marks the session TOTP.
+
+  router.post(
+    '/totp/reenrol/begin',
+    requireSession(deps),
+    handle(async (req, res) => {
+      if (rt.pepper === null || rt.kek === null) {
+        notConfigured(res);
+        return;
+      }
+      const me = currentSession(req);
+      if (!me.reenrolRequired) {
+        res.status(409).json({ error: 'reenrol_not_required' });
+        return;
+      }
+      const secret = generateTotpSecret();
+      const exp = nowMs() + REENROL_TTL_MS;
+      rt.reenrols.set(me.sessionId, { accountId: me.accountId, secret, exp, attempts: 0, checking: false });
+      // Nothing is written to the account until a code proves the new authenticator; the audit row
+      // records that re-enrolment began, and from which session. Never the secret.
+      await recordAudit(db, {
+        actor: asAccount(me.accountId),
+        action: 'auth.totp.reenrol.begin',
+        entityType: 'session',
+        entityId: me.sessionId,
+        after: { expiresAt: new Date(exp) },
+        context: getAuditContext(req),
+      });
+      const address = await primaryAddress(db, me.accountId);
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ secret, otpauthUri: provisioningUri(secret, address ?? me.displayName), expiresAt: new Date(exp).toISOString(), address });
+    }),
+  );
+
+  router.post(
+    '/totp/reenrol/complete',
+    requireSession(deps),
+    handle(async (req, res) => {
+      const kek = rt.kek;
+      const pepper = rt.pepper;
+      if (pepper === null || kek === null) {
+        notConfigured(res);
+        return;
+      }
+      const me = currentSession(req);
+      if (!me.reenrolRequired) {
+        res.status(409).json({ error: 'reenrol_not_required' });
+        return;
+      }
+      const parsed = StepUp.safeParse(req.body);
+      if (!parsed.success) {
+        badRequest(res, parsed.error);
+        return;
+      }
+      const pending = rt.reenrols.get(me.sessionId, nowMs());
+      if (pending === undefined || pending.accountId !== me.accountId) {
+        res.status(400).json({ error: 'reenrol_expired' });
+        return;
+      }
+      const throttleKey = `reenrol:${me.accountId}`;
+      const ip = req.ip ?? 'unknown';
+      const wait = rt.throttle.retryAfter(throttleKey, ip, nowMs());
+      if (wait > 0 || pending.checking) {
+        logThrottled(req);
+        const seconds = Math.max(1, Math.ceil(wait / 1000));
+        res.setHeader('Retry-After', String(seconds));
+        res.status(429).json({ error: 'too_many_attempts', retryAfterSeconds: seconds });
+        return;
+      }
+      // Claimed before anything slow, as at sign-in: one check in flight, the attempt counted now.
+      pending.checking = true;
+      pending.attempts += 1;
+      try {
+        const step = matchStep(pending.secret, parsed.data.code, rt.now());
+        if (step === null) {
+          if (pending.attempts >= MAX_CODE_ATTEMPTS) rt.reenrols.delete(me.sessionId);
+          rt.throttle.recordFailure(throttleKey, ip, nowMs());
+          await recordAudit(db, {
+            actor: asAccount(me.accountId),
+            action: 'auth.totp.reenrol.rejected',
+            entityType: 'session',
+            entityId: me.sessionId,
+            after: { attempts: pending.attempts },
+            context: getAuditContext(req),
+          });
+          res.status(401).json({ error: 'invalid_code' });
+          return;
+        }
+        // Ten Argon2id hashes before the transaction, as at setup: too slow to hold it open through.
+        const codes = generateRecoveryCodes();
+        const hashes = await hashRecoveryCodes(codes, pepper);
+        const at = rt.now();
+        const sealed = sealTotpSecret(kek, pending.secret, me.accountId);
+        const done = await db.$transaction(async (tx) => {
+          // The atomic claim: only a session still marked recovery_code completes, once.
+          const { count } = await tx.session.updateMany({
+            where: { id: me.sessionId, accountId: me.accountId, secondFactor: 'recovery_code' },
+            data: { secondFactor: 'totp' },
+          });
+          if (count !== 1) return false;
+          const old = await tx.account.findUniqueOrThrow({ where: { id: me.accountId }, select: { totpEnabled: true, totpSecret: true } });
+          const context = getAuditContext(req);
+          // 1. The old authenticator stops working: its secret is overwritten in this commit. (The
+          // audit payload's keys avoid the redactor's secret-ish words, so they stay readable.)
+          await recordAudit(tx, {
+            actor: asAccount(me.accountId),
+            action: 'auth.totp.invalidate',
+            entityType: 'account',
+            entityId: me.accountId,
+            before: { authenticator: old.totpEnabled && old.totpSecret !== null ? 'enrolled' : 'none' },
+            after: { authenticator: 'invalidated', reason: 'reenrol' },
+            context,
+          });
+          // 2. The new one, with the step its proving code used already burnt.
+          await tx.account.update({
+            where: { id: me.accountId },
+            data: { totpSecret: sealed, totpEnabled: true, totpLastStep: BigInt(step) },
+          });
+          await recordAudit(tx, {
+            actor: asAccount(me.accountId),
+            action: 'auth.totp.enrol',
+            entityType: 'account',
+            entityId: me.accountId,
+            after: { authenticator: 'enrolled', reason: 'reenrol', signedInWith: 'recovery_code', factorNow: 'totp' },
+            context,
+          });
+          // 3. A fresh set of recovery codes; the old set, used or not, goes with the old authenticator.
+          const replaced = await replaceRecoveryCodes(tx, me.accountId, hashes, at);
+          await recordAudit(tx, {
+            actor: asAccount(me.accountId),
+            action: 'auth.recovery-codes.regenerate',
+            entityType: 'account',
+            entityId: me.accountId,
+            before: { count: replaced },
+            after: { count: RECOVERY_CODE_COUNT, reason: 'reenrol' },
+            context,
+          });
+          return true;
+        });
+        if (!done) {
+          res.status(409).json({ error: 'reenrol_not_required' });
+          return;
+        }
+        rt.reenrols.delete(me.sessionId);
+        rt.throttle.clear(throttleKey, ip);
+        // The only time these codes are ever sent: the server keeps their hashes alone.
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ ok: true, recoveryCodes: codes.map(formatRecoveryCode), createdAt: at.toISOString() });
+      } finally {
+        pending.checking = false;
+      }
+    }),
+  );
+
   // ─── Password change (ASVS 5.0 6.2.2, 6.2.3, 7.5.1, 7.4.3) ──────────────
   // The current password and a TOTP code — full re-authentication — then the policy, then the new
   // hash, with every other session ended unless the caller asks to keep them.
@@ -799,6 +994,8 @@ export function authRoutes(deps: ApiDeps): Router {
         return;
       }
       const me = currentSession(req);
+      // Full re-authentication includes the authenticator a recovery code stood in for (PST-REQ-200).
+      if (await refuseUntilReenrolled(rt, req, res, me)) return;
       const account = await db.account.findUnique({ where: { id: me.accountId } });
       if (account === null || account.passwordHash === null || !account.totpEnabled || account.totpSecret === null) {
         // A D3 Auth-only account has no password here to change; it is D3 Auth's to manage.

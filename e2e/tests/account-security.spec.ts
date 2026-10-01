@@ -13,8 +13,15 @@
 //
 // PST-T-16.7 (PST-REQ-197): a recovery code signs in once in place of the TOTP code and is refused
 // the second time, and Security & devices makes a new set behind step-up that retires the old one.
+//
+// PST-T-16.26 (PST-REQ-200): a recovery-code sign-in lands on 'Set up a new authenticator'; until it
+// is done, step-up-gated actions answer 403 totp_reenrol_required. Re-enrolling replaces the
+// operator's TOTP secret — saved into the shared operator file, so every spec after this one signs
+// in with the new authenticator — and issues a new set of codes, which can then be regenerated
+// behind a step-up made with the new authenticator.
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext } from '@playwright/test';
+import { Secret, TOTP } from 'otpauth';
 import { ensureOperator, freshCode, isPhone, loadOperator, openNav, openPlace, saveOperator, signInWithPassword, tag, type Operator } from './support.js';
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 });
@@ -180,7 +187,7 @@ async function recoverySignInStatus(request: APIRequestContext, operator: Operat
   return (await request.post('/api/auth/signin/totp', { headers: CSRF, data: { challenge, code } })).status();
 }
 
-test('signs in with a recovery code once; the second use is refused', async ({ page, playwright, baseURL }) => {
+test('signs in with a recovery code once, re-enrols a new authenticator, and steps up with it; the second use of the code is refused', async ({ page, playwright, baseURL }) => {
   const operator = requireOperator();
   const codes = await regenerateOverApi(playwright, baseURL, operator);
   expect(codes).toHaveLength(10);
@@ -197,12 +204,70 @@ test('signs in with a recovery code once; the second use is refused', async ({ p
   // Typed the way a person copies it off paper: lower case, a space for the dash.
   await page.getByRole('textbox', { name: 'Recovery code' }).fill(code.toLowerCase().replace('-', ' '));
   await page.getByRole('button', { name: 'Verify' }).click();
+
+  // PST-REQ-200: the code stood in for a lost authenticator, so replacing it comes first.
+  await expect(page.getByRole('heading', { name: 'Set up a new authenticator' })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'QR code for your authenticator app' })).toBeVisible();
+  // Until it is replaced, anything behind step-up is refused — step-up itself included.
+  const gated = await page.request.post('/api/auth/recovery-codes', { headers: CSRF });
+  expect(gated.status()).toBe(403);
+  expect(await gated.json()).toEqual({ error: 'totp_reenrol_required' });
+  const stepUpFirst = await page.request.post('/api/auth/step-up', { headers: CSRF, data: { code: await freshCode(operator) } });
+  expect(stepUpFirst.status()).toBe(403);
+  expect(((await page.request.get('/api/auth/recovery-codes').then((r) => r.json())) as { remaining: number }).remaining).toBe(9);
+
+  const secret = (await page.getByTestId('totp-secret').textContent())?.trim() ?? '';
+  expect(secret).toMatch(/^[A-Z2-7]{32}$/);
+  expect(secret).not.toBe(operator.secret);
+  const oldSecret = operator.secret;
+  // The authenticator is the new one from here on, for this spec and every one after it.
+  operator.secret = secret;
+  saveOperator(operator);
+  await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
+  await page.getByRole('button', { name: 'Set up authenticator' }).click();
+
+  // A fresh set of ten codes, shown once, behind "I have saved these".
+  const reissued = page.getByRole('list', { name: 'Recovery codes' });
+  await expect(reissued.getByRole('listitem')).toHaveCount(10);
+  const reissuedCodes = (await reissued.getByRole('listitem').allTextContents()).map((t) => t.trim());
+  for (const c of reissuedCodes) expect(codes).not.toContain(c);
+  const carryOn = page.getByRole('button', { name: 'Continue to Postroom' });
+  await expect(carryOn).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'I have saved these' }).click();
+  await carryOn.click();
   await expect(page.getByRole('heading', { name: 'Mail', level: 1 })).toBeVisible();
 
   const status = (await page.request.get('/api/auth/recovery-codes').then((r) => r.json())) as { total: number; remaining: number };
-  expect(status).toMatchObject({ total: 10, remaining: 9 });
+  expect(status).toMatchObject({ total: 10, remaining: 10 });
+  const state = (await page.request.get('/api/auth/state').then((r) => r.json())) as { reenrolRequired?: boolean };
+  expect(state.reenrolRequired).toBe(false);
 
-  // The same code again, in a browser with no session: refused, and the reason is on screen.
+  // Regenerate behind step-up, made with the new authenticator.
+  await page.goto('/settings/security/sessions');
+  const section = page.getByRole('region', { name: 'Recovery codes' });
+  await expect(section.getByTestId('recovery-status')).toHaveText(/^10 of 10 left/);
+  await section.getByRole('button', { name: 'Make new codes' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Make new recovery codes?' });
+  await confirm.getByRole('button', { name: 'Make new codes' }).click();
+  const stepUp = page.getByRole('dialog', { name: 'Confirm it is you' });
+  await expect(stepUp).toBeVisible();
+  await stepUp.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
+  await stepUp.getByRole('button', { name: 'Verify and make new codes' }).click();
+  await expect(stepUp).toBeHidden();
+  const regenerated = section.getByRole('list', { name: 'Recovery codes' });
+  await expect(regenerated.getByRole('listitem')).toHaveCount(10);
+  for (const c of (await regenerated.getByRole('listitem').allTextContents()).map((t) => t.trim())) expect(reissuedCodes).not.toContain(c);
+  await section.getByRole('checkbox', { name: 'I have saved these' }).click();
+  await section.getByRole('button', { name: 'Done' }).click();
+  await expect(regenerated).toHaveCount(0);
+
+  // The old authenticator is dead: a code from it no longer signs in.
+  const viaOld = await page.request.post('/api/auth/signin', { headers: CSRF, data: { login: operator.login, password: operator.password } });
+  const { challenge } = (await viaOld.json()) as { challenge: string };
+  const oldCode = new TOTP({ secret: Secret.fromBase32(oldSecret), digits: 6, period: 30, algorithm: 'SHA1' }).generate();
+  expect((await page.request.post('/api/auth/signin/totp', { headers: CSRF, data: { challenge, code: oldCode } })).status()).toBe(401);
+
+  // The same recovery code again, in a browser with no session: refused, and the reason is on screen.
   const fresh = await page.context().browser()?.newContext(baseURL === undefined ? {} : { baseURL });
   if (fresh === undefined) throw new Error('no browser to open a second context in');
   const again = await fresh.newPage();

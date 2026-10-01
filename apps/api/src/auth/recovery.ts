@@ -67,13 +67,22 @@ export interface StoredRecoveryCode {
   codeHash: string;
 }
 
+/**
+ * How many recovery-code checks this process has started, and the Argon2id verifies they ran. A
+ * check is the expensive part of a guess, so the sign-in route must claim its attempt before one
+ * starts; tests read this to prove concurrent guesses at one challenge cannot each run one.
+ */
+export const recoveryCheckStats = { checks: 0, verifies: 0 };
+
 /** The id of the unused code `code` matches, or null. `code` must already be normalised. */
 export async function matchRecoveryCode(
   unused: readonly StoredRecoveryCode[],
   code: string,
   pepper: string,
 ): Promise<string | null> {
+  recoveryCheckStats.checks += 1;
   for (const row of unused) {
+    recoveryCheckStats.verifies += 1;
     if (await verifyPassword(row.codeHash, code, pepper)) return row.id;
   }
   return null;
