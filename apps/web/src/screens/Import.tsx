@@ -7,11 +7,10 @@ import {
   FormActions,
   FormField,
   Input,
-  Modal,
-  ModalClose,
   Page,
   PageHeader,
   Section,
+  Select,
   Stack,
   Table,
   Textarea,
@@ -19,6 +18,7 @@ import {
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, importApi, type ImportFolderStatus, type ImportStatus, type StartImportInput } from '../api';
 import { Loading, LoadFailed } from './states';
+import { IMPORT_PRESETS, presetById, presetForAddress, presetForHost } from './import/presets';
 
 const ACTIVE = new Set(['pending', 'running']);
 const POLL_MS = 2_000;
@@ -64,7 +64,7 @@ export function Import() {
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
 
@@ -107,30 +107,49 @@ export function Import() {
     };
   };
 
+  const choosePreset = (id: string) => {
+    const chosen = presetById(id);
+    if (chosen === undefined) return;
+    setHost(chosen.host);
+    setPort(chosen.port);
+  };
+
+  /** A known provider's address picks its preset; any other address leaves the server as it is. */
+  const changeUsername = (value: string) => {
+    setUsername(value);
+    const match = presetForAddress(value);
+    if (match !== undefined) choosePreset(match.id);
+  };
+
+  const preset = presetForHost(host);
+
   const start = async (): Promise<void> => {
-    setFormError(null);
-    setNotice(null);
     try {
       const started = await importApi.start(input());
       setCurrent(started);
-      setStepUpOpen(false);
       setPassword('');
+      setCode('');
       setNotice('Import started. You can leave this page; it carries on.');
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === 'step_up_required') {
         setCode('');
-        setCodeError(null);
-        setStepUpOpen(true);
+        setCodeError('That code has expired. Enter a fresh one.');
         return;
       }
-      setStepUpOpen(false);
       setFormError(importError(caught));
     }
   };
 
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
+    setFormError(null);
+    setCodeError(null);
+    setNotice(null);
     const port0 = Number(port);
+    if (code.trim() === '') {
+      setCodeError('Enter the code from your authenticator.');
+      return;
+    }
     if (host.trim() === '' || username.trim() === '' || password === '') {
       setFormError('Enter the server, your username there, and its password.');
       return;
@@ -140,22 +159,15 @@ export function Import() {
       return;
     }
     setBusy(true);
-    void start().finally(() => {
-      setBusy(false);
-    });
-  };
-
-  const confirmStepUp = (event: SyntheticEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    setCodeError(null);
     api
       .stepUp(code)
-      .then(() => start())
-      .catch((caught: unknown) => {
-        setCode('');
-        setCodeError(describeError(caught));
-      })
+      .then(
+        () => start(),
+        (caught: unknown) => {
+          setCode('');
+          setCodeError(describeError(caught));
+        },
+      )
       .finally(() => {
         setBusy(false);
       });
@@ -254,6 +266,60 @@ export function Import() {
                   {formError}
                 </Alert>
               )}
+              {/* PST-DA-046: the second factor is asked first, with the form, not after it. */}
+              <FormField
+                label="Authentication code"
+                width="sm"
+                help="From your authenticator app. Starting an import needs a fresh code."
+                {...(codeError === null ? {} : { error: codeError })}
+              >
+                <Input appearance="filled"
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9 ]*"
+                  required
+                  value={code}
+                  onChange={(e) => {
+                    setCode(e.target.value);
+                  }}
+                />
+              </FormField>
+              <FormField label="Provider" width="lg" help="Fills in the server and port. Pick Other for any IMAP server.">
+                <Select appearance="filled"
+                  name="provider"
+                  options={IMPORT_PRESETS.map((p) => ({ value: p.id, label: p.label }))}
+                  value={presetForHost(host).id}
+                  onValueChange={choosePreset}
+                />
+              </FormField>
+              <FormField label="Email address or username" width="lg" help="On the other server. A Gmail, iCloud, Outlook or Fastmail address picks its provider.">
+                <Input appearance="filled"
+                  name="username"
+                  autoComplete="off"
+                  required
+                  value={username}
+                  onChange={(e) => {
+                    changeUsername(e.target.value);
+                  }}
+                />
+              </FormField>
+              <FormField
+                label="Password"
+                width="lg"
+                help={preset.passwordHint ?? 'Its password or app password on that server. Deleted when the import ends.'}
+              >
+                <Input appearance="filled"
+                  name="password"
+                  type="password"
+                  autoComplete="off"
+                  required
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                  }}
+                />
+              </FormField>
               <FormField label="Server" width="lg" help="e.g. imap.example.org">
                 <Input appearance="filled"
                   name="host"
@@ -276,56 +342,51 @@ export function Import() {
                   }}
                 />
               </FormField>
-              <FormField label="Username" width="lg">
-                <Input appearance="filled"
-                  name="username"
-                  autoComplete="off"
-                  required
-                  value={username}
-                  onChange={(e) => {
-                    setUsername(e.target.value);
+              <div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-expanded={advancedOpen}
+                  aria-controls="import-advanced"
+                  onClick={() => {
+                    setAdvancedOpen((open) => !open);
                   }}
-                />
-              </FormField>
-              <FormField label="Password" width="lg" help="Its password or app password on that server. Deleted when the import ends.">
-                <Input appearance="filled"
-                  name="password"
-                  type="password"
-                  autoComplete="off"
-                  required
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                  }}
-                />
-              </FormField>
-              <FormField
-                label="Trust this certificate (optional)"
-                width="lg"
-                help="Only for your own server with a self-signed certificate: its SHA-256 fingerprint, from openssl x509 -noout -fingerprint -sha256 on that server."
-              >
-                <Input appearance="filled"
-                  name="trustFingerprint"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={fingerprint}
-                  onChange={(e) => {
-                    setFingerprint(e.target.value);
-                  }}
-                />
-              </FormField>
-              <FormField label="Only these folders (optional)" width="lg" help="One per line. Leave empty for every folder.">
-                <Textarea appearance="filled"
-                  name="folders"
-                  rows={3}
-                  value={folders}
-                  onChange={(e) => {
-                    setFolders(e.target.value);
-                  }}
-                />
-              </FormField>
+                >
+                  Advanced
+                </Button>
+              </div>
+              {advancedOpen ? (
+                <Stack gap="16" id="import-advanced">
+                  <FormField
+                    label="Trust this certificate (optional)"
+                    width="lg"
+                    help="Only for your own server with a self-signed certificate: its SHA-256 fingerprint, from openssl x509 -noout -fingerprint -sha256 on that server."
+                  >
+                    <Input appearance="filled"
+                      name="trustFingerprint"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={fingerprint}
+                      onChange={(e) => {
+                        setFingerprint(e.target.value);
+                      }}
+                    />
+                  </FormField>
+                  <FormField label="Only these folders (optional)" width="lg" help="One per line. Leave empty for every folder.">
+                    <Textarea appearance="filled"
+                      name="folders"
+                      rows={3}
+                      value={folders}
+                      onChange={(e) => {
+                        setFolders(e.target.value);
+                      }}
+                    />
+                  </FormField>
+                </Stack>
+              ) : null}
               <FormActions>
-                <Button type="submit" variant="primary" loading={busy && !stepUpOpen}>
+                <Button type="submit" variant="primary" loading={busy}>
                   Start import
                 </Button>
               </FormActions>
@@ -333,42 +394,6 @@ export function Import() {
           </form>
         </Section>
       )}
-
-      <Modal
-        open={stepUpOpen}
-        onOpenChange={(open) => {
-          if (!open) setStepUpOpen(false);
-        }}
-        title="Confirm it is you"
-        description="Starting an import needs a code from your authenticator; it stays valid for five minutes."
-        footer={
-          <>
-            <ModalClose>
-              <Button type="button">Cancel</Button>
-            </ModalClose>
-            <Button type="submit" form="import-step-up" variant="primary" loading={busy}>
-              Verify and start
-            </Button>
-          </>
-        }
-      >
-        <form id="import-step-up" onSubmit={confirmStepUp}>
-          <FormField label="Authentication code" {...(codeError === null ? {} : { error: codeError })}>
-            <Input appearance="filled"
-              name="code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="[0-9 ]*"
-              autoFocus
-              required
-              value={code}
-              onChange={(e) => {
-                setCode(e.target.value);
-              }}
-            />
-          </FormField>
-        </form>
-      </Modal>
     </Page>
   );
 }
