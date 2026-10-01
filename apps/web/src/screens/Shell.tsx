@@ -35,6 +35,7 @@ import { ContextBar, PushFrame, usePushDirection } from '../mobile/ContextBar';
 import { PhoneAccountMenu, PlaceIndex } from '../mobile/PlaceIndex';
 import { contextParent, contextTitle, placeIndexFor, pushDepth } from '../mobile/push';
 import { navEntries, PLACE_HOME, PLACE_NAME, routeForPath, type Place } from '../routes';
+import { PostroomMark } from '../brand/PostroomMark';
 import { PaneBoundary } from './PaneBoundary';
 import { NoAccess } from './states';
 
@@ -694,7 +695,7 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
         navTone="recessed"
         storageKey="postroom-shell"
         brand={
-          <AppShellBrand asChild name="Postroom" mark={<MailIcon />}>
+          <AppShellBrand asChild name="Postroom" mark={<PostroomMark decorative />}>
             <RouterLink to="/" />
           </AppShellBrand>
         }

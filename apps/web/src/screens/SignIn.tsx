@@ -1,6 +1,7 @@
 import '../styles/fields.css';
 import { type SyntheticEvent, useEffect, useState } from 'react';
 import { Alert, AuthLayout, Button, Card, FormActions, FormField, Input, PasswordInput, Stack, Link } from '@d3cloud/ui';
+import { PostroomMark } from '../brand/PostroomMark';
 import { api, describeError, type AuthState } from '../api';
 import { describeRecoveryError, USE_AUTHENTICATOR_LABEL, USE_RECOVERY_LABEL } from './recovery/codes';
 
@@ -80,11 +81,12 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
       title="Sign in to Postroom"
       description={
         challenge === null
-          ? 'Your d3cloud.io mail.'
+          ? 'Your own mail server for d3cloud.io — every message sorted, explained and yours.'
           : useRecovery
             ? 'One more step: one of your recovery codes.'
             : 'One more step: the code from your authenticator.'
       }
+      brand={<PostroomMark size={40} decorative />}
       focusOnMount={false}
     >
       <Card>
