@@ -10,7 +10,7 @@ import { audited, getAuditContext } from '@postroom/audit';
 import { BUCKET_FOLDERS, FILING_BUCKETS } from '@postroom/classifier';
 import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import type { Prisma } from '@postroom/db';
-import { displayNameOf } from '@postroom/mime';
+import { displayNameOf, parseMailboxes } from '@postroom/mime';
 import { htmlToText, snippetOf } from '@postroom/search';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -19,6 +19,7 @@ import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 import { DEFAULT_BLOB_ROOT } from '../mail/index.js';
 import { MAILBOX_CHANNEL } from '../mail/store.js';
+import { toSummaryColumns } from '../mail/to-summary.js';
 
 export function adminDevEnabled(env: NodeJS.ProcessEnv): boolean {
   return env['POSTROOM_E2E_SEED'] === '1';
@@ -163,6 +164,8 @@ export function adminDevRoutes(deps: ApiDeps): Router {
                 subject: seed.subject,
                 fromAddress: bareAddress(seed.from),
                 fromName: displayNameOf(seed.from),
+                // PST-T-16.12: the recipients summary, as a filed message would carry it.
+                ...toSummaryColumns([...parseMailboxes(seed.to ?? to), ...(seed.cc === undefined ? [] : parseMailboxes(seed.cc))]),
                 snippet: snippetOf(seed.text ?? (seed.html === undefined ? '' : htmlToText(seed.html))),
                 sentAt: date,
                 messageIdHeader,

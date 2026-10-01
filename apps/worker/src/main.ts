@@ -25,6 +25,7 @@ import { createInboundPipeline, INBOUND_QUEUE } from './pipeline.js';
 import { startSesFeedback } from './ses-feedback/index.js';
 import { startReportLoop } from './reports/index.js';
 import { createSummarySweeper, drainSummaries } from './sweep/summary-sweep.js';
+import { startToSummarySweep } from './stages/to-summary.js';
 import { createThreadSweeper } from './sweep/thread-sweep.js';
 import { createUploadSweeper, DEFAULT_UPLOAD_MAX_AGE_MS } from './sweep/upload-sweep.js';
 import { startTrainingLoop } from './training/index.js';
@@ -136,6 +137,10 @@ await runDaemon({
     const summarySweepTimer = setInterval(() => {
       runSummarySweep(false);
     }, summarySweepMs);
+    // PST-T-16.12 (PST-REQ-199): the recipients summary Sent and Drafts show (to_name, to_count), by
+    // the same drain-then-interval pattern — the backfill of mail filed before the columns existed.
+    const stopToSummarySweep = startToSummarySweep({ db, blobs: lazyBlobs, log: ctx.log, now: () => new Date(), intervalMs: envInt(ctx.env, 'TO_SUMMARY_SWEEP_MS', 60_000) });
+    ctx.onShutdown(stopToSummarySweep);
     ctx.onShutdown(() => {
       clearInterval(summarySweepTimer);
     });

@@ -9,6 +9,8 @@ import { fileLocalMessage } from '@postroom/dsn';
 import { indexMessage } from '@postroom/search';
 import { assignThread, normalizeMsgId } from '@postroom/threading';
 import { notifyMailbox } from '../mail/store.js';
+import { toSummaryColumns } from '../mail/to-summary.js';
+import type { Mailbox } from '@postroom/mime';
 
 type Tx = Prisma.TransactionClient;
 
@@ -39,6 +41,8 @@ export interface Denorm {
   readonly fromName?: string | null;
   /** PST-T-15.10: the attached files' names, so the list shows the paperclip and search finds them. */
   readonly attachmentNames?: readonly string[];
+  /** PST-T-16.12: every recipient (To, Cc, Bcc), so Sent and Drafts name them at once (PST-REQ-199). */
+  readonly recipients?: readonly Mailbox[];
 }
 
 async function writeDenorm(tx: Tx, accountId: string, messageId: string, d: Denorm): Promise<void> {
@@ -53,6 +57,7 @@ async function writeDenorm(tx: Tx, accountId: string, messageId: string, d: Deno
       sentAt: d.sentAt,
       inReplyTo: irt === '' ? null : irt,
       references: d.references.map(normalizeMsgId).filter((r) => r !== ''),
+      ...(d.recipients === undefined ? {} : toSummaryColumns(d.recipients)),
     },
   });
   await indexMessage(tx, {

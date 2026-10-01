@@ -307,6 +307,7 @@ export function composeRoutes(deps: ApiDeps): Router {
           // An encrypted message's text is not kept in the clear beside its ciphertext (PST-T-12.2).
           bodyText: body.crypto?.encrypt === undefined ? body.text : '',
           attachmentNames: uploads.map((u) => u.filename),
+          recipients: [...to, ...cc, ...bcc],
         };
 
         // PST-T-12.2 (PST-REQ-161): the composed message, signed and/or encrypted; null = as composed.
@@ -727,6 +728,7 @@ export function composeRoutes(deps: ApiDeps): Router {
               references,
               bodyText: body.text,
               attachmentNames: uploads.map((u) => u.filename),
+              recipients: [...to, ...cc, ...bcc],
             },
             now: date,
             takeReference: false,
@@ -1059,6 +1061,7 @@ export function mdnRoutes(deps: ApiDeps): Router {
                   inReplyTo: null,
                   references: [],
                   bodyText: '',
+                  recipients: [to],
                 },
                 now,
                 takeReference: true,

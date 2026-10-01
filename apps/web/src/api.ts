@@ -808,6 +808,8 @@ export interface DeliveryRecipient {
   lastEnhanced: string | null;
   lastText: string | null;
   deliveredAt: string | null;
+  /** When the row last changed; for a cancelled recipient, when it was cancelled (PST-T-16.14). */
+  updatedAt?: string;
   dsn: { delaySentAt: string | null; failureSentAt: string | null };
   transport: string;
   attemptsLog: DeliveryAttemptView[];
