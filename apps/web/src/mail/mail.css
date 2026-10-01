@@ -109,6 +109,14 @@
 
 .pr-search > :first-child {
   flex: 1;
+  /* PST-T-17.5 (PST-DA-082): a flex item will not shrink below its content without this, so with a
+     search active the field kept its width and pushed "Clear search" past the list column's edge. */
+  min-width: 0;
+}
+
+.pr-search__clear {
+  flex: none;
+  white-space: nowrap;
 }
 
 /* PST-T-11.4: the move notice and its Undo on one line. */

@@ -27,7 +27,7 @@ import {
 } from '@d3cloud/ui';
 import { ApiError, contactPath, contactsApi, describeError, type AddressBook, type ContactDetail, type ContactInput, type ContactSummary } from '../api';
 import { useMediaQuery } from '../mail/useMedia';
-import { blankContact, contactProblem, EMAIL_TYPES, inputOf, rowKey, TEL_TYPES, toForm, typeOptions, type ContactForm } from './form';
+import { blankContact, canRemoveRow, contactProblem, EMAIL_TYPES, inputOf, rowKey, TEL_TYPES, toForm, typeOptions, type ContactForm } from './form';
 import { Loading, LoadFailed } from '../screens/states';
 
 // Wider than mail's split (two panes beside the sidebar need the room), with the same height rule, so
@@ -132,7 +132,7 @@ export function Contacts() {
         <Input appearance="filled"
           type="search"
           aria-label="Search contacts"
-          placeholder="Search by name, email or organization"
+          placeholder="Search contacts"
           value={query}
           onChange={(e) => {
             setFilter('q', e.target.value);
@@ -515,14 +515,16 @@ function ContactEditor({
                       set({ emails: form.emails.map((x) => (x.key === e.key ? { ...x, type: v } : x)) });
                     }}
                   />
-                  <IconButton
-                    icon={<RemoveIcon />}
-                    label={`Remove email ${String(i + 1)}`}
-                    size="sm"
-                    onClick={() => {
-                      set({ emails: form.emails.filter((x) => x.key !== e.key) });
-                    }}
-                  />
+                  {canRemoveRow(form.emails, e.address) ? (
+                    <IconButton
+                      icon={<RemoveIcon />}
+                      label={`Remove email ${String(i + 1)}`}
+                      size="sm"
+                      onClick={() => {
+                        set({ emails: form.emails.filter((x) => x.key !== e.key) });
+                      }}
+                    />
+                  ) : null}
                 </Cluster>
               ))}
               <div>
@@ -560,14 +562,16 @@ function ContactEditor({
                       set({ tels: form.tels.map((x) => (x.key === t.key ? { ...x, type: v } : x)) });
                     }}
                   />
-                  <IconButton
-                    icon={<RemoveIcon />}
-                    label={`Remove phone ${String(i + 1)}`}
-                    size="sm"
-                    onClick={() => {
-                      set({ tels: form.tels.filter((x) => x.key !== t.key) });
-                    }}
-                  />
+                  {canRemoveRow(form.tels, t.value) ? (
+                    <IconButton
+                      icon={<RemoveIcon />}
+                      label={`Remove phone ${String(i + 1)}`}
+                      size="sm"
+                      onClick={() => {
+                        set({ tels: form.tels.filter((x) => x.key !== t.key) });
+                      }}
+                    />
+                  ) : null}
                 </Cluster>
               ))}
               <div>

@@ -1061,7 +1061,7 @@ function MailPanes({ route }: { route: MailRoute }) {
             }}
           />
           {searchQuery !== null ? (
-            <Button size="sm" variant="ghost" type="button" onClick={clearSearch}>
+            <Button size="sm" variant="ghost" type="button" className="pr-search__clear" onClick={clearSearch}>
               Clear search
             </Button>
           ) : null}

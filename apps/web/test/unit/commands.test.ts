@@ -2,7 +2,7 @@
 // behaviour — opening with ⌘K, moving a message with it — is e2e/tests/command-palette.spec.ts.
 import { describe, expect, it, vi } from 'vitest';
 import type { Mailbox, MessageSummary } from '../../src/api';
-import { buildCommands, COMMAND_GROUPS, filterCommands, fuzzyMatch, groupMatches, keycapsFor, LEAD_ACTIONS, paletteShortcut, type CommandContext } from '../../src/mail/commands';
+import { buildCommands, COMMAND_GROUPS, filterCommands, fuzzyMatch, groupMatches, keycapsFor, LEAD_ACTIONS, NEEDS_MESSAGE_ACTIONS, paletteShortcut, type CommandContext } from '../../src/mail/commands';
 import { SHORTCUTS } from '../../src/mail/keys';
 import { paletteRoutes, ROUTES } from '../../src/routes';
 
@@ -75,7 +75,7 @@ describe('fuzzyMatch', () => {
 
 describe('buildCommands', () => {
   it('exposes every keyboard action from SHORTCUTS except the palette itself', () => {
-    const commands = buildCommands(context());
+    const commands = buildCommands(context({ target: message(INBOX.id) }), false, false); // a message in hand: Archive, Snooze, Move, Next, Previous apply
     const actionIds = new Set(commands.filter((c) => c.id.startsWith('action:')).map((c) => c.id));
     for (const s of SHORTCUTS) {
       if (s.action === 'commandPalette') {
@@ -203,7 +203,7 @@ describe('buildCommands', () => {
 
   it('running a keyboard-action command calls perform() with that action', () => {
     const perform = vi.fn();
-    const commands = buildCommands(context({ perform }));
+    const commands = buildCommands(context({ perform, target: message(INBOX.id) }));
     const archive = commands.find((c) => c.id === 'action:archive');
     archive?.run();
     expect(perform).toHaveBeenCalledWith('archive');
@@ -265,5 +265,24 @@ describe('paletteShortcut', () => {
     expect(paletteShortcut(['o', 'or', 'Enter'])).toEqual(['o']);
     expect(paletteShortcut(['Shift', 'u'])).toEqual(['Shift', 'u']);
     expect(paletteShortcut(['e'])).toEqual(['e']);
+  });
+});
+
+// PST-T-17.5 (PST-DA-086): with no message open, the palette does not offer what needs one.
+describe('buildCommands with no message open', () => {
+  const ids = (cs: ReturnType<typeof buildCommands>): string[] => cs.map((c) => c.id);
+
+  it('omits Archive, Snooze, Move, Next and Previous', () => {
+    const none = ids(buildCommands(context({ target: null }), false, false));
+    expect(NEEDS_MESSAGE_ACTIONS).toEqual(['archive', 'snooze', 'moveTo', 'next', 'prev']);
+    for (const action of ['archive', 'snooze', 'moveTo', 'next', 'prev']) expect(none).not.toContain(`action:${action}`);
+    // The rest of the Actions group is still there.
+    expect(none).toContain('action:compose');
+    expect(none).toContain('action:search');
+  });
+
+  it('offers them again once a message is open', () => {
+    const open = ids(buildCommands(context({ target: message(INBOX.id) }), false, false));
+    for (const action of ['archive', 'snooze', 'moveTo', 'next', 'prev']) expect(open).toContain(`action:${action}`);
   });
 });
