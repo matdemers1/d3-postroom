@@ -346,7 +346,8 @@ test.describe('signed in', () => {
     // menu — where the list's Back goes.
     await page.getByTestId('context-bar').getByRole('link', { name: 'Inbox', exact: true }).click();
     await page.getByTestId('context-bar').getByRole('link', { name: 'Mailboxes', exact: true }).click();
-    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
+    // /mail is the stack's root: the mailbox list alone (MailView draws no message list there).
+    await expect(page).toHaveURL(/\/mail$/);
     await expect(page.getByRole('navigation', { name: 'Mailboxes' }).getByRole('link', { name: /^Inbox/ })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Places' }).getByRole('link')).toHaveText(['Calendar', 'Contacts']);
     await assertMobileFriendly(page, '/mail (mailbox list)');
@@ -770,7 +771,11 @@ test.describe('Swipe triage (PST-T-16.15)', () => {
     await expect(row).toBeVisible();
 
     await drag(row, -0.2);
-    await drag(row, -0.7, { dy: 120 });
+    // Vertical: more down than across from the first move, though its sideways part alone (half the
+    // row) would be past the 40% that archives — the list's scroll, not the row's swipe.
+    const width = (await row.boundingBox())?.width ?? 0;
+    expect(width).toBeGreaterThan(0);
+    await drag(row, -0.5, { dy: width * 0.75 });
     await expect(row).toHaveCount(1);
     await expect(row).not.toHaveAttribute('data-swipe', /.+/);
     await expect(toasts(page)).not.toContainText(m.subject);
