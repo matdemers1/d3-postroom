@@ -388,7 +388,8 @@
 @media (max-width: 767px), (max-height: 499px) {
   /* The header's bucket chip keeps its 20 px pill: its 44 px hit area is an invisible extension
    * above and below (a 44 px-tall filled pill crowded the recipient summary to "to …"). */
-  .pr-mhead .pr-why-control {
+  .pr-mhead .pr-why-control,
+  .pr-feed__item .pr-why-control {
     min-height: 44px;
     min-width: 44px;
   }
