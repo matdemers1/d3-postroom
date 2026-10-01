@@ -676,7 +676,10 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
         <PlaceFrame key={place} place={place} phone={phone}>
           {frame}
         </PlaceFrame>
-        <PlacePalette enabled={place !== 'mail'} />
+        {/* PST-T-16.2: the palette sat outside both boundaries; a throw in it blanked the app. */}
+        <PaneBoundary name="The command palette" resetKey={location.pathname} compact>
+          <PlacePalette enabled={place !== 'mail'} />
+        </PaneBoundary>
       </AppShell>
     </PaletteRoleContext.Provider>
     </PhoneAccountMenu.Provider>

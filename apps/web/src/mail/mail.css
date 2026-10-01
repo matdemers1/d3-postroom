@@ -479,11 +479,37 @@
   max-height: none;
   border-radius: 0;
   border-width: 0 0 0 var(--border-width);
-  animation-name: pr-inspect-in;
+  /* PST-T-16.2 (PST-REQ-192): a drawer slides on the drawer's own timing (--motion-drawer, 280 ms
+     ease-out), not the modal's 420 ms spring — an overshoot has no place on an edge-anchored sheet.
+     The Delivery details sheet and the admin queue drawer share this class, so they share the motion. */
+  animation: pr-inspect-in var(--motion-drawer) backwards;
 }
 
 .d3-modal.pr-inspect[data-state='closed'] {
-  animation-name: pr-inspect-out;
+  animation: pr-inspect-out var(--motion-drawer) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Asked for less motion: the drawer fades, it does not travel. */
+  .d3-modal.pr-inspect {
+    animation: pr-inspect-fade-in var(--motion-popover-enter) backwards;
+  }
+
+  .d3-modal.pr-inspect[data-state='closed'] {
+    animation: pr-inspect-fade-out var(--motion-popover-enter) forwards;
+  }
+}
+
+@keyframes pr-inspect-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pr-inspect-fade-out {
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes pr-inspect-in {
@@ -734,3 +760,27 @@
 
 /* The composer's action bar lives with the rest of the composer, in compose/composer.css
    (.pr-compose__footer, PST-T-15.4): these .pr-composer__actions rules had no element left. */
+
+/* --- A failed pane (PST-T-16.2, PST-DA-065) -------------------------------------------------- */
+/* PST-T-16.2: a failed pane inside the mail view keeps its column, so the other pane stays put. */
+.pr-pane-error.pr-pane-error--compact {
+  padding: var(--space-16);
+  box-sizing: border-box;
+}
+
+.pr-pane-error--list {
+  flex: 0 0 auto;
+  width: clamp(18rem, 38%, 24.5rem);
+  border-right: var(--border-width) solid var(--color-border);
+}
+
+.pr-pane-error--reader {
+  flex: 1;
+  min-width: 0;
+}
+
+.pr-mail[data-layout='push'] .pr-pane-error--list {
+  width: 100%;
+  border-right: 0;
+}
+

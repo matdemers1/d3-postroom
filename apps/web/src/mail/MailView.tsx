@@ -77,6 +77,7 @@ import { MAIL_HOME } from '../routes';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { emptyMailboxCopy, inSegment, isInboxSegment, segmentItems, segmentKeyword, type InboxSegment } from './split';
 import { showsKeyHints, SPLIT_QUERY, useMediaQuery } from './useMedia';
+import { PaneBoundary } from '../screens/PaneBoundary';
 import { SessionEnded } from '../screens/states';
 // PST-T-14.9: sorting you can see and correct where you read.
 import { sortingApi } from './sorting/api';
@@ -1307,22 +1308,42 @@ function MailPanes({ route }: { route: MailRoute }) {
     </section>
   );
 
+  // PST-T-16.2: the list and the reading pane each have their own boundary, so a throw in the
+  // thread (or the composer) leaves the message list on screen and the other way round. The list
+  // recovers when the mailbox or the search changes, the reader when another message opens.
+  const listPaneKey = `${route.mailboxId ?? ''}|${searchQuery ?? ''}`;
+  const readerKey = `${route.messageId ?? ''}|${route.compose ?? ''}`;
+  const guardedList = (
+    <PaneBoundary name="The message list" resetKey={listPaneKey} compact fallbackClassName="pr-pane-error--list">
+      {listPane}
+    </PaneBoundary>
+  );
+  const guardedReader = (
+    <PaneBoundary name="The reading pane" resetKey={readerKey} compact fallbackClassName="pr-pane-error--reader">
+      {readerPane}
+    </PaneBoundary>
+  );
+
   let content;
   if (isNewslettersFeed) {
-    content = feedPane;
+    content = (
+      <PaneBoundary name="The feed" resetKey={listPaneKey} compact fallbackClassName="pr-pane-error--reader">
+        {feedPane}
+      </PaneBoundary>
+    );
   } else if (split) {
     content = (
       <>
-        {listPane}
-        {readerPane}
+        {guardedList}
+        {guardedReader}
       </>
     );
   } else if (view === 'mailboxes') {
     content = <MailboxIndex mailboxes={mailboxes} headingRef={viewHeading} onCompose={() => { compose('new', null); }} />;
   } else if (view === 'list') {
-    content = listPane;
+    content = guardedList;
   } else {
-    content = readerPane;
+    content = guardedReader;
   }
 
   // PST-T-14.8: at phone width each level is a push screen — it slides in from the right when you
