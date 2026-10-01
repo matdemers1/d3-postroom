@@ -248,7 +248,13 @@ test('closing an event editor with unsaved changes asks before discarding (PST-T
   await expect(dialog.getByRole('button', { name: 'Create event' })).toBeVisible();
   // The zone is in words, and a one-off event has no Repeat helper echoing "Does not repeat".
   await expect(dialog.getByText(/^Times are in .+\.$/)).not.toContainText('/');
-  await expect(dialog.getByText('Does not repeat', { exact: true })).toHaveCount(1); // the select only
+  // The Repeat select shows it once. Inside a <form> the select also renders a hidden native <select>
+  // (aria-hidden, for form submission) whose <option> carries the same words, so that one is not
+  // counted; any other element saying it — a helper echoing the choice — is.
+  const repeat = dialog.getByRole('combobox', { name: 'Repeat' });
+  await expect(repeat).toContainText('Does not repeat');
+  await expect(repeat).not.toHaveAccessibleDescription(/Does not repeat/);
+  await expect(dialog.getByText('Does not repeat', { exact: true }).and(dialog.locator(':not(option)'))).toHaveCount(1);
 
   // Untouched: Cancel closes at once.
   await dialog.getByRole('button', { name: 'Cancel' }).click();
