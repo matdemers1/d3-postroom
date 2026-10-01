@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Button,
@@ -26,6 +27,12 @@ const STATUS_OPTIONS = [
   { value: 'running', label: 'Running' },
   { value: 'done', label: 'Done' },
 ];
+
+/** PST-T-16.4 (PST-REQ-198): ?status= is the filter, so a reload or Back keeps it; anything else is All. */
+function statusFrom(params: URLSearchParams): string {
+  const value = params.get('status') ?? '';
+  return STATUS_OPTIONS.some((o) => o.value === value) ? value : '';
+}
 
 const STAGE_OPTIONS = INBOUND_STAGES.map((s) => ({ value: s, label: s }));
 
@@ -58,7 +65,20 @@ function inboundMessageIdOf(job: AdminJob): string | null {
 export function AdminJobs() {
   const [jobs, setJobs] = useState<AdminJob[] | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
-  const [status, setStatus] = useState('');
+  const [params, setParams] = useSearchParams();
+  const status = statusFrom(params);
+  // Choosing a status rewrites the URL in place: the filter is part of this page, not a page of its own.
+  const setStatus = (next: string): void => {
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (next === '') out.delete('status');
+        else out.set('status', next);
+        return out;
+      },
+      { replace: true },
+    );
+  };
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<AdminJob | null>(null);
   const [stage, setStage] = useState<InboundStage>('file');

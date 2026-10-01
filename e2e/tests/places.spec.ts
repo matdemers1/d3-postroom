@@ -70,7 +70,8 @@ test('the account menu opens Settings and the Admin console; each has its own na
   await expect(mainNav(page)).toBeVisible();
   // Leave a mailbox open, so Back to Mail has somewhere to return to.
   await mainNav(page).getByRole('link', { name: /^Sent/ }).click();
-  await expect(page).toHaveURL(/\/mail\/[0-9a-f-]+$/);
+  // PST-T-16.4: a special-use mailbox is named by its slug.
+  await expect(page).toHaveURL(/\/mail\/sent$/);
   const sentUrl = page.url();
 
   await openAccountMenu(page);
@@ -200,4 +201,86 @@ test('moving between places cross-fades within --dur-2 and never slides; a page 
   await page.getByRole('menuitem', { name: 'Settings' }).click();
   await expect(page.locator('[data-place="settings"]')).toBeVisible();
   expect((await animation('[data-place="settings"]')).name).toBe('none');
+});
+
+// PST-T-16.4 (PST-REQ-198, PST-DA-052): a list's filters are the URL's — a reload and Back keep them.
+test('the jobs status filter is ?status=: a reload and Back keep it', async ({ page }) => {
+  await page.goto('/admin/jobs');
+  await expect(page.getByRole('heading', { name: 'Jobs', level: 1 })).toBeVisible();
+  const status = page.getByRole('combobox', { name: 'Status' });
+  await status.click();
+  await page.getByRole('option', { name: 'Dead' }).click();
+  // In place: choosing a filter adds no history entry of its own.
+  await expect(page).toHaveURL(/\/admin\/jobs\?status=dead$/);
+
+  const askedOnReload = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/admin/jobs' && new URL(r.url()).searchParams.get('status') === 'dead');
+  await page.reload();
+  await askedOnReload;
+  await expect(status).toContainText('Dead');
+
+  // Away to another admin screen, then Back.
+  await page.getByRole('navigation', { name: 'Admin console' }).getByRole('link', { name: 'Health' }).click();
+  await expect(page.getByRole('heading', { name: 'Health', level: 1 })).toBeVisible();
+  const askedOnBack = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/admin/jobs' && new URL(r.url()).searchParams.get('status') === 'dead');
+  await page.goBack();
+  await askedOnBack;
+  await expect(page).toHaveURL(/\/admin\/jobs\?status=dead$/);
+  await expect(status).toContainText('Dead');
+
+  // All statuses is the bare URL.
+  await status.click();
+  await page.getByRole('option', { name: 'All statuses' }).click();
+  await expect(page).toHaveURL(/\/admin\/jobs$/);
+});
+
+test('the contacts search and address book are ?q= and ?book=: a reload and Back keep them', async ({ page }) => {
+  const t = tag();
+  const { addressBooks } = (await (await api.get('/api/contacts/address-books')).json()) as { addressBooks: { id: string; slug: string; displayName: string }[] };
+  const book = addressBooks.find((b) => b.slug === 'contacts') ?? addressBooks[0];
+  if (book === undefined) throw new Error('no address book');
+  for (const [given, family] of [['Ada', `Byron ${t}`], ['Grace', `Hopper ${t}`]] as const) {
+    const made = await api.post(`/api/contacts/address-books/${encodeURIComponent(book.id)}/cards`, {
+      headers: { 'x-postroom-csrf': '1' },
+      data: { fn: `${given} ${family}`, given, family, emails: [{ address: `${given.toLowerCase()}-${t}@example.org`, type: null }], tels: [], org: '', note: '' },
+    });
+    expect(made.ok(), `create ${given}`).toBe(true);
+  }
+  const ada = page.getByRole('link', { name: `Ada Byron ${t}` });
+  const grace = page.getByRole('link', { name: `Grace Hopper ${t}` });
+  const search = page.getByRole('searchbox', { name: 'Search contacts' });
+
+  await page.goto('/contacts');
+  await expect(page.getByRole('heading', { name: 'Contacts', level: 1 })).toBeVisible();
+  await search.fill(`ada-${t}`);
+  await expect(page).toHaveURL(new RegExp(`/contacts\\?q=ada-${t}$`));
+  await expect(ada).toBeVisible();
+  await expect(grace).toHaveCount(0);
+
+  await page.reload();
+  await expect(search).toHaveValue(`ada-${t}`);
+  await expect(ada).toBeVisible();
+  await expect(grace).toHaveCount(0);
+
+  // The book rides in the URL by its slug; with more than one book the select shows it.
+  await page.goto(`/contacts?q=${t}&book=${book.slug}`);
+  await expect(ada).toBeVisible();
+  await expect(grace).toBeVisible();
+  if (addressBooks.length > 1) await expect(page.getByRole('combobox', { name: 'Address book' })).toContainText(book.displayName);
+
+  // Open a contact: the filters ride along, and the list beside it stays filtered.
+  await ada.click();
+  await expect(page).toHaveURL(new RegExp(`/contacts/[^?]+\\?q=${t}&book=${book.slug}$`));
+  await expect(search).toHaveValue(t);
+
+  // Away to another place, then Back — twice.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Calendar$/ }).click();
+  await expect(page.getByRole('heading', { name: 'Calendar', level: 1 })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/contacts/[^?]+\\?q=${t}&book=${book.slug}$`));
+  await expect(search).toHaveValue(t);
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/contacts\\?q=${t}&book=${book.slug}$`));
+  await expect(search).toHaveValue(t);
+  await expect(ada).toBeVisible();
+  await expect(grace).toBeVisible();
 });

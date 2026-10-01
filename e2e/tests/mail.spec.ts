@@ -91,7 +91,8 @@ test.describe('at 1280 px', () => {
     await expect(row(page, a.subject)).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('Enter');
 
-    await expect(page).toHaveURL(new RegExp(`/mail/${a.mailboxId}/${a.id}$`));
+    // PST-T-16.4: the Inbox is /mail/inbox, whatever its UUID.
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox/${a.id}$`));
     await expect(page.getByRole('heading', { name: a.subject, level: 2 })).toBeVisible();
     await expect(page.getByTestId('message-text')).toHaveText(`Body of alpha ${t}.`);
     // All three panes at once.
@@ -268,12 +269,12 @@ test.describe('at 390 px', () => {
     await expect(page.getByRole('heading', { name: 'No message open' })).toHaveCount(0);
 
     await row(page, g.subject).click();
-    await expect(page).toHaveURL(new RegExp(`/mail/${g.mailboxId}/${g.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox/${g.id}$`));
     await expect(page.getByRole('heading', { name: g.subject, level: 2 })).toBeVisible();
     await expect(list).toBeHidden();
 
     await page.getByRole('link', { name: 'Inbox', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/mail/${g.mailboxId}$`));
+    await expect(page).toHaveURL(/\/mail\/inbox$/);
     await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
 
     await row(page, g.subject).click();
@@ -288,6 +289,173 @@ test.describe('at 390 px', () => {
     await expect(page.getByRole('heading', { name: 'Mailboxes', level: 2 })).toBeVisible();
     await page.getByRole('navigation', { name: 'Mailboxes' }).getByRole('link', { name: /^Archive/ }).click();
     await expect(page.getByRole('listbox', { name: 'Messages in Archive' }).or(page.getByRole('heading', { name: 'Nothing archived' }))).toBeVisible();
+  });
+});
+
+// PST-T-16.4 (PST-REQ-198, design findings PST-DA-027 and PST-DA-052): the URL holds the open
+// mailbox (by slug), the open message, the search, the Inbox segment and the Inspect panel — so a
+// reload or Back restores each.
+test.describe('the URL holds the view', () => {
+  test.beforeEach(({ page: _page }, testInfo) => {
+    test.skip(!isDesktop(testInfo.project.name), 'the URL is the same at every width; the desktop project checks it');
+  });
+
+  const BUCKETS: Record<string, string> = { Updates: 'updates', Receipts: 'receipts', Notifications: 'notifications', Newsletters: 'newsletters' };
+  const LABELS: Record<string, string> = { inbox: 'Inbox', sent: 'Sent', drafts: 'Drafts', archive: 'Archive', trash: 'Trash', junk: 'Junk', rejects: 'Rejects' };
+
+  test('special-use mailboxes and buckets route by slug; / and the old UUID URLs redirect', async ({ page }) => {
+    const t = tag();
+    const [m] = await seedMail(api, [{ subject: `Slugged ${t}` }]);
+    if (m === undefined) throw new Error('seed returned nothing');
+
+    await page.goto('/');
+    await expect(page).toHaveURL(/\/mail\/inbox$/);
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
+
+    const { mailboxes } = (await (await api.get('/api/mailboxes')).json()) as { mailboxes: { id: string; name: string; specialUse: string | null }[] };
+    let checked = 0;
+    for (const mb of mailboxes) {
+      const slug = mb.specialUse ?? (mb.name.toUpperCase() === 'INBOX' ? 'inbox' : BUCKETS[mb.name]);
+      if (slug === undefined) continue;
+      await page.goto(`/mail/${mb.id}`);
+      await expect(page, mb.name).toHaveURL(new RegExp(`/mail/${slug}$`));
+      await expect(page.getByRole('heading', { name: new RegExp(`^${LABELS[slug] ?? mb.name}`), level: 2 })).toBeVisible();
+      // The slug itself is a URL that loads.
+      await page.reload();
+      await expect(page, `${slug} after a reload`).toHaveURL(new RegExp(`/mail/${slug}$`));
+      await expect(page.getByRole('heading', { name: new RegExp(`^${LABELS[slug] ?? mb.name}`), level: 2 })).toBeVisible();
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThanOrEqual(10);
+
+    // An old message URL keeps its message; the sidebar's links land on slugs too; Back walks them.
+    await page.goto(`/mail/${m.mailboxId}/${m.id}`);
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox/${m.id}$`));
+    await expect(page.getByRole('heading', { name: m.subject, level: 2 })).toBeVisible();
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Sent/ }).click();
+    await expect(page).toHaveURL(/\/mail\/sent$/);
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox/${m.id}$`));
+    await expect(page.getByRole('heading', { name: m.subject, level: 2 })).toBeVisible();
+
+    // '/' keeps its query on the way (sign-in and the composer's links land there).
+    await page.goto('/?compose=new');
+    await expect(page).toHaveURL(/\/mail\/inbox\?compose=new$/);
+    await expect(page.getByRole('region', { name: 'New message' })).toBeVisible();
+  });
+
+  test('the search is ?q=: a reload and Back show the same results', async ({ page }) => {
+    const t = tag();
+    const seeded = await seedMail(api, [{ subject: `Needle ${t} one` }, { subject: `Needle ${t} two` }]);
+    const [a, b] = seeded;
+    if (a === undefined || b === undefined) throw new Error('seed returned too few');
+    // Search answers from a fixed list (as command-palette.spec.ts does), so the test is about the URL.
+    const summaries = await Promise.all(seeded.map(async (m) => (await (await api.get(`/api/messages/${m.id}`)).json()) as unknown));
+    const asked: string[] = [];
+    await page.route('**/api/search?**', async (route) => {
+      asked.push(new URL(route.request().url()).searchParams.get('q') ?? '');
+      await route.fulfill({ json: { results: [], messages: summaries, nextCursor: null, warnings: [] } });
+    });
+    const query = `needle ${t}`;
+    const urlQuery = `q=needle\\+${t}`;
+    const results = page.getByRole('listbox', { name: `Messages matching ${query}` });
+    const field = page.getByRole('searchbox', { name: 'Search mail' });
+
+    await page.goto('/mail/inbox');
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
+    await field.focus();
+    await page.keyboard.type(query);
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox\\?${urlQuery}$`));
+    await expect(results).toBeVisible();
+    await expect(row(page, a.subject)).toBeVisible();
+    expect(asked.at(-1)).toBe(query);
+
+    await page.reload();
+    await expect(results).toBeVisible();
+    await expect(field).toHaveValue(query);
+    expect(asked.at(-1)).toBe(query);
+
+    // Opening a result keeps the search: the list beside it is still the results.
+    await row(page, b.subject).click();
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox/${b.id}\\?${urlQuery}$`));
+    await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+    await expect(results).toBeVisible();
+
+    // Away to another place, then Back: the message, then the results without it.
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Contacts$/ }).click();
+    await expect(page.getByRole('heading', { name: 'Contacts', level: 1 })).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox/${b.id}\\?${urlQuery}$`));
+    await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+    await expect(results).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox\\?${urlQuery}$`));
+    await expect(results).toBeVisible();
+    await expect(field).toHaveValue(query);
+    await expect(page.getByRole('heading', { name: 'No message open' })).toBeVisible();
+
+    // Clearing the search is a step of its own: Back brings the results back.
+    await page.getByRole('button', { name: 'Clear search' }).click();
+    await expect(page).toHaveURL(/\/mail\/inbox$/);
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
+    await expect(field).toHaveValue('');
+    await page.goBack();
+    await expect(results).toBeVisible();
+    await expect(field).toHaveValue(query);
+  });
+
+  test('the Inbox segment is ?view=, carried onto the message opened from it', async ({ page }) => {
+    const t = tag();
+    const [p] = await seedMail(api, [{ subject: `Segment ${t}` }]);
+    if (p === undefined) throw new Error('seed returned nothing');
+    const segment = (name: string) => page.getByRole('radiogroup', { name: 'Show in Inbox' }).getByRole('radio', { name: new RegExp(`^${name}`) });
+    await page.goto('/mail/inbox?view=people');
+    await expect(segment('People')).toHaveAttribute('aria-checked', 'true');
+    await page.reload();
+    await expect(page).toHaveURL(/\/mail\/inbox\?view=people$/);
+    await expect(segment('People')).toHaveAttribute('aria-checked', 'true');
+    // Choosing a segment names it in place; Everything is the bare Inbox URL.
+    await segment('Priority').click();
+    await expect(page).toHaveURL(/\/mail\/inbox\?view=priority$/);
+    await segment('Everything').click();
+    await expect(page).toHaveURL(/\/mail\/inbox$/);
+    await expect(segment('Everything')).toHaveAttribute('aria-checked', 'true');
+    // A segment named in the URL rides onto the message opened from its list.
+    await page.goto('/mail/inbox?view=all');
+    await expect(row(page, p.subject)).toBeVisible();
+    await row(page, p.subject).click();
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox/${p.id}\\?view=all$`));
+    await expect(segment('Everything')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('the Inspect drawer is ?panel=inspect: a reload and Back reopen it', async ({ page }) => {
+    const t = tag();
+    const [m] = await seedMail(api, [{ subject: `Inspect URL ${t}`, text: 'Look closer.' }]);
+    if (m === undefined) throw new Error('seed returned nothing');
+    const drawer = page.getByRole('dialog', { name: 'Inspect message' });
+
+    await page.goto(`/mail/inbox/${m.id}?panel=inspect`);
+    await expect(drawer).toBeVisible();
+    await page.reload();
+    await expect(drawer).toBeVisible();
+    await expect(page.getByRole('heading', { name: m.subject, level: 2 })).toBeAttached();
+
+    // Closing it clears the parameter in place; i opens it and names it again.
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox/${m.id}$`));
+    await page.getByRole('heading', { name: m.subject, level: 2 }).focus();
+    await page.keyboard.press('i');
+    await expect(drawer).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox/${m.id}\\?panel=inspect$`));
+
+    // Away, then Back: the same message, with its drawer open.
+    await page.goto('/contacts');
+    await expect(page.getByRole('heading', { name: 'Contacts', level: 1 })).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/mail/inbox/${m.id}\\?panel=inspect$`));
+    await expect(drawer).toBeVisible();
   });
 });
 

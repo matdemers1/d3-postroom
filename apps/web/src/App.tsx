@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Alert, AuthLayout, Button, Spinner, ThemeProvider, ToastRegion } from '@d3cloud/ui';
 import { api, redirectFor, serverUnreachable, type AuthState } from './api';
-import { REDIRECTS, ROUTES, type RouteId } from './routes';
+import { MAIL_HOME, REDIRECTS, ROUTES, type RouteId } from './routes';
 import { titleForPath } from './title';
 import { Calendar } from './calendar/Calendar';
 import { Contacts } from './contacts/Contacts';
@@ -134,9 +134,10 @@ function Gate() {
           </MailProvider>
         }
       >
+        {/* PST-T-16.4: one Inbox URL — '/' (and '/?compose=new', sign-in's landing) goes to /mail/inbox. */}
+        <Route index element={<Moved to={MAIL_HOME} />} />
         {/* One layout route for every mail URL, so moving between them never remounts the view. */}
         <Route element={<Mail />}>
-          <Route index element={null} />
           <Route path="/mail/*" element={null} />
         </Route>
         {ROUTES.filter((r) => isShellRoute(r.id)).map((r) => (
@@ -145,7 +146,7 @@ function Gate() {
         {REDIRECTS.map((r) => (
           <Route key={r.from} path={r.from} element={<Moved to={r.to} />} />
         ))}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to={MAIL_HOME} replace />} />
       </Route>
     </Routes>
   );
