@@ -1,0 +1,19 @@
+/* Connect a device (PST-T-16.16). Existing tokens only. */
+
+/* A copyable value: the value in mono, its note, then Copy — wrapping on a narrow screen. */
+.pr-device-value {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.pr-device-value > code {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.pr-device-status {
+  margin: 0;
+}

@@ -21,6 +21,8 @@ import {
 } from '@d3cloud/ui';
 import { api, describeError, type AppPassword, type AppPasswordScope } from '../api';
 import { relativeTime } from './app-passwords-format';
+import { ConnectionStatus } from './device/FirstUse';
+import { ServerSettings } from './device/ServerSettings';
 import { Loading, LoadFailed } from './states';
 import { SubNav } from './SubNav';
 
@@ -47,7 +49,7 @@ export function AppPasswords() {
   const [scopes, setScopes] = useState<AppPasswordScope[]>(['imap', 'smtp']);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [revealed, setRevealed] = useState<{ label: string; password: string } | null>(null);
+  const [revealed, setRevealed] = useState<{ id: string; label: string; password: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState<AppPassword | null>(null);
   const [revoking, setRevoking] = useState(false);
@@ -85,7 +87,7 @@ export function AppPasswords() {
     api
       .createAppPassword({ label: label.trim(), scopes })
       .then(async (created) => {
-        setRevealed({ label: created.label, password: created.password });
+        setRevealed({ id: created.id, label: created.label, password: created.password });
         setCopied(false);
         setLabel('');
         await load();
@@ -171,6 +173,9 @@ export function AppPasswords() {
                 Done
               </Button>
             </Cluster>
+            <ConnectionStatus key={revealed.id} watch={{ kind: 'password', id: revealed.id }} waiting="Waiting for the app to sign in." />
+            {/* PST-T-16.16: the same settings block as Connect a device › Other, beside the password. */}
+            <ServerSettings />
           </Stack>
         </Section>
       )}
