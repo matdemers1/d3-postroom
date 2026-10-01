@@ -136,8 +136,8 @@ describe('buildCommands', () => {
   it('running a place command navigates to its path', () => {
     const navigate = vi.fn();
     const commands = buildCommands(context({ navigate }));
-    commands.find((c) => c.label === 'Security & devices' || c.label === 'Browser sessions')?.run();
-    expect(navigate).toHaveBeenCalledWith('/settings/security');
+    commands.find((c) => c.label === 'Browser sessions')?.run();
+    expect(navigate).toHaveBeenCalledWith('/settings/security/sessions');
   });
 
   it('old names survive as searchable hints: "devices" finds Security & devices and Sign-in sessions', () => {

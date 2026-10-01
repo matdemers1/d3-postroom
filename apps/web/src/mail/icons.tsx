@@ -39,6 +39,46 @@ export const JunkIcon = () => (
     <path d="m6.5 6.5 11 11" />
   </Svg>
 );
+// PST-T-16.3 (PST-DA-018): each sorted bucket and Rejects has a mark of its own, so the sidebar,
+// palette and triage picker tell them apart at a glance without leaning on the label.
+/** Rejects: a shield with a cross — mail the server refused, as against Junk's ban sign. */
+export const RejectsIcon = () => (
+  <Svg>
+    <path d="M12 3 5 6v5.5c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6z" />
+    <path d="m9.5 9.5 5 5M14.5 9.5l-5 5" />
+  </Svg>
+);
+/** Updates: two arrows chasing each other — something changed. */
+export const UpdatesIcon = () => (
+  <Svg>
+    <path d="M20 12a8 8 0 0 0-13.7-5.6L4 8.5" />
+    <path d="M4 4v4.5h4.5" />
+    <path d="M4 12a8 8 0 0 0 13.7 5.6l2.3-2.1" />
+    <path d="M20 20v-4.5h-4.5" />
+  </Svg>
+);
+/** Receipts: a till roll with a torn edge and line items. */
+export const ReceiptsIcon = () => (
+  <Svg>
+    <path d="M6 3h12v18l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5L6 21z" />
+    <path d="M9 8h6M9 12h6" />
+  </Svg>
+);
+/** Notifications: a bell. */
+export const NotificationsIcon = () => (
+  <Svg>
+    <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" />
+    <path d="M10 20.5a2 2 0 0 0 4 0" />
+  </Svg>
+);
+/** Newsletters: a folded newspaper with a masthead and columns. */
+export const NewslettersIcon = () => (
+  <Svg>
+    <path d="M7 4h13v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8h4" />
+    <path d="M10.5 8h6M10.5 12h6M10.5 15.5h3" />
+    <path d="M7 4v14a2 2 0 0 1-2 2" />
+  </Svg>
+);
 export const TrashIcon = () => (
   <Svg>
     <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
@@ -75,12 +115,25 @@ export function mailboxIcon(use: SpecialUse | null, name: string): ReactNode {
     case 'archive':
       return <ArchiveIcon />;
     case 'junk':
-    case 'rejects':
       return <JunkIcon />;
+    case 'rejects':
+      return <RejectsIcon />;
     case 'trash':
       return <TrashIcon />;
     default:
-      return <FolderIcon />;
+      // The sorter's bucket folders carry no special-use flag; they are known by name.
+      switch (name.toLowerCase()) {
+        case 'updates':
+          return <UpdatesIcon />;
+        case 'receipts':
+          return <ReceiptsIcon />;
+        case 'notifications':
+          return <NotificationsIcon />;
+        case 'newsletters':
+          return <NewslettersIcon />;
+        default:
+          return <FolderIcon />;
+      }
   }
 }
 
