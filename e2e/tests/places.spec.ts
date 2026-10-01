@@ -110,6 +110,7 @@ test('the account menu opens Settings and the Admin console; each has its own na
     'Live SMTP',
     'Jobs',
     'Sign-in sessions',
+    'Sign in with D3 Auth',
     'Suppressions',
     /^Setup/,
   ]);

@@ -61,6 +61,7 @@ yourself has no slug and keeps its UUID, and a UUID in the path still works. `/`
 | Settings: Templates | `/settings/templates` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
 | Settings: Encryption keys | `/settings/keys` | — ² | — ² | — | — | n/a | n/a | — |
 | Admin: Sign-in sessions | `/admin/sessions` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
+| Admin: Sign in with D3 Auth | `/admin/sign-in` | ✅ | n/a (always has the connection values) | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: Health | `/admin/health` | ✅ | ✅ *No health checks reported* | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: Jobs | `/admin/jobs` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
 | Admin: Outbound queue | `/admin/queue` | ✅ | ✅ | ✅ | ✅ | ✅ ¹ | ✅ | ✅ |
