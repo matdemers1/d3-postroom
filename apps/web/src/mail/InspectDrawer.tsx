@@ -17,7 +17,7 @@
 // own (PST-T-14.6): the open state is held here, and on close focus goes back explicitly to what
 // opened it — the ⋯ or Details button, else whatever the reader was on (./focusReturn.ts).
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Badge, Button, Checkbox, Cluster, Modal, ModalClose, Skeleton, Stack } from '@d3cloud/ui';
+import { Alert, Badge, Button, Checkbox, Cluster, Modal, ModalClose, Skeleton, Stack, type BadgeTone } from '@d3cloud/ui';
 import { STATUS_TONE, toneKind, verdictKind } from '../status/status';
 import { StatusBadge } from '../status/StatusBadge';
 import { api, serverUnreachable, type DeliveryRecipient, type InspectAlignment, type InspectScore, type MessageInspect, type ReceivedHop } from '../api';
@@ -44,7 +44,8 @@ export const RAW_VIEW_CAP = 256 * 1024;
 /** The section headings, in order — the e2e suite and the unit test hold the drawer to this list. */
 export const INSPECT_SECTIONS = ['Authentication', 'Signature and encryption', 'Received path', 'Why this bucket', 'Spam score breakdown', 'Trackers removed', 'MDN request', 'Headers', 'Raw source'] as const;
 
-type Tone = 'neutral' | 'attention' | 'danger';
+/** status.ts's tones: since D3 UI 1.5 a Badge (and StatusDot) also take 'warning'. */
+type Tone = BadgeTone;
 
 /** How a verdict result reads at a glance: status.ts's mapping, shared with Admin › Health. */
 export function resultTone(result: string): Tone {

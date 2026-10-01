@@ -161,7 +161,7 @@ export function AdminSuppressions() {
             width: '20%',
             cell: (s: Suppression) =>
               s.source === null ? <span className="pr-muted">—</span> : <span className="pr-clip">{s.source.subject ?? '(no subject)'}</span>,
-          },
+          } satisfies TableColumn<Suppression>,
         ]
       : []),
     { key: 'bounceCount', header: 'Bounces', width: '6rem', numeric: true, cell: (s) => String(s.bounceCount) },
