@@ -85,11 +85,11 @@ export const ROUTES: readonly AppRoute[] = [
   r({
     id: 'settingsDeviceSetup',
     path: '/settings/security',
-    title: 'Set up iPhone / Mac',
+    title: 'Connect a device',
     place: 'settings',
     navGroup: 'Security & devices',
-    keywords: 'security devices configuration profile mobileconfig ios macos',
-    hint: 'Download a configuration profile',
+    keywords: 'security devices set up iphone mac thunderbird imap smtp server settings qr configuration profile mobileconfig ios macos',
+    hint: 'iPhone, Mac, Thunderbird or any mail app',
   }),
   r({
     id: 'settingsBrowsers',

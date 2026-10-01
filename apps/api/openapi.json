@@ -12555,6 +12555,25 @@
         "responses": {
           "200": {
             "description": "The .mobileconfig, signed or not.",
+            "headers": {
+              "X-Postroom-Mobileconfig-Signed": {
+                "description": "1 when signed as CMS SignedData, 0 when served unsigned.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "0",
+                    "1"
+                  ]
+                }
+              },
+              "X-Postroom-App-Password-Id": {
+                "description": "The id (never the secret) of the app password the profile carries.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
             "content": {
               "application/x-apple-aspen-config": {
                 "schema": {
@@ -12596,6 +12615,376 @@
           },
           "503": {
             "description": "Auth is not configured (no password pepper).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mobileconfig/links": {
+      "post": {
+        "operationId": "createMobileconfigLink",
+        "tags": [
+          "Mobileconfig"
+        ],
+        "summary": "A one-time, ten-minute profile URL for an iPhone to open (PST-REQ-139, PST-T-16.16).",
+        "description": "Nothing is minted yet: opening the URL mints the app password and returns the profile, once. The token is an HMAC-signed, 128-bit-random value bound to this account and its expiry. Step-up, audited (by the link id, never the token) and rate-limited.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The link.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "The one-time profile URL. A secret: show it as a QR code, never store it."
+                    },
+                    "linkId": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$",
+                      "description": "Names the link for polling; not the token."
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "linkId",
+                    "expiresAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header, or step-up required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The account has no primary address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many links in ten minutes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Auth is not configured (no pepper or session secret).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mobileconfig/links/{linkId}": {
+      "get": {
+        "operationId": "getMobileconfigLink",
+        "tags": [
+          "Mobileconfig"
+        ],
+        "summary": "Whether a one-time link was used, and when its app password first signed in.",
+        "parameters": [
+          {
+            "name": "linkId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The link status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "redeemed": {
+                      "type": "boolean"
+                    },
+                    "appPasswordId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time",
+                      "description": "When a mail app first signed in with the minted password."
+                    }
+                  },
+                  "required": [
+                    "redeemed",
+                    "appPasswordId",
+                    "lastUsedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such link of yours.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mobileconfig/once/{token}": {
+      "get": {
+        "operationId": "redeemMobileconfigLink",
+        "tags": [
+          "Mobileconfig"
+        ],
+        "summary": "Install the profile from a one-time link. No session: it is the URL an iPhone camera opens.",
+        "description": "Mints one app password scoped for imap+smtp+dav and returns the profile, exactly as POST /api/mobileconfig does — the first time. Every later request, and any expired, forged or malformed token, answers 410 with the same plain-text body. HEAD answers 405 and never spends the link. Audited.",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The .mobileconfig, signed or not.",
+            "headers": {
+              "X-Postroom-Mobileconfig-Signed": {
+                "description": "1 when signed as CMS SignedData, 0 when served unsigned.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "0",
+                    "1"
+                  ]
+                }
+              },
+              "X-Postroom-App-Password-Id": {
+                "description": "The id (never the secret) of the app password the profile carries.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/x-apple-aspen-config": {
+                "schema": {
+                  "type": "string",
+                  "contentEncoding": "binary"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired, already used, or not a link.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many failed attempts from this address.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Auth is not configured.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mobileconfig/settings": {
+      "get": {
+        "operationId": "getMailSettings",
+        "tags": [
+          "Mobileconfig"
+        ],
+        "summary": "The IMAP and SMTP servers, ports and username a mail app needs (PST-T-16.16).",
+        "description": "The same hosts the Thunderbird autoconfig document advertises: IMAP on 993 (TLS), SMTP on 465 (TLS) and 587 (STARTTLS).",
+        "responses": {
+          "200": {
+            "description": "The settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "address": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The primary address."
+                    },
+                    "username": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "What a mail app signs in as: the full address."
+                    },
+                    "imap": {
+                      "type": "object",
+                      "properties": {
+                        "host": {
+                          "type": "string"
+                        },
+                        "port": {
+                          "type": "integer"
+                        },
+                        "security": {
+                          "type": "string",
+                          "enum": [
+                            "tls"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "host",
+                        "port",
+                        "security"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "smtp": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "host": {
+                            "type": "string"
+                          },
+                          "port": {
+                            "type": "integer"
+                          },
+                          "security": {
+                            "type": "string",
+                            "enum": [
+                              "tls",
+                              "starttls"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "host",
+                          "port",
+                          "security"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "address",
+                    "username",
+                    "imap",
+                    "smtp"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
             "content": {
               "application/json": {
                 "schema": {

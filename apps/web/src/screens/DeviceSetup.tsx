@@ -1,137 +1,151 @@
-import { type SyntheticEvent, useState } from 'react';
-import { Alert, Button, FormActions, FormField, Input, Modal, ModalClose, Page, PageHeader, Section, Stack } from '@d3cloud/ui';
-import { ApiError, api, describeError, generateMobileconfig } from '../api';
+import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { Button, FormField, Input, Modal, ModalClose, Page, PageHeader, Section, TabPanel, Tabs } from '@d3cloud/ui';
+import { ApiError, api, describeError } from '../api';
+import { deviceApi, type MailSettings } from './device/api';
+import { IphonePanel, MacPanel, OtherPanel, ThunderbirdPanel, type WithStepUp } from './device/Panels';
 import { SubNav } from './SubNav';
 
-/** Triggers a browser download of a Blob without ever navigating away from this screen. */
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  try {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.append(a);
-    a.click();
-    a.remove();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+type Client = 'iphone' | 'mac' | 'thunderbird' | 'other';
+
+const CLIENTS: { value: Client; label: string }[] = [
+  { value: 'iphone', label: 'iPhone' },
+  { value: 'mac', label: 'Mac' },
+  { value: 'thunderbird', label: 'Thunderbird' },
+  { value: 'other', label: 'Other' },
+];
+
+interface Pending {
+  action: () => Promise<void>;
+  resolve: () => void;
+  reject: (reason: unknown) => void;
 }
 
 /**
- * A signed configuration profile for Mail, Calendar and Contacts (PST-REQ-139): one download sets
- * up all three on an iPhone or a Mac, with a fresh app password iOS never shows you. Generating one
+ * Connect a device (PST-T-16.16, PST-DA-039; PST-REQ-139): pick the client, then the shortest way
+ * in for it — a QR code to a one-time profile URL for an iPhone, a profile download for a Mac,
+ * Thunderbird's own autoconfig, or the server settings by hand with Copy on each. Minting a profile
  * needs a fresh step-up, the same as any other credential-minting action.
  */
 export function DeviceSetup() {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [client, setClient] = useState<Client>('iphone');
+  const [settings, setSettings] = useState<MailSettings | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [stepUpOpen, setStepUpOpen] = useState(false);
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const pending = useRef<Pending | null>(null);
 
-  const generate = async (): Promise<void> => {
-    setError(null);
-    setNotice(null);
-    try {
-      const { blob, filename, signed } = await generateMobileconfig();
-      downloadBlob(blob, filename);
-      setStepUpOpen(false);
-      setNotice(
-        signed
-          ? 'Downloaded. Open it on the device and follow the prompts in Settings — it will show as Verified.'
-          : 'Downloaded. Open it on the device and follow the prompts in Settings — it will show as Unverified (no signing certificate is configured on this server yet), but it installs and works the same.',
-      );
-    } catch (caught) {
-      if (caught instanceof ApiError && caught.code === 'step_up_required') {
-        setCode('');
-        setCodeError(null);
-        setStepUpOpen(true);
-        return;
-      }
-      setStepUpOpen(false);
-      setError(describeError(caught));
-    }
-  };
+  useEffect(() => {
+    let live = true;
+    deviceApi
+      .settings()
+      .then((loaded) => {
+        if (live) setSettings(loaded);
+      })
+      .catch((caught: unknown) => {
+        if (live) setSettingsError(describeError(caught));
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
 
-  const start = (event: SyntheticEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    void generate().finally(() => {
-      setBusy(false);
-    });
+  /** Runs `action`; when it needs a step-up, asks for the code and runs it again once verified. */
+  const withStepUp: WithStepUp = useCallback(
+    (action) =>
+      action().catch((caught: unknown) => {
+        if (!(caught instanceof ApiError && caught.code === 'step_up_required')) throw caught;
+        return new Promise<void>((resolve, reject) => {
+          pending.current?.resolve();
+          pending.current = { action, resolve, reject };
+          setCode('');
+          setCodeError(null);
+          setStepUpOpen(true);
+        });
+      }),
+    [],
+  );
+
+  const cancelStepUp = () => {
+    setStepUpOpen(false);
+    pending.current?.resolve();
+    pending.current = null;
   };
 
   const confirmStepUp = (event: SyntheticEvent) => {
     event.preventDefault();
-    setBusy(true);
+    setVerifying(true);
     setCodeError(null);
     api
       .stepUp(code)
-      .then(() => generate())
+      .then(() => {
+        const next = pending.current;
+        pending.current = null;
+        setStepUpOpen(false);
+        if (next !== null) void next.action().then(next.resolve, next.reject);
+      })
       .catch((caught: unknown) => {
         setCode('');
         setCodeError(describeError(caught));
       })
       .finally(() => {
-        setBusy(false);
+        setVerifying(false);
       });
   };
 
   return (
     // PST-T-15.6: the settings grid — a 680px column of Section cards.
     <Page width="narrow">
-      <PageHeader title="Set up iPhone / Mac" description="One profile configures Mail, Calendar and Contacts together, with their own app password." />
+      <PageHeader title="Connect a device" description="Set up mail, calendars and contacts on a phone, a computer or any mail app." />
       <SubNav />
 
-      {notice === null ? null : (
-        <Alert tone="info" dynamic>
-          {notice}
-        </Alert>
-      )}
-
-      <Section
-        title="Download a configuration profile"
-        description="Mints a fresh app password (scoped to Mail and DAV only, never your account password) and hands you back a signed .mobileconfig. On the device: open the file, then Settings > General > VPN & Device Management to install it."
-      >
-        <Stack gap="16">
-          {error === null ? null : (
-            <Alert tone="danger" title="Could not generate the profile">
-              {error}
-            </Alert>
-          )}
-          <form onSubmit={start}>
-            <FormActions>
-              <Button type="submit" variant="primary" loading={busy && !stepUpOpen}>
-                Download profile
-              </Button>
-            </FormActions>
-          </form>
-        </Stack>
+      <Section title="Which device?">
+        <Tabs
+          aria-label="Device"
+          items={CLIENTS}
+          value={client}
+          onValueChange={(value) => {
+            setClient(value as Client);
+          }}
+        >
+          <TabPanel value="iphone">
+            <IphonePanel withStepUp={withStepUp} />
+          </TabPanel>
+          <TabPanel value="mac">
+            <MacPanel withStepUp={withStepUp} />
+          </TabPanel>
+          <TabPanel value="thunderbird">
+            <ThunderbirdPanel settings={settings} />
+          </TabPanel>
+          <TabPanel value="other">
+            <OtherPanel settings={settings} error={settingsError} />
+          </TabPanel>
+        </Tabs>
       </Section>
 
       <Modal
         open={stepUpOpen}
         onOpenChange={(open) => {
-          if (!open) setStepUpOpen(false);
+          if (!open) cancelStepUp();
         }}
         title="Confirm it is you"
-        description="Generating a device profile mints a new credential; it needs a code from your authenticator, valid for five minutes."
+        description="Setting up a device mints a new app password, so it needs a code from your authenticator."
         footer={
           <>
             <ModalClose>
               <Button type="button">Cancel</Button>
             </ModalClose>
-            <Button type="submit" form="device-setup-step-up" variant="primary" loading={busy}>
-              Verify and download
+            <Button type="submit" form="device-setup-step-up" variant="primary" loading={verifying}>
+              Verify
             </Button>
           </>
         }
       >
         <form id="device-setup-step-up" onSubmit={confirmStepUp}>
           <FormField label="Authentication code" {...(codeError === null ? {} : { error: codeError })}>
-            <Input appearance="filled"
+            <Input
+              appearance="filled"
               name="code"
               inputMode="numeric"
               autoComplete="one-time-code"
