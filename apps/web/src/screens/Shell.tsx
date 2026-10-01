@@ -5,7 +5,7 @@
 // slide (D-024), and each pane sits in an error boundary so one failure never blanks the app.
 import '../styles/places.css';
 import '../styles/fields.css';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   AccountMenu,
@@ -559,6 +559,15 @@ function PlacePalette({ enabled }: { enabled: boolean }) {
  */
 function useGoChords(inMailView: boolean): void {
   const navigate = useNavigate();
+  // The listener is attached once. Its inputs live in refs, because useNavigate's identity changes
+  // with the URL — and Calendar and MailView rewrite their URL as they load (?view, mailbox slugs).
+  // Re-subscribing on that change dropped a pending 'g' between the two keys of a chord (PST-T-16.19).
+  const navigateRef = useRef(navigate);
+  const inMailViewRef = useRef(inMailView);
+  useEffect(() => {
+    navigateRef.current = navigate;
+    inMailViewRef.current = inMailView;
+  }, [navigate, inMailView]);
   useEffect(() => {
     let pending: 'g' | null = null;
     const onKey = (e: KeyboardEvent): void => {
@@ -570,18 +579,19 @@ function useGoChords(inMailView: boolean): void {
       }
       const { go, pending: next } = resolveGo({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, editable: describeTarget(e.target).editable }, pending);
       pending = next;
-      if (go === null || (inMailView && go.target === 'inbox')) return;
-      if (!inMailView) {
+      const inMail = inMailViewRef.current;
+      if (go === null || (inMail && go.target === 'inbox')) return;
+      if (!inMail) {
         e.preventDefault();
         e.stopPropagation();
       }
-      void navigate(go.path);
+      void navigateRef.current(go.path);
     };
     window.addEventListener('keydown', onKey, true);
     return () => {
       window.removeEventListener('keydown', onKey, true);
     };
-  }, [inMailView, navigate]);
+  }, []);
 }
 
 /** The signed-in frame: the place's nav (a drawer below `lg`), the account menu, and the page. */
