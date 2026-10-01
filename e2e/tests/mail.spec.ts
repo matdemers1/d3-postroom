@@ -439,7 +439,8 @@ test.describe('the URL holds the view', () => {
     await expect(drawer).toBeVisible();
     await page.reload();
     await expect(drawer).toBeVisible();
-    await expect(page.getByRole('heading', { name: m.subject, level: 2 })).toBeAttached();
+    // The modal drawer hides the page behind it from the accessibility tree, so look past that.
+    await expect(page.getByRole('heading', { name: m.subject, level: 2, includeHidden: true })).toBeAttached();
 
     // Closing it clears the parameter in place; i opens it and names it again.
     await page.keyboard.press('Escape');
