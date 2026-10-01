@@ -1,8 +1,9 @@
 import './contacts.css';
-import { type SyntheticEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, type ReactNode, type SyntheticEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Alert,
+  Badge,
   Button,
   Cluster,
   DataList,
@@ -30,6 +31,30 @@ import { blankContact, contactProblem, EMAIL_TYPES, inputOf, rowKey, TEL_TYPES, 
 import { Loading, LoadFailed } from '../screens/states';
 
 const SPLIT_QUERY = '(min-width: 900px)';
+
+/**
+ * A contact row's second line (PST-T-16.23): the organization, then each address on a line of its
+ * own that wraps rather than truncates, so a long local part never costs the domain; and the
+ * address-book name as a quiet Badge under the name rather than in the meta column.
+ */
+export function ContactSummaryLines({ contact, book }: { contact: ContactSummary; book: string }) {
+  // Line breaks, not a joined string: the row is not truncated (it wraps, anywhere), so the whole
+  // address — domain included — is always on screen, one address to a line.
+  const lines: ReactNode[] = [];
+  if (book !== '') lines.push(<Badge size="sm">{book}</Badge>);
+  if (contact.org !== '') lines.push(contact.org);
+  for (const email of contact.emails) lines.push(email);
+  return (
+    <>
+      {lines.map((line, i) => (
+        <Fragment key={i}>
+          {i === 0 ? null : <br />}
+          {line}
+        </Fragment>
+      ))}
+    </>
+  );
+}
 
 function RemoveIcon() {
   return (
@@ -140,9 +165,7 @@ export function Contacts() {
               key={`${c.addressBookId}/${c.name}`}
               aria-current={selected?.addressBookId === c.addressBookId && selected.name === c.name ? 'true' : undefined}
               title={<RouterLink to={`${contactPath(c.addressBookId, c.name)}${filterSearch}`}>{c.displayName === '' ? 'No name' : c.displayName}</RouterLink>}
-              description={[c.org, ...c.emails].filter((x) => x !== '').join(' · ')}
-              meta={bookName.get(c.addressBookId) ?? ''}
-              truncate
+              description={<ContactSummaryLines contact={c} book={bookName.get(c.addressBookId) ?? ''} />}
             />
           ))}
         </DataList>

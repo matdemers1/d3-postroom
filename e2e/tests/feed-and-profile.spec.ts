@@ -89,7 +89,9 @@ test('the Newsletters feed scrolls three newsletters, marks them all read, and t
   // Mark all read.
   expect((await mailboxByName('Newsletters')).unseen).toBeGreaterThan(0);
   await page.getByTestId('mark-all-read').click();
-  await expect(page.getByTestId('mark-all-read')).toBeDisabled();
+  // PST-T-16.23: nothing unread is a quiet status, not a disabled button.
+  await expect(page.getByTestId('all-read')).toHaveText('All read');
+  await expect(page.getByTestId('mark-all-read')).toHaveCount(0);
   await expect.poll(async () => (await mailboxByName('Newsletters')).unseen).toBe(0);
 
   // The sender profile, linked from a feed item's From line, for this fixture sender.
@@ -153,4 +155,30 @@ test('a Newsletters feed item offers "Why it’s here", and says so plainly when
   await why.getByRole('button', { name: 'Move this message to Priority' }).click();
   await expect(movedItem).toHaveCount(0);
   await expect(sortedItem).toBeVisible();
+});
+
+// PST-T-16.23 (PST-DA-057): a contact row shows the whole address — a 30-character local part must
+// not cost the domain at 1280px — with the address-book name as a quiet badge under the name.
+test('a contact with a 30-character local part shows its full domain, and its address book as a badge', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the 1280px list layout is the desktop project');
+  const t = tag();
+  const email = `${'a'.repeat(30 - t.length)}${t}@a-long-domain-name.example.org`;
+  const { addressBooks } = (await (await api.get('/api/contacts/address-books')).json()) as { addressBooks: { id: string; displayName: string }[] };
+  const book = addressBooks[0];
+  if (book === undefined) throw new Error('no address book');
+  const made = await api.post(`/api/contacts/address-books/${encodeURIComponent(book.id)}/cards`, {
+    headers: { 'x-postroom-csrf': '1' },
+    data: { fn: `Long Address ${t}`, given: 'Long', family: `Address ${t}`, emails: [{ address: email, type: null }], tels: [], org: '', note: '' },
+  });
+  expect(made.ok()).toBe(true);
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`/contacts?q=${t}`);
+  const row = page.getByRole('listitem').filter({ hasText: `Long Address ${t}` });
+  await expect(row).toBeVisible();
+  const address = row.getByText(email);
+  await expect(address).toBeVisible();
+  // Not clipped: the text fits its box (it wraps rather than ending in an ellipsis).
+  expect(await address.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  await expect(row.getByText(book.displayName)).toBeVisible();
 });

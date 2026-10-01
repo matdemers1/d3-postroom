@@ -20,6 +20,7 @@ import {
   TabPanel,
   Tabs,
   Textarea,
+  Tooltip,
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, compileErrorOf, describeError, sieveApi, type Mailbox, type SieveCompileError, type SieveScriptSummary } from '../api';
@@ -48,6 +49,9 @@ export interface Rule {
 }
 
 export const BUILDER_SCRIPT = 'Postroom rules';
+
+/** Why a script's Edit button is disabled: it is already the one open in the editor. */
+const OPEN_REASON = 'This script is already open in the editor above.';
 
 export const FIELDS: { value: RuleField; label: string }[] = [
   { value: 'from', label: 'From' },
@@ -418,16 +422,29 @@ export function Rules() {
       align: 'end',
       cell: (s) => (
         <Cluster gap="8" justify="end">
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={s.name === name}
-            onClick={() => {
-              run(() => open(s.name));
-            }}
-          >
-            Edit {s.name}
-          </Button>
+          {s.name === name ? (
+            // PST-T-16.23: the one disabled Edit says why — it is the script already open above.
+            <Tooltip content={OPEN_REASON}>
+              <span tabIndex={0} aria-describedby={`rules-open-reason-${s.name}`}>
+                <Button size="sm" variant="ghost" disabled>
+                  Edit {s.name}
+                </Button>
+                <span id={`rules-open-reason-${s.name}`} hidden>
+                  {OPEN_REASON}
+                </span>
+              </span>
+            </Tooltip>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                run(() => open(s.name));
+              }}
+            >
+              Edit {s.name}
+            </Button>
+          )}
           {s.active ? null : (
             <Button
               size="sm"
