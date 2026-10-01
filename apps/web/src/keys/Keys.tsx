@@ -143,6 +143,15 @@ export function Keys() {
     setNotice(null);
     setGenError(null);
     setImportError(null);
+    // One form at a time, and the two import forms share their fields: switching from one card's
+    // import to the other's (or from Generate) must not carry what was pasted into the first.
+    if (open !== null && (open.kind !== form.kind || (open.kind === 'import' && form.kind === 'import' && open.card !== form.card))) {
+      setGenName('');
+      setImportText('');
+      setImportKey('');
+      setImportPass('');
+      setImportAddress('');
+    }
     setOpen(form);
   };
 
@@ -415,7 +424,9 @@ export function Keys() {
       )}
 
       {loadError !== null ? (
-        <LoadFailed error={loadError} what="keys" onRetry={() => void load()} />
+        <Section title="Your keys">
+          <LoadFailed error={loadError} what="keys" headingLevel={3} size="row" onRetry={() => void load()} />
+        </Section>
       ) : rows === null ? (
         <Loading label="Loading keys" />
       ) : (

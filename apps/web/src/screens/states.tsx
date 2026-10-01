@@ -51,9 +51,9 @@ export function SessionEnded({ headingLevel = 2, size }: { headingLevel?: 2 | 3 
   );
 }
 
-export function NoAccess({ headingLevel = 2, children }: { headingLevel?: 2 | 3 | 4; children?: ReactNode }) {
+export function NoAccess({ headingLevel = 2, size, children }: { headingLevel?: 2 | 3 | 4; size?: 'inline' | 'row'; children?: ReactNode }) {
   return (
-    <EmptyState kind="no-access" heading="You do not have access to this" headingLevel={headingLevel}>
+    <EmptyState kind="no-access" heading="You do not have access to this" headingLevel={headingLevel} {...(size === undefined ? {} : { size })}>
       {children ?? 'This screen is for Postroom administrators. Ask the operator if you need it.'}
     </EmptyState>
   );
@@ -78,7 +78,7 @@ export function LoadFailed({
 }) {
   const failure = failureOf(error);
   if (failure === 'signed-out') return <SessionEnded headingLevel={headingLevel} {...(size === undefined ? {} : { size })} />;
-  if (failure === 'forbidden') return <NoAccess headingLevel={headingLevel} />;
+  if (failure === 'forbidden') return <NoAccess headingLevel={headingLevel} {...(size === undefined ? {} : { size })} />;
   return (
     <EmptyState
       kind="error"

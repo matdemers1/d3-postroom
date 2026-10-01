@@ -14,7 +14,10 @@ export interface WizardDnsGroups {
 export function wizardDnsGroups(rows: readonly DnsCheckRow[]): WizardDnsGroups {
   const groups: WizardDnsGroups = { now: [], goLive: [], addresses: [] };
   for (const row of rows) {
-    if (row.type === 'RCPT') groups.addresses.push(row);
+    // A failing address check (postmaster@ refused at RCPT) is something to fix now: it is shown and
+    // counted with the records, never only behind the link to DNS & DKIM.
+    if (row.type === 'RCPT' && (row.status === 'fail' || row.status === 'missing')) groups.now.push(row);
+    else if (row.type === 'RCPT') groups.addresses.push(row);
     else if (row.afterGoLive) groups.goLive.push(row);
     else groups.now.push(row);
   }

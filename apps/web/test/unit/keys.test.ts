@@ -142,7 +142,9 @@ describe('the Encryption keys screen', () => {
   });
 
   it('has no standalone Generate or Import sections: the forms open in place inside their cards', () => {
-    expect(source.match(/<Section\b/g)).toHaveLength(2);
+    // Two cards, plus the 'Your keys' card a load failure is drawn in (PST-T-17.10: never page-level).
+    expect(source.match(/<Section\b/g)).toHaveLength(3);
+    expect(source).toContain('<LoadFailed error={loadError} what="keys" headingLevel={3} size="row"');
     expect(source).not.toContain('scrollIntoView');
     expect(source.match(/className="pr-setform pr-inline-form"/g)).toHaveLength(2);
     expect(source.match(/<FormActions className="pr-setform__actions">/g)).toHaveLength(2);

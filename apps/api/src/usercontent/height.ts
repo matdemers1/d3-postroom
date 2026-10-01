@@ -83,7 +83,9 @@ function parse(html: string): Node {
       top.children.push(node);
       if (!VOID.has(token.name) && !token.selfClosing) stack.push(node);
     } else if (token.type === 'end') {
-      const at = stack.map((n) => n.name).lastIndexOf(token.name);
+      // A reverse scan, not stack.map(...).lastIndexOf: no allocation per end tag at the depth cap.
+      let at = stack.length - 1;
+      while (at >= 0 && stack[at]?.name !== token.name) at -= 1;
       if (at > 0) stack.length = at;
     }
   }

@@ -156,6 +156,14 @@ describe('the DNS step', () => {
     expect(groups.addresses.map((r) => r.record)).toEqual(['Role address']);
   });
 
+  it('brings a failing address check into the records to publish, counted in the summary', () => {
+    const failing = row({ type: 'RCPT', record: 'postmaster@', status: 'fail' });
+    const groups = wizardDnsGroups([...rows, failing]);
+    expect(groups.now.map((r) => r.record)).toContain('postmaster@');
+    expect(groups.addresses.map((r) => r.record)).not.toContain('postmaster@');
+    expect(summaryOf(groups.now).fail).toBe(2);
+  });
+
   it('summarises only the rows it shows', () => {
     expect(summaryOf(wizardDnsGroups(rows).now)).toEqual({ pass: 0, fail: 1, missing: 1, pending: 0, unknown: 0 });
   });
