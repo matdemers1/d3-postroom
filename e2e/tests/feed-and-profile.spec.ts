@@ -179,6 +179,11 @@ test('a contact with a 30-character local part shows its full domain, and its ad
   const address = row.getByText(email);
   await expect(address).toBeVisible();
   // Not clipped: the text fits its box (it wraps rather than ending in an ellipsis).
-  expect(await address.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  // The e2e project has no DOM lib, so the element is narrowed the way admin-queue.spec does it.
+  const fits = await address.evaluate((el) => {
+    const box = el as unknown as { scrollWidth: number; clientWidth: number };
+    return box.scrollWidth <= box.clientWidth + 1;
+  });
+  expect(fits).toBe(true);
   await expect(row.getByText(book.displayName)).toBeVisible();
 });

@@ -6,6 +6,7 @@
 // or its prefix matches a row: an unknown user, an unknown prefix and a wrong password cost the
 // same time. Nothing is cached, so a revocation, a disabled account or a freeze applies to the
 // very next login.
+import { recordAudit } from '@postroom/audit';
 import { AddressKind, type AppPasswordScope, type Db, normalizeDomain, normalizeLocalPart } from '@postroom/db';
 import { decoyAppPasswordHash, verifyAppPasswordHash } from './hash.js';
 import { parseAppPassword } from './generate.js';
@@ -105,10 +106,26 @@ export async function verifyProtocolLogin(
   if (request.scope === 'smtp' && candidate.frozenAt !== null) return { ok: false, reason: 'frozen' };
 
   // Conditional on still being live, so a revocation that lands between the read and here wins.
-  // Last-used is not audited: it is a login, not a mutation anyone made, and would drown the log.
-  const { count } = await db.appPassword.updateMany({
-    where: { id: candidate.id, revokedAt: null },
-    data: { lastUsedAt: now, lastUsedIp: request.ip },
+  // Last-used is not audited on every login: it is a login, not a mutation anyone made, and would
+  // drown the log. The FIRST use is (PST-T-16.27), once per credential: an `app_password.use` row
+  // naming the protocol, which the Connect a device screen reads to say "Connected over CalDAV"
+  // rather than guess. Same transaction as lastUsedAt, so a poll never sees one without the other.
+  const firstUse = candidate.lastUsedAt === null;
+  const count = await db.$transaction(async (tx) => {
+    const updated = await tx.appPassword.updateMany({
+      where: { id: candidate.id, revokedAt: null },
+      data: { lastUsedAt: now, lastUsedIp: request.ip },
+    });
+    if (updated.count > 0 && firstUse) {
+      await recordAudit(tx, {
+        actor: { kind: 'account', accountId: candidate.accountId },
+        action: 'app_password.use',
+        entityType: 'app_password',
+        entityId: candidate.id,
+        after: { scope: request.scope },
+      });
+    }
+    return updated.count;
   });
   if (count === 0) return { ok: false, reason: 'revoked' };
 
