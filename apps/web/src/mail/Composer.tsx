@@ -828,7 +828,7 @@ export function Composer({ draft, placement = 'pane', onDiscard, onDiscarded, on
         </Tooltip>
       ) : null}
       {!rows.bcc ? (
-        <Tooltip content="Recipients here get the message but are not shown to anyone">
+        <Tooltip content="Other recipients won’t see these addresses.">
           <Button type="button" size="sm" variant="ghost" className="pr-compose__reveal-link" onClick={() => { setRows((r) => revealRow(r, 'bcc')); }}>
             Bcc
           </Button>

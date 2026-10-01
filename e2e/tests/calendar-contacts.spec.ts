@@ -90,7 +90,7 @@ test('a weekly Mon/Wed event made in the UI lands on the right days, in month an
   await choose(page, dialog, 'Series ends', 'After a number of times');
   await dialog.getByRole('spinbutton', { name: 'Times' }).fill('6');
   await expect(dialog.getByText('Every week on Mon, Wed, 6 times')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Save' }).click();
+  await dialog.getByRole('button', { name: 'Create event' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByText(`Added “${title}”.`)).toBeVisible();
 
@@ -111,7 +111,7 @@ test('a weekly Mon/Wed event made in the UI lands on the right days, in month an
   await edit.getByRole('textbox', { name: 'Title' }).fill(`${title} moved`);
   await edit.getByLabel('Start time').fill('11:00');
   await edit.getByLabel('End time').fill('11:30');
-  await edit.getByRole('button', { name: 'Save' }).click();
+  await edit.getByRole('button', { name: 'Save event' }).click();
   await expect(edit).toBeHidden();
   await expect(page.getByRole('button', { name: new RegExp(`^${title} moved,`) })).toHaveCount(1);
   await expect(page.getByRole('button', { name: new RegExp(`^${title},`) })).toHaveCount(1);
@@ -236,6 +236,41 @@ test('month cells are quiet outside the month, chips lead with the title, and "N
   await page.setViewportSize({ width: 700, height: 1000 });
   await expect(chip.locator('.pr-cal-chip__time')).toBeHidden();
   await expect(chip.locator('.pr-cal-chip__title')).toBeVisible();
+});
+
+test('closing an event editor with unsaved changes asks before discarding (PST-T-16.22)', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the editor modal is exercised on desktop');
+  await page.goto('/calendar');
+  await expect(page.getByRole('heading', { name: 'Calendar', level: 1 })).toBeVisible();
+  await page.getByRole('button', { name: 'New event' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New event' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Create event' })).toBeVisible();
+  // The zone is in words, and a one-off event has no Repeat helper echoing "Does not repeat".
+  await expect(dialog.getByText(/^Times are in .+\.$/)).not.toContainText('/');
+  await expect(dialog.getByText('Does not repeat', { exact: true })).toHaveCount(1); // the select only
+
+  // Untouched: Cancel closes at once.
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+
+  // Edited: closing asks first. Keep editing returns to the form with the edit intact.
+  await page.getByRole('button', { name: 'New event' }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('textbox', { name: 'Title' }).fill(`Unsaved ${tag()}`);
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Discard changes to this event?' });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(confirm).toBeHidden();
+  await expect(dialog.getByRole('textbox', { name: 'Title' })).toHaveValue(/^Unsaved /);
+
+  // Discard closes the editor.
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: 'Discard' }).click();
+  await expect(confirm).toBeHidden();
+  await expect(dialog).toBeHidden();
 });
 
 test('a contact added in the UI is listed', async ({ page, isMobile }) => {

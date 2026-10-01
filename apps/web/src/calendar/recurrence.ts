@@ -147,3 +147,25 @@ export function describeRecurrence(f: RecurrenceForm): string {
   if (f.end === 'until') out += `, until ${f.until}`;
   return out;
 }
+
+/**
+ * The helper under the Repeat field: the rule in words, and nothing at all when the event does not
+ * repeat (the select already says "Does not repeat"; echoing it is noise, PST-DA-058).
+ */
+export function repeatHelp(f: RecurrenceForm): string | null {
+  return f.repeat === 'none' ? null : describeRecurrence(f);
+}
+
+/**
+ * A zone in words ("Eastern Time"), not an IANA id ("America/New_York"), via Intl's longGeneric
+ * name (PST-DA-058). Falls back to the id itself where the runtime cannot name the zone.
+ */
+export function timeZoneInWords(timeZone: string, at: Date = new Date()): string {
+  try {
+    const parts = new Intl.DateTimeFormat(undefined, { timeZone, timeZoneName: 'longGeneric' }).formatToParts(at);
+    const name = parts.find((p) => p.type === 'timeZoneName')?.value;
+    return name === undefined || name === '' ? timeZone : name;
+  } catch {
+    return timeZone;
+  }
+}

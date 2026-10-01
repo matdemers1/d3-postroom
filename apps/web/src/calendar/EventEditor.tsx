@@ -2,7 +2,7 @@ import { type SyntheticEvent, useEffect, useState } from 'react';
 import { Alert, Button, Checkbox, Cluster, FormField, Input, Modal, ModalClose, SegmentedControl, Select, Skeleton, Stack, Textarea } from '@d3cloud/ui';
 import { ApiError, calendarApi, describeError, type Calendar, type EventDetail, type EventInput, type EventInstance, type Weekday } from '../api';
 import { addDays, zonedDay, zonedMinutes } from './layout';
-import { defaultRecurrenceForm, describeRecurrence, detailToForm, formToRecurrence, WEEKDAY_NAMES, WEEKDAYS, type EndKind, type RecurrenceForm, type RepeatKind } from './recurrence';
+import { defaultRecurrenceForm, detailToForm, formToRecurrence, repeatHelp, timeZoneInWords, WEEKDAY_NAMES, WEEKDAYS, type EndKind, type RecurrenceForm, type RepeatKind } from './recurrence';
 
 /** What the editor was opened for: a new event on a day (and time), or an instance to edit. */
 export type EditorTarget = { kind: 'new'; day: string; minutes: number | null } | { kind: 'edit'; instance: EventInstance };
@@ -93,6 +93,9 @@ export function formProblem(f: FormState): string | null {
   return null;
 }
 
+/** A comparable picture of the form, for the dirty check. */
+const snapshot = (form: FormState, calendarId: string): string => JSON.stringify([form, calendarId]);
+
 const REPEAT_OPTIONS: { value: RepeatKind; label: string }[] = [
   { value: 'none', label: 'Does not repeat' },
   { value: 'DAILY', label: 'Daily' },
@@ -129,18 +132,27 @@ export function EventEditor({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // PST-DA-058: what the form looked like when it opened (or when its scope changed), so closing it
+  // with edits asks before throwing them away.
+  const [baseline, setBaseline] = useState<string | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const recurring = target?.kind === 'edit' && target.instance.recurring;
 
   useEffect(() => {
     setError(null);
     setConfirmDelete(false);
+    setConfirmDiscard(false);
     setDetail(null);
     setForm(null);
+    setBaseline(null);
     if (target === null) return;
     if (target.kind === 'new') {
-      setCalendarId(calendars.find((c) => c.canHoldEvents)?.id ?? '');
-      setForm(freshForm(target.day, target.minutes, tz));
+      const calendar = calendars.find((c) => c.canHoldEvents)?.id ?? '';
+      const fresh = freshForm(target.day, target.minutes, tz);
+      setCalendarId(calendar);
+      setForm(fresh);
+      setBaseline(snapshot(fresh, calendar));
       setEditableRule(true);
       return;
     }
@@ -154,7 +166,9 @@ export function EventEditor({
         setDetail(d);
         const series = seriesForm(d, tz);
         setEditableRule(series.editableRule);
-        setForm(target.instance.recurring ? instanceForm(d, target.instance, tz) : series.form);
+        const opened = target.instance.recurring ? instanceForm(d, target.instance, tz) : series.form;
+        setForm(opened);
+        setBaseline(snapshot(opened, target.instance.calendarId));
       })
       .catch((caught: unknown) => {
         if (live) setError(describeError(caught));
@@ -168,7 +182,9 @@ export function EventEditor({
   const chooseScope = (next: 'this' | 'all') => {
     setScope(next);
     if (detail === null || target?.kind !== 'edit') return;
-    setForm(next === 'all' ? seriesForm(detail, tz).form : instanceForm(detail, target.instance, tz));
+    const shown = next === 'all' ? seriesForm(detail, tz).form : instanceForm(detail, target.instance, tz);
+    setForm(shown);
+    setBaseline(snapshot(shown, calendarId));
   };
 
   const set = (patch: Partial<FormState>) => {
@@ -232,14 +248,18 @@ export function EventEditor({
       });
   };
 
+  const dirty = form !== null && baseline !== null && snapshot(form, calendarId) !== baseline;
   const eventCalendars = calendars.filter((c) => c.canHoldEvents);
   const showRule = form !== null && (target?.kind === 'new' || !recurring || scope === 'all');
 
   return (
+    <>
     <Modal
       open={target !== null}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (open) return;
+        if (dirty) setConfirmDiscard(true);
+        else onClose();
       }}
       size="lg"
       title={target?.kind === 'new' ? 'New event' : 'Edit event'}
@@ -266,7 +286,7 @@ export function EventEditor({
             <Button type="button">Cancel</Button>
           </ModalClose>
           <Button type="submit" form="pr-event-form" variant="primary" loading={busy} disabled={form === null}>
-            Save
+            {target?.kind === 'new' ? 'Create event' : 'Save event'}
           </Button>
         </>
       }
@@ -372,7 +392,7 @@ export function EventEditor({
                 </FormField>
               )}
             </Cluster>
-            {form.allDay ? null : <p className="pr-cal-note">Times are in {form.timezone}.</p>}
+            {form.allDay ? null : <p className="pr-cal-note">Times are in {timeZoneInWords(form.timezone)}.</p>}
             {showRule ? (
               editableRule ? (
                 <RecurrenceFields form={form.recurrence} onChange={setRule} />
@@ -403,6 +423,41 @@ export function EventEditor({
         </form>
       )}
     </Modal>
+      <Modal
+        open={confirmDiscard}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDiscard(false);
+        }}
+        destructive
+        size="sm"
+        title="Discard changes to this event?"
+        description="What you changed has not been saved."
+        footer={
+          <>
+            <Button
+              type="button"
+              onClick={() => {
+                setConfirmDiscard(false);
+              }}
+            >
+              Keep editing
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() => {
+                setConfirmDiscard(false);
+                onClose();
+              }}
+            >
+              Discard
+            </Button>
+          </>
+        }
+      >
+        {null}
+      </Modal>
+    </>
   );
 }
 
@@ -412,7 +467,7 @@ function RecurrenceFields({ form, onChange }: { form: RecurrenceForm; onChange: 
   };
   return (
     <Stack gap="12">
-      <FormField label="Repeat" width="md" help={describeRecurrence(form)}>
+      <FormField label="Repeat" width="md" {...(repeatHelp(form) === null ? {} : { help: repeatHelp(form) })}>
         <Select appearance="filled"
           options={REPEAT_OPTIONS}
           value={form.repeat}
