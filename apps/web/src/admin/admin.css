@@ -543,3 +543,25 @@
   flex-wrap: wrap;
   gap: var(--space-8);
 }
+
+/*
+ * A segmented filter in an admin toolbar (Jobs has six states) can be wider than a phone: it keeps
+ * to the toolbar's width and scrolls sideways inside itself (D3 UI's .d3-seg scrolls on overflow),
+ * rather than pushing past the card edge where the card clips it. PST-T-17.2, admin-phone.spec.
+ */
+.pr-table-toolbar,
+.pr-table-toolbar .d3-fb__controls {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pr-table-toolbar .d3-seg {
+  max-width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 767px), (max-height: 499px) {
+  .pr-table-toolbar .d3-fb__controls {
+    width: 100%;
+  }
+}

@@ -127,9 +127,14 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
   await page.getByRole('button', { name: 'Verify' }).click();
-  // PST-DA-040: signing back in returns to the page the session expired away from.
-  await expect(page).toHaveURL(/\/settings\/account$/);
-  await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
+  // PST-DA-040: signing back in returns to the page the session expired away from — on a phone the
+  // Settings index, where its account menu lives (PST-T-17.8).
+  if (isPhone(page)) {
+    await expect(page).toHaveURL(/\/settings$/);
+  } else {
+    await expect(page).toHaveURL(/\/settings\/account$/);
+    await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
+  }
 });
 
 test('Browser sessions lists sessions and revokes one after step-up', async ({ page, playwright, baseURL }) => {
