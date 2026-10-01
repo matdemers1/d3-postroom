@@ -8,7 +8,7 @@ wrapped. demers.dev stays on Outlook and is out of scope forever.
 
 The plan of record is **PST** in Foreman (`foreman_brief PST`). Documents: `foreman://PST/overview`,
 `/discovery`, `/research`, `/architecture`, `/data_model`, `/ux_flows`, `/api_contract`,
-`/test_strategy`, `/feature_ideas`. ADRs PST-ADR-001…010, risks PST-R-001…012, 14 phases (PST-P-0…13).
+`/test_strategy`, `/feature_ideas`. ADRs PST-ADR-001…013, risks PST-R-001…012, 17 phases (PST-P-0…16).
 Cite requirements and tasks by human ID (`PST-REQ-049`, `PST-T-1.5`) in commits; declare
 attribution with `foreman_attribute`.
 
