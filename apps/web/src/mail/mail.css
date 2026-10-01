@@ -763,7 +763,7 @@
 
 /* --- A failed pane (PST-T-16.2, PST-DA-065) -------------------------------------------------- */
 /* PST-T-16.2: a failed pane inside the mail view keeps its column, so the other pane stays put. */
-.pr-pane-error--compact {
+.pr-pane-error.pr-pane-error--compact {
   padding: var(--space-16);
   box-sizing: border-box;
 }
