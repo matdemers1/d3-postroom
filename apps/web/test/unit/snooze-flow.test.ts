@@ -2,7 +2,7 @@
 // snooze removes the row, advances and shows "Snoozed until …" only for conversations the server
 // actually snoozed; a failure is an error and nothing else. The browser half is e2e/tests/triage.spec.ts.
 import { describe, expect, it } from 'vitest';
-import { settleSnooze } from '../../src/mail/list/triage';
+import { settleSnooze, snoozeUnavailable } from '../../src/mail/list/triage';
 
 describe('settleSnooze', () => {
   it('every conversation snoozed: all done, no error', () => {
@@ -34,5 +34,12 @@ describe('settleSnooze', () => {
 
   it('never reports success for nothing: no attempts, no error, nothing done', () => {
     expect(settleSnooze([])).toEqual({ done: [], failed: [], error: null });
+  });
+});
+
+describe('snoozeUnavailable', () => {
+  it('nothing in scope has a conversation: says it is still there, never silence', () => {
+    expect(snoozeUnavailable(1)).toBe('Couldn’t snooze that — it’s still here.');
+    expect(snoozeUnavailable(3)).toBe('Couldn’t snooze those — they’re still here.');
   });
 });

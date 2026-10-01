@@ -12,6 +12,7 @@ import { createBlobStore, type BlobStore } from '@postroom/blobstore';
 import type { Prisma } from '@postroom/db';
 import { displayNameOf, parseMailboxes } from '@postroom/mime';
 import { htmlToText, snippetOf } from '@postroom/search';
+import { assignThread } from '@postroom/threading';
 import { Router } from 'express';
 import { z } from 'zod';
 import { currentSession, handle } from '../auth/middleware.js';
@@ -57,6 +58,11 @@ const SeedMessage = z.object({
    *  classify stage would have written it. Only with authVerdicts (which creates the verdict row). */
   bucket: z.enum(FILING_BUCKETS).optional(),
   reasons: z.array(z.string().max(500)).max(20).optional(),
+  /** PST-T-16.1: thread it straight away, as the worker's file stage does after its commit. Without
+   *  this a seeded message has threadId NULL until the thread sweep reaches it (THREAD_SWEEP_MS, past
+   *  a 30s grace), and thread actions such as Snooze are not offered on it. Off by default, so every
+   *  other fixture keeps its shape. */
+  threaded: z.boolean().default(false),
 });
 const SeedBody = z.object({ messages: z.array(SeedMessage).min(1).max(50) });
 
@@ -181,6 +187,11 @@ export function adminDevRoutes(deps: ApiDeps): Router {
             return { entityId: created.id, before: null, after, result: created };
           },
         );
+        if (seed.threaded) {
+          // After the filing transaction has committed, in its own transaction under the per-account
+          // advisory lock — exactly the worker's file stage (apps/worker/src/stages/file.ts).
+          await assignThread(db, { accountId: me.accountId, messageId: message.id, messageIdHeader, references: [], subject: seed.subject, from: seed.from, to: seed.to ?? to, date });
+        }
         filed.push({ id: message.id, mailboxId: message.mailboxId, uid: message.uid, subject: seed.subject, messageIdHeader });
       }
       res.status(201).json({ messages: filed });

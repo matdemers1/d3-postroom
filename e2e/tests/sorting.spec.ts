@@ -244,8 +244,11 @@ test.describe('a message moved into a folder by hand', () => {
     const detail = (await (await api.get(`/api/messages/${m.id}`)).json()) as { modseq: string };
     const res = await api.patch(`/api/messages/${m.id}`, { headers: { 'x-postroom-csrf': '1', 'if-match': `"${detail.modseq}"` }, data: { mailboxId: receipts } });
     expect(res.ok()).toBe(true);
+    // A move files a new copy in the destination (IMAP MOVE semantics: a new uid, a new row), so the
+    // message is opened by the id the move answered with; the seeded id is no longer anywhere.
+    const moved = (await res.json()) as { id: string };
 
-    await page.goto(`/mail/${receipts}/${m.id}`);
+    await page.goto(`/mail/${receipts}/${moved.id}`);
     await page.getByTestId('message-header').getByRole('button', { name: 'Why it’s here' }).click();
     const why = page.getByRole('dialog', { name: "Why it's here" });
     await expect(why.getByTestId('why-sentence')).toHaveText('You moved this here.');

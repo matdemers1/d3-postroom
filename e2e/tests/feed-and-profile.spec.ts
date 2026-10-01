@@ -105,9 +105,13 @@ test('the Newsletters feed scrolls three newsletters, marks them all read, and t
 // "Why it's here" control, wired to the same correction path as the reading pane's.
 test('a Newsletters feed item offers "Why it’s here", and says so plainly when you moved it there', async ({ page }) => {
   const t = tag();
+  // The stored sorting decision lives on the message's verdict row, which the seed route creates only
+  // with authVerdicts (as smtp-in does); without one there is no stored bucket to explain.
+  const authVerdicts = { spf: { result: 'pass', domain: 'example.news' }, dkim: [{ result: 'pass', domain: 'example.news' }], dmarc: { result: 'pass', policy: 'none', domain: 'example.news' }, arc: { result: 'none' } };
   const [sorted, byHand] = await seedMail(api, [
     {
       mailbox: 'newsletters',
+      authVerdicts,
       bucket: 'newsletters',
       subject: `Sorted digest ${t}`,
       from: `Digest <sorted-${t}@example.news>`,
@@ -115,7 +119,7 @@ test('a Newsletters feed item offers "Why it’s here", and says so plainly when
       text: `Sorted ${t}.`,
     },
     // Still 'people' in the stored verdict: a manual move only moves the message.
-    { bucket: 'people', subject: `Moved digest ${t}`, from: `Pal <moved-${t}@example.news>`, text: `Moved ${t}.` },
+    { authVerdicts, bucket: 'people', subject: `Moved digest ${t}`, from: `Pal <moved-${t}@example.news>`, text: `Moved ${t}.` },
   ]);
   if (sorted === undefined || byHand === undefined) throw new Error('seed returned nothing');
   const newsletters = await mailboxByName('Newsletters');

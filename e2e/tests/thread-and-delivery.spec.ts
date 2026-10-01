@@ -383,7 +383,10 @@ test('doneWhen: a cancelled recipient says why, Edit and resend opens the compos
   await page.goto(`/mail/sent/${sent.sentMessageId}`);
   await expect(page.getByRole('heading', { name: subject, level: 2 })).toBeVisible();
   await expect(page.getByTestId('delivery-loading')).toHaveAttribute('aria-busy', 'true');
-  await page.unroute('**/api/messages/*/outbound');
+  // Wait for the delayed handler to continue the request itself: a plain unroute while it sleeps
+  // lets Playwright continue the paused request first, and the handler's own continue() then throws
+  // "Route is already handled!" (seen in CI, where the heading shows well inside the delay).
+  await page.unrouteAll({ behavior: 'wait' });
 
   const delivery = page.getByRole('region', { name: 'Delivery' });
   const recipientRow = delivery.getByTestId('delivery-recipient');
