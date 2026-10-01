@@ -91,6 +91,17 @@ describe('buildCommands', () => {
     }
   });
 
+  it('omits the keyboard-only navigation commands on a touch screen, and keeps everything else (PST-T-16.15)', () => {
+    const fine = buildCommands(context({ target: message(INBOX.id) }), false, false).map((c) => c.id);
+    const coarse = buildCommands(context({ target: message(INBOX.id) }), false, true).map((c) => c.id);
+    for (const action of ['next', 'prev', 'open', 'back']) {
+      expect(fine, action).toContain(`action:${action}`);
+      expect(coarse, action).not.toContain(`action:${action}`);
+    }
+    // Only those four go: archive, snooze, move, the places and the rest stay.
+    expect(fine.filter((id) => !coarse.includes(id)).sort()).toEqual(['action:back', 'action:next', 'action:open', 'action:prev']);
+  });
+
   it('keeps g then i as its own command while the mailboxes are still loading', () => {
     const commands = buildCommands(context({ mailboxes: null }));
     expect(commands.some((c) => c.id === 'action:goInbox' && c.group === 'Go to')).toBe(true);
