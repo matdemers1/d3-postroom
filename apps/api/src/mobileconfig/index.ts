@@ -59,6 +59,18 @@ const LINKS_PER_WINDOW = 10;
  */
 const REDEEM_FAILURES_PER_WINDOW = 20;
 const LIMIT_WINDOW_MS = 10 * 60 * 1000;
+/**
+ * Opens of one signed link per window (PST-T-16.28). A person opens a link once, maybe twice; a
+ * leaked URL replayed in a loop is answered the same 410 past this, with no database work at all.
+ * Keyed by the link id, so it never touches anyone else's link.
+ */
+export const OPENS_PER_LINK = 10;
+
+/**
+ * Counted for tests (PST-T-16.28): `prechecks` is the non-locking reads that refused a link before
+ * the transaction, `locks` the transactions that took the per-link advisory lock.
+ */
+export const onceLinkStats = { prechecks: 0, locks: 0 };
 
 const GONE_TEXT = 'This link has expired or has already been used. Make a new one in Postroom under Settings › Security & devices.';
 
@@ -392,7 +404,31 @@ export function mobileconfigOnceRoutes(deps: ApiDeps): Router {
   const issuer = issuerFor(deps);
   const key = rt.sessionSecret === null ? null : linkKey(rt.sessionSecret);
   const failures = new WindowLimiter(REDEEM_FAILURES_PER_WINDOW, LIMIT_WINDOW_MS);
+  const opens = new WindowLimiter(OPENS_PER_LINK, LIMIT_WINDOW_MS);
   const router = Router();
+
+  /**
+   * Whether a link is already spent or superseded, read WITHOUT the lock: the same two questions the
+   * locked path asks, so a replayed spent URL is answered from one indexed read and never queues on
+   * the advisory lock or holds a pooled connection in a transaction. Only a definite "no" is
+   * trusted here; "maybe good" goes on to the locked path, which stays authoritative.
+   */
+  const refusedWithoutLock = async (link: { linkId: string; accountId: string }): Promise<'spent' | 'superseded' | null> => {
+    const spent = await db.auditEvent.findFirst({ where: { entityType: LINK_ENTITY, entityId: link.linkId, action: LINK_REDEEM }, select: { id: true } });
+    if (spent !== null) return 'spent';
+    const newest = await db.auditEvent.findFirst({
+      where: {
+        OR: [
+          { entityType: LINK_ENTITY, action: LINK_CREATE, actorAccountId: link.accountId },
+          { entityType: 'account', entityId: link.accountId, action: { in: CREDENTIAL_EVENTS } },
+        ],
+      },
+      orderBy: [{ at: 'desc' }, { id: 'desc' }],
+      select: { action: true, entityId: true },
+    });
+    if (newest === null || newest.action !== LINK_CREATE || newest.entityId !== link.linkId) return 'superseded';
+    return null;
+  };
 
   const gone = (req: Request, res: Response, reason: string): void => {
     // Only a guess counts against the address (see REDEEM_FAILURES_PER_WINDOW).
@@ -431,6 +467,18 @@ export function mobileconfigOnceRoutes(deps: ApiDeps): Router {
         return;
       }
       const { link } = inspected;
+      // Past OPENS_PER_LINK opens of this one link: the same 410, no database work (PST-T-16.28).
+      if (opens.blocked(link.linkId, now.getTime())) {
+        gone(req, res, 'replayed');
+        return;
+      }
+      opens.hit(link.linkId, now.getTime());
+      const early = await refusedWithoutLock(link);
+      if (early !== null) {
+        onceLinkStats.prechecks += 1;
+        gone(req, res, early);
+        return;
+      }
       const account = await db.account.findUnique({ where: { id: link.accountId }, select: { disabledAt: true } });
       if (account === null || account.disabledAt !== null || (await issuer.primaryAddress(link.accountId)) === null) {
         gone(req, res, 'account');
@@ -448,6 +496,7 @@ export function mobileconfigOnceRoutes(deps: ApiDeps): Router {
       // (PST-T-16.27). One query, ordered by audit time on both sides so no two clocks are compared;
       // no create row at all (it cannot happen, but) is refused too.
       const claimed = await db.$transaction(async (tx): Promise<'ok' | 'spent' | 'superseded'> => {
+        onceLinkStats.locks += 1;
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'postroom-mobileconfig-link:' + link.linkId}, 0))`;
         const spent = await tx.auditEvent.findFirst({ where: { entityType: LINK_ENTITY, entityId: link.linkId, action: LINK_REDEEM }, select: { id: true } });
         if (spent !== null) return 'spent';

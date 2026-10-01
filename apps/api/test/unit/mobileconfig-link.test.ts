@@ -193,9 +193,10 @@ describe('the one-time route, before it touches the database', () => {
 describe('the redeem limiter counts guesses only (PST-T-16.27)', () => {
   const SECRET = 's'.repeat(32);
   const real = linkKey(SECRET);
-  // The one query a signed, unexpired token reaches first: no such account, so 410 — never 429.
+  // The queries a signed, unexpired token reaches: no create row for it (so 410 from the
+  // non-locking read, PST-T-16.28) and no such account — 410 either way, never 429.
   const db = new Proxy(
-    { account: { findUnique: () => Promise.resolve(null) } },
+    { account: { findUnique: () => Promise.resolve(null) }, auditEvent: { findFirst: () => Promise.resolve(null) } },
     {
       get: (target, prop) => {
         if (prop in target) return target[prop as keyof typeof target];

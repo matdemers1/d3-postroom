@@ -150,6 +150,32 @@ function badRequest(res: Response, error: z.ZodError): void {
 const anonymous: Actor = { kind: 'anonymous' };
 const asAccount = (accountId: string): Actor => ({ kind: 'account', accountId });
 
+/**
+ * "Sign out everywhere": every session of the account but `keep` ends, audited as
+ * auth.session.revoke-others. Runs inside the caller's transaction. Also used when a recovery-code
+ * session re-enrols its authenticator (PST-T-16.28), with `reason` saying so.
+ */
+async function endOtherSessions(
+  tx: Prisma.TransactionClient,
+  accountId: string,
+  keep: string,
+  context: ReturnType<typeof getAuditContext>,
+  reason?: string,
+): Promise<string[]> {
+  const others = await tx.session.findMany({ where: { accountId, id: { not: keep } }, select: { id: true } });
+  const ended = others.map((o) => o.id);
+  await tx.session.deleteMany({ where: { id: { in: ended } } });
+  await recordAudit(tx, {
+    actor: asAccount(accountId),
+    action: 'auth.session.revoke-others',
+    entityType: 'account',
+    entityId: accountId,
+    after: reason === undefined ? { ended } : { ended, reason },
+    context,
+  });
+  return ended;
+}
+
 /** The account a login names: `local` at the primary domain, or a full primary address. */
 async function findByLogin(db: Db, login: string): Promise<Account | null> {
   let localPart: string;
@@ -739,19 +765,7 @@ export function authRoutes(deps: ApiDeps): Router {
     requireStepUp(deps),
     handle(async (req, res) => {
       const me = currentSession(req);
-      const ended = await db.$transaction(async (tx) => {
-        const others = await tx.session.findMany({ where: { accountId: me.accountId, id: { not: me.sessionId } }, select: { id: true } });
-        await tx.session.deleteMany({ where: { id: { in: others.map((o) => o.id) } } });
-        await recordAudit(tx, {
-          actor: asAccount(me.accountId),
-          action: 'auth.session.revoke-others',
-          entityType: 'account',
-          entityId: me.accountId,
-          after: { ended: others.map((o) => o.id) },
-          context: getAuditContext(req),
-        });
-        return others.length;
-      });
+      const ended = await db.$transaction(async (tx) => (await endOtherSessions(tx, me.accountId, me.sessionId, getAuditContext(req))).length);
       res.json({ ok: true, ended });
     }),
   );
@@ -835,19 +849,37 @@ export function authRoutes(deps: ApiDeps): Router {
         res.status(409).json({ error: 'reenrol_not_required' });
         return;
       }
-      const secret = generateTotpSecret();
-      const exp = nowMs() + REENROL_TTL_MS;
-      rt.reenrols.set(me.sessionId, { accountId: me.accountId, secret, exp, attempts: 0, checking: false });
-      // Nothing is written to the account until a code proves the new authenticator; the audit row
-      // records that re-enrolment began, and from which session. Never the secret.
-      await recordAudit(db, {
-        actor: asAccount(me.accountId),
-        action: 'auth.totp.reenrol.begin',
-        entityType: 'session',
-        entityId: me.sessionId,
-        after: { expiresAt: new Date(exp) },
-        context: getAuditContext(req),
-      });
+      // Limited per session (PST-T-16.28): REENROL_BEGINS_PER_WINDOW in a window, decided before
+      // anything touches the database.
+      const at = nowMs();
+      if (rt.reenrolBegins.blocked(me.sessionId, at)) {
+        logThrottled(req);
+        const seconds = Math.ceil(REENROL_TTL_MS / 1000);
+        res.setHeader('Retry-After', String(seconds));
+        res.status(429).json({ error: 'too_many_attempts', retryAfterSeconds: seconds });
+        return;
+      }
+      rt.reenrolBegins.hit(me.sessionId, at);
+      // A repeat Begin while one is pending answers the same secret (a reload of the screen, a second
+      // tab), with its attempts and expiry untouched, and writes no audit row: only the Begin that
+      // made the pending enrolment is recorded.
+      const existing = rt.reenrols.get(me.sessionId, at);
+      const pending = existing !== undefined && existing.accountId === me.accountId ? existing : null;
+      const secret = pending?.secret ?? generateTotpSecret();
+      const exp = pending?.exp ?? at + REENROL_TTL_MS;
+      if (pending === null) {
+        rt.reenrols.set(me.sessionId, { accountId: me.accountId, secret, exp, attempts: 0, checking: false });
+        // Nothing is written to the account until a code proves the new authenticator; the audit row
+        // records that re-enrolment began, and from which session. Never the secret.
+        await recordAudit(db, {
+          actor: asAccount(me.accountId),
+          action: 'auth.totp.reenrol.begin',
+          entityType: 'session',
+          entityId: me.sessionId,
+          after: { expiresAt: new Date(exp) },
+          context: getAuditContext(req),
+        });
+      }
       const address = await primaryAddress(db, me.accountId);
       res.setHeader('Cache-Control', 'no-store');
       res.json({ secret, otpauthUri: provisioningUri(secret, address ?? me.displayName), expiresAt: new Date(exp).toISOString(), address });
@@ -919,7 +951,7 @@ export function authRoutes(deps: ApiDeps): Router {
             where: { id: me.sessionId, accountId: me.accountId, secondFactor: 'recovery_code' },
             data: { secondFactor: 'totp' },
           });
-          if (count !== 1) return false;
+          if (count !== 1) return false as const;
           const old = await tx.account.findUniqueOrThrow({ where: { id: me.accountId }, select: { totpEnabled: true, totpSecret: true } });
           const context = getAuditContext(req);
           // 1. The old authenticator stops working: its secret is overwritten in this commit. (The
@@ -957,9 +989,11 @@ export function authRoutes(deps: ApiDeps): Router {
             after: { count: RECOVERY_CODE_COUNT, reason: 'reenrol' },
             context,
           });
-          return true;
+          // 4. A recovery-code sign-in means the authenticator was lost or taken, so every other
+          // session of the account ends with it, audited as "sign out everywhere" is (PST-T-16.28).
+          return endOtherSessions(tx, me.accountId, me.sessionId, context, 'reenrol');
         });
-        if (!done) {
+        if (done === false) {
           res.status(409).json({ error: 'reenrol_not_required' });
           return;
         }
@@ -967,7 +1001,7 @@ export function authRoutes(deps: ApiDeps): Router {
         rt.throttle.clear(throttleKey, ip);
         // The only time these codes are ever sent: the server keeps their hashes alone.
         res.setHeader('Cache-Control', 'no-store');
-        res.json({ ok: true, recoveryCodes: codes.map(formatRecoveryCode), createdAt: at.toISOString() });
+        res.json({ ok: true, recoveryCodes: codes.map(formatRecoveryCode), createdAt: at.toISOString(), endedSessions: done.length });
       } finally {
         pending.checking = false;
       }
