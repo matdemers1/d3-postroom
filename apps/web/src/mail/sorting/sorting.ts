@@ -71,6 +71,27 @@ export function whyControlShows(bucket: string | null | undefined, context: Chip
   return isFilingBucket(bucket) && context.kind === 'mailbox' && context.bucket !== null && context.bucket !== undefined;
 }
 
+/** Where a "Why it’s here" control is, and whether the message got there by Postroom’s sorting or by hand. */
+export interface WhyPlacement {
+  /** The bucket the message is in NOW: the folder it sits in. */
+  bucket: FilingBucket;
+  /**
+   * The stored verdict names a different bucket from the folder. A manual move only moves the message,
+   * never its verdict (the API's move path), so the stored bucket would describe the Inbox the message
+   * left; the popover says plainly that the person moved it, and corrects from where it is now.
+   */
+  byHand: boolean;
+}
+
+/** The placement for the control, or null where it does not show (see `whyControlShows`). */
+export function whyPlacement(bucket: string | null | undefined, context: ChipContext): WhyPlacement | null {
+  if (!whyControlShows(bucket, context) || context.kind !== 'mailbox' || !isFilingBucket(context.bucket)) return null;
+  return { bucket: context.bucket, byHand: bucket !== context.bucket };
+}
+
+/** What the popover says for a message the person moved into this folder themselves. */
+export const MOVED_BY_HAND_SENTENCE = 'You moved this here.';
+
 /** The bucket a mailbox IS (a bucket folder, or Junk), or null for the Inbox and everything else. */
 export function mailboxBucket(mailbox: { name: string; specialUse: string | null } | null): FilingBucket | null {
   if (mailbox === null) return null;

@@ -66,6 +66,14 @@
   transition: color var(--motion-hover);
 }
 
+/* The Newsletters feed item's header: the control sits beside Unsubscribe. */
+.pr-feed__item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
 .pr-why-control:hover {
   color: var(--color-accent);
 }

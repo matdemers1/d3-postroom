@@ -11,6 +11,8 @@ import { fullDate } from './format';
 import { isUnread, SEEN } from './list';
 import { MAIL_FRAME_HEIGHT, MAIL_FRAME_SANDBOX } from './ReadingPane';
 import { LoadFailed } from '../screens/states';
+import { HeaderWhyControl } from './sorting/BucketChip';
+import { mailboxBucket, type ChipContext, type FilingBucket } from './sorting/sorting';
 
 const PAGE = 20;
 
@@ -87,7 +89,17 @@ function FeedItemFrame({ messageId }: { messageId: string }) {
   );
 }
 
-function FeedItem({ message, onUnsubscribed }: { message: MessageSummary; onUnsubscribed: (address: string) => void }) {
+function FeedItem({
+  message,
+  list,
+  onUnsubscribed,
+  onCorrected,
+}: {
+  message: MessageSummary;
+  list: ChipContext;
+  onUnsubscribed: (address: string) => void;
+  onCorrected: (message: MessageSummary, bucket: FilingBucket) => void;
+}) {
   const [unsub, setUnsub] = useState<{ status: 'idle' | 'busy' | 'not-offered' | 'sent' | 'failed'; detail: string | undefined }>({ status: 'idle', detail: undefined });
   const [confirming, setConfirming] = useState(false);
 
@@ -121,6 +133,8 @@ function FeedItem({ message, onUnsubscribed }: { message: MessageSummary; onUnsu
           </div>
         </div>
         <div className="pr-feed__item-actions">
+          {/* PST-T-16.21: no open message here, so the control is told which folder this feed is. */}
+          <HeaderWhyControl message={message} list={list} onCorrected={(bucket) => { onCorrected(message, bucket); }} />
           {unsub.status === 'sent' ? (
             <span data-testid="unsubscribe-sent">Unsubscribed</span>
           ) : unsub.status === 'not-offered' ? (
@@ -240,6 +254,14 @@ export function Feed({ mailbox }: FeedProps) {
   // point so a future "hide unsubscribed senders" filter has somewhere to plug in.
   const forgetSender = (_address: string): void => {};
 
+  // A correction that moves a newsletter elsewhere takes it out of the feed (the move itself, the
+  // preference and the Undo Toast are MailView's correct(), reached through the sorting context).
+  const folder = mailboxBucket(mailbox);
+  const list: ChipContext = { kind: 'mailbox', bucket: folder };
+  const corrected = (message: MessageSummary, bucket: FilingBucket): void => {
+    if (bucket !== folder) setMessages((prev) => (prev === null ? prev : prev.filter((m) => m.id !== message.id)));
+  };
+
   if (loadError !== null) {
     return <LoadFailed error={loadError} what="the feed" onRetry={() => void loadFirstPage()} size="inline" />;
   }
@@ -267,7 +289,7 @@ export function Feed({ mailbox }: FeedProps) {
         </Button>
       </div>
       {messages.map((m) => (
-        <FeedItem key={m.id} message={m} onUnsubscribed={forgetSender} />
+        <FeedItem key={m.id} message={m} list={list} onUnsubscribed={forgetSender} onCorrected={corrected} />
       ))}
       <div ref={sentinelRef} aria-hidden="true" />
       {loadingMore ? <Skeleton variant="block" height={220} /> : null}

@@ -100,3 +100,53 @@ test('the Newsletters feed scrolls three newsletters, marks them all read, and t
   await expect(page.locator('#content').getByText('3', { exact: true })).toBeVisible();
   await expect(page.getByText('Never attempted')).toBeVisible();
 });
+
+// PST-T-16.21 (PST-DA-016): the feed has no open message, so each item's header carries its own quiet
+// "Why it's here" control, wired to the same correction path as the reading pane's.
+test('a Newsletters feed item offers "Why it’s here", and says so plainly when you moved it there', async ({ page }) => {
+  const t = tag();
+  const [sorted, byHand] = await seedMail(api, [
+    {
+      mailbox: 'newsletters',
+      bucket: 'newsletters',
+      subject: `Sorted digest ${t}`,
+      from: `Digest <sorted-${t}@example.news>`,
+      reasons: ['newsletters: List-Id/List-Unsubscribe present (mailing list)'],
+      text: `Sorted ${t}.`,
+    },
+    // Still 'people' in the stored verdict: a manual move only moves the message.
+    { bucket: 'people', subject: `Moved digest ${t}`, from: `Pal <moved-${t}@example.news>`, text: `Moved ${t}.` },
+  ]);
+  if (sorted === undefined || byHand === undefined) throw new Error('seed returned nothing');
+  const newsletters = await mailboxByName('Newsletters');
+  await moveTo(byHand, newsletters.id);
+
+  await page.goto(`/mail/${newsletters.id}`);
+  await expect(page.getByTestId('feed')).toBeVisible();
+
+  const sortedItem = page.getByTestId('feed-item').filter({ hasText: `Sorted digest ${t}` });
+  const control = sortedItem.getByRole('button', { name: "Why it's here" });
+  await expect(control).toBeVisible();
+  await control.click();
+  const why = page.getByRole('dialog', { name: "Why it's here" });
+  await expect(why).toBeVisible();
+  await expect(why.getByTestId('why-sentence')).toHaveText('Filed in Newsletters because it came through a mailing list.');
+  await expect(why.getByRole('button', { name: /^Always put .* in Newsletters$/ })).toBeVisible();
+  await expect(why.getByRole('button', { name: /^Move this message to / }).first()).toBeVisible();
+  await expect(why.getByRole('button', { name: 'Open Rules' })).toBeVisible();
+  await expect(sortedItem).not.toContainText(/verified/i);
+  await page.keyboard.press('Escape');
+  await expect(why).toBeHidden();
+
+  // Moved by hand: it says so, and corrects from where the message is now.
+  const movedItem = page.getByTestId('feed-item').filter({ hasText: `Moved digest ${t}` });
+  await movedItem.getByRole('button', { name: "Why it's here" }).click();
+  await expect(why.getByTestId('why-sentence')).toHaveText('You moved this here.');
+  await expect(why.getByRole('button', { name: /^Always put .* in Newsletters$/ })).toBeVisible();
+  await expect(why.getByText(/Filed in your Inbox/)).toHaveCount(0);
+
+  // A correction away from Newsletters takes the item out of the feed.
+  await why.getByRole('button', { name: 'Move this message to Priority' }).click();
+  await expect(movedItem).toHaveCount(0);
+  await expect(sortedItem).toBeVisible();
+});

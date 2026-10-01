@@ -232,6 +232,28 @@ test.describe('the bucket chip and its corrections', () => {
   }
 });
 
+test.describe('a message moved into a folder by hand', () => {
+  // PST-T-16.21: a manual move only moves the message, so its stored verdict still names the bucket it
+  // was in. The control must not claim "Filed in your Inbox as People" for a message sitting in Receipts.
+  test('says so plainly and corrects from where it is now', async ({ page }) => {
+    const t = tag();
+    const [m] = await seedMail(api, [{ subject: `Moved by hand ${t}`, from: `Pat <pat-${t}@example.org>`, authVerdicts: PASS, bucket: 'people', reasons: [AUTH_REASON] }]);
+    if (m === undefined) throw new Error('seed returned nothing');
+    const receipts = (await mailboxByName())['Receipts'];
+    if (receipts === undefined) throw new Error('no Receipts mailbox');
+    const detail = (await (await api.get(`/api/messages/${m.id}`)).json()) as { modseq: string };
+    const res = await api.patch(`/api/messages/${m.id}`, { headers: { 'x-postroom-csrf': '1', 'if-match': `"${detail.modseq}"` }, data: { mailboxId: receipts } });
+    expect(res.ok()).toBe(true);
+
+    await page.goto(`/mail/${receipts}/${m.id}`);
+    await page.getByTestId('message-header').getByRole('button', { name: "Why it's here" }).click();
+    const why = page.getByRole('dialog', { name: "Why it's here" });
+    await expect(why.getByTestId('why-sentence')).toHaveText('You moved this here.');
+    await expect(why.getByRole('button', { name: /^Always put .* in Receipts$/ })).toBeVisible();
+    await expect(why.getByText(/Filed in your Inbox/)).toHaveCount(0);
+  });
+});
+
 test.describe('the Person card', () => {
   test('the sender name opens one card: contact, routing, recent, full profile', async ({ page }, testInfo) => {
     const t = tag();
