@@ -137,7 +137,7 @@ test('Browser sessions lists sessions and revokes one after step-up', async ({ p
   await openNav(page);
   await page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Security & devices' }).click();
   // PST-T-16.3: the section opens on device setup; Browser sessions is its second page.
-  await expect(page.getByRole('heading', { name: 'Set up iPhone / Mac', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connect a device', level: 1 })).toBeVisible();
   await page.goto('/settings/security/sessions');
   await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
   await expect(page.getByText('This browser')).toBeVisible();

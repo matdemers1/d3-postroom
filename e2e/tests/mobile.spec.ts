@@ -462,7 +462,7 @@ test.describe('signed in', () => {
     await assertMobileFriendly(page, '/settings/import');
 
     await page.goto('/settings/security');
-    await expect(page.getByRole('heading', { name: 'Set up iPhone / Mac', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Connect a device', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/security');
 
     // PST-T-14.8: Settings pushes like the mailboxes — '/settings' is its index on a phone, each

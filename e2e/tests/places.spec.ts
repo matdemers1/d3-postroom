@@ -89,10 +89,10 @@ test('the account menu opens Settings and the Admin console; each has its own na
   await expect(settingsLinks).toHaveText(['Account', 'Security & devices', 'Addresses', 'Rules & sorting', 'Templates', 'Import & export', 'Encryption keys']);
   await settings.getByRole('link', { name: 'Security & devices' }).click();
   // PST-T-16.3: Security & devices leads with connecting a device, then Browser sessions.
-  await expect(page.getByRole('heading', { name: 'Set up iPhone / Mac', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connect a device', level: 1 })).toBeVisible();
   // One vocabulary: the section's own links name Browser sessions and Devices.
   const sub = page.getByRole('navigation', { name: 'Security & devices' });
-  await expect(sub.getByRole('link')).toHaveText(['Set up iPhone / Mac', 'Browser sessions', 'Devices']);
+  await expect(sub.getByRole('link')).toHaveText(['Connect a device', 'Browser sessions', 'Devices']);
   await sub.getByRole('link', { name: 'Devices' }).click();
   await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
   await expect(settings.getByRole('link', { name: 'Security & devices' })).toHaveAttribute('aria-current', 'page');
@@ -125,8 +125,8 @@ test('the old URLs redirect to their new homes', async ({ page }) => {
     ['/app-passwords', /\/settings\/security\/devices$/, 'Devices'],
     ['/account/password', /\/settings\/account$/, 'Account'],
     ['/account/sessions', /\/settings\/security\/sessions$/, 'Browser sessions'],
-    ['/account/device-setup', /\/settings\/security$/, 'Set up iPhone / Mac'],
-    ['/settings/security/device-setup', /\/settings\/security$/, 'Set up iPhone / Mac'],
+    ['/account/device-setup', /\/settings\/security$/, 'Connect a device'],
+    ['/settings/security/device-setup', /\/settings\/security$/, 'Connect a device'],
     ['/account/aliases', /\/settings\/addresses$/, 'Masked aliases'],
     ['/account/rules', /\/settings\/rules$/, 'Rules'],
     ['/account/templates', /\/settings\/templates$/, 'Compose templates'],
@@ -153,7 +153,7 @@ test('the palette lists every place from the route table, grouped, with keycaps'
     await expect(palette.getByRole('group', { name: group })).toBeVisible();
   }
   const settings = palette.getByRole('group', { name: 'Settings' });
-  for (const name of ['Account', 'Browser sessions', 'Devices', 'Set up iPhone / Mac', 'Addresses', 'Rules', 'Templates', 'Import & export', 'Encryption keys']) {
+  for (const name of ['Account', 'Browser sessions', 'Devices', 'Connect a device', 'Addresses', 'Rules', 'Templates', 'Import & export', 'Encryption keys']) {
     await expect(settings.getByRole('option', { name: new RegExp(`^${name.replace(/[/]/g, '\\/')}`) })).toHaveCount(1);
   }
   await expect(palette.getByRole('group', { name: 'Admin' }).getByRole('option')).toHaveCount(9);

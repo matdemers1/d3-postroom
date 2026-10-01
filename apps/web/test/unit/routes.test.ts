@@ -38,7 +38,7 @@ describe('the route table', () => {
     ]);
     const security = navEntries('settings', false).find((e) => e.label === 'Security & devices');
     expect(security?.path).toBe('/settings/security');
-    expect(security?.routes.map((r) => r.title)).toEqual(['Set up iPhone / Mac', 'Browser sessions', 'Devices']);
+    expect(security?.routes.map((r) => r.title)).toEqual(['Connect a device', 'Browser sessions', 'Devices']);
   });
 
   it('Security & devices opens on device setup, with Browser sessions after it (PST-DA-053)', () => {

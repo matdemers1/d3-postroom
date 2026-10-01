@@ -4,6 +4,7 @@ import { ApiError, api, describeError, type AccountSession } from '../api';
 import { describeAgent } from './agent';
 import { Loading, LoadFailed } from './states';
 import { SubNav } from './SubNav';
+import { RecoveryCodesSection } from '../settings/RecoveryCodesSection';
 
 const when = (iso: string): string =>
   new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -155,6 +156,9 @@ export function Sessions() {
           </DataList>
         </Section>
       )}
+
+      {/* PST-T-16.7 (PST-REQ-197): a fresh set of recovery codes, behind step-up. */}
+      <RecoveryCodesSection />
 
       <Modal
         open={confirming !== null}

@@ -118,6 +118,12 @@ test('first run: setup enrols TOTP from a QR, recovers from an expired enrolment
   await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
   await page.getByRole('button', { name: 'Finish setup' }).click();
 
+  // PST-T-16.7: ten recovery codes, shown once, behind "I have saved these".
+  await expect(page.getByRole('list', { name: 'Recovery codes' }).getByRole('listitem')).toHaveCount(10);
+  await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'I have saved these' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+
   // The operator is admin, so the next thing is the setup wizard — not an empty Inbox.
   await expect(page).toHaveURL(/\/admin\/setup$/);
   await expect(page.getByRole('heading', { name: 'Set up mail', level: 1 })).toBeVisible();

@@ -170,7 +170,7 @@ const SCREENS: Screen[] = [
   { name: 'Settings — Account', path: () => '/settings/account', ready: h1('Account') },
   { name: 'Settings — Browser sessions', path: () => '/settings/security/sessions', ready: h1('Browser sessions'), data: /\/api\/auth\/sessions(\?|$)/ },
   { name: 'Settings — Devices (app passwords)', path: () => '/settings/security/devices', ready: h1('Devices'), data: /\/api\/app-passwords(\?|$)/ },
-  { name: 'Settings — Set up iPhone / Mac', path: () => '/settings/security', ready: h1('Set up iPhone / Mac') },
+  { name: 'Settings — Connect a device', path: () => '/settings/security', ready: h1('Connect a device') },
   { name: 'Settings — Addresses', path: () => '/settings/addresses', ready: h1('Masked aliases'), data: /\/api\/aliases(\?|$)/ },
   {
     name: 'Settings — Import & export',
