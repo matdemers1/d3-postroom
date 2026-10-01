@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Badge, Button, DescriptionItem, DescriptionList, EmptyState, Page, PageHeader, Section, Table, type TableColumn } from '@d3cloud/ui';
+import { useHasContextBar } from '../mobile/barSlot';
 import { api, contactsApi, describeError, type SenderProfile as SenderProfileJson, type SenderProfileMessage } from '../api';
 import { Loading, LoadFailed } from './states';
 
@@ -27,6 +28,9 @@ export function SenderProfile() {
   const params = useParams();
   const address = params['address'] ?? '';
   const navigate = useNavigate();
+  // PST-T-17.8: on a phone the context bar's Back (named for the mailbox you came from) is the one
+  // way back; the page draws its own Back only where there is no bar.
+  const hasBar = useHasContextBar();
   const [profile, setProfile] = useState<SenderProfileJson | null>(null);
   const [contact, setContact] = useState<ContactHit>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -100,9 +104,11 @@ export function SenderProfile() {
       <PageHeader
         title={profile.address}
         actions={
-          <Button size="sm" variant="ghost" onClick={() => { void navigate(-1); }}>
-            Back
-          </Button>
+          hasBar ? undefined : (
+            <Button size="sm" variant="ghost" onClick={() => { void navigate(-1); }}>
+              Back
+            </Button>
+          )
         }
       />
       {notice !== null ? <Alert tone={notice.tone} title={notice.tone === 'danger' ? 'Unsubscribe failed' : 'Unsubscribe'}>{notice.text}</Alert> : null}

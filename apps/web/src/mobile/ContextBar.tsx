@@ -4,9 +4,15 @@
 // it slides in from the right when you go deeper and reverses when you come back, on
 // --motion-drawer (280 ms, --ease-out). The slide is a CSS entrance with backwards fill, so nothing
 // waits for an animationend that reduced motion (no animation at all) would never send.
+//
+// PST-T-17.8: on Settings, Admin and the other pushed screens the bar is a large-title bar
+// (`largeTitle`): empty, with no hairline, until the page's own h1 scrolls up under it (largeTitle.ts),
+// and its trailing slot carries an action the page hands up (barSlot.tsx, documented there).
 import './mobile.css';
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
+import { useBarSlotAction, type BarSlot } from './barSlot';
+import { observeLargeTitle } from './largeTitle';
 import { pushDirection, type ContextParent, type PushDirection } from './push';
 
 function BackChevron() {
@@ -34,11 +40,45 @@ export interface ContextBarProps {
    * under the bar, so the bar draws no hairline and no title of its own.
    */
   flush?: boolean | undefined;
+  /**
+   * The iOS large-title pattern (PST-T-17.8): the title stays empty, and the bar flush, until the
+   * page's PageHeader h1 (`.d3-ph__title`, found in the bar's own push frame) has scrolled up under
+   * the bar. A screen without one shows the title from the start.
+   */
+  largeTitle?: boolean | undefined;
+  /** The trailing slot a page fills with `useContextBarAction` (barSlot.tsx); drawn after `actions`. */
+  slot?: BarSlot | null | undefined;
 }
 
-export function ContextBar({ back, title, titleIsDuplicate = true, actions, flush = false }: ContextBarProps) {
+/** Whether the bar shows its title: always, unless it is a large-title bar whose page h1 still shows. */
+function useShowTitle(largeTitle: boolean, bar: RefObject<HTMLDivElement | null>): boolean {
+  // A large-title screen opens with its h1 in view, so the bar starts empty; the layout effect
+  // corrects it before the first paint when there is no h1 to defer to.
+  const [show, setShow] = useState(!largeTitle);
+  useLayoutEffect(() => {
+    const el = bar.current;
+    if (!largeTitle || el === null) {
+      setShow(true);
+      return undefined;
+    }
+    return observeLargeTitle(el, setShow);
+  }, [largeTitle, bar]);
+  return show;
+}
+
+export function ContextBar({ back, title, titleIsDuplicate = true, actions, flush = false, largeTitle = false, slot }: ContextBarProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const showTitle = useShowTitle(largeTitle, ref);
+  const trailing = useBarSlotAction(slot);
+  // While the page's h1 shows under it, a large-title bar is flush: no title, no hairline.
+  const titleHidden = largeTitle && !showTitle;
   return (
-    <div className={flush ? 'pr-cbar pr-cbar--flush' : 'pr-cbar'} data-testid="context-bar">
+    <div
+      ref={ref}
+      className={flush || titleHidden ? 'pr-cbar pr-cbar--flush' : 'pr-cbar'}
+      data-testid="context-bar"
+      {...(largeTitle ? { 'data-large-title': showTitle ? 'collapsed' : 'expanded' } : {})}
+    >
       <div className="pr-cbar__lead">
         {back === null || back === undefined ? null : (
           <RouterLink className="pr-cbar__back" to={back.to}>
@@ -48,9 +88,12 @@ export function ContextBar({ back, title, titleIsDuplicate = true, actions, flus
         )}
       </div>
       <p className="pr-cbar__title" {...(titleIsDuplicate ? { 'aria-hidden': true } : {})}>
-        {title ?? ''}
+        {showTitle ? (title ?? '') : ''}
       </p>
-      <div className="pr-cbar__actions">{actions}</div>
+      <div className="pr-cbar__actions">
+        {actions}
+        {trailing}
+      </div>
     </div>
   );
 }

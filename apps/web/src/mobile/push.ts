@@ -75,9 +75,14 @@ export function contextParent(pathname: string, lastMail: string, lastMailName: 
   return { to: '/mail', label: 'Mailboxes' };
 }
 
-/** The title a non-mail screen's context bar shows. */
+/**
+ * The title a non-mail screen's context bar shows: its nav label (PST-T-17.8, critique X12), which
+ * is also its page h1 — so Security & devices' three screens collapse into "Security & devices", the
+ * heading they share, never into a tab's name.
+ */
 export function contextTitle(pathname: string): string {
   const index = placeIndexFor(pathname);
   if (index !== null) return PLACE_NAME[index];
-  return routeForPath(pathname)?.title ?? '';
+  const route = routeForPath(pathname);
+  return route?.navGroup ?? route?.title ?? '';
 }

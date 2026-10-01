@@ -58,5 +58,12 @@ describe('context bar', () => {
     expect(placeIndexFor('/settings/rules')).toBeNull();
     expect(contextTitle('/admin')).toBe('Admin console');
     expect(contextTitle('/settings/rules')).toBe('Rules & sorting');
+    expect(contextTitle('/settings/import')).toBe('Import');
+    // PST-T-17.8: the bar collapses into the page's h1, which for the three Security screens is the
+    // section's name, not the tab's.
+    expect(contextTitle('/settings/security')).toBe('Security & devices');
+    expect(contextTitle('/settings/security/sessions')).toBe('Security & devices');
+    expect(contextTitle('/settings/security/devices')).toBe('Security & devices');
+    expect(contextTitle('/senders/a%40b.example')).toBe('Sender');
   });
 });
