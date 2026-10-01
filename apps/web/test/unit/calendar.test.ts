@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import type { EventDetail, EventInstance } from '../../src/api';
 import {
   addDays,
+  agendaTimeLines,
+  chipText,
   instancesOnDay,
   layoutTimed,
   monthGrid,
@@ -12,6 +14,7 @@ import {
   step,
   viewHeading,
   visibleDays,
+  weekStrip,
   zonedDay,
   zonedMidnight,
   zonedMinutes,
@@ -171,5 +174,38 @@ describe('calendar layout', () => {
     expect(viewHeading('month', '2026-10-15', 'en-US')).toBe('October 2026');
     expect(viewHeading('day', '2026-10-05', 'en-US')).toBe('Monday, October 5, 2026');
     expect(viewHeading('week', '2026-10-07', 'en-US')).toMatch(/^Oct 4\s?–\s?10, 2026$/);
+  });
+});
+
+describe('phone agenda and month chips (PST-T-16.11)', () => {
+  const at = (summary: string, start: string, end: string, extra: Partial<EventInstance> = {}): EventInstance =>
+    ({ calendarId: 'c', name: `${summary}.ics`, recurrenceId: '', summary, location: '', allDay: false, recurring: false, start, end, ...extra }) as EventInstance;
+
+  it('an agenda time is two short lines, start over end, and "All day" is one', () => {
+    const meeting = at('Sync', '2026-10-05T13:00:00Z', '2026-10-05T14:30:00Z');
+    expect(agendaTimeLines(meeting, NY, 'en-US').map((l) => l.replace(/\s/g, ' '))).toEqual(['9:00 AM', '10:30 AM']);
+    expect(agendaTimeLines(at('Holiday', '2026-10-05T04:00:00Z', '2026-10-06T04:00:00Z', { allDay: true }), NY)).toEqual(['All day']);
+    expect(agendaTimeLines(at('Ping', '2026-10-05T13:00:00Z', '2026-10-05T13:00:00Z'), NY, 'en-US')).toHaveLength(1);
+  });
+
+  it('the week strip is the seven days of the anchor week, with how many events each holds', () => {
+    const list = [at('A', '2026-10-06T13:00:00Z', '2026-10-06T14:00:00Z'), at('B', '2026-10-06T15:00:00Z', '2026-10-06T16:00:00Z'), at('C', '2026-10-09T15:00:00Z', '2026-10-09T16:00:00Z')];
+    const strip = weekStrip('2026-10-07', list, NY, '2026-10-05', 'en-US');
+    expect(strip.map((d) => d.day)).toEqual(['2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10']);
+    expect(strip.map((d) => d.events)).toEqual([0, 0, 2, 0, 0, 1, 0]);
+    expect(strip.filter((d) => d.isSelected).map((d) => d.day)).toEqual(['2026-10-07']);
+    expect(strip.filter((d) => d.isToday).map((d) => d.day)).toEqual(['2026-10-05']);
+    expect(strip[2]?.label).toBe('Tuesday, October 6, 2026, 2 events');
+    expect(strip[1]?.label).toBe('Monday, October 5, 2026, today, no events');
+    expect(strip[2]?.dom).toBe(6);
+  });
+
+  it('a chip leads with the title; the time is dropped for all-day and compact chips', () => {
+    const e = at('Design review', '2026-10-05T13:00:00Z', '2026-10-05T14:00:00Z');
+    expect(chipText(e, NY, false, 'en-US').title).toBe('Design review');
+    expect(chipText(e, NY, false, 'en-US').time?.replace(/\s/g, ' ')).toBe('9:00 AM');
+    expect(chipText(e, NY, true, 'en-US').time).toBeNull();
+    expect(chipText(at('Holiday', '2026-10-05T04:00:00Z', '2026-10-06T04:00:00Z', { allDay: true }), NY, false).time).toBeNull();
+    expect(chipText(at('', '2026-10-05T13:00:00Z', '2026-10-05T14:00:00Z'), NY, true).title).toBe('Untitled event');
   });
 });

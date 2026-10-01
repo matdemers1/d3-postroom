@@ -212,3 +212,61 @@ export function timeLabel(iso: string, tz: string, locale?: string): string {
 export function today(tz: string, now: Date = new Date()): string {
   return zoned(now.getTime(), tz).day;
 }
+
+/**
+ * A phone agenda row's time as short lines, so the column stays narrow: "9:00 AM" over "10:00 AM",
+ * or just "All day". Two lines, never one long "start – end" that wraps.
+ */
+export function agendaTimeLines(i: Pick<EventInstance, 'allDay' | 'start' | 'end'>, tz: string, locale?: string): string[] {
+  if (i.allDay) return ['All day'];
+  const start = timeLabel(i.start, tz, locale);
+  const end = timeLabel(i.end, tz, locale);
+  return start === end ? [start] : [start, end];
+}
+
+export interface WeekStripDay {
+  readonly day: string;
+  /** "S", "M" … (a narrow weekday; the full name is in `label`). */
+  readonly dow: string;
+  readonly dom: number;
+  /** The day as a screen reader reads it, with how many events it holds. */
+  readonly label: string;
+  readonly events: number;
+  readonly isToday: boolean;
+  readonly isSelected: boolean;
+}
+
+/** The phone's one-row week strip: the seven days of the week holding `anchor`, with event counts. */
+export function weekStrip(anchor: string, instances: readonly EventInstance[], tz: string, todayDay: string, locale?: string): WeekStripDay[] {
+  return visibleDays('week', anchor).map((day) => {
+    const on = instancesOnDay(instances, day, tz);
+    const events = on.allDay.length + on.timed.length;
+    const [y, m, d] = parts(day);
+    const dow = new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, d, 12)));
+    const isToday = day === todayDay;
+    return {
+      day,
+      dow,
+      dom: d,
+      label: `${dayLabel(day, locale)}${isToday ? ', today' : ''}, ${events === 0 ? 'no events' : `${String(events)} ${events === 1 ? 'event' : 'events'}`}`,
+      events,
+      isToday,
+      isSelected: day === anchor,
+    };
+  });
+}
+
+export interface ChipText {
+  readonly title: string;
+  /** The start time to show after the title; null for all-day events and where the chip is too small for one. */
+  readonly time: string | null;
+}
+
+/**
+ * What a chip says. The title always leads (it is what you scan for); the time follows it, and goes
+ * for all-day events and for chips too short to hold a second item. A month cell that is too narrow
+ * hides the time with a container query in calendar.css.
+ */
+export function chipText(i: Pick<EventInstance, 'summary' | 'allDay' | 'start'>, tz: string, compact: boolean, locale?: string): ChipText {
+  return { title: i.summary === '' ? 'Untitled event' : i.summary, time: i.allDay || compact ? null : timeLabel(i.start, tz, locale) };
+}
