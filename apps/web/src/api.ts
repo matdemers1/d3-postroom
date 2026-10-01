@@ -1066,6 +1066,10 @@ export function describeError(error: unknown): string {
       return 'That took too long. Sign in again.';
     case 'too_many_attempts':
       return 'Too many attempts. Wait a moment and try again.';
+    case 'last_sign_in_method':
+      return 'D3 Auth is the only way into this account, so it can’t be unlinked. Set a password first.';
+    case 'conflict':
+      return 'Someone else saved these settings at the same moment. Reload and try again.';
     case 'totp_not_enrolled':
       return 'This account has no authenticator enrolled, so it can’t finish signing in. If Sign in with D3 Auth is set up for it, use that instead.';
     case 'setup_complete':
@@ -1643,6 +1647,11 @@ export interface D3AuthConfig {
   postLogoutRedirectUri: string;
   /** The D3 Auth app manifest, ready to paste. */
   manifest: Record<string, unknown>;
+  /**
+   * On a save or turn-off only: turning off or pointing at another issuer or client ends every
+   * D3 Auth session, and this browser's was one of them (its cookie is already cleared).
+   */
+  signedOut?: boolean;
 }
 
 export interface D3AuthConfigInput {

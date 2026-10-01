@@ -318,6 +318,10 @@ export function AdminD3Auth() {
     withStepUp(() => d3authApi.save(saveInput(form)))
       .then((saved) => {
         if (saved === null) return;
+        if (saved.signedOut === true) {
+          window.location.assign('/signin');
+          return;
+        }
         show(saved);
         setNotice(saved.status === 'available' ? 'Saved. Sign in with D3 Auth is available.' : 'Saved.');
       })
@@ -338,6 +342,10 @@ export function AdminD3Auth() {
     withStepUp(() => d3authApi.turnOff())
       .then((off) => {
         if (off === null) return;
+        if (off.signedOut === true) {
+          window.location.assign('/signin');
+          return;
+        }
         show(off);
         setTestResult(null);
         setNotice('Sign in with D3 Auth is off.');

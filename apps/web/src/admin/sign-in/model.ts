@@ -123,7 +123,7 @@ export const REGISTER_STEPS: readonly { title: string; detail: string }[] = [
   { title: 'Link your account', detail: 'In Settings › Account, choose Link… beside Sign in with D3 Auth.' },
 ];
 
-export const TURN_OFF_COPY = 'Postroom stops offering Sign in with D3 Auth. Everyone keeps signing in with their password and authenticator code.';
+export const TURN_OFF_COPY = 'Postroom stops offering Sign in with D3 Auth, and anyone signed in through it is signed out. Everyone keeps signing in with their password and authenticator code.';
 export const UNLINK_COPY = 'Postroom will no longer accept D3 Auth for this account. Your password keeps working.';
 
 /** The account row's description: who it is linked to, or what linking does. */
