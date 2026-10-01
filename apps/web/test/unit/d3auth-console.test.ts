@@ -314,8 +314,8 @@ describe('the API client', () => {
   });
 
   it('lists and unlinks identities at /api/account/identities', async () => {
-    stub(204, null);
-    await expect(d3authApi.unlink('id/1')).resolves.toBeNull();
+    stub(200, { ok: true, endedSessions: 1, signedOut: false });
+    await expect(d3authApi.unlink('id/1')).resolves.toEqual({ ok: true, endedSessions: 1, signedOut: false });
     expect(calls[0]).toMatchObject({ method: 'DELETE', url: '/api/account/identities/id%2F1' });
     stub(200, []);
     await d3authApi.identities();
@@ -356,7 +356,7 @@ describe('Settings › Account › Sign in with D3 Auth', () => {
     const source = read('admin/sign-in/AccountD3AuthRow.tsx');
     expect(source).toContain('window.location.assign(OIDC_LINK_PATH)');
     expect(source).toContain('UNLINK_COPY');
-    expect(source).toMatch(/withStepUp\(async \(\) => \{\s*await d3authApi\.unlink/);
+    expect(source).toMatch(/withStepUp\(\(\) => d3authApi\.unlink/);
     expect(UNLINK_COPY).toBe('Postroom will no longer accept D3 Auth for this account. Your password keeps working.');
   });
 

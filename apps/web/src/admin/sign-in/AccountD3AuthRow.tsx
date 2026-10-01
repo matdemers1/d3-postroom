@@ -60,13 +60,15 @@ export function AccountD3AuthRow() {
   const unlink = () => {
     setConfirming(false);
     if (identity === null) return;
-    // The DELETE answers 204 (null), and a cancelled step-up settles null too: answer `true` to tell them apart.
-    withStepUp(async () => {
-      await d3authApi.unlink(identity.id);
-      return true as const;
-    })
+    // A cancelled step-up settles null; a done unlink answers its result.
+    withStepUp(() => d3authApi.unlink(identity.id))
       .then(async (done) => {
         if (done === null) return;
+        // This browser signed in through the identity just unlinked: its session ended with it.
+        if (done.signedOut) {
+          window.location.assign('/signin');
+          return;
+        }
         toast.show({ message: 'D3 Auth unlinked. Your password keeps working.' });
         await load();
       })

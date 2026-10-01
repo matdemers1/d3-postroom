@@ -1668,6 +1668,12 @@ export interface LinkedIdentity {
   lastUsedAt: string | null;
 }
 
+export interface UnlinkResult {
+  ok: true;
+  endedSessions: number;
+  signedOut: boolean;
+}
+
 /** A real navigation, not a fetch: the server checks the sign-in is fresh, then hands over to D3 Auth. */
 export const OIDC_LINK_PATH = '/api/auth/oidc/start?link=1';
 
@@ -1680,6 +1686,9 @@ export const d3authApi = {
   /** Step-up. Answers the turned-off config. */
   turnOff: () => call<D3AuthConfig>('DELETE', '/api/admin/auth/d3auth'),
   identities: () => call<LinkedIdentity[]>('GET', '/api/account/identities'),
-  /** Step-up. 204. */
-  unlink: (id: string) => call<null>('DELETE', `/api/account/identities/${encodeURIComponent(id)}`),
+  /**
+   * Step-up. Ends that identity's D3 Auth sessions; `signedOut` says this browser's own session was
+   * one of them (its cookie is already cleared).
+   */
+  unlink: (id: string) => call<UnlinkResult>('DELETE', `/api/account/identities/${encodeURIComponent(id)}`),
 };
