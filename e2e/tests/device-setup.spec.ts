@@ -103,6 +103,8 @@ test('the app-password reveal shows the same settings block', async ({ page }) =
   await page.goto('/settings/security/devices');
   await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
   const label = `e2e device ${tag()}`;
+  // PST-T-16.23: the create form opens on demand, from the page header.
+  await page.getByRole('button', { name: 'New app password' }).click();
   await page.getByRole('textbox', { name: 'Name' }).fill(label);
   await page.getByRole('button', { name: 'Create password' }).click();
   await expect(page.getByRole('heading', { name: `Password for ${label}` })).toBeVisible();
