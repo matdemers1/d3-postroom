@@ -1,7 +1,7 @@
 // The template manager (PST-T-9.2, PST-REQ-144): create, edit and delete the saved templates the
 // composer's `;` shortcut offers. CRUD over /api/templates, every mutation audited server-side.
 import '../settings/settings.css';
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, DataList, DataListRow, EmptyState, FormActions, FormField, Input, Modal, ModalClose, Page, PageHeader, Section, Stack, Textarea } from '@d3cloud/ui';
 import { describeError } from '../api';
 import { templatesApi, type TemplateJson } from './api';
@@ -22,6 +22,16 @@ export function TemplatesScreen() {
   const [loadError, setLoadError] = useState<unknown>(null);
   // PST-T-16.23: the form is not in the DOM until "New template" (or a row's Edit) opens it.
   const [open, setOpen] = useState(false);
+  // PST-T-16.23: the header's New button unmounts while the form is open; folding the form away
+  // (Cancel, or done) hands focus back to it, as Account's Change password does.
+  const newButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (!open && returnFocus.current) {
+      returnFocus.current = false;
+      newButton.current?.focus();
+    }
+  }, [open]);
   const [form, setForm] = useState<FormState>(BLANK);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -43,6 +53,7 @@ export function TemplatesScreen() {
   }, [load]);
 
   const closeForm = () => {
+    returnFocus.current = true;
     setOpen(false);
     setForm(BLANK);
     setFormError(null);
@@ -108,6 +119,7 @@ export function TemplatesScreen() {
         actions={
           open ? null : (
             <Button
+              ref={newButton}
               variant="primary"
               onClick={() => {
                 setNotice(null);

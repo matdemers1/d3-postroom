@@ -1,5 +1,5 @@
 import '../settings/settings.css';
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useId, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -271,6 +271,9 @@ export function Rules() {
   const [scripts, setScripts] = useState<SieveScriptSummary[] | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [name, setName] = useState(BUILDER_SCRIPT);
+  // The disabled Edit's reason: one id, since only the open script's row has it. A script name can
+  // hold spaces ("Postroom rules"), which would split an id built from it in aria-describedby.
+  const openReasonId = useId();
   const [mode, setMode] = useState<Mode>('builder');
   const [rules, setRules] = useState<Rule[]>([]);
   const [source, setSource] = useState('');
@@ -425,11 +428,11 @@ export function Rules() {
           {s.name === name ? (
             // PST-T-16.23: the one disabled Edit says why — it is the script already open above.
             <Tooltip content={OPEN_REASON}>
-              <span tabIndex={0} aria-describedby={`rules-open-reason-${s.name}`}>
+              <span tabIndex={0} aria-describedby={openReasonId}>
                 <Button size="sm" variant="ghost" disabled>
                   Edit {s.name}
                 </Button>
-                <span id={`rules-open-reason-${s.name}`} hidden>
+                <span id={openReasonId} hidden>
                   {OPEN_REASON}
                 </span>
               </span>

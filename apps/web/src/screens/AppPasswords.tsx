@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -46,6 +46,16 @@ export function AppPasswords() {
   const [loadError, setLoadError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // PST-T-16.23: the header's New button unmounts while the form is open; folding the form away
+  // (Cancel, or done) hands focus back to it, as Account's Change password does.
+  const newButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (!creating && returnFocus.current) {
+      returnFocus.current = false;
+      newButton.current?.focus();
+    }
+  }, [creating]);
   const [label, setLabel] = useState('');
   const [scopes, setScopes] = useState<AppPasswordScope[]>(['imap', 'smtp']);
   const [formError, setFormError] = useState<string | null>(null);
@@ -74,6 +84,7 @@ export function AppPasswords() {
 
   // PST-T-16.23: the form is not in the DOM until "New app password" is pressed, and closes on create.
   const closeForm = () => {
+    returnFocus.current = true;
     setCreating(false);
     setLabel('');
     setScopes(['imap', 'smtp']);
@@ -151,6 +162,7 @@ export function AppPasswords() {
         actions={
           creating ? null : (
             <Button
+              ref={newButton}
               variant="primary"
               onClick={() => {
                 setNotice(null);
