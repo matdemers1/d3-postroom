@@ -30,7 +30,9 @@ import {
   formFrom,
   manifestText,
   REGISTER_STEPS,
+  SECRET_AGAIN_HELP,
   SECRET_NEW_HELP,
+  secretNeeded,
   SECRET_SAVED_HELP,
   saveInput,
   statusLine,
@@ -106,6 +108,7 @@ export function ConnectCard(props: ConnectCardProps) {
     props.onSave();
   };
   const err = (field: keyof D3AuthForm) => (errors[field] === undefined ? {} : { error: errors[field] });
+  const needSecret = secretNeeded(config, form);
   return (
     <Section title="Connect to D3 Auth" description="The issuer and the client D3 Auth registered for Postroom. Saving takes effect at once.">
       <form className="pr-d3a__form" onSubmit={submit} aria-label="Connect to D3 Auth" noValidate>
@@ -142,12 +145,18 @@ export function ConnectCard(props: ConnectCardProps) {
             }}
           />
         </FormField>
-        <FormField label="Client secret" width="md" help={config.secretSet ? SECRET_SAVED_HELP : SECRET_NEW_HELP} optional={config.secretSet} {...err('clientSecret')}>
+        <FormField
+          label="Client secret"
+          width="md"
+          help={needSecret === 'again' ? SECRET_AGAIN_HELP : needSecret === 'new' ? SECRET_NEW_HELP : SECRET_SAVED_HELP}
+          optional={needSecret === null}
+          {...err('clientSecret')}
+        >
           <PasswordInput
             name="clientSecret"
             autoComplete="new-password"
             capsLockHint={false}
-            required={!config.secretSet}
+            required={needSecret !== null}
             value={form.clientSecret}
             onChange={(e) => {
               onChange({ ...form, clientSecret: e.target.value });

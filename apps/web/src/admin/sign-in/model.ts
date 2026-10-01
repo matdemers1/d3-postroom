@@ -35,6 +35,7 @@ export function statusLine(config: D3AuthConfig): StatusLine {
 
 export const SECRET_SAVED_HELP = 'Saved — enter a new one to replace it.';
 export const SECRET_NEW_HELP = 'D3 Auth shows it once, when you register Postroom.';
+export const SECRET_AGAIN_HELP = 'Enter the secret again: the issuer or client ID changed, and the saved one stays with the old one.';
 
 export interface D3AuthForm {
   issuer: string;
@@ -51,6 +52,18 @@ export function formFrom(config: D3AuthConfig | null): D3AuthForm {
 export function saveInput(form: D3AuthForm): { issuer: string; clientId: string; clientSecret?: string } {
   const secret = form.clientSecret.trim();
   return { issuer: form.issuer.trim(), clientId: form.clientId.trim(), ...(secret === '' ? {} : { clientSecret: secret }) };
+}
+
+const sameIssuer = (a: string, b: string): boolean => a.trim().replace(/\/+$/, '').toLowerCase() === b.trim().replace(/\/+$/, '').toLowerCase();
+
+/**
+ * Whether Save needs a secret typed (PST-T-17.6): when none is saved, or when the issuer or client
+ * ID moved — the server never sends a saved secret to a different issuer or client.
+ */
+export function secretNeeded(config: Pick<D3AuthConfig, 'secretSet' | 'issuer' | 'clientId'>, form: D3AuthForm): 'new' | 'again' | null {
+  if (!config.secretSet) return 'new';
+  if (!sameIssuer(form.issuer, config.issuer ?? '') || form.clientId.trim() !== (config.clientId ?? '')) return 'again';
+  return null;
 }
 
 export type FieldErrors = Partial<Record<keyof D3AuthForm, string>>;

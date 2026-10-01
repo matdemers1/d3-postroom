@@ -62,6 +62,7 @@ import {
   saveInput,
   SECRET_NEW_HELP,
   SECRET_SAVED_HELP,
+  secretNeeded,
   statusLine,
   TURN_OFF_COPY,
   UNLINK_COPY,
@@ -374,5 +375,20 @@ describe('Settings › Account › Sign in with D3 Auth', () => {
     expect(twoFactor).toBeGreaterThan(0);
     expect(row).toBeGreaterThan(twoFactor);
     expect(row).toBeLessThan(preferences);
+  });
+});
+
+describe('secretNeeded (PST-T-17.6: a saved secret never follows a new issuer or client)', () => {
+  const saved = { secretSet: true, issuer: 'https://auth.d3cloud.io', clientId: 'postroom' };
+  const form = (issuer: string, clientId: string) => ({ issuer, clientId, clientSecret: '' });
+  it('asks for a new secret when none is saved', () => {
+    expect(secretNeeded({ ...saved, secretSet: false }, form('https://auth.d3cloud.io', 'postroom'))).toBe('new');
+  });
+  it('keeps the saved one for the same issuer and client, ignoring a trailing slash and case', () => {
+    expect(secretNeeded(saved, form('https://Auth.d3cloud.io/', 'postroom'))).toBeNull();
+  });
+  it('asks again when the issuer or the client ID changes', () => {
+    expect(secretNeeded(saved, form('https://evil.example', 'postroom'))).toBe('again');
+    expect(secretNeeded(saved, form('https://auth.d3cloud.io', 'other'))).toBe('again');
   });
 });
