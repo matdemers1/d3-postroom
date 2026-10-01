@@ -6,21 +6,48 @@
 // drawer's: every attempt with its transport, host, TLS and the raw SMTP reply. Nothing in the first
 // renders a reply code or reply text; that is what keeps a raw "550 5.1.10 …" (or any string a test
 // transport wrote) out of the calm view.
-import { Badge } from '@d3cloud/ui';
+import { Link as RouterLink } from 'react-router-dom';
+import { Badge, Button, Skeleton } from '@d3cloud/ui';
 import type { DeliveryRecipient } from '../api';
-import { attemptRemoteText, attemptSummary, deferralReason, deliveryLine, dsnFiledAt, relativeMinutes, STATE_LABEL, STATE_TONE } from './delivery';
+import { attemptRemoteText, attemptSummary, deferralReason, deliveryLine, dsnFiledAt, relativeMinutes, STATE_LABEL, STATE_TONE, type CancelledFields } from './delivery';
 import { fullDate } from './format';
 import { DangerIcon, WarningIcon } from './icons';
+import { canResend } from './resend';
 import { deliveryChipTone, deliverySentence } from './thread/view';
+
+/** The delivery section while it is being looked up: one quiet line the height of the first real one,
+ *  so nothing below it jumps when the recipients arrive (PST-T-16.14). */
+export function DeliverySkeleton() {
+  return (
+    <section aria-label="Delivery" aria-busy="true" className="pr-delivery" data-testid="delivery-loading">
+      <Skeleton variant="text" lines={1} />
+    </section>
+  );
+}
 
 /** One recipient in the reading view: who, and what happened, in words. A deferral or a bounce is an
  *  exception, so it reads as a chip (PST-T-14.6) followed by one plain sentence; anything else is a
- *  quiet line. */
-export function DeliveryRecipientRow({ recipient: r, now }: { recipient: DeliveryRecipient; now?: Date }) {
+ *  quiet line — a cancelled one adds why and when (PST-T-16.14). A bounced or cancelled recipient
+ *  offers "Edit and resend", and an admin gets a link to the recipient's row in the outbound queue. */
+export function DeliveryRecipientRow({
+  recipient: r,
+  now,
+  onResend,
+  resending = false,
+  queueTo,
+}: {
+  recipient: DeliveryRecipient & CancelledFields;
+  now?: Date;
+  /** Opens the composer with a draft of this message for the failed recipient(s); absent: no button. */
+  onResend?: (recipient: DeliveryRecipient) => void;
+  resending?: boolean;
+  /** Admins only: the queue, filtered to this message (resend.ts's queuePath). */
+  queueTo?: string | null;
+}) {
   const dsnAt = dsnFiledAt(r);
   const at = now ?? new Date();
   const chip = deliveryChipTone(r.state);
-  const sentence = deliverySentence(r);
+  const sentence = deliverySentence(r, at);
   const line = (
     <>
       {deliveryLine(r, at)}
@@ -47,6 +74,28 @@ export function DeliveryRecipientRow({ recipient: r, now }: { recipient: Deliver
         <p className="pr-reader__note" data-testid="dsn-note">
           A delivery failure notice was filed to your Inbox at {fullDate(dsnAt)}.
         </p>
+      ) : null}
+      {(canResend(r.state) && onResend !== undefined) || (queueTo !== undefined && queueTo !== null) ? (
+        <div className="pr-delivery__head">
+          {canResend(r.state) && onResend !== undefined ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={resending}
+              aria-label={`Edit and resend to ${r.address}`}
+              onClick={() => {
+                onResend(r);
+              }}
+            >
+              Edit and resend
+            </Button>
+          ) : null}
+          {queueTo !== undefined && queueTo !== null ? (
+            <RouterLink to={queueTo} aria-label={`View ${r.address} in the outbound queue`} data-testid="delivery-queue-link">
+              View in queue
+            </RouterLink>
+          ) : null}
+        </div>
       ) : null}
     </li>
   );

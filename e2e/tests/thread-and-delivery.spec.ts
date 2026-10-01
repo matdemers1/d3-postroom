@@ -357,3 +357,58 @@ test('doneWhen: a deferred outbound recipient reads in plain words, with its rea
   // Clean up: cancel it so it never lingers on the shared queue.
   await api.post(`/api/messages/${outboundId}/recipients/${recipientId}/cancel`, { headers: CSRF });
 });
+
+test('doneWhen: a cancelled recipient says why, Edit and resend opens the composer prefilled, and the queue link filters to the message', async ({ page, isMobile }) => {
+  // PST-T-16.14 (PST-DA-024). The composer flow runs in the three-pane desktop layout, as above.
+  test.skip(isMobile, 'the composer flows run in the three-pane desktop layout');
+  const t = tag();
+  const subject = `Lease renewal ${t}`;
+  const text = `Please confirm the new lease by Friday ${t}.`;
+  await clearSuppressions(api, ['bob@example.org']);
+  const res = await api.post('/api/compose/send', {
+    headers: CSRF,
+    data: { from: 'operator@d3cloud.io', to: ['bob@example.org'], cc: [], bcc: [], subject, text, inReplyTo: null, references: [], forwardOf: null, draftId: null },
+  });
+  if (!res.ok()) throw new Error(`compose/send answered ${String(res.status())}: ${await res.text()}`);
+  const sent = (await res.json()) as SendResponse;
+  outbound.push(sent.outboundId);
+  // Cancel it on the queue (the same call the rest of this suite makes to keep it from going out).
+  await cancelOutbound([sent.outboundId]);
+
+  // While the lookup runs the section holds one skeleton line instead of vanishing and popping in.
+  await page.route('**/api/messages/*/outbound', async (route) => {
+    await new Promise((done) => setTimeout(done, 1_000));
+    await route.continue();
+  });
+  await page.goto(`/mail/sent/${sent.sentMessageId}`);
+  await expect(page.getByRole('heading', { name: subject, level: 2 })).toBeVisible();
+  await expect(page.getByTestId('delivery-loading')).toHaveAttribute('aria-busy', 'true');
+  await page.unroute('**/api/messages/*/outbound');
+
+  const delivery = page.getByRole('region', { name: 'Delivery' });
+  const recipientRow = delivery.getByTestId('delivery-recipient');
+  await expect(recipientRow).toHaveAttribute('data-state', 'cancelled');
+  await expect(recipientRow).toContainText('bob@example.org');
+  // A sentence, not a bare "Canceled": who canceled it, and that nothing was sent.
+  await expect(recipientRow).toContainText(/You canceled it.*so it was never sent\./);
+  await expectNoAxeViolations(page, 'cancelled delivery');
+
+  // Admins get the recipient's queue row: the outbound queue, filtered to this message.
+  await recipientRow.getByRole('link', { name: /in the outbound queue/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/admin/queue\\?message=${sent.outboundId}`));
+  await expect(page.getByText('Showing one message’s recipients only.')).toBeVisible();
+
+  // Edit and resend: a new draft with the same To, Subject and body, open in the composer.
+  await page.goto(`/mail/sent/${sent.sentMessageId}`);
+  await page.getByRole('region', { name: 'Delivery' }).getByRole('button', { name: /Edit and resend/ }).click();
+  const composer = page.getByRole('region', { name: 'New message' });
+  await expect(composer).toBeVisible();
+  await expect(page).toHaveURL(/compose=draft&id=[0-9a-f-]{36}/);
+  await expect(composer.getByRole('list', { name: 'To recipients' })).toContainText('bob@example.org');
+  await expect(composer.getByRole('textbox', { name: 'Subject' })).toHaveValue(subject);
+  await expect(composer.getByRole('textbox', { name: 'Message' })).toHaveValue(new RegExp(`^${escape(text)}`));
+
+  // Clean up: the draft this made, so it never lingers in the shared Drafts folder.
+  const draftId = new URL(page.url()).searchParams.get('id');
+  if (draftId !== null) await api.delete(`/api/compose/drafts/${draftId}`, { headers: CSRF });
+});
