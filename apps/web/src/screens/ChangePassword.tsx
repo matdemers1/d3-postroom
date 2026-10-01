@@ -1,27 +1,27 @@
-// Settings › Account (PST-T-15.6, PST-REQ-194), to the canvas (Settings.dc.html): one 680px column
-// of Section cards made of SettingsRows — Profile, Sign-in and Preferences. The Password row's
-// "Change…" opens the change-password form in place, inside the Sign-in card, rather than on a page
-// of its own; Cancel (or the close button) folds it back and returns focus to "Change…".
+// Settings › Account (PST-T-15.6, PST-T-17.12, PST-REQ-194), to the canvas (Settings.dc.html): one
+// centred 680px column of Section cards made of SettingsRows — Profile, Sign-in and Preferences. The
+// Password row's "Change…" opens the change-password form in place, inside the Sign-in card, rather
+// than on a page of its own; Cancel (or the close button) folds it back and returns focus to "Change…".
 //
 // What is here is only what the API already has: the profile is read-only (there is no endpoint to
-// rename an account or change its address), two-factor shows its state (TOTP is enrolled at setup
-// and nothing in the webmail manages it), "Sign in with D3 Auth" is the link/unlink row (PST-T-17.7), and
-// Preferences holds the theme alone: there are no server-side preferences, and one spacing scale
-// for everyone (D-007).
+// rename an account or change its address — the Email row goes on to Addresses), two-factor shows its
+// state (TOTP is enrolled at setup and nothing in the webmail manages it), Recovery codes counts what
+// is left and makes a new set behind step-up (PST-REQ-197, moved here from Browser sessions), "Sign in
+// with D3 Auth" is the link/unlink row (PST-T-17.7), and Preferences holds the theme alone: there are
+// no server-side preferences, and one spacing scale for everyone (D-007).
 import '../settings/settings.css';
+import '../settings/account.css';
 import { type SyntheticEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   Alert,
   Avatar,
-  Badge,
   Button,
   Checkbox,
   CodeInput,
   FormActions,
   FormField,
   IconButton,
-  Link,
   Page,
   PageHeader,
   PasswordInput,
@@ -34,6 +34,8 @@ import {
 import { api, describeError, type AuthState } from '../api';
 import { scorePassword } from '../settings/password-strength';
 import { AccountD3AuthRow } from '../admin/sign-in/AccountD3AuthRow';
+import { RecoveryCodesSection } from '../settings/RecoveryCodesSection';
+import { ChevronIcon } from '../mail/icons';
 import { Loading, LoadFailed } from './states';
 
 /**
@@ -223,7 +225,7 @@ export function AccountScreen() {
   };
 
   return (
-    <Page width="narrow" className="pr-settings">
+    <Page width="narrow" align="center" className="pr-settings">
       <PageHeader title="Account" description="Your profile, how you sign in, and how Postroom looks." />
       {notice === null ? null : (
         <Alert tone="info" dynamic>
@@ -251,14 +253,13 @@ export function AccountScreen() {
             {account.address === null ? null : (
               <SettingsRow
                 title="Email address"
-                description="Where your mail arrives. Aliases and masked aliases are under Addresses."
+                description="Where your mail arrives. Masked aliases are under Addresses."
                 control={
                   <span className="pr-set-value">
                     <span className="pr-set-mono">{account.address}</span>
-                    <Badge size="sm">Primary</Badge>
-                    <Link asChild variant="standalone" aria-label="Manage addresses">
-                      <RouterLink to="/settings/addresses">Manage</RouterLink>
-                    </Link>
+                    <RouterLink className="pr-account-go d3-ibtn d3-ibtn--sm" to="/settings/addresses" aria-label="Manage addresses">
+                      <ChevronIcon />
+                    </RouterLink>
                   </span>
                 }
               />
@@ -268,7 +269,7 @@ export function AccountScreen() {
           <Section title="Sign-in">
             <SettingsRow
               title="Password"
-              description="With your authenticator code, it signs you in on the web. Mail apps use app passwords instead."
+              description="Signs you in on the web. Mail apps use app passwords."
               control={
                 editing ? (
                   <IconButton label="Close password form" icon={<CloseIcon />} size="sm" aria-expanded="true" aria-controls={formId} onClick={close} />
@@ -293,9 +294,23 @@ export function AccountScreen() {
             ) : null}
             <SettingsRow
               title="Two-factor authentication"
-              description="A code from your authenticator app at every sign-in, and before anything destructive."
-              control={account.totpEnabled ? <StatusDot tone="neutral">On · Authenticator app</StatusDot> : <StatusDot tone="attention">Off</StatusDot>}
+              description="Asked at sign-in and before anything destructive."
+              control={
+                // Healthy reads neutral and only what needs you takes a hue (D-016): @d3cloud/ui's
+                // StatusDot has no success tone, so "On" is the neutral dot.
+                account.totpEnabled ? (
+                  <StatusDot size="sm" tone="neutral">
+                    On · Authenticator app
+                  </StatusDot>
+                ) : (
+                  <StatusDot size="sm" tone="attention">
+                    Off
+                  </StatusDot>
+                )
+              }
             />
+            {/* PST-T-17.12 (PST-REQ-197): how many recovery codes are left, and a new set behind step-up. */}
+            <RecoveryCodesSection />
             {/* PST-T-17.7 (PST-REQ-202): link or unlink D3 Auth; absent while D3 Auth is not available. */}
             <AccountD3AuthRow />
           </Section>

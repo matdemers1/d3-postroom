@@ -1,7 +1,7 @@
 // PST-T-16.7 (PST-REQ-197): recovery codes in the web app. Completing setup shows the ten codes
 // behind an "I have saved these" checkbox before the wizard; Copy all and Download .txt hand them
-// over; sign-in offers a recovery code in place of the TOTP code; and Security & devices can make a
-// new set behind step-up.
+// over; sign-in offers a recovery code in place of the TOTP code; and Settings › Account › Sign-in can
+// make a new set behind step-up (on Browser sessions until PST-T-17.12).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -117,7 +117,7 @@ describe('sign-in takes a recovery code in place of the TOTP code', () => {
   });
 });
 
-describe('Security & devices: a new set behind step-up', () => {
+describe('Settings › Account › Sign-in: a new set behind step-up', () => {
   it('regenerate is POST /api/auth/recovery-codes; the status is a GET', async () => {
     const call = vi.spyOn(apiModule, 'call').mockResolvedValue({});
     await recoveryApi.regenerate();
@@ -131,6 +131,30 @@ describe('Security & devices: a new set behind step-up', () => {
     expect(src).toContain("caught.code === 'step_up_required'");
     expect(src).toMatch(/\.stepUp\(code\)\s*\.then\(\(\) => regenerate\(\)\)/);
     expect(src).toContain('<RecoveryCodes');
+  });
+
+  it('renders on Account, as a row of the Sign-in card after Two-factor (PST-T-17.12)', () => {
+    const account = read('screens/ChangePassword.tsx');
+    const signIn = account.indexOf('<Section title="Sign-in">');
+    const twoFactor = account.indexOf('title="Two-factor authentication"');
+    const recovery = account.indexOf('<RecoveryCodesSection />');
+    const d3auth = account.indexOf('<AccountD3AuthRow />');
+    expect(signIn).toBeGreaterThan(0);
+    expect(recovery).toBeGreaterThan(twoFactor);
+    expect(twoFactor).toBeGreaterThan(signIn);
+    expect(d3auth).toBeGreaterThan(recovery);
+    expect(recovery).toBeLessThan(account.indexOf('<Section title="Preferences">'));
+    // Browser sessions no longer holds it.
+    expect(read('screens/Sessions.tsx')).not.toContain('RecoveryCodesSection');
+  });
+
+  it('asks first, then steps up: the confirm dialog, then the code prompt', () => {
+    const src = read('settings/RecoveryCodesSection.tsx');
+    expect(src).toContain('title="Make new recovery codes?"');
+    expect(src).toContain('title="Confirm it is you"');
+    expect(src).toContain('Verify and make new codes');
+    // The confirm's own button is what calls the server; "Make new codes" in the row only opens it.
+    expect(src).toMatch(/setConfirming\(true\);\s*\}\}\s*>\s*Make new codes/);
   });
 
   it('says how many are left', () => {

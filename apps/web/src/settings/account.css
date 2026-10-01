@@ -1,0 +1,49 @@
+/* Settings › Account (PST-T-17.12, PST-REQ-194; Settings.dc.html, Account artboard). Only what the
+ * library has no part for: the Email row's chevron link, and the Recovery codes row, which sits in a
+ * <section> of its own inside the Sign-in card so the row and a freshly made set are one region.
+ * D3 semantic tokens only: no hex, no shadows, no outlines of our own. */
+
+/* The Email row's way to Addresses: a chevron, square like an icon button (its d3-ibtn classes give
+ * it the library's hover, focus ring and the 44px coarse-pointer size). */
+.pr-account-go {
+  flex: none;
+}
+
+/* The Recovery codes region reads as one more row of the card: the library draws a row's hairline
+ * only between adjacent SettingsRows, so the region takes the row's place in that sequence — a
+ * hairline above it and above the row after it, and the card's row-to-row rhythm (no section gap). */
+.pr-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+.d3-setrow + .pr-recovery,
+.pr-recovery + .d3-setrow {
+  margin-top: calc(var(--space-16) * -1);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+/* Inside the region the row is the only one, so the library treats it as the first and the last
+ * row of a card and drops its padding; give it back, except at the card's own foot. */
+.pr-recovery > .d3-setrow:first-child {
+  padding-top: var(--space-16);
+}
+
+.pr-recovery > .d3-setrow:last-child {
+  padding-bottom: var(--space-16);
+}
+
+.pr-recovery:last-child > .d3-setrow:last-child {
+  padding-bottom: 0;
+}
+
+/* A new set, shown once under the row, ends where the next row's hairline begins. */
+.pr-recovery > :last-child:not(.d3-setrow) {
+  padding-bottom: var(--space-16);
+}
+
+.pr-recovery:last-child > :last-child:not(.d3-setrow) {
+  padding-bottom: 0;
+}

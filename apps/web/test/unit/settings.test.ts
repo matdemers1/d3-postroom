@@ -100,10 +100,19 @@ describe('the settings grid', () => {
     expect(account).toContain('<SettingsRow');
     expect(account).toContain('<ThemeSwitch label="Theme"');
     expect(account).toContain('tint="auto"');
-    expect(account).toContain('<Badge size="sm">Primary</Badge>');
-    // Two-factor status is neutral when on (D-016), attention only when off.
-    expect(account).toContain('<StatusDot tone="neutral">On · Authenticator app</StatusDot>');
-    expect(account).toContain('<StatusDot tone="attention">Off</StatusDot>');
+    // PST-T-17.12: the column is centred, like every settings page.
+    expect(account).toContain('<Page width="narrow" align="center"');
+    // The Email row is the address and a chevron on to Addresses: no "Primary" badge, no inline "Manage".
+    expect(account).not.toContain('Primary</Badge>');
+    expect(account).not.toMatch(/>Manage</);
+    expect(account).toMatch(/<RouterLink className="pr-account-go d3-ibtn d3-ibtn--sm" to="\/settings\/addresses" aria-label="Manage addresses">\s*<ChevronIcon \/>/);
+    expect(account).toContain('Masked aliases are under Addresses.');
+    // Two-factor status is neutral when on (D-016: StatusDot has no success tone), attention only when off.
+    expect(account).toMatch(/<StatusDot size="sm" tone="neutral">\s*On · Authenticator app\s*<\/StatusDot>/);
+    expect(account).toMatch(/<StatusDot size="sm" tone="attention">\s*Off\s*<\/StatusDot>/);
+    // One-line descriptions at 680px (critique 2.1 #4, #5).
+    expect(account).toContain('description="Signs you in on the web. Mail apps use app passwords."');
+    expect(account).toContain('description="Asked at sign-in and before anything destructive."');
     // "Change…" opens the form in place: no page of its own.
     expect(account).toMatch(/Change…/);
     expect(account).toContain('<ChangePasswordForm');
