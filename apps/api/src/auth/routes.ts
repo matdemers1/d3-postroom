@@ -861,25 +861,24 @@ export function authRoutes(deps: ApiDeps): Router {
       }
       rt.reenrolBegins.hit(me.sessionId, at);
       // A repeat Begin while one is pending answers the same secret (a reload of the screen, a second
-      // tab), with its attempts and expiry untouched, and writes no audit row: only the Begin that
-      // made the pending enrolment is recorded.
+      // tab), with its attempts and expiry untouched. Every Begin is audited — PST-REQ-009, and the
+      // mutation guard holds every successful POST to it — the repeat as a resume; the limiter above
+      // (5 per session per 15 minutes) is what bounds the volume (PST-T-16.28).
       const existing = rt.reenrols.get(me.sessionId, at);
       const pending = existing !== undefined && existing.accountId === me.accountId ? existing : null;
       const secret = pending?.secret ?? generateTotpSecret();
       const exp = pending?.exp ?? at + REENROL_TTL_MS;
-      if (pending === null) {
-        rt.reenrols.set(me.sessionId, { accountId: me.accountId, secret, exp, attempts: 0, checking: false });
-        // Nothing is written to the account until a code proves the new authenticator; the audit row
-        // records that re-enrolment began, and from which session. Never the secret.
-        await recordAudit(db, {
-          actor: asAccount(me.accountId),
-          action: 'auth.totp.reenrol.begin',
-          entityType: 'session',
-          entityId: me.sessionId,
-          after: { expiresAt: new Date(exp) },
-          context: getAuditContext(req),
-        });
-      }
+      if (pending === null) rt.reenrols.set(me.sessionId, { accountId: me.accountId, secret, exp, attempts: 0, checking: false });
+      // Nothing is written to the account until a code proves the new authenticator; the audit row
+      // records that re-enrolment began (or resumed), and from which session. Never the secret.
+      await recordAudit(db, {
+        actor: asAccount(me.accountId),
+        action: pending === null ? 'auth.totp.reenrol.begin' : 'auth.totp.reenrol.resume',
+        entityType: 'session',
+        entityId: me.sessionId,
+        after: { expiresAt: new Date(exp) },
+        context: getAuditContext(req),
+      });
       const address = await primaryAddress(db, me.accountId);
       res.setHeader('Cache-Control', 'no-store');
       res.json({ secret, otpauthUri: provisioningUri(secret, address ?? me.displayName), expiresAt: new Date(exp).toISOString(), address });

@@ -358,12 +358,14 @@ describe('second-factor hardening (PST-T-16.28)', () => {
     expect(secrets.size).toBe(1);
     expect(expiries.size).toBe(1);
     expect(fake.audits.filter((a) => a.action === 'auth.totp.reenrol.begin')).toHaveLength(1);
+    expect(fake.audits.filter((a) => a.action === 'auth.totp.reenrol.resume')).toHaveLength(4);
 
     const sixth = await request(app).post('/api/auth/totp/reenrol/begin').set(CSRF).set('cookie', COOKIE);
     expect(sixth.status).toBe(429);
     expect(sixth.body).toMatchObject({ error: 'too_many_attempts' });
     expect(Number(sixth.headers['retry-after'])).toBeGreaterThan(0);
     expect(fake.audits.filter((a) => a.action === 'auth.totp.reenrol.begin')).toHaveLength(1);
+    expect(fake.audits.filter((a) => a.action === 'auth.totp.reenrol.resume')).toHaveLength(4);
   });
 
   it('a repeat begin does not reset the attempts a pending enrolment has used', async () => {

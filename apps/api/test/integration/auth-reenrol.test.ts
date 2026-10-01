@@ -235,12 +235,15 @@ describe.skipIf(!baseUrl)('TOTP re-enrolment after a recovery-code sign-in (PST-
       secrets.add((begin.body as { secret: string }).secret);
     }
     expect(secrets.size).toBe(1);
+    // Every Begin is audited (PST-REQ-009): the first as a begin, each repeat as a resume.
     expect(await db.auditEvent.count({ where: { action: 'auth.totp.reenrol.begin', entityType: 'session', entityId: sessionId } })).toBe(1);
+    expect(await db.auditEvent.count({ where: { action: 'auth.totp.reenrol.resume', entityType: 'session', entityId: sessionId } })).toBe(4);
 
     const sixth = await request(app).post('/api/auth/totp/reenrol/begin').set(CSRF).set('cookie', cookie);
     expect(sixth.status).toBe(429);
     expect(sixth.body).toMatchObject({ error: 'too_many_attempts' });
-    expect(await db.auditEvent.count({ where: { action: 'auth.totp.reenrol.begin', entityType: 'session', entityId: sessionId } })).toBe(1);
+    // The limited sixth writes nothing: the limiter, not silence, is what bounds the trail.
+    expect(await db.auditEvent.count({ where: { action: { in: ['auth.totp.reenrol.begin', 'auth.totp.reenrol.resume'] }, entityType: 'session', entityId: sessionId } })).toBe(5);
     // The secret handed out is never in the audit trail either.
     const text = JSON.stringify((await db.auditEvent.findMany()).map((e) => [e.before, e.after]));
     for (const secret of secrets) expect(text).not.toContain(secret);
