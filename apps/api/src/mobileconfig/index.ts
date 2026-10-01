@@ -41,7 +41,8 @@ const GENERATE = 'mobileconfig.generate';
  * The account's credential events a link must postdate (PST-T-16.27): written by src/auth (a
  * password change, "sign out everywhere"), read here. A link made before either is dead.
  */
-const CREDENTIAL_EVENTS = ['auth.password.change', 'auth.session.revoke-others'];
+// A new authenticator or a fresh recovery-code set is a credential change too (PST-T-16.26).
+const CREDENTIAL_EVENTS = ['auth.password.change', 'auth.session.revoke-others', 'auth.totp.enrol', 'auth.recovery-codes.regenerate'];
 /**
  * The row the protocol login check writes when an app password is used (entity `app_password`, id
  * the password's, `after.scope` the protocol it verified for). The newest one names the protocol.
