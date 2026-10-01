@@ -10,6 +10,11 @@ import { z } from 'zod';
 import { isLoopback, type OidcProvider, type OidcSettings } from './oidc.js';
 
 export const D3AUTH_SETTING_KEY = 'auth:d3auth';
+/**
+ * The advisory lock a save holds exclusively; a D3 Auth sign-in holds it shared while it issues its
+ * session, so a session is never issued under settings a concurrent turn-off or retarget has replaced.
+ */
+export const D3AUTH_SAVE_LOCK = 'postroom-setting:auth:d3auth';
 const SECRET_AAD = 'setting:auth:d3auth';
 
 export const KEK_NOT_LOADED = 'The server key is not loaded; the saved settings cannot be read';

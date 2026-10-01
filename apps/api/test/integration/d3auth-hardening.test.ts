@@ -202,6 +202,26 @@ describe.skipIf(!baseUrl)('D3 Auth settings hardening (PST-T-17.6)', () => {
     expect(await db.identityLink.count({ where: { subject: 'erin-a' } })).toBe(0);
   });
 
+  it('a turn-off that commits during the code exchange still stops the session being issued', async () => {
+    // The row is written behind the in-process provider's back: the callback's first check (against
+    // the live provider) passes and the code is exchanged, so only the issue-time check can refuse.
+    const begun = await beginOidc(app, issuerB, { sub: 'late-b', roles: [] });
+    const before = await db.setting.findUniqueOrThrow({ where: { key: 'auth:d3auth' } });
+    await db.setting.update({ where: { key: 'auth:d3auth' }, data: { value: { enabled: false, updatedAt: new Date().toISOString() } } });
+    try {
+      const tokensB = issuerB.stats.token;
+      const { location, jar } = await finishOidc(app, begun.callback, begun.jar);
+      expect(issuerB.stats.token).toBe(tokensB + 1);
+      expect(new URL(location, 'http://x').searchParams.get('signin_error')).toBe(CHANGED);
+      expect(jar['postroom_session']).toBeUndefined();
+      expect(await db.identityLink.count({ where: { subject: 'late-b' } })).toBe(0);
+      const audit = await db.auditEvent.findFirstOrThrow({ where: { action: 'auth.oidc.rejected' }, orderBy: { at: 'desc' } });
+      expect(audit.after).toMatchObject({ reason: 'settings_changed', stage: 'issue' });
+    } finally {
+      await db.setting.update({ where: { key: 'auth:d3auth' }, data: { value: before.value as object } });
+    }
+  });
+
   it('turning off ends D3 Auth sessions, the caller’s own included — it is told, and its cookie cleared', async () => {
     const fresh = await signIn(app, 'operator', PASSWORD, operator.totpSecret);
     expect((await oidcSignIn(app, issuerB, { sub: 'op-b', roles: [] }, { ...fresh }, '/api/auth/oidc/start?link=1')).location).toBe('/');

@@ -10,6 +10,7 @@ import type { ApiDeps } from '../deps.js';
 import {
   auditView,
   buildD3AuthView,
+  D3AUTH_SAVE_LOCK,
   D3AUTH_SETTING_KEY,
   D3AuthSaveBody,
   D3AuthTestBody,
@@ -56,7 +57,7 @@ const asStored = (stored: StoredD3Auth | null | 'invalid'): StoredD3Auth | null 
 export const TESTS_PER_WINDOW = 10;
 export const TEST_WINDOW_MS = 60_000;
 /** Every save takes this transaction-scoped lock, so two saves never interleave in the database. */
-const SAVE_LOCK = 'postroom-setting:auth:d3auth';
+const SAVE_LOCK = D3AUTH_SAVE_LOCK;
 
 /**
  * Why D3 Auth sessions end with a save: turned off, or a different issuer or client ID than the

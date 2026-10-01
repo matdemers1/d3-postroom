@@ -51,6 +51,7 @@ import {
 } from './recovery.js';
 import { completeSetup, isSetupRequired, SetupConflict } from './setup.js';
 import { checkSetupGate } from './setup-gate.js';
+import { D3AUTH_SAVE_LOCK, readStored } from './d3auth-settings.js';
 import { burnStep, generateTotpSecret, matchStep, openTotpSecret, provisioningUri, sealTotpSecret } from './totp.js';
 
 const Login = z.string().trim().min(1).max(320);
@@ -1202,6 +1203,12 @@ export function authRoutes(deps: ApiDeps): Router {
       const name = typeof identity.claims['name'] === 'string' ? identity.claims['name'] : undefined;
       try {
         const session = await db.$transaction(async (dbtx) => {
+          // A turn-off or retarget may have committed while the code was being exchanged: under the
+          // save lock (shared), the stored settings must still be the ones this sign-in started under,
+          // or the session would outlive the revoke that save just made (PST-T-17.6).
+          await dbtx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtextextended(${D3AUTH_SAVE_LOCK}, 0))`;
+          const stored = await readStored(dbtx);
+          if (stored !== null && stored !== 'invalid' && (!stored.enabled || stored.issuer !== tx.iss || stored.clientId !== tx.cid)) return 'settings_changed' as const;
           const resolved = await resolveIdentity(
             dbtx,
             {
@@ -1240,6 +1247,18 @@ export function authRoutes(deps: ApiDeps): Router {
           });
           return issued;
         });
+        if (session === 'settings_changed') {
+          await recordAudit(db, {
+            actor: anonymous,
+            action: 'auth.oidc.rejected',
+            entityType: 'session',
+            entityId: null,
+            after: { reason: 'settings_changed', stage: 'issue', startedWith: { issuer: tx.iss, clientId: tx.cid } },
+            context: getAuditContext(req),
+          });
+          res.redirect(302, signinError('Sign-in settings changed while you were signing in. Try again.'));
+          return;
+        }
         if (session === null) {
           res.redirect(302, signinError('This account is disabled.'));
           return;
