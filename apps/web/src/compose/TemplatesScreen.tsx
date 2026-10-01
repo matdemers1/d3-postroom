@@ -94,7 +94,7 @@ export function TemplatesScreen() {
     <Page width="narrow">
       <PageHeader
         title="Compose templates"
-        description="Type ; in the composer to insert one. {{name}}, {{first_name}} and {{date}} are filled in when it's inserted."
+        description="Saved replies you can drop into any message."
         {...(rows === null ? {} : { count: rows.length, countNoun: { one: 'template', other: 'templates' } })}
       />
       {notice === null ? null : (
@@ -106,7 +106,12 @@ export function TemplatesScreen() {
       <Section title={form.id === null ? 'New template' : `Editing ;${form.shortcut}`}>
         <form onSubmit={save}>
           <Stack gap="16">
-            <FormField label="Shortcut" width="sm" help="What ; matches on, e.g. sig (without the ;).">
+            <FormField label="Shortcut" width="sm" help={
+                <>
+                  Type <code>;sig</code> in a message to insert the template whose shortcut is sig.
+                </>
+              }
+            >
               <Input
                 appearance="filled"
                 maxLength={64}
