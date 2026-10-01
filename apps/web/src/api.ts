@@ -8,6 +8,8 @@ export interface AuthState {
   signedIn: boolean;
   account?: { id: string; displayName: string; isAdmin: boolean; totpEnabled: boolean; address: string | null };
   method?: 'password' | 'oidc';
+  /** PST-T-16.26: signed in with a recovery code; a new authenticator comes first. */
+  reenrolRequired?: boolean;
 }
 
 export class ApiError extends Error {
@@ -1084,6 +1086,8 @@ export function describeError(error: unknown): string {
       return 'This account signs in with D3 Auth and has no password here to change.';
     case 'step_up_required':
       return 'That needs a fresh authentication code.';
+    case 'totp_reenrol_required':
+      return 'You signed in with a recovery code. Set up a new authenticator first.';
     default:
       return 'Something went wrong on the server. Try again, and if it keeps happening, check Health.';
   }

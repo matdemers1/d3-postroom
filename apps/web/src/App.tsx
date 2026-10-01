@@ -31,6 +31,7 @@ import { SetupWizard } from './screens/SetupWizard';
 import { PaneBoundary } from './screens/PaneBoundary';
 import { Shell } from './screens/Shell';
 import { SignIn } from './screens/SignIn';
+import { ReEnrol } from './screens/reenrol/ReEnrol';
 
 export const THEME_KEY = 'postroom-theme';
 
@@ -123,6 +124,9 @@ function Gate() {
 
   const target = redirectFor(state, location.pathname, location.search);
   if (target !== null && target !== location.pathname) return <Navigate to={target} replace />;
+  // PST-T-16.26 (PST-REQ-200): signed in with a recovery code, the account replaces its lost
+  // authenticator before anything else — on every load, so a reload cannot skip it.
+  if (state.signedIn && state.reenrolRequired === true) return <ReEnrol onDone={refresh} />;
 
   return (
     <Routes>
