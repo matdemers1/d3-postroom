@@ -77,29 +77,29 @@ test.beforeEach(async ({ context }) => {
 test('Google and Microsoft fixtures render on Deliverability, axe clean in both themes', async ({ page }) => {
   await page.goto('/admin/deliverability');
   await expect(page.getByRole('heading', { name: 'Deliverability', level: 1 })).toBeVisible();
-  await page.getByRole('combobox', { name: 'Range' }).click();
-  await page.getByRole('option', { name: 'All time' }).click();
+  // PST-T-17.1: Range is a segmented control in the page header.
+  await page.getByRole('radio', { name: 'All time' }).click();
 
   await expect(page.getByRole('img', { name: 'DMARC pass and fail by day' })).toBeVisible();
   // Both fixtures' days carry bars: Google's on 24 September, Microsoft's on 25 September.
   await expect(page.locator('[data-day="2026-09-24"] rect')).toHaveCount(2);
   await expect(page.locator('[data-day="2026-09-25"] rect')).toHaveCount(2);
 
-  const sources = page.getByRole('table', { name: 'DMARC results by sending source' });
-  const shared = sources.getByRole('row').filter({ hasText: '203.0.113.25' });
+  const sources = page.getByRole('table', { name: 'DMARC results by sending source' }).or(page.getByRole('list', { name: 'DMARC results by sending source' }));
+  const shared = sources.getByRole('row').or(sources.getByRole('listitem')).filter({ hasText: '203.0.113.25' });
   await expect(shared).toContainText('Enterprise Outlook, google.com');
   await expect(shared).toContainText('59');
   await expect(shared).toContainText('100%');
-  await expect(sources.getByRole('row').filter({ hasText: '198.51.100.77' })).toContainText('0%');
-  await expect(sources.getByRole('row').filter({ hasText: '2001:db8::25' })).toBeVisible();
+  await expect(sources.getByRole('row').or(sources.getByRole('listitem')).filter({ hasText: '198.51.100.77' })).toContainText('0%');
+  await expect(sources.getByRole('row').or(sources.getByRole('listitem')).filter({ hasText: '2001:db8::25' })).toBeVisible();
 
-  const reporters = page.getByRole('table', { name: 'DMARC results by reporting organization' });
-  await expect(reporters.getByRole('row').filter({ hasText: 'google.com' })).toContainText('50');
-  await expect(reporters.getByRole('row').filter({ hasText: 'Enterprise Outlook' })).toContainText('19');
+  const reporters = page.getByRole('table', { name: 'DMARC results by reporting organization' }).or(page.getByRole('list', { name: 'DMARC results by reporting organization' }));
+  await expect(reporters.getByRole('row').or(reporters.getByRole('listitem')).filter({ hasText: 'google.com' })).toContainText('50');
+  await expect(reporters.getByRole('row').or(reporters.getByRole('listitem')).filter({ hasText: 'Enterprise Outlook' })).toContainText('19');
 
-  const tls = page.getByRole('table', { name: 'TLS sessions by policy' });
-  await expect(tls.getByRole('row').filter({ has: page.getByRole('cell', { name: 'sts', exact: true }) })).toContainText('58');
-  await expect(page.getByRole('table', { name: 'TLS failures by type' })).toContainText('certificate-expired');
+  const tls = page.getByRole('table', { name: 'TLS sessions by policy' }).or(page.getByRole('list', { name: 'TLS sessions by policy' }));
+  await expect(tls.getByRole('row').or(tls.getByRole('listitem')).filter({ has: page.getByRole('cell', { name: 'sts', exact: true }) })).toContainText('58');
+  await expect(page.getByRole('table', { name: 'TLS failures by type' }).or(page.getByRole('list', { name: 'TLS failures by type' }))).toContainText('certificate-expired');
 
   const light = await new AxeBuilder({ page }).include('main').analyze();
   expect(light.violations).toEqual([]);
@@ -107,8 +107,8 @@ test('Google and Microsoft fixtures render on Deliverability, axe clean in both 
     localStorage.setItem('postroom-theme', 'dark');
   });
   await page.reload();
-  await page.getByRole('combobox', { name: 'Range' }).click();
-  await page.getByRole('option', { name: 'All time' }).click();
+  // PST-T-17.1: Range is a segmented control in the page header.
+  await page.getByRole('radio', { name: 'All time' }).click();
   await expect(page.getByRole('img', { name: 'DMARC pass and fail by day' })).toBeVisible();
   const dark = await new AxeBuilder({ page }).include('main').analyze();
   expect(dark.violations).toEqual([]);

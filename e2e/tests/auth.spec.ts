@@ -126,7 +126,7 @@ test('first run: setup enrols TOTP from a QR, recovers from an expired enrolment
 
   // The operator is admin, so the next thing is the setup wizard — not an empty Inbox.
   await expect(page).toHaveURL(/\/admin\/setup$/);
-  await expect(page.getByRole('heading', { name: 'Set up mail', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Setup', level: 1 })).toBeVisible();
   expect(cspViolations).toEqual([]);
 });
 

@@ -258,7 +258,7 @@ test('a fresh install walks the wizard to a delivered test message with its time
   await page.locator('button.d3-acct').click();
   await page.getByRole('menuitem', { name: /^Admin console \(\d+ setup steps? left\)/ }).click();
   await page.getByRole('navigation', { name: 'Admin console' }).getByRole('link', { name: /^Setup/ }).click();
-  await expect(page.getByRole('heading', { name: 'Set up mail', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Setup', level: 1 })).toBeVisible();
 
   // 1. Domain.
   await page.getByRole('button', { name: '1. Domain' }).click();
@@ -283,9 +283,11 @@ test('a fresh install walks the wizard to a delivered test message with its time
 
   // 3. DNS: expected vs live, with copy buttons; the resolver is named.
   await expect(page.getByText('Answers come from Postroom’s own resolver')).toBeVisible();
-  const spfRow = page.getByRole('row').filter({ hasText: /SPF\s*TXT/ });
+  // PST-T-17.14: the wizard's DNS step is a card list at every width.
+  const spfRow = page.getByRole('listitem').filter({ hasText: /SPF\s*TXT/ });
   await expect(spfRow).toBeVisible({ timeout: 30_000 });
-  await expect(spfRow.getByRole('button', { name: /^Copy expected SPF value/ }).or(spfRow.getByText('not provisioned')).first()).toBeVisible();
+  // A passing record collapses to one line with no copy field.
+  await expect(spfRow.getByRole('button', { name: /^Copy expected SPF value/ }).or(spfRow.getByText('not provisioned')).or(spfRow.getByText('Pass')).first()).toBeVisible();
   if (FAKE_MX) {
     // PST-REQ-099's acceptance: a deliberately wrong SPF shows fail, with the reason.
     await expect(spfRow).toContainText('Fail');
@@ -296,8 +298,8 @@ test('a fresh install walks the wizard to a delivered test message with its time
     publishZone(domain, keys, EDGE);
     await page.getByRole('button', { name: 'Re-check' }).click();
     await expect(spfRow).toContainText('Pass');
-    await expect(page.getByRole('row').filter({ hasText: /DKIM\s*TXT/ }).first()).toContainText('Pass');
-    await expect(page.getByRole('row').filter({ hasText: /MX\s*MX/ })).toContainText('Pending');
+    await expect(page.getByRole('listitem').filter({ hasText: /DKIM\s*TXT/ }).first()).toContainText('Pass');
+    await expect(page.getByRole('listitem').filter({ hasText: /MX\s*MX/ })).toContainText('Pending');
   }
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await thenMaybeStepUp(page, page.getByRole('heading', { name: 'Mailbox', level: 2 }));
@@ -358,7 +360,7 @@ test('the wizard and the DNS checker are axe-clean in light and dark, and fit 39
     expect(await fitsWidth(page)).toBe(true);
 
     await page.goto('/admin/setup');
-    await expect(page.getByRole('heading', { name: 'Set up mail', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Setup', level: 1 })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Setup steps' })).toBeVisible();
     await axe(page, `${theme} /admin/setup`);
     expect(await fitsWidth(page)).toBe(true);

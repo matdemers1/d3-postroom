@@ -552,7 +552,7 @@ test.describe('signed in', () => {
     const seededSuppression = await api.post('/api/admin/suppressions/dev-seed-bounce', { headers: CSRF, data: { address: `gone-${t}@mobile.test` } });
     if (seededSuppression.status() === 404) throw new Error('the stack has no dev-seed-bounce route: start the api with POSTROOM_E2E_SEED=1');
     await page.goto('/admin/suppressions');
-    await expect(page.getByRole('heading', { name: 'Suppression list', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Suppressions', level: 1 })).toBeVisible();
     await expect(page.getByText(`gone-${t}@mobile.test`)).toBeVisible();
     await assertMobileFriendly(page, '/admin/suppressions');
 

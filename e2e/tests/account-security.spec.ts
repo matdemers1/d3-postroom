@@ -373,7 +373,7 @@ test('App passwords, Addresses and Templates list first and open their create fo
   // Addresses (masked aliases).
   await page.goto('/settings/addresses');
   await expect(page.getByRole('heading', { name: 'Addresses', level: 1 })).toBeVisible();
-  await firstSection(/^Your masked aliases/);
+  await firstSection(/^Masked aliases/);
   await expect(page.getByRole('textbox', { name: 'Site' })).toHaveCount(0);
   await page.getByRole('button', { name: 'New alias' }).click();
   await expect(page.getByRole('textbox', { name: 'Site' })).toBeVisible();
@@ -389,7 +389,7 @@ test('App passwords, Addresses and Templates list first and open their create fo
   // Templates.
   await page.goto('/settings/templates');
   await expect(page.getByRole('heading', { name: 'Templates', level: 1 })).toBeVisible();
-  await firstSection(/^Your templates/);
+  await firstSection(/^Saved replies/);
   await expect(page.getByRole('textbox', { name: 'Shortcut' })).toHaveCount(0);
   await page.getByRole('button', { name: 'New template' }).click();
   await expect(page.getByRole('textbox', { name: 'Shortcut' })).toBeVisible();

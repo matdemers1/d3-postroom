@@ -52,7 +52,7 @@ test('renders the queue with a seeded deferred recipient, axe clean', async ({ p
 
   await page.goto('/admin/queue');
   await expect(page.getByRole('heading', { name: 'Outbound queue', level: 1 })).toBeVisible();
-  await page.getByRole('textbox', { name: 'Domain' }).first().fill(domain);
+  await page.getByRole('searchbox', { name: 'Domain' }).first().fill(domain);
   await expect(rowOf(page, `first@${domain}`)).toBeVisible();
 
   const results = await new AxeBuilder({ page }).include('main').analyze();
@@ -64,7 +64,7 @@ test('Force SES, through the confirm-and-step-up modal, re-routes a deferred mes
   const { recipientId } = await seedDeferred(domain);
 
   await page.goto('/admin/queue');
-  await page.getByRole('textbox', { name: 'Domain' }).first().fill(domain);
+  await page.getByRole('searchbox', { name: 'Domain' }).first().fill(domain);
   const row = rowOf(page, `first@${domain}`);
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: /^Actions for / }).click();
@@ -125,7 +125,7 @@ test('?state= and ?message= filter the list from the URL, and reload keeps them'
 
   // ?state=: the seeded rows are deferred, so "pending" hides them and "deferred" shows them.
   await page.goto(`/admin/queue?domain=${domain}&state=pending`);
-  await expect(page.getByRole('combobox', { name: 'State' })).toContainText('Pending');
+  await expect(page.getByRole('radiogroup', { name: 'State' }).getByRole('radio', { name: /^Pending/ })).toHaveAttribute('aria-checked', 'true');
   await expect(rowOf(page, `first@${domain}`)).toHaveCount(0);
   await page.goto(`/admin/queue?domain=${domain}&state=deferred`);
   await expect(rowOf(page, `first@${domain}`)).toHaveCount(2);
@@ -142,7 +142,7 @@ test('?state= and ?message= filter the list from the URL, and reload keeps them'
   await expect(rowOf(page, `first@${domain}`)).toHaveCount(2);
 
   // Typing a domain writes it to the URL.
-  await page.getByRole('textbox', { name: 'Domain' }).first().fill(domain);
+  await page.getByRole('searchbox', { name: 'Domain' }).first().fill(domain);
   await expect(page).toHaveURL(new RegExp(`domain=${domain.replace(/\./g, '\\.')}`));
 });
 
