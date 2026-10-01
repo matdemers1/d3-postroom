@@ -16,7 +16,9 @@ import {
   saveSegment,
   SEGMENT_STORAGE_KEY,
   suggestedMove,
+  MOVED_BY_HAND_SENTENCE,
   whyControlShows,
+  whyPlacement,
   whySentence,
 } from '../../src/mail/sorting/sorting';
 
@@ -43,6 +45,19 @@ describe('where the bucket chip shows', () => {
     expect(whyControlShows('receipts', { kind: 'search' })).toBe(false);
     expect(whyControlShows('receipts', { kind: 'thread', openBucket: 'priority' })).toBe(false);
     expect(whyControlShows(null, { kind: 'mailbox', bucket: 'receipts' })).toBe(false);
+  });
+
+  it('says plainly when the message was moved here by hand, and corrects from where it is now', () => {
+    // A manual move leaves the stored verdict alone: a message dragged from the Inbox into Receipts is still 'people'.
+    expect(whyPlacement('people', { kind: 'mailbox', bucket: 'receipts' })).toEqual({ bucket: 'receipts', byHand: true });
+    expect(whyPlacement('receipts', { kind: 'mailbox', bucket: 'receipts' })).toEqual({ bucket: 'receipts', byHand: false });
+    expect(whyPlacement('newsletters', { kind: 'mailbox', bucket: 'junk' })).toEqual({ bucket: 'junk', byHand: true });
+    expect(MOVED_BY_HAND_SENTENCE).toBe('You moved this here.');
+    // Where the control does not show there is no placement at all.
+    expect(whyPlacement('receipts', { kind: 'search' })).toBeNull();
+    expect(whyPlacement('receipts', { kind: 'inbox', segment: 'all' })).toBeNull();
+    expect(whyPlacement('receipts', { kind: 'mailbox', bucket: null })).toBeNull();
+    expect(whyPlacement(null, { kind: 'mailbox', bucket: 'receipts' })).toBeNull();
   });
 
   it('never for an unsorted message', () => {

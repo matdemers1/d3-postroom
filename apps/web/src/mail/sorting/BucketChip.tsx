@@ -10,7 +10,7 @@
 import { useRef, useState } from 'react';
 import type { MessageSummary } from '../../api';
 import { useSorting } from './SortingContext';
-import { BUCKET_LABEL, chipShows, isFilingBucket, whyControlShows } from './sorting';
+import { BUCKET_LABEL, chipShows, isFilingBucket, whyPlacement, type ChipContext, type FilingBucket } from './sorting';
 import { WhyPopover } from './WhyPopover';
 
 export function HeaderBucketChip({ message }: { message: MessageSummary }) {
@@ -57,13 +57,27 @@ export function HeaderBucketChip({ message }: { message: MessageSummary }) {
   );
 }
 
-/** The open message's quiet "Why it's here" control, in a bucket folder or Junk (where there is no chip). */
-export function HeaderWhyControl({ message }: { message: MessageSummary }) {
+/**
+ * The quiet "Why it's here" control, in a bucket folder or Junk (where there is no chip). In the reading
+ * pane it is the open message's; in the Newsletters feed there is no open message, so a feed item
+ * passes the folder it is rendered in as `list` and hears about a correction through `onCorrected`.
+ */
+export function HeaderWhyControl({
+  message,
+  list,
+  onCorrected,
+}: {
+  message: MessageSummary;
+  list?: ChipContext;
+  onCorrected?: (bucket: FilingBucket) => void;
+}) {
   const sorting = useSorting();
   const button = useRef<HTMLButtonElement>(null);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
-  if (sorting === null || message.id !== sorting.openId || !isFilingBucket(message.bucket)) return null;
-  if (!whyControlShows(message.bucket, sorting.list)) return null;
+  if (sorting === null) return null;
+  if (list === undefined && message.id !== sorting.openId) return null;
+  const placement = whyPlacement(message.bucket, list ?? sorting.list);
+  if (placement === null) return null;
   return (
     <>
       <button
@@ -83,6 +97,7 @@ export function HeaderWhyControl({ message }: { message: MessageSummary }) {
       {anchor === null ? null : (
         <WhyPopover
           message={message}
+          placement={placement}
           anchor={anchor}
           returnFocus={button.current}
           opener={button.current}
@@ -91,6 +106,7 @@ export function HeaderWhyControl({ message }: { message: MessageSummary }) {
           }}
           onCorrect={(bucket, scope) => {
             sorting.correct(message, bucket, scope, 'chip');
+            onCorrected?.(bucket);
           }}
         />
       )}
