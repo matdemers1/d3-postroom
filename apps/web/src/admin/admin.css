@@ -165,3 +165,9 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+
+/* PST-T-16.5: a failing Health row's next step, on its own line under the detail. */
+.pr-health-action {
+  display: block;
+  margin-top: var(--space-4);
+}

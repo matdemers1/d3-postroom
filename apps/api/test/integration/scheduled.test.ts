@@ -176,7 +176,10 @@ describe.skipIf(!baseUrl)('held sends and snooze over HTTP (PST-T-9.1)', () => {
     expect(pending.remindAfterSeconds).toBe(3_600);
     // Dated when it goes, not when it was written.
     const row = await db.pendingSend.findUniqueOrThrow({ where: { id: pending.id } });
-    expect((await blobs.getBuffer(row.heldBlobSha256)).toString('latin1')).toContain(`Date: ${at.toUTCString().replace('GMT', '+0000')}`);
+    // RFC 5322 writes the day as 1*2DIGIT and the server writes it unpadded ("Thu, 1 Oct"), where
+    // toUTCString pads it ("Thu, 01 Oct") — so this only failed on the 1st to the 9th of a month.
+    const dated = `Date: ${at.toUTCString().replace('GMT', '+0000').replace(/, 0(\d) /, ', $1 ')}`;
+    expect((await blobs.getBuffer(row.heldBlobSha256)).toString('latin1')).toContain(dated);
 
     const later = new Date(at.getTime() + 86_400_000);
     const moved = await request(app).patch(`/api/compose/pending/${pending.id}`).set(CSRF).set('cookie', me.cookie).send({ sendAt: later.toISOString() });

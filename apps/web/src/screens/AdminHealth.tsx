@@ -146,11 +146,12 @@ function Services({ tiles, now }: { tiles: HealthTile[]; now: Date }) {
       cell: (t) => {
         const action = tileAction(t);
         return (
-          <span className="pr-muted pr-wrap">
-            {humanizeDetail(t.detail)}
+          <>
+            <span className="pr-muted pr-wrap">{humanizeDetail(t.detail)}</span>
+            {/* The next step sits on its own line: a link inline in muted text differs from it by
+                colour alone (1.61:1), which axe's link-in-text-block refuses (PST-REQ-154). */}
             {action === null ? null : (
-              <>
-                {' '}
+              <span className="pr-health-action">
                 {action.external ? (
                   <Link href={action.href} external target="_blank" rel="noopener noreferrer">
                     {action.label}
@@ -160,9 +161,9 @@ function Services({ tiles, now }: { tiles: HealthTile[]; now: Date }) {
                     <RouterLink to={action.href}>{action.label}</RouterLink>
                   </Link>
                 )}
-              </>
+              </span>
             )}
-          </span>
+          </>
         );
       },
     },

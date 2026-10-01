@@ -22,7 +22,8 @@ const WRAP = { overflowWrap: 'anywhere' } as const;
 export function SessionDetails({ userAgent, ip }: { userAgent: string | null; ip: string | null }) {
   return (
     <details className="pr-session-details">
-      <summary>Details</summary>
+      {/* Named for its session, so ten rows are not ten identical "Details" (the visible word leads, WCAG 2.5.3). */}
+      <summary aria-label={`Details for ${describeAgent(userAgent)}`}>Details</summary>
       <DescriptionList>
         <DescriptionItem term="User agent">
           <span className="pr-mono" style={WRAP}>{userAgent === null || userAgent.trim() === '' ? 'Unknown' : userAgent}</span>

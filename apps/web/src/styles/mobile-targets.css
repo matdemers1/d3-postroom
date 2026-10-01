@@ -37,6 +37,13 @@
     inset: -10px;
   }
 
+  /* A session's native Details disclosure (PST-T-16.17): its summary line is the tap target. */
+  .pr-session-details > summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
   /* The icon-only buttons (28/34/40px square: "Open navigation", the shell's icon actions). */
   .d3-ibtn--sm,
   .d3-ibtn--md,

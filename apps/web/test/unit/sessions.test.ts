@@ -37,7 +37,8 @@ describe('session labels', () => {
 describe('SessionDetails', () => {
   it('discloses the full user agent and the IP, in mono', () => {
     const html = renderToStaticMarkup(createElement(SessionDetails, { userAgent: UA, ip: '203.0.113.7' }));
-    expect(html).toContain('<summary>Details</summary>');
+    // Named for its session, the visible word leading (WCAG 2.5.3).
+    expect(html).toContain('<summary aria-label="Details for Chrome on macOS">Details</summary>');
     expect(html).toContain(UA);
     expect(html).toContain('203.0.113.7');
     expect(html).toContain('pr-mono');
@@ -45,6 +46,7 @@ describe('SessionDetails', () => {
 
   it('says Unknown when the agent or the address was not recorded', () => {
     const html = renderToStaticMarkup(createElement(SessionDetails, { userAgent: null, ip: null }));
-    expect(html.match(/Unknown/g)).toHaveLength(2);
+    // The two recorded values (the summary's name may also say Unknown; that is not a value).
+    expect(html.match(/>Unknown</g)).toHaveLength(2);
   });
 });
