@@ -73,7 +73,7 @@ describe('liveStatus', () => {
   });
 
   it('takes a hue only when the stream needs attention, and that outranks a pause', () => {
-    expect(liveStatus('retrying', true)).toEqual({ word: 'Reconnecting', tone: 'attention' });
+    expect(liveStatus('retrying', true)).toEqual({ word: 'Reconnecting', tone: 'warning' });
     expect(liveStatus('closed', false)).toEqual({ word: 'Disconnected', tone: 'danger' });
     expect(liveStatus('connecting', false)).toEqual({ word: 'Connecting', tone: 'idle' });
   });

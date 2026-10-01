@@ -101,7 +101,7 @@ describe('delivery timeline', () => {
       'Delivered to someone@example.net',
     ]);
     expect(events[1]?.detail).toBe('no TLS · 451 4.7.1 greylisted');
-    expect(events[1]?.tone).toBe('attention');
+    expect(events[1]?.tone).toBe('warning');
     expect(events[2]?.detail).toBe('TLSv1.3 TLS_AES_256_GCM_SHA384 · 250 2.0.0 OK queued');
   });
 

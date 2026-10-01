@@ -152,7 +152,7 @@ describe('the status line (header)', () => {
 
   it('unavailable from the server file: needs you, with the last error and the source', () => {
     const html = renderToStaticMarkup(createElement(D3AuthStatusLine, { config: unavailable }));
-    expect(html).toContain('data-tone="attention"');
+    expect(html).toContain('data-tone="warning"');
     expect(html).toContain('Unavailable');
     expect(html).toContain('connect ECONNREFUSED');
     expect(html).toContain('from the server’s env file');

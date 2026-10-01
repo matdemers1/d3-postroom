@@ -89,7 +89,7 @@ const STATUS_TONE: Record<string, StatusDotTone> = {
   pending: 'neutral',
   running: 'neutral',
   done: 'neutral',
-  failed: 'attention',
+  failed: 'warning',
   dead: 'danger',
 };
 

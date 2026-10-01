@@ -2,7 +2,7 @@
 // is fine, colour only when it needs you). Pure, so the words and tones are tested without rendering.
 import type { ImportFolderStatus, ImportStatus } from '../../api';
 
-export type Tone = 'neutral' | 'attention' | 'danger' | 'idle';
+export type Tone = 'neutral' | 'warning' | 'danger' | 'idle';
 
 export const ACTIVE_STATUSES: ReadonlySet<ImportStatus['status']> = new Set(['pending', 'running']);
 
@@ -21,7 +21,7 @@ export function isActive(imp: Pick<ImportStatus, 'status'> | null | undefined): 
 /** The import's state. An active import that hit an error is resuming: that wants your attention. */
 export function importState(imp: Pick<ImportStatus, 'status' | 'error'>): { tone: Tone; label: string } {
   if (imp.status === 'failed') return { tone: 'danger', label: STATUS_LABEL.failed };
-  if (ACTIVE_STATUSES.has(imp.status) && imp.error !== null) return { tone: 'attention', label: 'Interrupted, resuming' };
+  if (ACTIVE_STATUSES.has(imp.status) && imp.error !== null) return { tone: 'warning', label: 'Interrupted, resuming' };
   if (imp.status === 'cancelled') return { tone: 'idle', label: STATUS_LABEL.cancelled };
   return { tone: 'neutral', label: STATUS_LABEL[imp.status] };
 }

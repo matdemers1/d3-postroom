@@ -18,11 +18,11 @@ export function keyStatus(key: Pick<CryptoKeyJson, 'revokedAt' | 'expiresAt'>, n
 
 /**
  * A key's status as a dot and a word (PST-T-17.10): Active is the healthy state, so neutral (D-016);
- * Expired asks you to make or fetch a new one, so attention; Revoked was a deliberate end, so idle.
+ * Expired asks you to make or fetch a new one, so warning; Revoked was a deliberate end, so idle.
  */
-export function keyStatusDot(status: KeyStatus): { label: string; tone: 'neutral' | 'attention' | 'idle' } {
+export function keyStatusDot(status: KeyStatus): { label: string; tone: 'neutral' | 'warning' | 'idle' } {
   if (status === 'revoked') return { label: 'Revoked', tone: 'idle' };
-  if (status === 'expired') return { label: 'Expired', tone: 'attention' };
+  if (status === 'expired') return { label: 'Expired', tone: 'warning' };
   return { label: 'Active', tone: 'neutral' };
 }
 

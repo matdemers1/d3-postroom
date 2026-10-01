@@ -73,13 +73,13 @@ export type LiveConnection = 'connecting' | 'open' | 'retrying' | 'closed';
 
 export interface LiveStatus {
   word: string;
-  tone: 'neutral' | 'attention' | 'danger' | 'idle';
+  tone: 'neutral' | 'warning' | 'danger' | 'idle';
 }
 
 export function liveStatus(connection: LiveConnection, paused: boolean): LiveStatus {
   // A dropped or refused stream outranks the pause: the operator needs to know the feed is gone.
   if (connection === 'closed') return { word: 'Disconnected', tone: 'danger' };
-  if (connection === 'retrying') return { word: 'Reconnecting', tone: 'attention' };
+  if (connection === 'retrying') return { word: 'Reconnecting', tone: 'warning' };
   if (connection === 'connecting') return { word: 'Connecting', tone: 'idle' };
   if (paused) return { word: 'Paused', tone: 'idle' };
   return { word: 'Connected', tone: 'neutral' };

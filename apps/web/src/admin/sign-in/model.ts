@@ -2,7 +2,7 @@
 // and the account row, held in plain TypeScript so they are unit-tested without a browser.
 import { ApiError, type D3AuthConfig, type D3AuthSource, type LinkedIdentity } from '../../api';
 
-export type DotTone = 'neutral' | 'attention' | 'danger' | 'idle';
+export type DotTone = 'neutral' | 'warning' | 'danger' | 'idle';
 
 export interface StatusLine {
   tone: DotTone;
@@ -27,7 +27,7 @@ export function statusLine(config: D3AuthConfig): StatusLine {
     case 'available':
       return { tone: 'neutral', label: 'Available', detail: null, source };
     case 'unavailable':
-      return { tone: 'attention', label: 'Unavailable', detail: config.lastError, source };
+      return { tone: 'warning', label: 'Unavailable', detail: config.lastError, source };
     default:
       return { tone: 'idle', label: 'Not configured', detail: null, source: null };
   }

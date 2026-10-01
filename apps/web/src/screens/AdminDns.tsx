@@ -168,7 +168,7 @@ export function DnsName({ name }: { name: string }) {
 }
 
 /** D-016: a passing record is neutral, a pending one idle; only a wrong or absent one takes a hue. */
-const STATUS_TONE: Record<DnsStatus, StatusDotTone> = { pass: 'neutral', pending: 'idle', unknown: 'attention', fail: 'danger', missing: 'danger' };
+const STATUS_TONE: Record<DnsStatus, StatusDotTone> = { pass: 'neutral', pending: 'idle', unknown: 'warning', fail: 'danger', missing: 'danger' };
 
 function DnsStatusDot({ status }: { status: DnsStatus }) {
   return (

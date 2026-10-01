@@ -68,7 +68,7 @@ describe('the Import page (PST-T-17.11)', () => {
   it('says where an import stands as a dot and a word, coloured only when it needs you', () => {
     expect(importState(imp('pending'))).toEqual({ tone: 'neutral', label: 'Waiting to start' });
     expect(importState(imp('running'))).toEqual({ tone: 'neutral', label: 'Importing' });
-    expect(importState(imp('running', 'connection reset'))).toEqual({ tone: 'attention', label: 'Interrupted, resuming' });
+    expect(importState(imp('running', 'connection reset'))).toEqual({ tone: 'warning', label: 'Interrupted, resuming' });
     expect(importState(imp('done'))).toEqual({ tone: 'neutral', label: 'Finished' });
     expect(importState(imp('failed', 'bad password'))).toEqual({ tone: 'danger', label: 'Failed' });
     expect(importState(imp('cancelled'))).toEqual({ tone: 'idle', label: 'Canceled' });

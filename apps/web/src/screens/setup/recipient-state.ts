@@ -2,14 +2,14 @@
 // other admin status. Neutral while it moves and once it is delivered; colour only when it needs you.
 import type { RecipientState } from '../../api';
 
-export function recipientTone(state: RecipientState): 'neutral' | 'attention' | 'danger' {
+export function recipientTone(state: RecipientState): 'neutral' | 'warning' | 'danger' {
   switch (state) {
     case 'queued':
     case 'attempting':
     case 'delivered':
       return 'neutral';
     case 'deferred':
-      return 'attention';
+      return 'warning';
     case 'bounced':
     case 'cancelled':
       return 'danger';

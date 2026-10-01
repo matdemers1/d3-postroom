@@ -282,7 +282,7 @@ export interface TimelineEvent {
   at: string;
   title: string;
   detail: string | null;
-  tone: 'neutral' | 'attention' | 'danger';
+  tone: 'neutral' | 'attention' | 'warning' | 'danger';
 }
 
 /** One recipient's delivery as a list of events, oldest first: queued, each attempt, the outcome. Pure. */
@@ -297,7 +297,7 @@ export function timelineOf(view: DeliveryView, recipient: DeliveryRecipient): Ti
       at: a.startedAt,
       title: `Attempt via ${a.transport}${where === '' ? '' : ` to ${where}`}: ${outcome}`,
       detail: [tls, reply].filter((x) => x !== null && x !== '').join(' · ') || null,
-      tone: a.outcome === 'delivered' ? 'neutral' : a.outcome === 'bounced' ? 'danger' : 'attention',
+      tone: a.outcome === 'delivered' ? 'neutral' : a.outcome === 'bounced' ? 'danger' : 'warning',
     });
   }
   if (recipient.state === 'delivered') {
@@ -305,7 +305,7 @@ export function timelineOf(view: DeliveryView, recipient: DeliveryRecipient): Ti
   } else if (recipient.state === 'bounced') {
     events.push({ at: recipient.nextAttemptAt, title: `Bounced: ${recipient.address}`, detail: recipient.lastText, tone: 'danger' });
   } else if (recipient.state === 'deferred') {
-    events.push({ at: recipient.nextAttemptAt, title: 'Deferred: next attempt scheduled', detail: recipient.lastText, tone: 'attention' });
+    events.push({ at: recipient.nextAttemptAt, title: 'Deferred: next attempt scheduled', detail: recipient.lastText, tone: 'warning' });
   } else if (recipient.state === 'queued' || recipient.state === 'attempting') {
     events.push({ at: recipient.nextAttemptAt, title: recipient.state === 'queued' ? 'Waiting for the delivery daemon' : 'Delivering now', detail: null, tone: 'neutral' });
   }
@@ -337,12 +337,12 @@ export interface DnsReport {
   rows: DnsCheckRow[];
 }
 
-export const DNS_STATUS: Record<DnsStatus, { label: string; tone: 'neutral' | 'attention' | 'danger' }> = {
+export const DNS_STATUS: Record<DnsStatus, { label: string; tone: 'neutral' | 'attention' | 'warning' | 'danger' }> = {
   pass: { label: 'Pass', tone: 'neutral' },
   fail: { label: 'Fail', tone: 'danger' },
   missing: { label: 'Missing', tone: 'danger' },
   pending: { label: 'Pending', tone: 'neutral' },
-  unknown: { label: 'Unknown', tone: 'attention' },
+  unknown: { label: 'Unknown', tone: 'warning' },
 };
 
 /** "9 pass · 1 fail · 4 pending", leaving out zero counts. Pure. */

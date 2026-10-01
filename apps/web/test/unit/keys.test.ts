@@ -114,9 +114,9 @@ describe('Keys screen helpers', () => {
 
 // PST-T-17.10 (PST-REQ-194): Encryption keys on the canvas.
 describe('Encryption keys rows', () => {
-  it('status is a dot and a word: Active neutral, Expired attention, Revoked idle — never danger', () => {
+  it('status is a dot and a word: Active neutral, Expired warning, Revoked idle — never danger', () => {
     expect(keyStatusDot('active')).toEqual({ label: 'Active', tone: 'neutral' });
-    expect(keyStatusDot('expired')).toEqual({ label: 'Expired', tone: 'attention' });
+    expect(keyStatusDot('expired')).toEqual({ label: 'Expired', tone: 'warning' });
     expect(keyStatusDot('revoked')).toEqual({ label: 'Revoked', tone: 'idle' });
   });
 

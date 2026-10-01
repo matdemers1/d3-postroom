@@ -223,7 +223,7 @@ describe('the test recipient', () => {
     expect(recipientTone('queued')).toBe('neutral');
     expect(recipientTone('attempting')).toBe('neutral');
     expect(recipientTone('delivered')).toBe('neutral');
-    expect(recipientTone('deferred')).toBe('attention');
+    expect(recipientTone('deferred')).toBe('warning');
     expect(recipientTone('bounced')).toBe('danger');
     expect(recipientTone('cancelled')).toBe('danger');
     expect(recipientWord('delivered')).toBe('Delivered');
