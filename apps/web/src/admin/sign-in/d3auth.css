@@ -1,0 +1,136 @@
+/* Admin › Sign in with D3 Auth (PST-T-17.7). A narrow Page of two Section cards; this file only adds
+ * what the library has no part for. D3 semantic tokens only: no hex, no shadows, hairlines between
+ * rows. Every long value (a URI, the manifest) wraps rather than widening a 390px screen. */
+
+/* The header's status: the dot, why it is down, and where the settings come from. */
+.pr-d3a__status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.pr-d3a__detail {
+  overflow-wrap: anywhere;
+}
+
+.pr-d3a__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.pr-d3a__mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  color: var(--color-fg);
+  overflow-wrap: anywhere;
+}
+
+/* Test connection, with what it found beside it (under it when there is no room). */
+.pr-d3a__test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+}
+
+.pr-d3a__test-out {
+  min-width: 0;
+  flex: 1 1 16rem;
+  font-size: var(--text-13);
+}
+
+.pr-d3a__test-out:empty {
+  display: none;
+}
+
+.pr-d3a__result {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  min-width: 0;
+}
+
+.pr-d3a__actions {
+  padding-top: var(--space-16);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+/* ---- Register Postroom in D3 Auth --------------------------------------------------------------- */
+
+.pr-d3a__steps {
+  margin: 0;
+  padding-left: var(--space-20);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  font-size: var(--text-14);
+  line-height: var(--leading-20);
+}
+
+/* Label / value / Copy, one row each, hairlines between. */
+.pr-d3a__uris {
+  margin: var(--space-16) 0 0;
+}
+
+.pr-d3a__uri {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  padding-block: var(--space-12);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.pr-d3a__uri dt {
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+  color: var(--color-fg-muted);
+}
+
+.pr-d3a__uri dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .pr-d3a__uri {
+    grid-template-columns: 12rem minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-16);
+  }
+}
+
+.pr-d3a__manifest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding-top: var(--space-12);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.pr-d3a__h3 {
+  margin: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-d3a__manifest {
+  margin: var(--space-8) 0 0;
+  padding: var(--space-12);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  line-height: var(--leading-20);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -5,7 +5,7 @@
 //
 // What is here is only what the API already has: the profile is read-only (there is no endpoint to
 // rename an account or change its address), two-factor shows its state (TOTP is enrolled at setup
-// and nothing in the webmail manages it), there is no "Sign in with D3 Auth" link/unlink API, and
+// and nothing in the webmail manages it), "Sign in with D3 Auth" is the link/unlink row (PST-T-17.7), and
 // Preferences holds the theme alone: there are no server-side preferences, and one spacing scale
 // for everyone (D-007).
 import '../settings/settings.css';
@@ -33,6 +33,7 @@ import {
 } from '@d3cloud/ui';
 import { api, describeError, type AuthState } from '../api';
 import { scorePassword } from '../settings/password-strength';
+import { AccountD3AuthRow } from '../admin/sign-in/AccountD3AuthRow';
 import { Loading, LoadFailed } from './states';
 
 /**
@@ -295,6 +296,8 @@ export function AccountScreen() {
               description="A code from your authenticator app at every sign-in, and before anything destructive."
               control={account.totpEnabled ? <StatusDot tone="neutral">On · Authenticator app</StatusDot> : <StatusDot tone="attention">Off</StatusDot>}
             />
+            {/* PST-T-17.7 (PST-REQ-202): link or unlink D3 Auth; absent while D3 Auth is not available. */}
+            <AccountD3AuthRow />
           </Section>
 
           <Section title="Preferences">

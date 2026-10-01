@@ -210,6 +210,17 @@ function SealIcon() {
   );
 }
 
+/** PST-T-17.7: Sign in with D3 Auth — a key inside a shield. */
+function ShieldKeyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z" />
+      <circle cx="12" cy="10" r="2" />
+      <path d="M12 12v4M12 14.5h1.5" />
+    </svg>
+  );
+}
+
 function BackIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -254,6 +265,7 @@ const NAV_ICONS: Readonly<Record<string, () => ReactNode>> = {
   'Live SMTP': TerminalIcon,
   Jobs: QueueIcon,
   'Sign-in sessions': SessionsIcon,
+  'Sign in with D3 Auth': ShieldKeyIcon,
   Suppressions: BlockIcon,
   Setup: SetupIcon,
 };
