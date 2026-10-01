@@ -746,7 +746,7 @@ export function InspectDrawer({ messageId }: { messageId: string }) {
       title="Inspect message"
       description="Everything Postroom knows about this message, and why it decided what it did."
       size="lg"
-      className="pr-inspect"
+      className="pr-inspect pr-inspect--message"
       footer={
         <ModalClose>
           <Button type="button">Close</Button>

@@ -91,7 +91,8 @@ const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
 /** PST-T-16.4: whether the open message's Inspect drawer is on screen. The drawer keeps its own open
  *  state (InspectDrawer.tsx), so the URL follows it by watching for its dialog. */
 function inspectDrawerOpen(): boolean {
-  return document.querySelector('.d3-modal.pr-inspect[data-state="open"]') !== null;
+  // Inspect only: the Delivery details sheet shares the pr-inspect look but is not ?panel=inspect.
+  return document.querySelector('.d3-modal.pr-inspect--message[data-state="open"]') !== null;
 }
 
 type Notice = { tone: 'info' | 'danger'; text: string; key: number };
