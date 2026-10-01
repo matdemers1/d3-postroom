@@ -1,28 +1,41 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Badge,
   Button,
-  Cluster,
+  Card,
+  DataList,
+  DataListRow,
   EmptyState,
+  FilterBar,
   FormField,
   Input,
   Modal,
   ModalClose,
   Page,
   PageHeader,
+  SearchField,
   Stack,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, type Suppression } from '../api';
+import { RelativeTime } from '../components/RelativeTime';
+import { PHONE_QUERY, useMediaQuery } from '../mail/useMedia';
 import { Loading, LoadFailed } from './states';
 import '../admin/admin.css';
+import '../admin/lists.css';
 
-const when = (iso: string): string => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+/** Why an address is listed, in plain words (critique 2.8 #3: plain text, never a pill). */
+export const whyOf = (s: Pick<Suppression, 'reason'>): string => (s.reason === 'manual' ? 'Added by an admin' : 'Hard bounce');
+
+/** "1 address", "12 addresses": the toolbar's count. */
+export const addressCount = (n: number): string => `${String(n)} ${n === 1 ? 'address' : 'addresses'}`;
+
+/** Show the "Bounced message" column only when some row has one (critique 2.8 #4): never a column of dashes. */
+export const hasBouncedMessage = (rows: readonly Pick<Suppression, 'source'>[]): boolean => rows.some((s) => s.source !== null);
 
 /** The remote reply that listed it, as the wire said it: `550 5.1.1 No such user`. */
-function replyOf(s: Suppression): string {
+export function replyOf(s: Suppression): string {
   if (s.reason === 'manual') return s.note ?? '—';
   return [s.code === null ? null : String(s.code), s.enhanced, s.text].filter((p): p is string => p !== null && p !== '').join(' ') || '—';
 }
@@ -49,6 +62,7 @@ export function AdminSuppressions() {
   const [formError, setFormError] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const phone = useMediaQuery(PHONE_QUERY);
 
   const load = useCallback(async (q: string) => {
     try {
@@ -114,60 +128,76 @@ export function AdminSuppressions() {
     }
   };
 
+  // One action, so one secondary button — never red in the row; the step-up modal says "remove" in red.
+  const removeButton = (s: Suppression) => (
+    <Button
+      size="sm"
+      variant="secondary"
+      aria-label={`Remove ${s.address}`}
+      onClick={() => {
+        open({ kind: 'remove', entry: s });
+      }}
+    >
+      Remove
+    </Button>
+  );
+
+  const reply = (s: Suppression) => (
+    <span className={s.reason === 'manual' ? 'pr-clip' : 'pr-mono pr-muted pr-clip'} title={replyOf(s)}>
+      {replyOf(s)}
+    </span>
+  );
+
   const columns: TableColumn<Suppression>[] = [
-    { key: 'address', header: 'Address', cell: (s) => <span className="pr-mono">{s.address}</span> },
-    {
-      key: 'reason',
-      header: 'Why',
-      // D-016: a listed address is the list doing its job, not something that needs you — so no hue.
-      cell: (s) => <Badge tone="neutral">{s.reason === 'manual' ? 'Added by an admin' : 'Hard bounce'}</Badge>,
-    },
-    {
-      key: 'reply',
-      header: 'Bounce or note',
-      cell: (s) => <span className={s.reason === 'manual' ? 'pr-wrap' : 'pr-mono pr-muted pr-wrap'}>{replyOf(s)}</span>,
-    },
-    { key: 'subject', header: 'Bounced message', cell: (s) => (s.source === null ? <span className="pr-muted">—</span> : (s.source.subject ?? '(no subject)')) },
-    { key: 'bounceCount', header: 'Bounces', numeric: true, cell: (s) => String(s.bounceCount) },
-    { key: 'lastAt', header: 'Last', cell: (s) => when(s.lastAt) },
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'end',
-      cell: (s) => (
-        <Button size="sm" variant="danger-ghost" aria-label={`Remove ${s.address}`} onClick={() => { open({ kind: 'remove', entry: s }); }}>
-          Remove
-        </Button>
-      ),
-    },
+    { key: 'address', header: 'Address', width: 'auto', cell: (s) => <span className="pr-mono pr-clip" title={s.address}>{s.address}</span> },
+    // D-016: a listed address is the list doing its job, not something that needs you — so no hue, and no pill.
+    { key: 'reason', header: 'Why', width: '9rem', cell: (s) => <span className="pr-muted">{whyOf(s)}</span> },
+    { key: 'reply', header: 'Bounce or note', width: 'auto', cell: reply },
+    ...(rows !== null && hasBouncedMessage(rows)
+      ? [
+          {
+            key: 'subject',
+            header: 'Bounced message',
+            width: '20%',
+            cell: (s: Suppression) =>
+              s.source === null ? <span className="pr-muted">—</span> : <span className="pr-clip">{s.source.subject ?? '(no subject)'}</span>,
+          },
+        ]
+      : []),
+    { key: 'bounceCount', header: 'Bounces', width: '6rem', numeric: true, cell: (s) => String(s.bounceCount) },
+    { key: 'lastAt', header: 'Last', width: '8rem', cell: (s) => <RelativeTime iso={s.lastAt} /> },
+    { key: 'actions', header: <span className="pr-sr-only">Actions</span>, width: '7rem', align: 'end', cell: removeButton },
   ];
 
   const title = pending === null ? 'Confirm' : pending.kind === 'add' ? 'Add an address to the suppression list' : `Remove ${pending.entry.address}`;
+
+  const empty = (
+    <EmptyState
+      kind={query === '' ? 'empty' : 'no-results'}
+      heading={query === '' ? 'No suppressed addresses' : 'No address matches'}
+      headingLevel={2}
+      size={phone ? 'inline' : 'row'}
+    >
+      {query === '' ? 'An address is added here when mail to it bounces because it does not exist.' : 'Try part of the address instead.'}
+    </EmptyState>
+  );
 
   return (
     <Page>
       <PageHeader
         title="Suppression list"
         description="Addresses that hard-bounced or were added by hand. Mail to them is refused from every sending path until they are removed."
-        {...(rows === null ? {} : { count: total, countNoun: { one: 'address', other: 'addresses' } })}
         actions={
-          <Button variant="primary" onClick={() => { open({ kind: 'add' }); }}>
+          <Button
+            variant="primary"
+            onClick={() => {
+              open({ kind: 'add' });
+            }}
+          >
             Add address
           </Button>
         }
       />
-      <Cluster gap="12">
-        <FormField label="Search" width="sm">
-          <Input appearance="filled"
-            type="search"
-            value={query}
-            placeholder="name@example.com"
-            onChange={(e) => {
-              setQuery(e.target.value.trim());
-            }}
-          />
-        </FormField>
-      </Cluster>
 
       {notice === null ? null : (
         <Alert tone="info" dynamic>
@@ -175,25 +205,51 @@ export function AdminSuppressions() {
         </Alert>
       )}
 
-      {loadError !== null ? (
-        <LoadFailed error={loadError} what="the suppression list" onRetry={() => void load(query)} />
-      ) : rows === null ? (
-        <Loading label="Loading the suppression list" />
-      ) : (
-        <Table
-          className="pr-admin-table"
-          caption="Suppression list"
-          captionHidden
-          columns={columns}
-          rows={rows}
-          rowKey={(s) => s.id}
-          empty={
-            <EmptyState kind={query === '' ? 'empty' : 'no-results'} heading={query === '' ? 'No suppressed addresses' : 'No address matches'} size="row">
-              {query === '' ? 'An address is added here when mail to it bounces because it does not exist.' : 'Try part of the address instead.'}
-            </EmptyState>
-          }
-        />
-      )}
+      <Card className="pr-table-card">
+        <div className="pr-table-toolbar">
+          <FilterBar aria-label="Filter the suppression list" trailing={rows === null ? null : <span>{addressCount(total)}</span>}>
+            <SearchField
+              aria-label="Search addresses"
+              placeholder="Search addresses"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value.trim());
+              }}
+            />
+          </FilterBar>
+        </div>
+        {loadError !== null ? (
+          <LoadFailed error={loadError} what="the suppression list" onRetry={() => void load(query)} />
+        ) : rows === null ? (
+          <Loading label="Loading the suppression list" />
+        ) : phone ? (
+          <DataList aria-label="Suppression list" empty={empty}>
+            {rows.map((s) => (
+              <DataListRow
+                key={s.id}
+                title={<span className="pr-mono">{s.address}</span>}
+                truncate={false}
+                description={
+                  <span className="pr-list-desc">
+                    {whyOf(s)} · {replyOf(s)} · <RelativeTime iso={s.lastAt} />
+                  </span>
+                }
+                actions={removeButton(s)}
+              />
+            ))}
+          </DataList>
+        ) : (
+          <Table
+            className="pr-admin-table pr-admin-table--fixed"
+            caption="Suppression list"
+            captionHidden
+            columns={columns}
+            rows={rows}
+            rowKey={(s) => s.id}
+            empty={empty}
+          />
+        )}
+      </Card>
 
       <Modal
         open={pending !== null}

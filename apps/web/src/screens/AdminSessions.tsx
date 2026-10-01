@@ -1,8 +1,10 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Badge,
   Button,
+  Card,
+  DataList,
+  DataListRow,
   EmptyState,
   FormField,
   Input,
@@ -14,17 +16,28 @@ import {
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, type AdminSession } from '../api';
-import { CURRENT_SESSION_LABEL, END_SESSION_LABEL, SessionDetails } from './Sessions';
+import { RelativeTime } from '../components/RelativeTime';
+import { PHONE_QUERY, useMediaQuery } from '../mail/useMedia';
+import { describeAgent } from './agent';
+import { CURRENT_SESSION_LABEL, END_SESSION_LABEL } from './Sessions';
 import { Loading, LoadFailed } from './states';
 import '../admin/admin.css';
+import '../admin/lists.css';
 
-const when = (iso: string): string =>
-  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+/** "Password" or "D3 Auth": how the session was signed in. */
+export const methodLabel = (method: string): string => (method === 'oidc' ? 'D3 Auth' : 'Password');
+
+/** "3 sessions": the toolbar's count. */
+export const sessionCount = (n: number): string => `${String(n)} ${n === 1 ? 'session' : 'sessions'}`;
 
 /**
  * Every live web session, and the demonstration destructive action for PST-REQ-008: revoking one
  * needs a TOTP code from the last five minutes. The server decides — a 403 step_up_required opens
  * the code prompt, and the revoke is retried once the code is accepted.
+ *
+ * PST-T-17.2: the list sits in a card; the device is a column of its own ("Chrome on macOS", the full
+ * user agent on hover) instead of a Details disclosure inside the row; the session you are using is
+ * marked in words, not a pill; and on a phone each session is a card with Sign out on it.
  */
 export function AdminSessions() {
   const [sessions, setSessions] = useState<AdminSession[] | null>(null);
@@ -34,6 +47,7 @@ export function AdminSessions() {
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const phone = useMediaQuery(PHONE_QUERY);
 
   const load = useCallback(async () => {
     try {
@@ -83,69 +97,107 @@ export function AdminSessions() {
       });
   };
 
+  // One action, so one secondary button — never red in the row; the step-up modal carries the weight.
+  const signOut = (s: AdminSession) =>
+    s.current ? null : (
+      <Button
+        variant="secondary"
+        size="sm"
+        data-session-id={s.id}
+        aria-label={`${END_SESSION_LABEL} ${s.displayName}'s session from ${s.ip ?? 'an unknown address'}`}
+        onClick={() => {
+          void revoke(s);
+        }}
+      >
+        {END_SESSION_LABEL}
+      </Button>
+    );
+
+  const device = (s: AdminSession) => (
+    <span className="pr-clip" {...(s.userAgent === null ? {} : { title: s.userAgent })}>
+      {describeAgent(s.userAgent)}
+    </span>
+  );
+
+  const current = (s: AdminSession) =>
+    s.current ? (
+      <span className="pr-list-aside">
+        <span aria-hidden="true"> · </span>
+        <span>{CURRENT_SESSION_LABEL}</span>
+      </span>
+    ) : null;
+
   const columns: TableColumn<AdminSession>[] = [
     {
       key: 'displayName',
       header: 'Account',
+      width: 'auto',
       cell: (s) => (
-        <span className="pr-inline">
-          <span>{s.displayName}</span>
-          {s.current ? <Badge size="sm">{CURRENT_SESSION_LABEL}</Badge> : null}
-          <SessionDetails userAgent={s.userAgent} ip={s.ip} />
+        <span className="pr-clip">
+          {s.displayName}
+          {current(s)}
         </span>
       ),
     },
-    { key: 'method', header: 'Signed in with', cell: (s) => (s.method === 'oidc' ? 'D3 Auth' : 'Password') },
-    { key: 'createdAt', header: 'Since', cell: (s) => when(s.createdAt) },
-    { key: 'ip', header: 'From', cell: (s) => (s.ip === null ? <span className="pr-muted">Unknown</span> : <span className="pr-mono">{s.ip}</span>) },
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'end',
-      cell: (s) =>
-        s.current ? null : (
-          <Button
-            variant="danger-ghost"
-            size="sm"
-            data-session-id={s.id}
-            aria-label={`${END_SESSION_LABEL} ${s.displayName}'s session from ${s.ip ?? 'an unknown address'}`}
-            onClick={() => {
-              void revoke(s);
-            }}
-          >
-            {END_SESSION_LABEL}
-          </Button>
-        ),
-    },
+    { key: 'device', header: 'Device', width: '14rem', cell: device },
+    { key: 'method', header: 'Signed in with', width: '8rem', cell: (s) => methodLabel(s.method) },
+    { key: 'createdAt', header: 'Since', width: '8rem', cell: (s) => <RelativeTime iso={s.createdAt} /> },
+    { key: 'ip', header: 'From', width: '9rem', cell: (s) => (s.ip === null ? <span className="pr-muted">Unknown</span> : <span className="pr-mono">{s.ip}</span>) },
+    { key: 'actions', header: <span className="pr-sr-only">Actions</span>, width: '7rem', align: 'end', cell: signOut },
   ];
 
   return (
     <Page>
-      <PageHeader
-        title="Sign-in sessions"
-        description="Everyone signed in to the web app right now."
-        {...(sessions === null ? {} : { count: sessions.length, countNoun: { one: 'session', other: 'sessions' } })}
-      />
+      <PageHeader title="Sign-in sessions" description="Everyone signed in to the web app right now." />
       {notice === null ? null : (
         <Alert tone="info" dynamic>
           {notice}
         </Alert>
       )}
-      {loadError !== null ? (
-        <LoadFailed error={loadError} what="sessions" onRetry={() => void load()} />
-      ) : sessions === null ? (
-        <Loading label="Loading sessions" />
-      ) : (
-        <Table
-          className="pr-admin-table"
-          caption="Live sessions"
-          captionHidden
-          columns={columns}
-          rows={sessions}
-          rowKey={(s) => s.id}
-          empty={<EmptyState kind="empty" heading="No live sessions" size="row" />}
-        />
-      )}
+      <Card className="pr-table-card">
+        {sessions === null ? null : (
+          <div className="pr-table-toolbar">
+            <span className="pr-list-count">{sessionCount(sessions.length)}</span>
+          </div>
+        )}
+        {loadError !== null ? (
+          <LoadFailed error={loadError} what="sessions" onRetry={() => void load()} />
+        ) : sessions === null ? (
+          <Loading label="Loading sessions" />
+        ) : phone ? (
+          <DataList aria-label="Live sessions" empty={<EmptyState kind="empty" heading="No live sessions" headingLevel={2} size="inline" />}>
+            {sessions.map((s) => (
+              <DataListRow
+                key={s.id}
+                title={s.displayName}
+                meta={s.current ? <span>{CURRENT_SESSION_LABEL}</span> : null}
+                description={
+                  <span className="pr-list-desc">
+                    {describeAgent(s.userAgent)} · {methodLabel(s.method)} · <RelativeTime iso={s.createdAt} />
+                    {s.ip === null ? null : (
+                      <>
+                        {' · '}
+                        <span className="pr-mono">{s.ip}</span>
+                      </>
+                    )}
+                  </span>
+                }
+                actions={signOut(s)}
+              />
+            ))}
+          </DataList>
+        ) : (
+          <Table
+            className="pr-admin-table pr-admin-table--fixed"
+            caption="Live sessions"
+            captionHidden
+            columns={columns}
+            rows={sessions}
+            rowKey={(s) => s.id}
+            empty={<EmptyState kind="empty" heading="No live sessions" size="row" />}
+          />
+        )}
+      </Card>
 
       <Modal
         open={pending !== null}
@@ -167,7 +219,8 @@ export function AdminSessions() {
       >
         <form id="step-up" onSubmit={confirmStepUp}>
           <FormField label="Authentication code" {...(codeError === null ? {} : { error: codeError })}>
-            <Input appearance="filled"
+            <Input
+              appearance="filled"
               name="code"
               inputMode="numeric"
               autoComplete="one-time-code"
