@@ -42,7 +42,7 @@
 //     scroll; a long message scrolls inside the frame and only there.
 //   - an EARLIER message a reader expands by hand gets a fixed clamp(16rem, 50vh, 36rem) frame, so
 //     opening an old newsletter in a thread never pushes the latest reply a whole screen away.
-// The Newsletters feed (Feed.tsx) still uses the fixed MAIL_FRAME_HEIGHT, one frame per issue.
+// The Newsletters feed (Feed.tsx) sizes each frame from the server's height estimate (PST-T-17.3).
 //
 // When the server has no usercontent origin configured (503), the text/plain part is shown instead
 // and an HTML-only message says so.
@@ -688,9 +688,6 @@ function DeliverySection({ messageId, mailboxId, body }: { messageId: string; ma
 
 /** The frame's sandbox: popups only, so a link (target=_blank, noopener) opens in a normal tab. No scripts, no same-origin. */
 export const MAIL_FRAME_SANDBOX = 'allow-popups allow-popups-to-escape-sandbox';
-/** The Newsletters feed's fixed frame height (Feed.tsx): no script in the frame can report its
- *  content height. The reading pane lays its frames out instead (see the header comment). */
-export const MAIL_FRAME_HEIGHT = '70vh';
 
 /** What the reader is told about blocked remote images; null when there is nothing to say. */
 export function blockedImagesNote(ticket: Pick<RenderTicket, 'images' | 'remoteImages'>): string | null {
