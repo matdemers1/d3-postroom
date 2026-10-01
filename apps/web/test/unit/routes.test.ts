@@ -1,6 +1,8 @@
 // PST-T-14.3 (PST-REQ-189, PST-ADR-011): one route table defines every screen — its path, title,
 // place, nav group, palette keywords and whether it is admin-only — and both navs, the tab title and
 // the palette are generated from it. These pin its shape; the browser side is e2e/tests/places.spec.ts.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { navEntries, paletteRoutes, placeForPath, redirectForOldPath, REDIRECTS, routeForPath, ROUTES } from '../../src/routes';
 
@@ -121,5 +123,29 @@ describe('redirects from the old URLs', () => {
       expect(routeForPath(r.to), r.to).not.toBeNull();
       expect(routeForPath(r.from), r.from).toBeNull();
     }
+  });
+});
+
+// PST-T-17.8 (critique-settings X4): a nav label is the page's h1. e2e/tests/titles.spec.ts checks
+// that in the browser from its own copy of the list (it cannot import this table); this keeps the copy
+// honest — every Settings and Admin route, in table order, with its nav label.
+describe('the page-title e2e list', () => {
+  it('names the nav entry "Import", not "Import & export" (there is no export)', () => {
+    expect(routeForPath('/settings/import')?.navGroup).toBe('Import');
+    expect(routeForPath('/settings/import')?.title).toBe('Import');
+    expect(ROUTES.some((r) => r.navGroup === 'Import & export' || r.title === 'Import & export')).toBe(false);
+  });
+
+  it('every route outside Security & devices is titled with its nav label', () => {
+    for (const route of ROUTES.filter((r) => (r.place === 'settings' || r.place === 'admin') && r.navGroup !== 'Security & devices')) {
+      expect(route.title, route.id).toBe(route.navGroup);
+    }
+  });
+
+  it('matches the route table', () => {
+    const spec = readFileSync(join(__dirname, '../../../../e2e/tests/titles.spec.ts'), 'utf8');
+    const listed = [...spec.matchAll(/^ {2}\['(\/(?:settings|admin)\/[^']*)', '([^']+)'\],$/gm)].map((m) => [m[1], m[2]]);
+    const expected = ROUTES.filter((r) => r.place === 'settings' || r.place === 'admin').map((r) => [r.path, r.navGroup ?? r.title]);
+    expect(listed).toEqual(expected);
   });
 });
