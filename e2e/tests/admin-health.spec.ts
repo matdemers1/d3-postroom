@@ -83,10 +83,10 @@ test('a simulated fault (a dead inbound job) shows the queue tile down', async (
 
   await test.step('Jobs lists the failure and Replay re-files it', async () => {
     await page.goto('/admin/jobs');
-    await page.getByRole('combobox', { name: 'Status' }).click();
-    await page.getByRole('option', { name: 'Dead' }).click();
+    // PST-T-17.2: the status filter is a segmented control; a phone shows cards, not table rows.
+    await page.getByRole('radiogroup', { name: 'Status' }).getByRole('radio', { name: /^Dead/ }).click();
 
-    const row = page.getByRole('row').filter({ hasText: 'simulated worker crash' }).first();
+    const row = page.getByRole('row').or(page.getByRole('listitem')).filter({ hasText: 'simulated worker crash' }).first();
     await expect(row).toBeVisible();
     await row.getByRole('button', { name: 'Replay' }).click();
 

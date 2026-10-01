@@ -278,6 +278,7 @@ export function AdminJobs() {
           <DataList aria-label="Jobs" empty={empty}>
             {jobs.map((j) => (
               <DataListRow
+                truncate={false}
                 key={j.id}
                 title={<span className="pr-mono">{j.queue}</span>}
                 meta={statusDot(j)}

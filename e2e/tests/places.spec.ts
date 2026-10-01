@@ -284,16 +284,17 @@ test('moving between places cross-fades within --dur-2 and never slides; a page 
 test('the jobs status filter is ?status=: a reload and Back keep it', async ({ page }) => {
   await page.goto('/admin/jobs');
   await expect(page.getByRole('heading', { name: 'Jobs', level: 1 })).toBeVisible();
-  const status = page.getByRole('combobox', { name: 'Status' });
-  await status.click();
-  await page.getByRole('option', { name: 'Dead' }).click();
+  // PST-T-17.2: the status filter is a segmented control (a radiogroup), its segments counted.
+  const status = page.getByRole('radiogroup', { name: 'Status' });
+  const dead = status.getByRole('radio', { name: /^Dead/ });
+  await dead.click();
   // In place: choosing a filter adds no history entry of its own.
   await expect(page).toHaveURL(/\/admin\/jobs\?status=dead$/);
 
   const askedOnReload = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/admin/jobs' && new URL(r.url()).searchParams.get('status') === 'dead');
   await page.reload();
   await askedOnReload;
-  await expect(status).toContainText('Dead');
+  await expect(dead).toHaveAttribute('aria-checked', 'true');
 
   // Away to another admin screen, then Back.
   await page.getByRole('navigation', { name: 'Admin console' }).getByRole('link', { name: 'Health' }).click();
@@ -302,11 +303,10 @@ test('the jobs status filter is ?status=: a reload and Back keep it', async ({ p
   await page.goBack();
   await askedOnBack;
   await expect(page).toHaveURL(/\/admin\/jobs\?status=dead$/);
-  await expect(status).toContainText('Dead');
+  await expect(dead).toHaveAttribute('aria-checked', 'true');
 
-  // All statuses is the bare URL.
-  await status.click();
-  await page.getByRole('option', { name: 'All statuses' }).click();
+  // All is the bare URL.
+  await status.getByRole('radio', { name: /^All/ }).click();
   await expect(page).toHaveURL(/\/admin\/jobs$/);
 });
 

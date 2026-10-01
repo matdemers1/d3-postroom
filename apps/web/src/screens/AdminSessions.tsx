@@ -168,6 +168,7 @@ export function AdminSessions() {
           <DataList aria-label="Live sessions" empty={<EmptyState kind="empty" heading="No live sessions" headingLevel={2} size="inline" />}>
             {sessions.map((s) => (
               <DataListRow
+                truncate={false}
                 key={s.id}
                 title={s.displayName}
                 meta={s.current ? <span>{CURRENT_SESSION_LABEL}</span> : null}
