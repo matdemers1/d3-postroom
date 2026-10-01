@@ -16,6 +16,7 @@ import {
   saveSegment,
   SEGMENT_STORAGE_KEY,
   suggestedMove,
+  whyControlShows,
   whySentence,
 } from '../../src/mail/sorting/sorting';
 
@@ -29,6 +30,19 @@ describe('where the bucket chip shows', () => {
     expect(chipShows('receipts', { kind: 'mailbox', bucket: null })).toBe(false);
     expect(chipShows('updates', { kind: 'thread', openBucket: 'priority' })).toBe(true);
     expect(chipShows('priority', { kind: 'thread', openBucket: 'priority' })).toBe(false);
+  });
+
+  it('offers the quiet "Why it\u2019s here" control exactly where the chip stays away', () => {
+    for (const b of ['receipts', 'newsletters', 'updates', 'notifications', 'junk'] as const) {
+      expect(whyControlShows(b, { kind: 'mailbox', bucket: b })).toBe(true);
+      expect(chipShows(b, { kind: 'mailbox', bucket: b })).toBe(false);
+    }
+    expect(whyControlShows('people', { kind: 'mailbox', bucket: null })).toBe(false);
+    expect(whyControlShows('people', { kind: 'mailbox' })).toBe(false);
+    expect(whyControlShows('priority', { kind: 'inbox', segment: 'all' })).toBe(false);
+    expect(whyControlShows('receipts', { kind: 'search' })).toBe(false);
+    expect(whyControlShows('receipts', { kind: 'thread', openBucket: 'priority' })).toBe(false);
+    expect(whyControlShows(null, { kind: 'mailbox', bucket: 'receipts' })).toBe(false);
   });
 
   it('never for an unsorted message', () => {

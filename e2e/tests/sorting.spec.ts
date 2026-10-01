@@ -186,6 +186,50 @@ test.describe('the bucket chip and its corrections', () => {
     await page.reload();
     await expect(page.getByRole('radio', { name: /^Everything/ })).toHaveAttribute('aria-checked', 'true');
   });
+
+  // PST-T-16.21 (PST-DA-016): the chip stays away inside a bucket folder, but the open message's header
+  // carries a quiet "Why it's here" control there, which opens the same popover.
+  for (const [folder, mailbox, bucket, label, reason] of [
+    ['Receipts', 'receipts', 'receipts', 'Receipts', 'receipts: sender domain sends order and payment confirmations'],
+    ['Junk', 'junk', 'junk', 'Junk', 'junk: spam score over the threshold'],
+  ] as const) {
+    test(`a message opened in ${folder} offers "Why it's here" in its header`, async ({ page }) => {
+      const t = tag();
+      const [m] = await seedMail(api, [
+        {
+          mailbox,
+          subject: `${folder} order ${t}`,
+          from: `Shop <shop-${t}@example.shop>`,
+          authVerdicts: PASS,
+          bucket,
+          reasons: [AUTH_REASON, reason],
+        },
+      ]);
+      if (m === undefined) throw new Error('seed returned nothing');
+      await page.goto(`/mail/${m.mailboxId}/${m.id}`);
+      const header = page.getByTestId('message-header');
+      await expect(header).toBeVisible();
+      // No chip here: the folder already says it.
+      await expect(header.getByTestId('bucket-chip')).toHaveCount(0);
+      const control = header.getByRole('button', { name: "Why it's here" });
+      await expect(control).toBeVisible();
+      await control.click();
+
+      const why = page.getByRole('dialog', { name: "Why it's here" });
+      await expect(why).toBeVisible();
+      await expect(why.getByTestId('why-sentence')).not.toHaveText(/Loading the reasons/);
+      await expect(why.getByTestId('why-sentence')).toContainText(label);
+      await expect(why.getByRole('button', { name: new RegExp(`^Always put .* in ${label}$`) })).toBeVisible();
+      await expect(why.getByRole('button', { name: /^Move this message to / }).first()).toBeVisible();
+      await expect(why.getByRole('button', { name: 'Open Rules' })).toBeVisible();
+      // There is never a positive "Verified" chip (BRAND-04).
+      await expect(header).not.toContainText(/verified/i);
+
+      await page.keyboard.press('Escape');
+      await expect(why).toBeHidden();
+      await expect(control).toBeFocused();
+    });
+  }
 });
 
 test.describe('the Person card', () => {
