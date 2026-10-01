@@ -615,3 +615,47 @@ test.describe('signed in', () => {
     expect(widths.scrollWidth, 'the message is wider than its frame: its right edge is clipped').toBeLessThanOrEqual(widths.clientWidth);
   });
 });
+
+// PST-T-16.13 (PST-DA-031, PST-REQ-155): the Outbound queue below 640px is a list of cards, and
+// every action is reachable without sideways scroll. Self-contained: later tasks edit this file too.
+test.describe('Outbound queue as cards (PST-T-16.13)', () => {
+  test.beforeAll(async () => {
+    if (cookies.length === 0) {
+      operator = await ensureOperator(api);
+      cookies = await signInCookies(api, operator);
+    }
+  });
+
+  test('rows are DataList cards with an Actions menu and a details drawer, and the page never scrolls sideways', async ({ page }) => {
+    const t = tag();
+    const domain = `cards-${t}.test`;
+    const seeded = await api.post('/api/admin/queue/dev-seed-deferred', { headers: CSRF, data: { domain } });
+    if (seeded.status() === 404) throw new Error('the stack has no dev-seed-deferred route: start the api with POSTROOM_E2E_SEED=1');
+
+    await page.goto(`/admin/queue?domain=${domain}`);
+    await expect(page.getByRole('heading', { name: 'Outbound queue', level: 1 })).toBeVisible();
+    await expect(page.getByRole('table')).toHaveCount(0);
+    const list = page.getByRole('list', { name: 'Outbound queue' });
+    await expect(list).toBeVisible();
+    const card = list.getByRole('listitem').filter({ hasText: `first@${domain}` });
+    await expect(card).toBeVisible();
+    await assertMobileFriendly(page, '/admin/queue (cards)');
+
+    // Every action, with the menu open, sits inside the viewport.
+    await card.getByRole('button', { name: /^Actions for / }).click();
+    for (const name of ['Retry now', 'Force SES', 'Bounce', 'Delete']) {
+      const item = page.getByRole('menuitem', { name });
+      await expect(item).toBeVisible();
+      const box = await item.boundingBox();
+      expect((box?.x ?? 0) + (box?.width ?? 0), `${name} runs past the right edge`).toBeLessThanOrEqual(390);
+      expect(box?.x ?? -1, `${name} starts left of the screen`).toBeGreaterThanOrEqual(0);
+    }
+    await page.keyboard.press('Escape');
+
+    // The evidence is a sheet over the whole phone.
+    await card.getByRole('button', { name: `Delivery details for first@${domain}` }).click();
+    const drawer = page.getByRole('dialog', { name: 'Delivery details' });
+    await expect(drawer.getByTestId('queue-last-response')).toContainText('greylisted (seeded for e2e)');
+    await assertMobileFriendly(page, '/admin/queue (details drawer)');
+  });
+});

@@ -1,8 +1,11 @@
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Button,
   Cluster,
+  DataList,
+  DataListRow,
   EmptyState,
   FormField,
   Input,
@@ -20,6 +23,10 @@ import {
 import { ApiError, api, describeError, type AdminQueueRecipient, type QueueScope, type QueueStateFilter } from '../api';
 import { Loading, LoadFailed } from './states';
 import { queueState } from '../admin/health/model';
+import { QueueActions } from '../admin/queue/QueueActions';
+import { QueueDrawer } from '../admin/queue/QueueDrawer';
+import { filterByMessage, parseQueueFilters, QUEUE_ACTION_LABEL, QUEUE_PHONE_QUERY, type QueueActionKind, withQueueFilter } from '../admin/queue/model';
+import { useMediaQuery } from '../mail/useMedia';
 import '../admin/admin.css';
 
 const STATE_OPTIONS: { value: '' | QueueStateFilter; label: string }[] = [
@@ -30,14 +37,8 @@ const STATE_OPTIONS: { value: '' | QueueStateFilter; label: string }[] = [
   { value: 'failed', label: 'Failed' },
 ];
 
-type ActionKind = 'retry' | 'force-ses' | 'bounce' | 'delete';
-
-const ACTION_LABEL: Record<ActionKind, string> = {
-  retry: 'Retry now',
-  'force-ses': 'Force SES',
-  bounce: 'Bounce',
-  delete: 'Delete',
-};
+type ActionKind = QueueActionKind;
+const ACTION_LABEL = QUEUE_ACTION_LABEL;
 
 interface Row extends AdminQueueRecipient {
   subject: string | null;
@@ -51,13 +52,18 @@ const when = (iso: string): string => new Date(iso).toLocaleString(undefined, { 
  * recipient, per message, or per domain (the bulk form below the table). Every mutation needs a
  * fresh step-up (PST-REQ-008): the confirm modal always asks for a current code, since almost
  * every visit to this screen is the first destructive action in the session.
+ *
+ * PST-T-16.13 (PST-DA-031): the four row actions are one Actions menu, the row's evidence (last reply,
+ * every attempt) is a drawer, a phone gets cards, and ?state= ?domain= ?message= hold the filters.
  */
 export function AdminQueue() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [sesConfigured, setSesConfigured] = useState(true);
   const [loadError, setLoadError] = useState<unknown>(null);
-  const [domain, setDomain] = useState('');
-  const [state, setState] = useState<'' | QueueStateFilter>('');
+  const [params, setParams] = useSearchParams();
+  const { domain, state, message } = parseQueueFilters(params);
+  const phone = useMediaQuery(QUEUE_PHONE_QUERY);
+  const [details, setDetails] = useState<Row | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const [pending, setPending] = useState<{ scope: QueueScope; action: ActionKind; label: string } | null>(null);
@@ -67,6 +73,12 @@ export function AdminQueue() {
   const [busy, setBusy] = useState(false);
 
   const [bulkDomain, setBulkDomain] = useState('');
+
+  // Replace, not push: typing a domain letter by letter must not fill the Back stack.
+  const setFilter = (key: 'state' | 'domain' | 'message', value: string): void => {
+    setParams((current) => withQueueFilter(current, key, value), { replace: true });
+  };
+  const shown = useMemo(() => (rows === null ? null : filterByMessage(rows, message)), [rows, message]);
 
   const load = useCallback(async (d: string, s: '' | QueueStateFilter) => {
     try {
@@ -132,71 +144,57 @@ export function AdminQueue() {
     }
   };
 
+  const pick = (r: Row, kind: ActionKind): void => {
+    const who = r.address;
+    const label = kind === 'retry' ? `Retry ${who}` : kind === 'force-ses' ? `Force SES for ${who}` : kind === 'bounce' ? `Bounce ${who}` : `Delete ${who}`;
+    openConfirm({ kind: 'recipient', id: r.id }, kind, label);
+  };
+
+  const stateDot = (r: Row) => {
+    const s = queueState(r.state);
+    return (
+      <StatusDot tone={s.tone} size="sm">
+        {s.label}
+      </StatusDot>
+    );
+  };
+
   const columns: TableColumn<Row>[] = [
-    { key: 'address', header: 'Recipient', cell: (r) => <span className="pr-mono">{r.address}</span> },
-    { key: 'subject', header: 'Subject', cell: (r) => r.subject ?? '(no subject)' },
-    { key: 'domain', header: 'Domain', cell: (r) => <span className="pr-mono">{r.domain}</span> },
     {
-      key: 'state',
-      header: 'State',
-      cell: (r) => {
-        const s = queueState(r.state);
-        return (
-          <StatusDot tone={s.tone} size="sm">
-            {s.label}
-          </StatusDot>
-        );
-      },
-    },
-    { key: 'transport', header: 'Transport', cell: (r) => <span className="pr-mono">{r.transport}</span> },
-    { key: 'attempts', header: 'Attempts', numeric: true, cell: (r) => String(r.attempts) },
-    { key: 'nextAttemptAt', header: 'Next attempt', cell: (r) => when(r.nextAttemptAt) },
-    {
-      key: 'lastText',
-      header: 'Last response',
-      cell: (r) =>
-        r.lastText === null ? (
-          <span className="pr-muted">—</span>
-        ) : (
-          <span className="pr-mono pr-muted" title={r.lastText}>
-            {r.lastText}
-          </span>
-        ),
-    },
-    {
-      key: 'timeline',
-      header: 'Timeline',
+      key: 'address',
+      header: 'Recipient',
+      width: 'minmax(0, 1.4fr)',
       cell: (r) => (
-        <a className="pr-tbl-link" href={`/api/messages/${r.outboundMessageId}/delivery`} target="_blank" rel="noreferrer">
-          View
-        </a>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label={`Delivery details for ${r.address}`}
+          onClick={() => {
+            setDetails(r);
+          }}
+        >
+          <span className="pr-mono pr-queue-addr">{r.address}</span>
+        </Button>
       ),
     },
+    { key: 'subject', header: 'Subject', width: 'minmax(0, 1.4fr)', cell: (r) => r.subject ?? '(no subject)' },
+    { key: 'state', header: 'State', width: '7.5rem', cell: stateDot },
+    { key: 'transport', header: 'Transport', width: '6rem', cell: (r) => <span className="pr-mono">{r.transport}</span> },
+    { key: 'attempts', header: 'Attempts', width: '6rem', numeric: true, cell: (r) => String(r.attempts) },
+    { key: 'nextAttemptAt', header: 'Next attempt', width: '11rem', cell: (r) => when(r.nextAttemptAt) },
     {
       key: 'actions',
       header: 'Actions',
+      width: '6.5rem',
       align: 'end',
       cell: (r) => (
-        <span className="pr-admin-actions">
-          <Button size="sm" variant="secondary" onClick={() => { openConfirm({ kind: 'recipient', id: r.id }, 'retry', `Retry ${r.address}`); }}>
-            Retry
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!sesConfigured}
-            title={sesConfigured ? undefined : 'SES is not configured'}
-            onClick={() => { openConfirm({ kind: 'recipient', id: r.id }, 'force-ses', `Force SES for ${r.address}`); }}
-          >
-            Force SES
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => { openConfirm({ kind: 'recipient', id: r.id }, 'bounce', `Bounce ${r.address}`); }}>
-            Bounce
-          </Button>
-          <Button size="sm" variant="danger-ghost" onClick={() => { openConfirm({ kind: 'recipient', id: r.id }, 'delete', `Delete ${r.address}`); }}>
-            Delete
-          </Button>
-        </span>
+        <QueueActions
+          address={r.address}
+          sesConfigured={sesConfigured}
+          onPick={(kind) => {
+            pick(r, kind);
+          }}
+        />
       ),
     },
   ];
@@ -206,7 +204,7 @@ export function AdminQueue() {
       <PageHeader
         title="Outbound queue"
         description="Queued, deferred, held and failed outbound mail: retry now, bounce, delete or force SES — per message, or across a whole domain below."
-        {...(rows === null ? {} : { count: rows.length, countNoun: { one: 'recipient', other: 'recipients' } })}
+        {...(shown === null ? {} : { count: shown.length, countNoun: { one: 'recipient', other: 'recipients' } })}
       />
       <Cluster gap="12">
         <FormField label="Domain" width="sm">
@@ -214,7 +212,7 @@ export function AdminQueue() {
             value={domain}
             placeholder="example.com"
             onChange={(e) => {
-              setDomain(e.target.value.trim().toLowerCase());
+              setFilter('domain', e.target.value.trim().toLowerCase());
             }}
           />
         </FormField>
@@ -223,11 +221,30 @@ export function AdminQueue() {
             options={STATE_OPTIONS}
             value={state}
             onValueChange={(v) => {
-              setState(v as '' | QueueStateFilter);
+              setFilter('state', v);
             }}
           />
         </FormField>
       </Cluster>
+
+      {message === '' ? null : (
+        <Alert
+          tone="info"
+          actions={
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setFilter('message', '');
+              }}
+            >
+              Show all
+            </Button>
+          }
+        >
+          Showing one message’s recipients only.
+        </Alert>
+      )}
 
       {notice === null ? null : (
         <Alert tone="info" dynamic>
@@ -237,15 +254,47 @@ export function AdminQueue() {
 
       {loadError !== null ? (
         <LoadFailed error={loadError} what="the queue" onRetry={() => void load(domain, state)} />
-      ) : rows === null ? (
+      ) : shown === null ? (
         <Loading label="Loading the queue" />
+      ) : phone ? (
+        <DataList aria-label="Outbound queue" empty={<EmptyState kind="empty" heading="Nothing queued" headingLevel={3} size="inline" />}>
+          {shown.map((r) => (
+            <DataListRow
+              key={r.id}
+              title={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Delivery details for ${r.address}`}
+                  onClick={() => {
+                    setDetails(r);
+                  }}
+                >
+                  <span className="pr-mono pr-queue-addr">{r.address}</span>
+                </Button>
+              }
+              description={`${r.subject ?? '(no subject)'} · ${r.transport} · ${String(r.attempts)} ${r.attempts === 1 ? 'attempt' : 'attempts'} · next ${when(r.nextAttemptAt)}`}
+              meta={stateDot(r)}
+              truncate={false}
+              actions={
+                <QueueActions
+                  address={r.address}
+                  sesConfigured={sesConfigured}
+                  onPick={(kind) => {
+                    pick(r, kind);
+                  }}
+                />
+              }
+            />
+          ))}
+        </DataList>
       ) : (
         <Table
-          className="pr-admin-table"
+          className="pr-admin-table pr-admin-table--fixed"
           caption="Outbound queue"
           captionHidden
           columns={columns}
-          rows={rows}
+          rows={shown}
           rowKey={(r) => r.id}
           empty={<EmptyState kind="empty" heading="Nothing queued" size="row" />}
         />
@@ -292,6 +341,21 @@ export function AdminQueue() {
           </Button>
         </Cluster>
       </Section>
+
+      <QueueDrawer
+        row={details}
+        onClose={() => {
+          setDetails(null);
+        }}
+        onlyThisMessage={
+          message === ''
+            ? (id) => {
+                setDetails(null);
+                setFilter('message', id);
+              }
+            : null
+        }
+      />
 
       <Modal
         open={pending !== null}
