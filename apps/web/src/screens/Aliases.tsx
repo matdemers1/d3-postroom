@@ -1,5 +1,5 @@
 import '../settings/settings.css';
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, DataList, DataListRow, EmptyState, FormActions, FormField, Input, Page, PageHeader, Section, Stack } from '@d3cloud/ui';
 import { api, describeError, type Alias } from '../api';
 import { Loading, LoadFailed } from './states';
@@ -16,6 +16,16 @@ export function Aliases() {
   const [rows, setRows] = useState<Alias[] | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [creating, setCreating] = useState(false);
+  // PST-T-16.23: the header's New button unmounts while the form is open; folding the form away
+  // (Cancel, or done) hands focus back to it, as Account's Change password does.
+  const newButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (!creating && returnFocus.current) {
+      returnFocus.current = false;
+      newButton.current?.focus();
+    }
+  }, [creating]);
   const [site, setSite] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -37,6 +47,7 @@ export function Aliases() {
 
   // PST-T-16.23: the form is not in the DOM until "New alias" is pressed, and closes once it has made one.
   const closeForm = () => {
+    returnFocus.current = true;
     setCreating(false);
     setSite('');
     setFormError(null);
@@ -113,6 +124,7 @@ export function Aliases() {
         actions={
           creating ? null : (
             <Button
+              ref={newButton}
               variant="primary"
               onClick={() => {
                 setNotice(null);

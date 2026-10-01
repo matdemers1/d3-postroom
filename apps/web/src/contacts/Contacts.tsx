@@ -166,6 +166,9 @@ export function Contacts() {
               aria-current={selected?.addressBookId === c.addressBookId && selected.name === c.name ? 'true' : undefined}
               title={<RouterLink to={`${contactPath(c.addressBookId, c.name)}${filterSearch}`}>{c.displayName === '' ? 'No name' : c.displayName}</RouterLink>}
               description={<ContactSummaryLines contact={c} book={bookName.get(c.addressBookId) ?? ''} />}
+              // The library truncates by default (one nowrap line, ellipsis); off, the row wraps
+              // anywhere, so a long local part never costs the domain (PST-T-16.23).
+              truncate={false}
             />
           ))}
         </DataList>
