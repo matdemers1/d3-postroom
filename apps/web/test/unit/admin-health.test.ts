@@ -10,6 +10,7 @@ import {
   certificateValue,
   durationShort,
   healthSummary,
+  humanizeDetail,
   inboundQueueCounts,
   lastRunFootnote,
   lastRunStat,
@@ -18,6 +19,9 @@ import {
   relativeTime,
   servicesMeta,
   sinceText,
+  sortTiles,
+  tileAction,
+  BACKUP_RUNBOOK_URL,
 } from '../../src/admin/health/model';
 
 const SRC = join(__dirname, '../../src');
@@ -89,6 +93,8 @@ describe('Stats read only what the server sent', () => {
   it('parses the inbound-queue detail apps/api writes, and refuses anything else', () => {
     expect(inboundQueueCounts(tile({ id: 'queue', state: 'ok', detail: 'no dead jobs' }))).toEqual({ dead: 0, failed: 0 });
     expect(inboundQueueCounts(tile({ id: 'queue', state: 'down', detail: '2 dead job(s), 1 failed message(s)' }))).toEqual({ dead: 2, failed: 1 });
+    expect(inboundQueueCounts(tile({ id: 'queue', state: 'down', detail: '1 dead job, 3 failed messages' }))).toEqual({ dead: 1, failed: 3 });
+    expect(inboundQueueCounts(tile({ id: 'queue', state: 'ok', detail: 'No dead jobs' }))).toEqual({ dead: 0, failed: 0 });
     expect(inboundQueueCounts(tile({ id: 'queue', state: 'down', detail: 'something new' }))).toBeNull();
   });
 
@@ -152,5 +158,64 @@ describe('the Admin screens on the canvas (source scan)', () => {
       expect(text, file).not.toContain('box-shadow');
       expect(text, file).not.toContain('--color-success');
     }
+  });
+});
+
+describe('Health speaks plainly (PST-T-16.5, PST-DA-033)', () => {
+  it('capitalises the first letter and pluralises "(s)" by the count', () => {
+    expect(humanizeDetail('not yet checked')).toBe('Not yet checked');
+    expect(humanizeDetail('7 dead job(s), 5 failed message(s)')).toBe('7 dead jobs, 5 failed messages');
+    expect(humanizeDetail('1 dead job(s), 1 failed message(s)')).toBe('1 dead job, 1 failed message');
+    expect(humanizeDetail('0 session(s), 0 bytes compressed (0 raw)')).toBe('0 sessions, 0 bytes compressed (0 raw)');
+    expect(humanizeDetail('1 DKIM key(s) awaiting DNS beyond 3d')).toBe('1 DKIM key awaiting DNS beyond 3d');
+    expect(humanizeDetail('ok')).toBe('OK');
+    expect(humanizeDetail('expires in 3 days')).toBe('Expires in 3 days');
+    expect(humanizeDetail('')).toBe('');
+    for (const raw of ['3 dead job(s)', '1 session(s)', 'x']) expect(humanizeDetail(raw)).not.toContain('(s)');
+  });
+
+  it('maps raw errno reasons to sentences, whatever surrounds the code', () => {
+    expect(humanizeDetail("EACCES: permission denied, open '/backups/x.dump'")).toMatch(/^Permission denied/);
+    expect(humanizeDetail('EACCES')).not.toMatch(/EACCES/);
+    expect(humanizeDetail("ENOENT: no such file or directory, open '/x'")).toBe('A file or folder Postroom needs wasn’t found.');
+    expect(humanizeDetail('connect ECONNREFUSED 10.0.0.2:9000')).toBe('The connection was refused: nothing is listening there.');
+    expect(humanizeDetail('read ETIMEDOUT')).toMatch(/timed out/);
+    expect(humanizeDetail('write ENOSPC: no space left on device')).toBe('The disk is full.');
+    expect(lastRunFootnote(tile({ id: 'backup', state: 'down', detail: 'EACCES: permission denied' }), 'backup')).toMatch(/^Permission denied/);
+  });
+
+  it('orders rows down, then degraded, then not checked, then healthy, keeping server order within a state', () => {
+    const rows = [
+      tile({ id: 'ok1', state: 'ok' }),
+      tile({ id: 'unk1', state: 'unknown' }),
+      tile({ id: 'down1', state: 'down' }),
+      tile({ id: 'ok2', state: 'ok' }),
+      tile({ id: 'warn1', state: 'warn' }),
+      tile({ id: 'down2', state: 'down' }),
+      tile({ id: 'unk2', state: 'unknown' }),
+    ];
+    expect(sortTiles(rows).map((t) => t.id)).toEqual(['down1', 'down2', 'warn1', 'unk1', 'unk2', 'ok1', 'ok2']);
+    expect(rows[0]?.id).toBe('ok1');
+  });
+
+  it('links a failing Inbound queue to the dead jobs and a failing Backup or Drill to the backup runbook', () => {
+    expect(tileAction(tile({ id: 'queue', state: 'down' }))).toEqual({ label: 'View dead jobs', href: '/admin/jobs?status=dead', external: false });
+    expect(tileAction(tile({ id: 'backup', state: 'down' }))).toEqual({ label: 'Backup runbook', href: BACKUP_RUNBOOK_URL, external: true });
+    expect(tileAction(tile({ id: 'drill', state: 'warn' }))?.href).toBe(BACKUP_RUNBOOK_URL);
+    expect(BACKUP_RUNBOOK_URL).toBe('https://github.com/matdemers1/d3-postroom/blob/main/docs/runbooks/backups.md');
+  });
+
+  it('offers no link for a check that is fine, not checked, or has no fix screen; OK stays neutral', () => {
+    expect(tileAction(tile({ id: 'queue', state: 'ok' }))).toBeNull();
+    expect(tileAction(tile({ id: 'backup', state: 'unknown' }))).toBeNull();
+    expect(tileAction(tile({ id: 'disk', state: 'down' }))).toBeNull();
+    expect(TILE_TONE.ok.tone).toBe('neutral');
+  });
+
+  it('the screen sorts, humanises and opens the runbook in a new tab with rel noopener noreferrer', () => {
+    const health = read('screens/AdminHealth.tsx');
+    expect(health).toContain('sortTiles(tiles)');
+    expect(health).toContain('humanizeDetail(t.detail)');
+    expect(health).toContain('rel="noopener noreferrer"');
   });
 });
