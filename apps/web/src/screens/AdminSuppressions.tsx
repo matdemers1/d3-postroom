@@ -185,7 +185,7 @@ export function AdminSuppressions() {
   return (
     <Page>
       <PageHeader
-        title="Suppression list"
+        title="Suppressions"
         description="Addresses that hard-bounced or were added by hand. Mail to them is refused from every sending path until they are removed."
         actions={
           <Button

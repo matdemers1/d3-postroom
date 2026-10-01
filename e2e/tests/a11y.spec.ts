@@ -187,7 +187,7 @@ const SCREENS: Screen[] = [
   { name: 'Admin — Health', path: () => '/admin/health', ready: h1('Health'), data: /\/api\/admin\/health(\?|$)/, admin: true },
   { name: 'Admin — Jobs', path: () => '/admin/jobs', ready: h1('Jobs'), data: /\/api\/admin\/jobs(\?|$)/, admin: true },
   { name: 'Admin — Outbound queue', path: () => '/admin/queue', ready: h1('Outbound queue'), data: /\/api\/admin\/queue(\?|$)/, admin: true },
-  { name: 'Admin — Suppressions', path: () => '/admin/suppressions', ready: h1('Suppression list'), data: /\/api\/admin\/suppressions(\?|$)/, empty: (body) => ({ ...body, suppressions: [], total: 0 }), admin: true },
+  { name: 'Admin — Suppressions', path: () => '/admin/suppressions', ready: h1('Suppressions'), data: /\/api\/admin\/suppressions(\?|$)/, empty: (body) => ({ ...body, suppressions: [], total: 0 }), admin: true },
   {
     name: 'Admin — Deliverability',
     path: () => '/admin/deliverability',

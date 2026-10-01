@@ -43,7 +43,7 @@ test('lists a seeded hard bounce with the reply that caused it, axe clean', asyn
   expect(res.ok()).toBe(true);
 
   await page.goto('/admin/suppressions');
-  await expect(page.getByRole('heading', { name: 'Suppression list', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Suppressions', level: 1 })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search' }).fill(address);
   const row = page.getByRole('row').filter({ hasText: address });
   await expect(row).toBeVisible();
@@ -57,7 +57,7 @@ test('lists a seeded hard bounce with the reply that caused it, axe clean', asyn
 test('adds an address and removes it again, each through the step-up modal', async ({ page }) => {
   const address = `trap-${Date.now()}@manual.test`;
   await page.goto('/admin/suppressions');
-  await expect(page.getByRole('heading', { name: 'Suppression list', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Suppressions', level: 1 })).toBeVisible();
 
   await page.getByRole('button', { name: 'Add address' }).click();
   const add = page.getByRole('dialog', { name: /Add an address/ });

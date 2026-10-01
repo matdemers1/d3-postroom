@@ -140,7 +140,7 @@ async function checkAllFour(page: Page, geometry: string): Promise<void> {
 
   await test.step(`Suppressions (${geometry})`, async () => {
     await page.goto('/admin/suppressions');
-    await expect(page.getByRole('heading', { name: 'Suppression list', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Suppressions', level: 1 })).toBeVisible();
     await page.getByRole('searchbox', { name: 'Search addresses' }).fill(suppressed);
     const list = page.getByRole('list', { name: 'Suppression list' });
     await expect(list.getByText(suppressed)).toBeVisible();
