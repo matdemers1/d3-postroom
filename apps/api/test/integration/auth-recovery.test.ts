@@ -214,7 +214,11 @@ describe.skipIf(!baseUrl)('TOTP recovery codes (PST-T-16.7)', () => {
   it('recovery-code guesses count toward the same throttle and attempt cap as TOTP guesses (PST-REQ-075)', async () => {
     const ch = await challenge();
     const statuses: number[] = [];
-    for (let i = 0; i < 5; i++) statuses.push((await second(ch, `WRONG-${String(i).padStart(5, '0')}`)).status);
+    // Four recovery-shaped misses, then a TOTP-shaped fifth: the four are what bring the (login, IP)
+    // pair to the threshold, and the fifth costs no Argon2id work, so the 1 s delay it starts cannot
+    // run out on a slow runner before the sign-in below (the clock is wall time plus an offset).
+    for (let i = 0; i < 4; i++) statuses.push((await second(ch, `WRONG-${String(i).padStart(5, '0')}`)).status);
+    statuses.push((await second(ch, '000000')).status);
     expect(statuses).toEqual([401, 401, 401, 401, 401]);
     // The fifth miss burnt the challenge…
     expect((await second(ch, issued[1] ?? '')).status).toBe(401);

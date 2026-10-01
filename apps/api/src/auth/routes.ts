@@ -578,7 +578,7 @@ export function authRoutes(deps: ApiDeps): Router {
             step === null
               ? null
               : await db.$transaction(async (tx) => {
-                  if (!(await burnStep(tx, found.id, step))) return null;
+                  if (!(await burnStep(tx, found.id, step, found.totpSecret ?? undefined))) return null;
                   const replaced = await endPresentedSession(rt, tx, req);
                   const session = await issueSession(tx, found.id, { method: 'password', roles: [], secondFactor: factor }, req, rt.now());
                   await recordAudit(tx, {
@@ -683,7 +683,7 @@ export function authRoutes(deps: ApiDeps): Router {
       const ok =
         step !== null &&
         (await db.$transaction(async (tx) => {
-          if (!(await burnStep(tx, account.id, step))) return false;
+          if (!(await burnStep(tx, account.id, step, account.totpSecret ?? undefined))) return false;
           await tx.session.update({ where: { id: session.sessionId }, data: { stepUpAt: at } });
           await recordAudit(tx, {
             actor: asAccount(account.id),
@@ -1058,7 +1058,7 @@ export function authRoutes(deps: ApiDeps): Router {
         newHash === null || step === null
           ? null
           : await db.$transaction(async (tx) => {
-              if (!(await burnStep(tx, account.id, step))) return null;
+              if (!(await burnStep(tx, account.id, step, account.totpSecret ?? undefined))) return null;
               await tx.account.update({ where: { id: account.id }, data: { passwordHash: newHash } });
               const others = endOthers
                 ? await tx.session.findMany({ where: { accountId: account.id, id: { not: me.sessionId } }, select: { id: true } })

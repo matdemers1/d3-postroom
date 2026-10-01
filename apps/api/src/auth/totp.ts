@@ -53,9 +53,16 @@ type Tx = Prisma.TransactionClient;
  * false for a replay. Run inside the transaction that acts on the code: the conditional update is
  * one statement, so two concurrent uses of one code cannot both win.
  */
-export async function burnStep(tx: Tx, accountId: string, step: number): Promise<boolean> {
+export async function burnStep(tx: Tx, accountId: string, step: number, sealedSecret?: Uint8Array<ArrayBuffer>): Promise<boolean> {
+  // With the sealed secret the code was proven against, the burn also requires that secret is still
+  // the account's: a code from an authenticator that re-enrolment replaced between the check and this
+  // transaction burns nothing and mints nothing (PST-T-16.28; the old secret stops in the same commit).
   const { count } = await tx.account.updateMany({
-    where: { id: accountId, OR: [{ totpLastStep: null }, { totpLastStep: { lt: BigInt(step) } }] },
+    where: {
+      id: accountId,
+      OR: [{ totpLastStep: null }, { totpLastStep: { lt: BigInt(step) } }],
+      ...(sealedSecret === undefined ? {} : { totpSecret: { equals: sealedSecret } }),
+    },
     data: { totpLastStep: BigInt(step) },
   });
   return count === 1;

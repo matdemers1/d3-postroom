@@ -16,7 +16,7 @@ import type { Express } from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { recoveryCheckStats } from '../../src/auth/recovery.js';
-import { openTotpSecret } from '../../src/auth/totp.js';
+import { burnStep, openTotpSecret } from '../../src/auth/totp.js';
 import { request } from '../loopback.js';
 import { baseConfig, cookieHeader, cookiesOf, KEK_BASE64, TestClock, totpCode } from './helpers.js';
 
@@ -220,7 +220,7 @@ describe.skipIf(!baseUrl)('TOTP re-enrolment after a recovery-code sign-in (PST-
     expect((await second(await challenge(), totpCode(newSecret, clock.now()))).status).toBe(200);
   }, 60_000);
 
-  it('a repeat Begin answers the same pending secret with no new audit row; the sixth in the window is 429 (PST-T-16.28)', async () => {
+  it('a repeat Begin answers the same pending secret with a resume audit row, not a second begin; the sixth in the window is 429 (PST-T-16.28)', async () => {
     // A fresh recovery-code sign-in, with a code from the set issued after re-enrolment.
     const res = await second(await challenge(), fresh[0] ?? '');
     expect(res.status).toBe(200);
@@ -257,6 +257,18 @@ describe.skipIf(!baseUrl)('TOTP re-enrolment after a recovery-code sign-in (PST-
       expect(text).not.toContain(code);
       expect(text).not.toContain(code.replace('-', ''));
     }
+  });
+
+  it('a code proven against a replaced secret burns nothing: the burn is bound to the sealed secret it was checked against (PST-T-16.28)', async () => {
+    const account = await db.account.findUniqueOrThrow({ where: { id: operatorId } });
+    const current = account.totpSecret ?? new Uint8Array();
+    const stale = new Uint8Array(current);
+    stale[stale.length - 1] = (stale[stale.length - 1] ?? 0) ^ 0xff;
+    const step = Math.floor(clock.now().getTime() / 30_000) + 100;
+    // A sign-in that checked its code before re-enrolment committed holds the OLD sealed bytes.
+    expect(await db.$transaction((tx) => burnStep(tx, operatorId, step, stale))).toBe(false);
+    // The same step against the secret the account holds now still burns.
+    expect(await db.$transaction((tx) => burnStep(tx, operatorId, step, current))).toBe(true);
   });
 
   it('left no successful mutation unaudited', async () => {
