@@ -461,6 +461,7 @@
   border: var(--border-width) solid var(--color-border-field);
   border-radius: var(--radius-sm);
   background: var(--color-bg-sunken);
+  white-space: nowrap;
 }
 
 /* --- The Inspect drawer (PST-T-6.1, PST-REQ-114/115) ------------------------------------------

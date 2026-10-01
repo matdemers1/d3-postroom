@@ -177,6 +177,75 @@ test('the palette lists every place from the route table, grouped, with keycaps'
   await page.keyboard.press('Escape');
 });
 
+// PST-T-16.19 (PST-DA-026, PST-DA-056): Calendar and Contacts are Mail-place routes without a
+// MailView, and ⌘K and the go-to chords used to do nothing there.
+for (const [path, heading] of [['/calendar', 'Calendar'], ['/contacts', 'Contacts']] as const) {
+  test(`${path}: Ctrl+K opens the palette and g then i goes to the Inbox`, async ({ page }) => {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
+    await page.keyboard.press('Control+k');
+    const palette = page.getByRole('dialog', { name: 'Command palette' });
+    await expect(palette).toBeVisible();
+    await expect(palette.getByRole('group', { name: 'Go to' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(palette).toBeHidden();
+
+    await page.keyboard.press('g');
+    await page.keyboard.press('i');
+    await expect(page).toHaveURL(/\/mail\/inbox$/);
+  });
+}
+
+test('the go-to chords reach Sent, Drafts, Calendar and Contacts from a place without a MailView', async ({ page }) => {
+  await page.goto('/contacts');
+  await expect(page.getByRole('heading', { name: 'Contacts', level: 1 })).toBeVisible();
+  await page.keyboard.press('g');
+  await page.keyboard.press('s');
+  await expect(page).toHaveURL(/\/mail\/sent$/);
+  await page.keyboard.press('g');
+  await page.keyboard.press('d');
+  await expect(page).toHaveURL(/\/mail\/drafts$/);
+  await page.keyboard.press('g');
+  await page.keyboard.press('c');
+  await expect(page).toHaveURL(/\/calendar$/);
+  await page.keyboard.press('g');
+  await page.keyboard.press('p');
+  await expect(page).toHaveURL(/\/contacts$/);
+  await page.keyboard.press('g');
+  await page.keyboard.press('c');
+  await expect(page).toHaveURL(/\/calendar$/);
+  // Calendar binds a bare d to Day view; the chord's d must go to Drafts and not switch the view.
+  await page.keyboard.press('g');
+  await page.keyboard.press('d');
+  await expect(page).toHaveURL(/\/mail\/drafts$/);
+});
+
+test('typing in a field is not a chord', async ({ page }) => {
+  await page.goto('/contacts');
+  const search = page.getByRole('searchbox', { name: 'Search contacts' });
+  await search.fill('');
+  await search.press('g');
+  await search.press('s');
+  await expect(search).toHaveValue('gs');
+  await expect(page).toHaveURL(/\/contacts(\?q=gs)?$/);
+});
+
+test('the shortcuts overlay has a Close button, one-line keycaps, and the new chords', async ({ page }) => {
+  await seedMail(api, [{ subject: `Overlay check ${tag()}` }]);
+  await page.goto('/');
+  await expect(page.getByRole('listbox', { name: /^Messages in/ })).toBeVisible();
+  await page.keyboard.press('?');
+  const overlay = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toContainText('Work in any mailbox, except while you’re typing in a field.');
+  await expect(overlay.getByRole('columnheader', { name: 'Action' })).toBeVisible();
+  for (const keys of ['g then i', 'g then s', 'g then d', 'g then c', 'g then p']) await expect(overlay.locator('kbd', { hasText: new RegExp(`^${keys}$`) })).toHaveCount(1);
+  const wrap = await overlay.locator('kbd', { hasText: /^g then i$/ }).evaluate((el) => (el as unknown as { getBoundingClientRect: () => { height: number } }).getBoundingClientRect().height);
+  expect(wrap).toBeLessThan(30);
+  await overlay.getByRole('button', { name: 'Close' }).click();
+  await expect(overlay).toBeHidden();
+});
+
 test('moving between places cross-fades within --dur-2 and never slides; a page load does not fade', async ({ page }) => {
   // The suite runs with reduced motion (playwright.config.ts); this test is about the motion.
   await page.emulateMedia({ reducedMotion: 'no-preference' });

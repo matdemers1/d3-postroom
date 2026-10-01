@@ -56,6 +56,49 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { keys: '⌘K or Ctrl+K', action: 'commandPalette', description: 'Open the command palette' },
 ];
 
+// --- Go-to chords (PST-T-16.19, PST-DA-026) ------------------------------------------------------
+//
+// `g` then a letter goes to a place. Inbox keeps its MailAction ('goInbox', MailView performs it);
+// the rest are plain data here, resolved by the Shell so they work on every route — Calendar,
+// Contacts, Settings and Admin included. The overlay lists these rows beside the others.
+
+export type GoTarget = 'inbox' | 'sent' | 'drafts' | 'calendar' | 'contacts';
+
+export interface GoChord {
+  /** The second key, after g. */
+  key: string;
+  target: GoTarget;
+  path: string;
+  description: string;
+}
+
+export const GO_CHORDS: readonly GoChord[] = [
+  { key: 'i', target: 'inbox', path: '/mail/inbox', description: 'Go to Inbox' },
+  { key: 's', target: 'sent', path: '/mail/sent', description: 'Go to Sent' },
+  { key: 'd', target: 'drafts', path: '/mail/drafts', description: 'Go to Drafts' },
+  { key: 'c', target: 'calendar', path: '/calendar', description: 'Go to Calendar' },
+  { key: 'p', target: 'contacts', path: '/contacts', description: 'Go to Contacts' },
+];
+
+/** What a keydown means as a go-to chord, given a pending 'g'. Typing and modified keys mean nothing. */
+export function resolveGo(input: Pick<KeyInput, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'editable'>, pending: 'g' | null): { go: GoChord | null; pending: 'g' | null } {
+  if (input.editable || input.ctrlKey || input.metaKey || input.altKey) return { go: null, pending: null };
+  if (pending === 'g') return { go: GO_CHORDS.find((c) => c.key === input.key) ?? null, pending: null };
+  return { go: null, pending: input.key === 'g' ? 'g' : null };
+}
+
+/** The rows the ? overlay lists: SHORTCUTS, with the other go-to chords after "g then i". */
+export function overlayShortcuts(): { id: string; keys: string; description: string }[] {
+  const rows: { id: string; keys: string; description: string }[] = [];
+  for (const s of SHORTCUTS) {
+    rows.push({ id: s.action, keys: s.keys, description: s.description });
+    if (s.action === 'goInbox') {
+      for (const c of GO_CHORDS) if (c.target !== 'inbox') rows.push({ id: `go:${c.target}`, keys: `g then ${c.key}`, description: c.description });
+    }
+  }
+  return rows;
+}
+
 const SINGLE: Readonly<Record<string, MailAction>> = {
   j: 'next',
   k: 'prev',
