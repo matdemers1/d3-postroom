@@ -1,0 +1,163 @@
+/* PST-T-17.13 (PST-REQ-194, PST-REQ-155): Admin › Live SMTP on the canvas grammar. Two cards on the
+ * sheet (the card's own edge comes from @d3cloud/ui; nothing here fakes one), each opened by a
+ * toolbar row from admin.css. The log is a recessed mono pane with a time and a direction gutter —
+ * no pill per line. D3 semantic tokens only. */
+
+/* Visually hidden, still read: the direction word beside its glyph and the actions column header. */
+.pr-smtp-vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.pr-smtp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+  min-width: 0;
+}
+
+/* The toolbar's start: the card's title, then its state or its filters, on one line where it fits. */
+.pr-smtp-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+  min-width: 0;
+}
+
+.pr-smtp-title {
+  margin: 0;
+  font-size: var(--text-14);
+  line-height: var(--leading-14);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg);
+}
+
+.pr-smtp-search {
+  width: 15rem;
+  max-width: 100%;
+}
+
+.pr-smtp-count {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The log pane. Inside a card it runs edge to edge under the toolbar; in the transcript drawer it
+ * stands alone, so it takes its own hairline and radius (--framed). */
+.pr-smtp-log {
+  margin: 0;
+  padding: var(--space-8) 0;
+  background: var(--color-bg);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  line-height: var(--leading-20);
+  color: var(--color-fg);
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.pr-smtp-log--live {
+  max-height: 24rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.pr-smtp-log--framed {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.pr-smtp-log:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+/* One line: time, (session), direction, then the text. The text wraps anywhere rather than ever
+ * widening the page; its spaces are kept, since protocol text is exact. */
+.pr-smtp-line {
+  display: grid;
+  grid-template-columns: 8ch 2ch minmax(0, 1fr);
+  column-gap: var(--space-12);
+  padding: 0 var(--space-16);
+}
+
+.pr-smtp-log--sessions .pr-smtp-line {
+  grid-template-columns: 8ch 6ch 2ch minmax(0, 1fr);
+}
+
+.pr-smtp-line__time,
+.pr-smtp-line__sess {
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+}
+
+.pr-smtp-line__dir {
+  color: var(--color-fg-muted);
+  text-align: center;
+}
+
+.pr-smtp-line__text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* What we said back reads a step quieter than what the client sent. */
+.pr-smtp-line[data-dir='S'] .pr-smtp-line__text {
+  color: var(--color-fg-muted);
+}
+
+/* The live card's empty and loading states sit inside the card, padded like its rows. */
+.pr-smtp-body {
+  padding: var(--space-16);
+}
+
+/* Transcript drawer: what the session was, then the whole log. */
+.pr-smtp-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.pr-smtp-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+  margin: 0;
+  font-size: var(--text-13);
+  color: var(--color-fg-muted);
+}
+
+/* Phone (the 768 edge, PHONE_QUERY): the session gutter goes — the time and direction stay — and
+ * the pane is a little shorter so the sessions card is in reach. */
+@media (max-width: 767px), (max-height: 499px) {
+  .pr-smtp-log--sessions .pr-smtp-line {
+    grid-template-columns: 8ch 2ch minmax(0, 1fr);
+  }
+
+  .pr-smtp-line__sess {
+    display: none;
+  }
+
+  .pr-smtp-line {
+    column-gap: var(--space-8);
+    padding: 0 var(--space-12);
+  }
+
+  .pr-smtp-log--live {
+    max-height: 60dvh;
+  }
+
+  .pr-smtp-search {
+    width: 100%;
+  }
+}
