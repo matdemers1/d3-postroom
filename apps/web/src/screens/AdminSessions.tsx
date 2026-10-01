@@ -14,6 +14,7 @@ import {
   type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, api, describeError, type AdminSession } from '../api';
+import { CURRENT_SESSION_LABEL, END_SESSION_LABEL, SessionDetails } from './Sessions';
 import { Loading, LoadFailed } from './states';
 import '../admin/admin.css';
 
@@ -89,7 +90,8 @@ export function AdminSessions() {
       cell: (s) => (
         <span className="pr-inline">
           <span>{s.displayName}</span>
-          {s.current ? <Badge size="sm">This session</Badge> : null}
+          {s.current ? <Badge size="sm">{CURRENT_SESSION_LABEL}</Badge> : null}
+          <SessionDetails userAgent={s.userAgent} ip={s.ip} />
         </span>
       ),
     },
@@ -106,12 +108,12 @@ export function AdminSessions() {
             variant="danger-ghost"
             size="sm"
             data-session-id={s.id}
-            aria-label={`Revoke ${s.displayName}'s session from ${s.ip ?? 'an unknown address'}`}
+            aria-label={`${END_SESSION_LABEL} ${s.displayName}'s session from ${s.ip ?? 'an unknown address'}`}
             onClick={() => {
               void revoke(s);
             }}
           >
-            Revoke
+            {END_SESSION_LABEL}
           </Button>
         ),
     },
@@ -151,14 +153,14 @@ export function AdminSessions() {
           if (!open) setPending(null);
         }}
         title="Confirm it is you"
-        description="Revoking a session is destructive. Enter a code from your authenticator; it stays valid for five minutes."
+        description="Signing a session out is destructive. Enter a code from your authenticator; it stays valid for five minutes."
         footer={
           <>
             <ModalClose>
               <Button type="button">Cancel</Button>
             </ModalClose>
             <Button type="submit" form="step-up" variant="danger" loading={busy}>
-              Verify and revoke
+              Verify and sign out
             </Button>
           </>
         }
