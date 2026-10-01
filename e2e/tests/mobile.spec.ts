@@ -15,6 +15,9 @@
 // is the other specs' 1280 px assertions. The 'mobile' project (390×844) runs the sweeps below;
 // the 'landscape' project (844×390, PST-T-16.18) runs only the last suite, because the sweeps
 // above it measure against portrait numbers (390 wide, 844 tall).
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext, type Locator, type Page } from '@playwright/test';
 
@@ -673,6 +676,109 @@ test.describe('Outbound queue as cards (PST-T-16.13)', () => {
     const drawer = page.getByRole('dialog', { name: 'Delivery details' });
     await expect(drawer.getByTestId('queue-last-response')).toContainText('greylisted (seeded for e2e)');
     await assertMobileFriendly(page, '/admin/queue (details drawer)');
+  });
+});
+
+// PST-T-17.1 (PST-REQ-155, PST-REQ-194): Health, the Outbound queue and Deliverability are lists of
+// cards on a phone — not a table clipped at the right edge. On each: the page never scrolls sideways,
+// nothing inside main reaches past the viewport, and every row action is on screen. Self-contained,
+// like the queue suite above: it seeds its own queue row and the DMARC/TLS fixtures.
+const reportFixtures = join(import.meta.dirname, '..', '..', 'packages', 'reports', 'test', 'fixtures');
+function reportFixture(suffix: string, contentType: string): { filename: string; contentType: string; contentBase64: string } {
+  const filename = readdirSync(reportFixtures).find((f) => f.endsWith(suffix));
+  if (filename === undefined) throw new Error(`no fixture ending ${suffix}`);
+  return { filename, contentType, contentBase64: readFileSync(join(reportFixtures, filename)).toString('base64') };
+}
+
+interface OverflowElement {
+  tagName: string;
+  className: unknown;
+  parentElement: OverflowElement | null;
+  getBoundingClientRect(): { right: number; width: number };
+}
+interface OverflowWindow {
+  innerWidth: number;
+  document: { scrollingElement: { scrollWidth: number } | null; querySelectorAll(selector: string): OverflowElement[] };
+  getComputedStyle(el: OverflowElement): { overflowX: string; display: string; visibility: string };
+}
+
+test.describe('Health, Outbound queue and Deliverability as cards (PST-T-17.1)', () => {
+  test.beforeAll(async () => {
+    if (cookies.length === 0) {
+      operator = await ensureOperator(api);
+      cookies = await signInCookies(api, operator);
+    }
+  });
+
+  test('nothing inside main overflows sideways, and every row action is visible', async ({ page }) => {
+    const t = tag();
+    const domain = `canvas-${t}.test`;
+    const queued = await api.post('/api/admin/queue/dev-seed-deferred', { headers: CSRF, data: { domain } });
+    if (queued.status() === 404) throw new Error('the stack has no dev-seed-deferred route: start the api with POSTROOM_E2E_SEED=1');
+    const reports = await api.post('/api/admin/deliverability/dev/seed', {
+      headers: CSRF,
+      data: {
+        messages: [
+          { from: 'noreply-dmarc-support@google.com', subject: 'Report domain: d3cloud.io Submitter: google.com Report-ID: 4817259360124789153', attachments: [reportFixture('.zip', 'application/zip')] },
+          { from: 'noreply-smtp-tls-reporting@google.com', subject: 'Report Domain: d3cloud.io Submitter: google.com Report-ID: <2026.09.24T00.00.00Z+d3cloud.io@google.com>', attachments: [reportFixture('.json.gz', 'application/tlsrpt+gzip')] },
+        ],
+      },
+    });
+    if (reports.status() === 404) throw new Error('the stack has no deliverability dev seed route: start the api with POSTROOM_E2E_SEED=1');
+    await expect
+      .poll(async () => ((await (await api.get('/api/admin/deliverability?days=3650')).json()) as { dmarc: { totals: { reports: number } } }).dmarc.totals.reports, {
+        timeout: 60_000,
+        message: 'the reports never appeared — is the worker running against this stack?',
+      })
+      .toBeGreaterThan(0);
+
+    const screens: { path: string; h1: string; list: string; actions: number }[] = [
+      { path: '/admin/health', h1: 'Health', list: 'Services', actions: 0 },
+      { path: `/admin/queue?domain=${domain}`, h1: 'Outbound queue', list: 'Outbound queue', actions: 1 },
+      { path: '/admin/deliverability?days=3650', h1: 'Deliverability', list: 'DMARC results by sending source', actions: 0 },
+    ];
+    for (const screen of screens) {
+      await page.goto(screen.path);
+      await expect(page.getByRole('heading', { name: screen.h1, level: 1 })).toBeVisible();
+      await expect(page.getByRole('list', { name: screen.list })).toBeVisible();
+      // A phone gets cards: no table anywhere in main.
+      await expect(page.locator('main table')).toHaveCount(0);
+
+      const overflow = await page.evaluate(() => {
+        const w = globalThis as unknown as OverflowWindow;
+        // Text cut off behind its own ellipsis reports its full width, but nothing of it shows past the
+        // box that clips it: an element counts only when no clipping ancestor stops inside the viewport.
+        const clipped = (el: OverflowElement): boolean => {
+          for (let p = el.parentElement; p !== null; p = p.parentElement) {
+            if (w.getComputedStyle(p).overflowX !== 'visible' && p.getBoundingClientRect().right <= w.innerWidth) return true;
+          }
+          return false;
+        };
+        const offenders = [...w.document.querySelectorAll('main *')]
+          .filter((el) => {
+            const rect = el.getBoundingClientRect();
+            const style = w.getComputedStyle(el);
+            return rect.width > 0 && style.display !== 'none' && style.visibility !== 'hidden' && rect.right > w.innerWidth + 0.5 && !clipped(el);
+          })
+          .map((el) => `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)} right=${String(Math.round(el.getBoundingClientRect().right))}`);
+        return { scrollWidth: w.document.scrollingElement?.scrollWidth ?? 0, innerWidth: w.innerWidth, offenders };
+      });
+      expect(overflow.scrollWidth, `${screen.path}: the page scrolls sideways`).toBeLessThanOrEqual(overflow.innerWidth);
+      expect(overflow.offenders, `${screen.path}: elements in main past the right edge`).toEqual([]);
+
+      // Every row action — the queue's ⋯ menu, Health's next step — is on screen, whole.
+      const actions = page.locator('main .d3-dlrow__actions').locator('button, a');
+      expect(await actions.count(), `${screen.path}: row actions`).toBeGreaterThanOrEqual(screen.actions);
+      for (const action of await actions.all()) {
+        await action.scrollIntoViewIfNeeded();
+        await expect(action).toBeVisible();
+        const box = await action.boundingBox();
+        expect(box, `${screen.path}: a row action has no box`).not.toBeNull();
+        expect(box?.x ?? -1, `${screen.path}: a row action starts left of the screen`).toBeGreaterThanOrEqual(0);
+        expect((box?.x ?? 0) + (box?.width ?? 0), `${screen.path}: a row action runs past the right edge`).toBeLessThanOrEqual(overflow.innerWidth);
+      }
+      await assertMobileFriendly(page, `${screen.path} (cards)`);
+    }
   });
 });
 

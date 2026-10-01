@@ -7,20 +7,25 @@ import { describe, expect, it } from 'vitest';
 import type { HealthTile } from '../../src/api';
 import {
   TILE_TONE,
-  certificateValue,
+  backupNotConfigured,
+  certificateStat,
   durationShort,
   healthSummary,
   humanizeDetail,
   inboundQueueCounts,
+  inboundQueueStat,
   lastRunFootnote,
+  lastRunView,
   lastRunStat,
   queueMeta,
   queueState,
   relativeTime,
+  serviceName,
   servicesMeta,
   sinceText,
   sortTiles,
   tileAction,
+  tileDetail,
   BACKUP_RUNBOOK_URL,
 } from '../../src/admin/health/model';
 
@@ -106,10 +111,47 @@ describe('Stats read only what the server sent', () => {
     expect(lastRunFootnote(tile({ id: 'backup', state: 'down', detail: 'S3 refused' }), 'backup')).toBe('S3 refused');
   });
 
-  it('certificates are one word; the detail carries the numbers', () => {
-    expect(certificateValue(tile({ id: 'cert-expiry', state: 'ok' }))).toBe('Valid');
-    expect(certificateValue(tile({ id: 'cert-expiry', state: 'down' }))).toBe('Failing');
-    expect(certificateValue(tile({ id: 'cert-expiry', state: 'unknown' }))).toBe('Not checked');
+  it('certificates are days left, read from the monitor’s detail, or "—" — never a status word (PST-T-17.1)', () => {
+    expect(certificateStat(tile({ id: 'cert-expiry', state: 'ok', detail: 'all certificates valid for at least 21 days' }))).toMatchObject({ value: '21+', unit: 'days left' });
+    const failing = certificateStat(tile({ id: 'cert-expiry', state: 'down', detail: 'a.pem: expires in 3.6 days; b.pem: expires in 12.0 days' }));
+    expect(failing).toMatchObject({ value: '3', unit: 'days left', status: { label: 'Down', tone: 'danger' } });
+    expect(certificateStat(tile({ id: 'cert-expiry', state: 'down', detail: 'a.pem: expires in 0.4 days' }))).toMatchObject({ value: '0', unit: 'days left' });
+    expect(certificateStat(tile({ id: 'cert-expiry', state: 'unknown', detail: 'Not yet checked' }))).toEqual({
+      value: '—',
+      status: { label: 'Not checked', tone: 'idle' },
+      footnote: 'Not checked yet',
+    });
+    expect(certificateStat(tile({ id: 'cert-expiry', state: 'down', detail: 'a.pem: ENOENT' })).value).toBe('—');
+    expect(certificateStat(undefined)).toMatchObject({ value: '—', footnote: 'Not reported' });
+  });
+
+  it('every Stat value is a number, a time or "—"; the inbound queue counts dead jobs', () => {
+    expect(inboundQueueStat(tile({ id: 'queue', state: 'down', detail: '1 dead job, 1 failed message' }))).toEqual({
+      value: '1',
+      unit: 'dead job',
+      status: { label: 'Down', tone: 'danger' },
+      footnote: '1 failed message',
+    });
+    expect(inboundQueueStat(tile({ id: 'queue', state: 'ok', detail: 'something new' })).value).toBe('—');
+    expect(inboundQueueStat(undefined).value).toBe('—');
+  });
+
+  it('a backup with no offsite bucket is "Local only" with an attention status, not a time over "Not checked"', () => {
+    const skipped = tile({
+      id: 'backup',
+      state: 'unknown',
+      since: new Date(NOW.getTime() - 60_000).toISOString(),
+      detail: 'backups not configured (BACKUP_BUCKET not set): local dump only, nothing left this machine',
+    });
+    expect(backupNotConfigured(skipped)).toBe(true);
+    expect(lastRunView(skipped, 'backup', NOW)).toEqual({
+      value: 'Local only',
+      status: { label: 'No offsite copy', tone: 'attention' },
+      footnote: 'BACKUP_BUCKET not set · local dump ran 1 min ago',
+    });
+    const ran = lastRunView(tile({ id: 'drill', state: 'ok', detail: 'ok', since: new Date(NOW.getTime() - 60_000).toISOString() }), 'drill', NOW);
+    expect(ran).toMatchObject({ unit: 'today', status: { label: 'Healthy', tone: 'neutral' }, footnote: 'Last drill succeeded' });
+    expect(lastRunView(tile({ id: 'drill', state: 'unknown', detail: 'Never run' }), 'drill', NOW).value).toBe('Never');
   });
 });
 
@@ -215,7 +257,71 @@ describe('Health speaks plainly (PST-T-16.5, PST-DA-033)', () => {
   it('the screen sorts, humanises and opens the runbook in a new tab with rel noopener noreferrer', () => {
     const health = read('screens/AdminHealth.tsx');
     expect(health).toContain('sortTiles(tiles)');
-    expect(health).toContain('humanizeDetail(t.detail)');
+    expect(health).toContain('tileDetail(tile)');
     expect(health).toContain('rel="noopener noreferrer"');
+  });
+});
+
+describe('Health on the canvas (PST-T-17.1, admin critique 2.1)', () => {
+  it('names the daemons in words and leaves the server’s own labels alone', () => {
+    expect(serviceName({ id: 'smtp-in', label: 'smtp-in' })).toBe('SMTP inbound');
+    expect(serviceName({ id: 'imap', label: 'imap' })).toBe('IMAP');
+    expect(serviceName({ id: 'managesieve', label: 'managesieve' })).toBe('ManageSieve');
+    expect(serviceName({ id: 'dav', label: 'dav' })).toBe('CalDAV / CardDAV');
+    expect(serviceName({ id: 'queue', label: 'Inbound queue' })).toBe('Inbound queue');
+    expect(serviceName({ id: 'newd', label: 'newd' })).toBe('Newd');
+  });
+
+  it('drops a detail that only restates the status, and humanises the rest', () => {
+    expect(tileDetail({ state: 'warn', detail: 'reported degraded' })).toBeNull();
+    expect(tileDetail({ state: 'unknown', detail: 'Not yet checked' })).toBeNull();
+    expect(tileDetail({ state: 'ok', detail: 'reachable' })).toBeNull();
+    expect(tileDetail({ state: 'ok', detail: 'ok' })).toBeNull();
+    expect(tileDetail({ state: 'down', detail: 'HTTP 503' })).toBe('HTTP 503');
+    expect(tileDetail({ state: 'down', detail: '2 dead job(s), 1 failed message(s)' })).toBe('2 dead jobs, 1 failed message');
+    // "reachable" on a down tile is not a restatement, so it stays.
+    expect(tileDetail({ state: 'down', detail: 'reachable' })).toBe('Reachable');
+  });
+
+  it('has no Edge card, no pr-admin-card, a 9rem Status column, and cards on a phone', () => {
+    const health = read('screens/AdminHealth.tsx');
+    expect(health).not.toMatch(/title="Edge"/);
+    expect(health).not.toContain('pr-admin-card');
+    expect(health).toMatch(/key: 'state', header: 'Status', align: 'end', width: '9rem'/);
+    expect(health).toContain('useMediaQuery(PHONE_QUERY)');
+    expect(health).toContain('<DataList aria-label="Services"');
+    expect(health).toContain('className="pr-table-card"');
+    expect(health).toContain('<RelativeTime');
+  });
+});
+
+describe('Health, Queue and Deliverability share one list grammar (source scan)', () => {
+  const screens = ['AdminHealth', 'AdminQueue', 'AdminDeliverability'];
+
+  it('no column width is fr or minmax (admin critique X8), and pr-admin-card is gone', () => {
+    for (const screen of screens) {
+      const src = read(`screens/${screen}.tsx`);
+      expect(src, screen).not.toMatch(/width: '[^']*(fr|minmax)[^']*'/);
+      expect(src, screen).not.toContain('pr-admin-card');
+    }
+    expect(read('admin/admin.css')).not.toMatch(/\.pr-admin-card\b/);
+  });
+
+  it('every list is in a pr-table-card; no Badge, no stacked FormField filter, no local when()', () => {
+    for (const screen of screens) {
+      const src = read(`screens/${screen}.tsx`);
+      expect(src, screen).toContain('pr-table-card');
+      expect(src, screen).not.toMatch(/<Badge\b/);
+      expect(src, screen).not.toMatch(/<FormField label="(Domain|State|Range|Search)"/);
+      expect(src, screen).not.toMatch(/const when = /);
+    }
+  });
+
+  it('renders a phone as DataList cards', () => {
+    for (const screen of screens) {
+      const src = read(`screens/${screen}.tsx`);
+      expect(src, screen).toMatch(/useMediaQuery\((QUEUE_)?PHONE_QUERY\)/);
+      expect(src, screen).toContain('<DataList');
+    }
   });
 });

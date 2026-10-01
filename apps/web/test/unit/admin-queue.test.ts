@@ -6,13 +6,20 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  domainMenuItems,
   filterByMessage,
   lastResponse,
+  matchesQueueState,
   parseQueueFilters,
   QUEUE_PHONE_QUERY,
+  QUEUE_STATE_SEGMENTS,
   queueMenuItems,
+  queueStateCounts,
+  recipientCount,
+  rowsForState,
   withQueueFilter,
 } from '../../src/admin/queue/model';
+import { PHONE_QUERY } from '../../src/mail/useMedia';
 
 const SRC = join(__dirname, '../../src');
 const read = (path: string): string => readFileSync(join(SRC, path), 'utf8');
@@ -101,9 +108,90 @@ describe('AdminQueue layout (source)', () => {
     }
   });
 
-  it('keeps its filters in the URL, and renders cards below 640px', () => {
+  it('keeps its filters in the URL, and renders cards on a phone', () => {
     expect(screen).toContain('useSearchParams');
     expect(screen).toContain('<DataListRow');
+    expect(screen).toContain('useMediaQuery(PHONE_QUERY)');
+    expect(QUEUE_PHONE_QUERY).toBe(PHONE_QUERY);
     expect(QUEUE_PHONE_QUERY).toBe('(max-width: 767px), (max-height: 499px)');
+  });
+});
+
+describe('the State segments (PST-T-17.1, admin critique X7)', () => {
+  const rows = [{ state: 'queued' }, { state: 'deferred' }, { state: 'deferred' }, { state: 'bounced' }];
+
+  it('are five, so a SegmentedControl: All, Pending, Deferred, Held, Failed', () => {
+    expect(QUEUE_STATE_SEGMENTS.map((s) => s.label)).toEqual(['All', 'Pending', 'Deferred', 'Held', 'Failed']);
+    expect(QUEUE_STATE_SEGMENTS.map((s) => s.value)).toEqual(['', 'pending', 'deferred', 'held', 'failed']);
+  });
+
+  it('match rows the way the API reads ?state= (pending is queued, failed is bounced)', () => {
+    expect(matchesQueueState('queued', 'pending')).toBe(true);
+    expect(matchesQueueState('bounced', 'failed')).toBe(true);
+    expect(matchesQueueState('deferred', 'pending')).toBe(false);
+    expect(matchesQueueState('deferred', '')).toBe(true);
+    expect(matchesQueueState('queued', 'held')).toBe(false);
+  });
+
+  it('count every state, with held as the API answered it', () => {
+    expect(queueStateCounts(rows, 2)).toEqual({ '': 4, pending: 1, deferred: 2, held: 2, failed: 1 });
+    expect(queueStateCounts([], 0)).toEqual({ '': 0, pending: 0, deferred: 0, held: 0, failed: 0 });
+  });
+
+  it('show the held list for Held and filter the rest locally', () => {
+    const held = [{ state: 'queued' }];
+    expect(rowsForState(rows, held, 'held')).toEqual(held);
+    expect(rowsForState(rows, held, 'deferred')).toHaveLength(2);
+    expect(rowsForState(rows, held, '')).toHaveLength(4);
+  });
+
+  it('say how many recipients the list holds', () => {
+    expect(recipientCount(1)).toBe('1 recipient');
+    expect(recipientCount(12)).toBe('12 recipients');
+  });
+});
+
+describe('domain actions (admin critique 2.2 #1)', () => {
+  it('offer the four actions for a whole domain, each with the confirm modal’s title, Delete last and the only danger', () => {
+    const items = domainMenuItems('example.com', true);
+    expect(items.map((i) => i.label)).toEqual(['Retry all', 'Force SES for all', 'Bounce all', 'Delete all…']);
+    expect(items.map((i) => i.confirm)).toEqual([
+      'Retry every recipient at example.com',
+      'Force SES for example.com',
+      'Bounce every recipient at example.com',
+      'Delete every recipient at example.com',
+    ]);
+    expect(items.filter((i) => i.tone === 'danger').map((i) => i.kind)).toEqual(['delete']);
+    expect(domainMenuItems('example.com', false).find((i) => i.kind === 'force-ses')?.disabled).toBe(true);
+  });
+});
+
+describe('AdminQueue on the canvas (source, PST-T-17.1)', () => {
+  const screen = read('screens/AdminQueue.tsx');
+  const actions = read('admin/queue/QueueActions.tsx');
+
+  it('has one Domain field: a SearchField in the card toolbar, and no Bulk section', () => {
+    expect(screen.match(/aria-label="Domain"/g)).toHaveLength(1);
+    expect(screen).toContain('<SearchField');
+    expect(screen).toContain('<SegmentedControl');
+    expect(screen).toContain('className="pr-table-toolbar"');
+    expect(screen).not.toMatch(/Bulk, by domain/);
+    expect(screen).not.toMatch(/<FormField label="Domain"/);
+    expect(screen).not.toMatch(/<Select\b/);
+  });
+
+  it('shows the domain’s bulk actions only once a domain is typed', () => {
+    expect(screen).toMatch(/domain === '' \? null : \(\s*<DomainActions/);
+  });
+
+  it('the row action is a ⋯ IconButton menu under a visually hidden header; nothing red in the row', () => {
+    expect(actions).toMatch(/<IconButton label=\{`Actions for \$\{address\}`\}/);
+    expect(screen).toContain("header: hidden('Actions')");
+    expect(screen).not.toContain('danger-ghost');
+    expect(screen).not.toMatch(/variant="danger"(?![^>]*form="queue-confirm")/);
+  });
+
+  it('shows Next attempt as a relative time in a rem-width column', () => {
+    expect(screen).toMatch(/header: 'Next attempt', width: '\d+(\.\d+)?rem', cell: \(r\) => <RelativeTime iso=\{r\.nextAttemptAt\} \/>/);
   });
 });
