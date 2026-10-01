@@ -1620,3 +1620,66 @@ export function parseSmtpLiveBlock(block: string): SmtpLiveLine | null {
     return null;
   }
 }
+
+// --- Sign in with D3 Auth, from the console (PST-T-17.7; PST-REQ-201, PST-REQ-202, PST-REQ-204) -----
+// PST-ADR-014: D3 Auth is configured in the admin console (the secret sealed at rest, no restart);
+// the server's env file is the fallback. Writes need a fresh step-up (403 step_up_required).
+
+/** Where the live D3 Auth settings come from: the console, the server's env file, or nowhere. */
+export type D3AuthSource = 'console' | 'server_file' | 'none';
+export type D3AuthStatus = 'available' | 'unavailable' | 'not_configured';
+
+export interface D3AuthConfig {
+  source: D3AuthSource;
+  enabled: boolean;
+  issuer: string | null;
+  clientId: string | null;
+  /** The secret is write-only: the server says only whether one is saved. */
+  secretSet: boolean;
+  status: D3AuthStatus;
+  lastError: string | null;
+  redirectUri: string;
+  backchannelLogoutUri: string;
+  postLogoutRedirectUri: string;
+  /** The D3 Auth app manifest, ready to paste. */
+  manifest: Record<string, unknown>;
+}
+
+export interface D3AuthConfigInput {
+  issuer: string;
+  clientId: string;
+  /** Absent keeps the saved secret. */
+  clientSecret?: string;
+}
+
+export interface D3AuthTestResult {
+  ok: boolean;
+  issuer: string;
+  authorizationEndpoint?: string;
+  error?: string;
+}
+
+/** One D3 Auth identity linked to the signed-in account. */
+export interface LinkedIdentity {
+  id: string;
+  issuer: string;
+  email: string | null;
+  linkedAt: string;
+  lastUsedAt: string | null;
+}
+
+/** A real navigation, not a fetch: the server checks the sign-in is fresh, then hands over to D3 Auth. */
+export const OIDC_LINK_PATH = '/api/auth/oidc/start?link=1';
+
+export const d3authApi = {
+  config: () => call<D3AuthConfig>('GET', '/api/admin/auth/d3auth'),
+  /** Step-up. 400 invalid_request with `fields` when the issuer or client ID is refused. */
+  save: (input: D3AuthConfigInput) => call<D3AuthConfig>('PUT', '/api/admin/auth/d3auth', input),
+  /** Discovery against `issuer`, or the saved issuer when it is absent. Never saves. */
+  test: (issuer?: string) => call<D3AuthTestResult>('POST', '/api/admin/auth/d3auth/test', issuer === undefined ? {} : { issuer }),
+  /** Step-up. Answers the turned-off config. */
+  turnOff: () => call<D3AuthConfig>('DELETE', '/api/admin/auth/d3auth'),
+  identities: () => call<LinkedIdentity[]>('GET', '/api/account/identities'),
+  /** Step-up. 204. */
+  unlink: (id: string) => call<null>('DELETE', `/api/account/identities/${encodeURIComponent(id)}`),
+};
