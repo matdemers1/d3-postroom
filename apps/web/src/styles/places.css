@@ -119,6 +119,28 @@
   padding: var(--page-pad);
 }
 
+/* PST-T-16.2: a failed pane inside the mail view keeps its column, so the other pane stays put. */
+.pr-pane-error--compact {
+  padding: var(--space-16);
+  box-sizing: border-box;
+}
+
+.pr-pane-error--list {
+  flex: 0 0 auto;
+  width: clamp(18rem, 38%, 24.5rem);
+  border-right: var(--border-width) solid var(--color-border);
+}
+
+.pr-pane-error--reader {
+  flex: 1;
+  min-width: 0;
+}
+
+.pr-mail[data-layout='push'] .pr-pane-error--list {
+  width: 100%;
+  border-right: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Asked for less motion: places swap instantly (the palette's own motion is the library's). */
   .pr-place--fade {

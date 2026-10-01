@@ -479,11 +479,37 @@
   max-height: none;
   border-radius: 0;
   border-width: 0 0 0 var(--border-width);
-  animation-name: pr-inspect-in;
+  /* PST-T-16.2 (PST-REQ-192): a drawer slides on the drawer's own timing (--motion-drawer, 280 ms
+     ease-out), not the modal's 420 ms spring — an overshoot has no place on an edge-anchored sheet.
+     The Delivery details sheet and the admin queue drawer share this class, so they share the motion. */
+  animation: pr-inspect-in var(--motion-drawer) backwards;
 }
 
 .d3-modal.pr-inspect[data-state='closed'] {
-  animation-name: pr-inspect-out;
+  animation: pr-inspect-out var(--motion-drawer) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Asked for less motion: the drawer fades, it does not travel. */
+  .d3-modal.pr-inspect {
+    animation: pr-inspect-fade-in var(--motion-popover-enter) backwards;
+  }
+
+  .d3-modal.pr-inspect[data-state='closed'] {
+    animation: pr-inspect-fade-out var(--motion-popover-enter) forwards;
+  }
+}
+
+@keyframes pr-inspect-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pr-inspect-fade-out {
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes pr-inspect-in {
