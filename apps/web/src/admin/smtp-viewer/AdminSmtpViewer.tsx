@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -17,10 +17,10 @@ import {
 } from '@d3cloud/ui';
 import { api, parseSmtpLiveBlock, type SmtpLiveLine, type SmtpTranscriptDetail, type SmtpTranscriptLine, type SmtpTranscriptSummary } from '../../api';
 import { fullTime, RelativeTime, relativeTime } from '../../components/RelativeTime';
+import { useFocusReturn } from '../../mail/focusReturn';
 import { PHONE_QUERY, useMediaQuery } from '../../mail/useMedia';
 import { Loading, LoadFailed } from '../../screens/states';
 import {
-  appendCapped,
   atBottom,
   clock,
   daemonCounts,
@@ -29,7 +29,11 @@ import {
   duration,
   filterTranscripts,
   humanBytes,
+  initialLiveFeed,
+  liveCount,
+  liveFeedReducer,
   liveStatus,
+  MAX_LIVE_LINES,
   sessionCount,
   sessionTag,
   type DaemonFilter,
@@ -66,17 +70,16 @@ function LogRow({ line, live }: { line: LogLine; live: boolean }) {
 }
 
 /** The admin-only live SMTP viewer (PST-REQ-117): every session, line by line, credentials already
- * redacted server-side before this ever sees them. Pause holds new lines rather than dropping them;
- * Clear empties the view only (the stored transcripts are untouched). */
+ * redacted server-side before this ever sees them. Pause holds new lines (up to the cap, and says
+ * when the oldest fell off); Resume flushes them in one step; Clear empties the view only (the
+ * stored transcripts are untouched). The state is model.ts's liveFeedReducer. */
 function LiveFeed() {
-  const [lines, setLines] = useState<LogLine[]>([]);
-  const [held, setHeld] = useState<LogLine[]>([]);
+  const [feed, dispatch] = useReducer(liveFeedReducer<LogLine>, MAX_LIVE_LINES, initialLiveFeed<LogLine>);
   const [connection, setConnection] = useState<LiveConnection>('connecting');
-  const [paused, setPaused] = useState(false);
   const [pinned, setPinned] = useState(true);
-  const pausedRef = useRef(false);
   const seq = useRef(0);
   const logRef = useRef<HTMLDivElement | null>(null);
+  const { lines, held, paused } = feed;
 
   useEffect(() => {
     const source = new EventSource('/api/admin/smtp/live');
@@ -91,9 +94,8 @@ function LiveFeed() {
       const parsed = parseSmtpLiveBlock(`event: line\ndata: ${(ev as MessageEvent<string>).data}`);
       if (parsed === null) return;
       seq.current += 1;
-      const next = { ...parsed, key: seq.current };
-      if (pausedRef.current) setHeld((prev) => appendCapped(prev, [next]));
-      else setLines((prev) => appendCapped(prev, [next]));
+      // Paused or not is the reducer's call, made against the state it holds — never a stale copy.
+      dispatch({ type: 'line', line: { ...parsed, key: seq.current } });
     });
     return () => {
       source.close();
@@ -106,29 +108,10 @@ function LiveFeed() {
     if (el !== null && pinned) el.scrollTop = el.scrollHeight;
   }, [lines, pinned]);
 
-  const togglePause = (): void => {
-    if (pausedRef.current) {
-      pausedRef.current = false;
-      setPaused(false);
-      setLines((prev) => appendCapped(prev, held));
-      setHeld([]);
-    } else {
-      pausedRef.current = true;
-      setPaused(true);
-    }
-  };
-
-  const clear = (): void => {
-    setLines([]);
-    setHeld([]);
-    setPinned(true);
-  };
-
   const status = liveStatus(connection, paused);
-  const count = `${String(lines.length)} ${lines.length === 1 ? 'line' : 'lines'}${held.length > 0 ? ` · ${String(held.length)} new while paused` : ''}`;
 
   return (
-    <Card as="section" className="pr-table-card" aria-labelledby="pr-smtp-live-title">
+    <Card as="section" className="pr-table-card pr-smtp-live" aria-labelledby="pr-smtp-live-title">
       <div className="pr-table-toolbar">
         <div className="pr-smtp-head">
           <h2 id="pr-smtp-live-title" className="pr-smtp-title">
@@ -139,26 +122,29 @@ function LiveFeed() {
           </StatusDot>
         </div>
         <div className="pr-table-toolbar__end">
-          <span className="pr-smtp-count">
-            {count}
-          </span>
-          {!pinned && lines.length > 0 ? (
+          <span className="pr-smtp-count">{liveCount(feed)}</span>
+          <span className="pr-smtp-actions">
             <Button
               size="sm"
-              variant="ghost"
+              variant="secondary"
               onClick={() => {
+                dispatch({ type: paused ? 'resume' : 'pause' });
+              }}
+            >
+              {paused ? 'Resume' : 'Pause'}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={lines.length === 0 && held.length === 0}
+              onClick={() => {
+                dispatch({ type: 'clear' });
                 setPinned(true);
               }}
             >
-              Jump to latest
+              Clear
             </Button>
-          ) : null}
-          <Button size="sm" variant="secondary" onClick={togglePause}>
-            {paused ? 'Resume' : 'Pause'}
-          </Button>
-          <Button size="sm" variant="secondary" disabled={lines.length === 0 && held.length === 0} onClick={clear}>
-            Clear
-          </Button>
+          </span>
         </div>
       </div>
       {lines.length === 0 ? (
@@ -168,20 +154,35 @@ function LiveFeed() {
           </EmptyState>
         </div>
       ) : (
-        <div
-          ref={logRef}
-          role="log"
-          aria-label="Live SMTP session lines"
-          tabIndex={0}
-          className="pr-smtp-log pr-smtp-log--live pr-smtp-log--sessions"
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            setPinned(atBottom(el.scrollTop, el.clientHeight, el.scrollHeight));
-          }}
-        >
-          {lines.map((l) => (
-            <LogRow key={l.key} line={l} live />
-          ))}
+        <div className="pr-smtp-logwrap">
+          <div
+            ref={logRef}
+            role="log"
+            aria-label="Live SMTP session lines"
+            tabIndex={0}
+            className="pr-smtp-log pr-smtp-log--live pr-smtp-log--sessions"
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              setPinned(atBottom(el.scrollTop, el.clientHeight, el.scrollHeight));
+            }}
+          >
+            {lines.map((l) => (
+              <LogRow key={l.key} line={l} live />
+            ))}
+          </div>
+          {/* Floats on the pane, outside the log region, so it never crowds the toolbar. */}
+          {pinned ? null : (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="pr-smtp-jump"
+              onClick={() => {
+                setPinned(true);
+              }}
+            >
+              Jump to latest
+            </Button>
+          )}
         </div>
       )}
     </Card>
@@ -192,7 +193,7 @@ function viewLabel(t: SmtpTranscriptSummary): string {
   return `View transcript: ${t.clientIp}, ${relativeTime(t.startedAt)}`;
 }
 
-function columnsFor(onOpen: (row: SmtpTranscriptSummary) => void): TableColumn<SmtpTranscriptSummary>[] {
+function columnsFor(onOpen: (row: SmtpTranscriptSummary, opener: HTMLElement) => void): TableColumn<SmtpTranscriptSummary>[] {
   return [
     { key: 'startedAt', header: 'Started', width: '8rem', cell: (t) => <RelativeTime iso={t.startedAt} /> },
     { key: 'daemon', header: 'Daemon', width: '8rem', cell: (t) => daemonLabel(t.daemon) },
@@ -216,8 +217,8 @@ function columnsFor(onOpen: (row: SmtpTranscriptSummary) => void): TableColumn<S
           size="sm"
           variant="secondary"
           aria-label={viewLabel(t)}
-          onClick={() => {
-            onOpen(t);
+          onClick={(e) => {
+            onOpen(t, e.currentTarget);
           }}
         >
           View
@@ -227,8 +228,9 @@ function columnsFor(onOpen: (row: SmtpTranscriptSummary) => void): TableColumn<S
   ];
 }
 
-/** One stored session, in the end-edge drawer the queue and Inspect use: the list stays put behind it. */
-function TranscriptDrawer({ row, onClose }: { row: SmtpTranscriptSummary | null; onClose: () => void }) {
+/** One stored session, in the end-edge drawer the queue and Inspect use: the list stays put behind it.
+ * `row` outlives `open`, so the drawer keeps its content while it animates out. */
+function TranscriptDrawer({ open, row, onClose }: { open: boolean; row: SmtpTranscriptSummary | null; onClose: () => void }) {
   const [detail, setDetail] = useState<SmtpTranscriptDetail | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
@@ -255,9 +257,9 @@ function TranscriptDrawer({ row, onClose }: { row: SmtpTranscriptSummary | null;
   const lasted = row === null ? null : duration(row.startedAt, row.endedAt);
   return (
     <Modal
-      open={row !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
+      open={open && row !== null}
+      onOpenChange={(next) => {
+        if (!next) onClose();
       }}
       title="Session transcript"
       description={row === null ? '' : <span className="pr-mono">{row.clientIp}</span>}
@@ -323,7 +325,20 @@ function TranscriptDrawer({ row, onClose }: { row: SmtpTranscriptSummary | null;
 export function AdminSmtpViewer() {
   const [transcripts, setTranscripts] = useState<SmtpTranscriptSummary[] | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
+  // The drawer's row stays set after it closes (its exit animation still shows it); `drawerOpen` is
+  // what opens and closes it. The controlled Modal has no trigger, so focus goes back to the View
+  // button that opened it by hand (PST-T-14.6's useFocusReturn), in the table and on a phone card.
   const [selected, setSelected] = useState<SmtpTranscriptSummary | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const returnTo = useFocusReturn(drawerOpen);
+  const openTranscript = useCallback(
+    (row: SmtpTranscriptSummary, opener: HTMLElement) => {
+      returnTo.current = opener;
+      setSelected(row);
+      setDrawerOpen(true);
+    },
+    [returnTo],
+  );
   const [daemon, setDaemon] = useState<DaemonFilter>('all');
   const [query, setQuery] = useState('');
   const phone = useMediaQuery(PHONE_QUERY);
@@ -345,10 +360,10 @@ export function AdminSmtpViewer() {
   const counts = useMemo(() => daemonCounts(transcripts ?? []), [transcripts]);
   const columns = useMemo(
     () =>
-      columnsFor((row) => {
-        setSelected(row);
+      columnsFor((row, opener) => {
+        openTranscript(row, opener);
       }),
-    [],
+    [openTranscript],
   );
   const filtered = daemon !== 'all' || query.trim() !== '';
   const emptyList = filtered ? (
@@ -433,8 +448,8 @@ export function AdminSmtpViewer() {
                       size="sm"
                       variant="secondary"
                       aria-label={viewLabel(t)}
-                      onClick={() => {
-                        setSelected(t);
+                      onClick={(e) => {
+                        openTranscript(t, e.currentTarget);
                       }}
                     >
                       View
@@ -457,9 +472,10 @@ export function AdminSmtpViewer() {
         </Card>
       </div>
       <TranscriptDrawer
+        open={drawerOpen}
         row={selected}
         onClose={() => {
-          setSelected(null);
+          setDrawerOpen(false);
         }}
       />
     </Page>
