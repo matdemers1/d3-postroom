@@ -236,6 +236,15 @@ export function settleSnooze(attempts: readonly SnoozeAttempt[]): SnoozeSettled 
   return { done, failed, error };
 }
 
+/**
+ * A snooze chosen for something with no conversation to snooze (the picker was offered on a row that
+ * has since been read back without a thread): nothing is sent, nothing moves, and it says so rather
+ * than closing the picker on silence.
+ */
+export function snoozeUnavailable(count: number): string {
+  return count > 1 ? 'Couldn’t snooze those — they’re still here.' : 'Couldn’t snooze that — it’s still here.';
+}
+
 // --- Selection (x) -------------------------------------------------------------------------------------
 
 export function toggleSelected(selected: ReadonlySet<string>, id: string): Set<string> {

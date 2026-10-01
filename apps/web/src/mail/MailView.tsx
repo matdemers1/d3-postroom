@@ -40,6 +40,7 @@ import {
   pruneSelected,
   selectedMessages,
   settleSnooze,
+  snoozeUnavailable,
   threadMembersInMailbox,
   toggleSelected,
   triageMessage,
@@ -608,7 +609,11 @@ function MailPanes({ route }: { route: MailRoute }) {
     const { messages: targets } = scopeOf(explicit);
     const first = targets[0];
     const threads = [...new Set(targets.map((m) => m.threadId).filter((t): t is string => t !== null))];
-    if (first === undefined || threads.length === 0) return;
+    if (first === undefined) return;
+    if (threads.length === 0) {
+      say('danger', snoozeUnavailable(targets.length));
+      return;
+    }
     const ids = new Set(targets.map((m) => m.id));
     for (const m of latest.current.list.messages) if (m.threadId !== null && threads.includes(m.threadId) && m.mailboxId === first.mailboxId) ids.add(m.id);
     const done: string[] = [];
