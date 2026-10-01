@@ -1159,6 +1159,13 @@ function MailPanes({ route }: { route: MailRoute }) {
             else if (action === 'delete' && trash !== undefined) triage(trash, m);
             else if (action === 'move') setPicker({ mode: 'move', explicit: m });
             else if (action === 'snooze' && canSnoozeScope(m)) setPicker({ mode: 'snooze', explicit: m });
+            else if (action === 'toggleRead') {
+              // PST-T-16.15: a right swipe on a phone. Read becomes unread and back, through the same
+              // flag path as Mark read; remembered so opening the row does not undo the choice.
+              const seen = !isUnread(m);
+              markedSeen.current.add(m.id);
+              setFlags(m.id, seen ? [] : [SEEN], seen ? [SEEN] : []);
+            }
           }}
           onShowNew={showNew}
           onNearEnd={loadMore}
