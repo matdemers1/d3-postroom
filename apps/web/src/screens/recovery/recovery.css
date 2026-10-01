@@ -1,0 +1,24 @@
+/* TOTP recovery codes (PST-T-16.7). Existing tokens only. */
+
+/* Two columns of codes, each in two groups of five; one column on a narrow phone. */
+.pr-recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8) var(--space-16);
+  margin: 0;
+  padding: var(--space-16);
+  list-style: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sunken);
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 360px) {
+  .pr-recovery-codes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pr-recovery-codes > li {
+  white-space: nowrap;
+}

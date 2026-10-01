@@ -83,8 +83,17 @@ export const ROUTES: readonly AppRoute[] = [
   // Settings: your account, reached from the account menu.
   r({ id: 'settingsAccount', path: '/settings/account', title: 'Account', place: 'settings', navGroup: 'Account', keywords: 'profile change password', hint: 'Name, change password' }),
   r({
-    id: 'settingsBrowsers',
+    id: 'settingsDeviceSetup',
     path: '/settings/security',
+    title: 'Connect a device',
+    place: 'settings',
+    navGroup: 'Security & devices',
+    keywords: 'security devices set up iphone mac thunderbird imap smtp server settings qr configuration profile mobileconfig ios macos',
+    hint: 'iPhone, Mac, Thunderbird or any mail app',
+  }),
+  r({
+    id: 'settingsBrowsers',
+    path: '/settings/security/sessions',
     title: 'Browser sessions',
     place: 'settings',
     navGroup: 'Security & devices',
@@ -99,15 +108,6 @@ export const ROUTES: readonly AppRoute[] = [
     navGroup: 'Security & devices',
     keywords: 'security app passwords mail apps iphone thunderbird',
     hint: 'Mail apps and their app passwords',
-  }),
-  r({
-    id: 'settingsDeviceSetup',
-    path: '/settings/security/device-setup',
-    title: 'Set up iPhone / Mac',
-    place: 'settings',
-    navGroup: 'Security & devices',
-    keywords: 'security devices configuration profile mobileconfig ios macos',
-    hint: 'Download a configuration profile',
   }),
   r({ id: 'settingsAddresses', path: '/settings/addresses', title: 'Addresses', place: 'settings', navGroup: 'Addresses', keywords: 'aliases masked aliases', hint: 'Aliases, masked aliases' }),
   r({ id: 'settingsRules', path: '/settings/rules', title: 'Rules', place: 'settings', navGroup: 'Rules & sorting', keywords: 'filters sieve sorting corrections' }),
@@ -132,8 +132,9 @@ export const REDIRECTS: readonly { from: string; to: string }[] = [
   { from: '/app-passwords', to: '/settings/security/devices' },
   { from: '/account', to: '/settings/account' },
   { from: '/account/password', to: '/settings/account' },
-  { from: '/account/sessions', to: '/settings/security' },
-  { from: '/account/device-setup', to: '/settings/security/device-setup' },
+  { from: '/account/sessions', to: '/settings/security/sessions' },
+  { from: '/account/device-setup', to: '/settings/security' },
+  { from: '/settings/security/device-setup', to: '/settings/security' },
   { from: '/account/aliases', to: '/settings/addresses' },
   { from: '/account/rules', to: '/settings/rules' },
   { from: '/account/templates', to: '/settings/templates' },
@@ -142,6 +143,10 @@ export const REDIRECTS: readonly { from: string; to: string }[] = [
   { from: '/settings', to: '/settings/account' },
   { from: '/admin', to: '/admin/health' },
 ];
+
+/** PST-T-16.4 (PST-REQ-198, PST-DA-027): the Inbox has one URL. '/' redirects here (App.tsx) and keeps
+ * its query; the 'mail' route above stays at '/' so the shell's home still names the Mail place. */
+export const MAIL_HOME = '/mail/inbox';
 
 export const PLACE_HOME: Readonly<Record<'settings' | 'admin', string>> = {
   settings: '/settings/account',

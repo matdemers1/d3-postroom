@@ -282,7 +282,8 @@ test('a forward opens inline and carries the original, attached whole', async ({
   await expect(page.getByRole('listbox', { name: 'Messages in Sent' })).toBeVisible();
   await row(page, `Fwd: ${subject}`).click();
   await expect(page.getByRole('heading', { name: `Fwd: ${subject}`, level: 2 })).toBeVisible();
-  const sentId = /\/mail\/[0-9a-f-]{36}\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
+  // Sent routes by its slug (/mail/sent/<id>, PST-T-16.4); any mailbox key works here.
+  const sentId = /\/mail\/[^/?]+\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
   const raw = await (await api.get(`/api/messages/${sentId}/raw`)).text();
   expect(raw).toContain('Content-Type: message/rfc822');
   expect(raw).toContain(`Message-ID: ${original.messageIdHeader}`);

@@ -1,4 +1,6 @@
-/* PST-T-11.2: at phone width, every interactive element needs a 44×44 CSS px hit area of its own.
+/* PST-T-11.2: for a finger, every interactive element needs a 44×44 CSS px hit area of its own.
+ * PST-T-16.18 (PST-DA-047): keyed to the pointer — `(pointer: coarse)` — not the width. A touch
+ * laptop at 1280px gets 44px targets; a narrow desktop window, driven by a mouse, does not.
  * @d3cloud/ui's control heights (sm 28px, md 34px, even lg 40px for a button; 26px for the
  * password-reveal toggle) are all under that, and the package is not ours to edit, so this file
  * sizes them here.
@@ -16,7 +18,7 @@
  * centre and 20px out each way): each probe lands on the control itself, and never on another one.
  * No raw hex, no shadows, no invented tokens: only sizes, `inset`, `position` and spacing tokens.
  */
-@media (max-width: 767px) {
+@media (pointer: coarse) {
   /* Every @d3cloud/ui Button size is under 44px tall (sm 28, md 34, lg 40). Grown for real: a row
    * of small buttons wraps onto more lines instead of sharing one tap area. */
   .d3-btn--sm,
@@ -35,6 +37,13 @@
     content: '';
     position: absolute;
     inset: -10px;
+  }
+
+  /* A session's native Details disclosure (PST-T-16.17): its summary line is the tap target. */
+  .pr-session-details > summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
   }
 
   /* The icon-only buttons (28/34/40px square: "Open navigation", the shell's icon actions). */
@@ -181,7 +190,7 @@
   }
 
   /* PST-T-11.4: iOS Safari zooms the whole page when a focused field's text is under 16px, and
-   * every @d3cloud/ui field is 12-14px. At phone width the field text is 16px, so focusing To,
+   * every @d3cloud/ui field is 12-14px. On a touch device the field text is 16px, so focusing To,
    * Subject or search never zooms the layout. */
   .d3-inp {
     font-size: var(--text-16);

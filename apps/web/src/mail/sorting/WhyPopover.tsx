@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, type MessageSummary } from '../../api';
 import { useMediaQuery, SPLIT_QUERY } from '../useMedia';
 import { Floating } from './Floating';
-import { alwaysPut, BUCKET_LABEL, isFilingBucket, otherBuckets, suggestedMove, whySentence, type FilingBucket } from './sorting';
+import { alwaysPut, BUCKET_LABEL, isFilingBucket, MOVED_BY_HAND_SENTENCE, otherBuckets, suggestedMove, whySentence, type FilingBucket, type WhyPlacement } from './sorting';
 
 export const RULES_CORRECTIONS_PATH = '/settings/rules#sorting-corrections';
 
@@ -20,11 +20,13 @@ export interface WhyPopoverProps {
   anchor: DOMRect;
   returnFocus: HTMLElement | null;
   opener?: HTMLElement | null;
+  /** Where the control is (a bucket folder or Junk): the bucket the message is in now, and whether it was moved there by hand. */
+  placement?: WhyPlacement | null;
   onClose: () => void;
   onCorrect: (bucket: FilingBucket, scope: 'sender' | 'domain') => void;
 }
 
-export function WhyPopover({ message, anchor, returnFocus, opener = null, onClose, onCorrect }: WhyPopoverProps) {
+export function WhyPopover({ message, anchor, returnFocus, opener = null, placement = null, onClose, onCorrect }: WhyPopoverProps) {
   const navigate = useNavigate();
   const wide = useMediaQuery(SPLIT_QUERY);
   const [reasons, setReasons] = useState<string[] | null>(null);
@@ -46,7 +48,8 @@ export function WhyPopover({ message, anchor, returnFocus, opener = null, onClos
     };
   }, [message.id]);
 
-  const bucket = isFilingBucket(message.bucket) ? message.bucket : null;
+  const bucket = placement !== null ? placement.bucket : isFilingBucket(message.bucket) ? message.bucket : null;
+  const byHand = placement?.byHand === true;
   if (bucket === null) return null;
   const always = alwaysPut(message.from, message.fromName, bucket);
   const move = suggestedMove(bucket);
@@ -64,7 +67,7 @@ export function WhyPopover({ message, anchor, returnFocus, opener = null, onClos
         Why it’s here
       </p>
       <p className="pr-why__sentence" data-testid="why-sentence">
-        {failed ? 'The reasons for this decision could not be loaded.' : reasons === null ? 'Loading the reasons…' : whySentence(bucket, reasons)}
+        {byHand ? MOVED_BY_HAND_SENTENCE : failed ? 'The reasons for this decision could not be loaded.' : reasons === null ? 'Loading the reasons…' : whySentence(bucket, reasons)}
       </p>
       <div className="pr-why__actions" role="group" aria-label="Correct it">
         {always === null ? null : (
@@ -96,7 +99,7 @@ export function WhyPopover({ message, anchor, returnFocus, opener = null, onClos
           Open Rules
         </button>
       </div>
-      <p className="pr-why__foot">Reasons from the stored decision · every score is in Inspect</p>
+      <p className="pr-why__foot">{byHand ? 'Corrections apply to where it is now · every score is in Inspect' : 'Reasons from the stored decision · every score is in Inspect'}</p>
     </Floating>
   );
 }

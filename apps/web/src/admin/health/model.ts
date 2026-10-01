@@ -87,12 +87,12 @@ export const tileById = (tiles: readonly HealthTile[], id: string): HealthTile |
 
 /**
  * The inbound-queue tile's two numbers, read from the detail apps/api/src/admin-health writes
- * ("no dead jobs", or "2 dead job(s), 1 failed message(s)"); null when the wording is anything else,
+ * ("No dead jobs", or "2 dead jobs, 1 failed message"; the older "(s)" wording still parses); null when the wording is anything else,
  * so the screen falls back to the state word instead of guessing.
  */
 export function inboundQueueCounts(tile: HealthTile): { dead: number; failed: number } | null {
-  if (tile.detail === 'no dead jobs') return { dead: 0, failed: 0 };
-  const m = /^(\d+) dead job\(s\), (\d+) failed message\(s\)$/.exec(tile.detail);
+  if (tile.detail.toLowerCase() === 'no dead jobs') return { dead: 0, failed: 0 };
+  const m = /^(\d+) dead jobs?(?:\(s\))?, (\d+) failed messages?(?:\(s\))?$/.exec(tile.detail);
   return m === null ? null : { dead: Number(m[1]), failed: Number(m[2]) };
 }
 
@@ -112,10 +112,10 @@ export function lastRunStat(tile: HealthTile, now: Date): { value: string; unit?
   return { value: time, unit: day };
 }
 
-/** The footnote under a last-run Stat: the server's "ok" becomes a sentence, anything else is its reason. */
+/** The footnote under a last-run Stat: the server's "ok" becomes a sentence, anything else is its reason, humanised. */
 export function lastRunFootnote(tile: HealthTile, what: string): string {
   if (tile.state === 'ok') return `Last ${what} succeeded`;
-  return tile.detail;
+  return humanizeDetail(tile.detail);
 }
 
 /** The certificate tile's one word: the detail line carries the numbers. */
@@ -150,4 +150,73 @@ export function queueMeta(recipients: readonly Pick<AdminQueueRecipient, 'state'
   const deferred = recipients.filter((r) => r.state === 'deferred').length;
   const bounced = recipients.filter((r) => r.state === 'bounced').length;
   return [n, deferred > 0 ? `${String(deferred)} deferred` : null, bounced > 0 ? `${String(bounced)} bounced` : null].filter((p) => p !== null).join(' · ');
+}
+
+const PLURAL = new Intl.PluralRules('en');
+
+/** "7 dead job(s)" becomes "7 dead jobs" and "1 failed message(s)" becomes "1 failed message". */
+function pluralise(text: string): string {
+  return text.replace(/(\d+)((?: [\w-]+)*?) ([A-Za-z]+)\(s\)/g, (_all, n: string, middle: string, noun: string) => {
+    const one = PLURAL.select(Number(n)) === 'one';
+    return `${n}${middle} ${one ? noun : `${noun}s`}`;
+  });
+}
+
+/** Raw errno codes as a sentence a person can act on; the code itself is left out, the sentence says it. */
+const ERRNO_SENTENCES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bEACCES\b|\bEPERM\b/, 'Permission denied: Postroom isn’t allowed to read or write something it needs.'],
+  [/\bENOENT\b/, 'A file or folder Postroom needs wasn’t found.'],
+  [/\bENOSPC\b/, 'The disk is full.'],
+  [/\bECONNREFUSED\b/, 'The connection was refused: nothing is listening there.'],
+  [/\bECONNRESET\b|\bEPIPE\b/, 'The connection was dropped partway through.'],
+  [/\bETIMEDOUT\b|\bESOCKETTIMEDOUT\b/, 'The connection timed out: nothing answered in time.'],
+  [/\bENOTFOUND\b|\bEAI_AGAIN\b/, 'The name couldn’t be looked up in DNS.'],
+  [/\bEHOSTUNREACH\b|\bENETUNREACH\b/, 'The host couldn’t be reached over the network.'],
+  [/\bEROFS\b/, 'The disk is mounted read-only.'],
+];
+
+/**
+ * A server detail as a sentence: errno reasons mapped, "(s)" pluralised, "ok" as OK, and the first
+ * letter capitalised. A reason that is already prose passes through otherwise untouched.
+ */
+export function humanizeDetail(detail: string): string {
+  const text = detail.trim();
+  if (text === '') return text;
+  for (const [pattern, sentence] of ERRNO_SENTENCES) if (pattern.test(text)) return sentence;
+  if (text.toLowerCase() === 'ok') return 'OK';
+  const plural = pluralise(text);
+  return plural.charAt(0).toUpperCase() + plural.slice(1);
+}
+
+const STATE_RANK: Readonly<Record<HealthTileState, number>> = { down: 0, warn: 1, unknown: 2, ok: 3 };
+
+/** Down, then degraded, then not checked, then healthy; the server's order breaks ties. */
+export function sortTiles(tiles: readonly HealthTile[]): HealthTile[] {
+  return tiles
+    .map((tile, index) => ({ tile, index }))
+    .sort((a, b) => STATE_RANK[a.tile.state] - STATE_RANK[b.tile.state] || a.index - b.index)
+    .map((x) => x.tile);
+}
+
+export const BACKUP_RUNBOOK_URL = 'https://github.com/matdemers1/d3-postroom/blob/main/docs/runbooks/backups.md';
+
+export interface TileAction {
+  readonly label: string;
+  readonly href: string;
+  /** True when the link leaves the app and should open in a new tab. */
+  readonly external: boolean;
+}
+
+/** Where to go to fix a failing check; null for a check that is fine, not checked, or has no fix screen. */
+export function tileAction(tile: HealthTile): TileAction | null {
+  if (tile.state !== 'down' && tile.state !== 'warn') return null;
+  switch (tile.id) {
+    case 'queue':
+      return { label: 'View dead jobs', href: '/admin/jobs?status=dead', external: false };
+    case 'backup':
+    case 'drill':
+      return { label: 'Backup runbook', href: BACKUP_RUNBOOK_URL, external: true };
+    default:
+      return null;
+  }
 }

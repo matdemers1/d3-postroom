@@ -261,6 +261,75 @@
   }
 }
 
+/* --- Swipe on a touch screen (PST-T-16.15, PST-DA-066) ---------------------------------------------- */
+
+/* The row's content slides over two surfaces drawn under it: Archive on the trailing side, shown
+   when the row is dragged left, and Read / Unread on the leading side, when it is dragged right.
+   MessageRow draws them only on a coarse pointer; useRowSwipe sets --swipe-x and data-swipe. The
+   slide uses `translate`, not `transform`, so the row's exit animation still runs on top of it.
+   `pan-y` leaves vertical scrolling to the browser and hands sideways drags to the gesture. */
+.pr-mrow__swipe {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  padding-inline: var(--space-24);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-mrow__swipe--archive {
+  justify-content: flex-end;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.pr-mrow__swipe--read {
+  justify-content: flex-start;
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+}
+
+@media (pointer: coarse) {
+  .pr-mrow {
+    touch-action: pan-y;
+  }
+
+  .pr-mrow[data-swipe] .pr-mrow__inner {
+    /* Opaque while it slides, so the surface under it shows only where the row has moved off. */
+    background: var(--color-surface);
+    transition: none;
+  }
+
+  .pr-mrow[data-swipe='reveal-archive'] .pr-mrow__swipe--archive,
+  .pr-mrow[data-swipe='commit-archive'] .pr-mrow__swipe--archive,
+  .pr-mrow[data-swipe='done'] .pr-mrow__swipe--archive,
+  .pr-mrow[data-swipe='reveal-read'] .pr-mrow__swipe--read,
+  .pr-mrow[data-swipe='commit-read'] .pr-mrow__swipe--read {
+    display: flex;
+  }
+}
+
+@media (pointer: coarse) and (prefers-reduced-motion: no-preference) {
+  .pr-mrow__inner {
+    translate: var(--swipe-x, 0px) 0;
+    /* Letting go short of the threshold: the row settles back. While dragging, it follows the finger. */
+    transition: translate var(--motion-hover), background-color var(--motion-hover);
+  }
+
+  .pr-mrow[data-swipe] .pr-mrow__inner {
+    transition: none;
+  }
+}
+
+/* Reduced motion: the row does not slide. Past the threshold it takes the accent fill instead, and
+   the action still commits on release. */
+@media (pointer: coarse) and (prefers-reduced-motion: reduce) {
+  .pr-mrow[data-swipe^='commit'] .pr-mrow__inner {
+    background: var(--color-accent-muted);
+  }
+}
+
 /* --- On a phone (PST-T-15.8, the canvas's PhoneInbox) ---------------------------------------------- */
 
 /* The rows run edge to edge: 16 px either side, square, with a hairline under each that starts at the

@@ -1,7 +1,7 @@
 // The template manager (PST-T-9.2, PST-REQ-144): create, edit and delete the saved templates the
 // composer's `;` shortcut offers. CRUD over /api/templates, every mutation audited server-side.
 import '../settings/settings.css';
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, DataList, DataListRow, EmptyState, FormActions, FormField, Input, Modal, ModalClose, Page, PageHeader, Section, Stack, Textarea } from '@d3cloud/ui';
 import { describeError } from '../api';
 import { templatesApi, type TemplateJson } from './api';
@@ -20,6 +20,18 @@ const BLANK: FormState = { id: null, shortcut: '', name: '', subject: '', body: 
 export function TemplatesScreen() {
   const [rows, setRows] = useState<TemplateJson[] | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
+  // PST-T-16.23: the form is not in the DOM until "New template" (or a row's Edit) opens it.
+  const [open, setOpen] = useState(false);
+  // PST-T-16.23: the header's New button unmounts while the form is open; folding the form away
+  // (Cancel, or done) hands focus back to it, as Account's Change password does.
+  const newButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (!open && returnFocus.current) {
+      returnFocus.current = false;
+      newButton.current?.focus();
+    }
+  }, [open]);
   const [form, setForm] = useState<FormState>(BLANK);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -40,6 +52,13 @@ export function TemplatesScreen() {
     void load();
   }, [load]);
 
+  const closeForm = () => {
+    returnFocus.current = true;
+    setOpen(false);
+    setForm(BLANK);
+    setFormError(null);
+  };
+
   const save = (event: SyntheticEvent) => {
     event.preventDefault();
     setFormError(null);
@@ -54,7 +73,7 @@ export function TemplatesScreen() {
     call
       .then(async (created) => {
         setNotice(form.id === null ? `Created ;${created.template.shortcut}.` : `Saved ;${created.template.shortcut}.`);
-        setForm(BLANK);
+        closeForm();
         await load();
       })
       .catch((caught: unknown) => {
@@ -68,6 +87,7 @@ export function TemplatesScreen() {
   const edit = (row: TemplateJson) => {
     setForm({ id: row.id, shortcut: row.shortcut, name: row.name, subject: row.subject ?? '', body: row.body });
     setFormError(null);
+    setOpen(true);
   };
 
   const remove = (row: TemplateJson) => {
@@ -78,7 +98,7 @@ export function TemplatesScreen() {
       .then(async () => {
         setConfirming(null);
         setNotice(`Deleted ;${row.shortcut}.`);
-        if (form.id === row.id) setForm(BLANK);
+        if (form.id === row.id) closeForm();
         await load();
       })
       .catch((caught: unknown) => {
@@ -94,8 +114,23 @@ export function TemplatesScreen() {
     <Page width="narrow">
       <PageHeader
         title="Compose templates"
-        description="Type ; in the composer to insert one. {{name}}, {{first_name}} and {{date}} are filled in when it's inserted."
+        description="Saved replies you can drop into any message."
         {...(rows === null ? {} : { count: rows.length, countNoun: { one: 'template', other: 'templates' } })}
+        actions={
+          open ? null : (
+            <Button
+              ref={newButton}
+              variant="primary"
+              onClick={() => {
+                setNotice(null);
+                setForm(BLANK);
+                setOpen(true);
+              }}
+            >
+              New template
+            </Button>
+          )
+        }
       />
       {notice === null ? null : (
         <Alert tone="info" dynamic>
@@ -103,64 +138,70 @@ export function TemplatesScreen() {
         </Alert>
       )}
 
-      <Section title={form.id === null ? 'New template' : `Editing ;${form.shortcut}`}>
-        <form onSubmit={save}>
-          <Stack gap="16">
-            <FormField label="Shortcut" width="sm" help="What ; matches on, e.g. sig (without the ;).">
-              <Input
-                appearance="filled"
-                maxLength={64}
-                required
-                value={form.shortcut}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, shortcut: e.target.value }));
-                }}
-              />
-            </FormField>
-            <FormField label="Name" width="lg">
-              <Input
-                appearance="filled"
-                maxLength={200}
-                required
-                value={form.name}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, name: e.target.value }));
-                }}
-              />
-            </FormField>
-            <FormField label="Subject" width="lg" optional>
-              <Input
-                appearance="filled"
-                value={form.subject}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, subject: e.target.value }));
-                }}
-              />
-            </FormField>
-            <FormField label="Body" help="Markdown. Use {{name}}, {{first_name}} or {{date}}." {...(formError === null ? {} : { error: formError })}>
-              <Textarea
-                appearance="filled"
-                rows={8}
-                required
-                value={form.body}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, body: e.target.value }));
-                }}
-              />
-            </FormField>
-            <FormActions>
-              {form.id === null ? null : (
-                <Button type="button" variant="ghost" onClick={() => { setForm(BLANK); }}>
+      {!open ? null : (
+        <Section title={form.id === null ? 'New template' : `Editing ;${form.shortcut}`}>
+          <form onSubmit={save}>
+            <Stack gap="16">
+              <FormField label="Shortcut" width="sm" help={
+                  <>
+                    Type <code>;sig</code> in a message to insert the template whose shortcut is sig.
+                  </>
+                }
+              >
+                <Input
+                  appearance="filled"
+                  autoFocus
+                  maxLength={64}
+                  required
+                  value={form.shortcut}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, shortcut: e.target.value }));
+                  }}
+                />
+              </FormField>
+              <FormField label="Name" width="lg">
+                <Input
+                  appearance="filled"
+                  maxLength={200}
+                  required
+                  value={form.name}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, name: e.target.value }));
+                  }}
+                />
+              </FormField>
+              <FormField label="Subject" width="lg" optional>
+                <Input
+                  appearance="filled"
+                  value={form.subject}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, subject: e.target.value }));
+                  }}
+                />
+              </FormField>
+              <FormField label="Body" help="Markdown. Use {{name}}, {{first_name}} or {{date}}." {...(formError === null ? {} : { error: formError })}>
+                <Textarea
+                  appearance="filled"
+                  rows={8}
+                  required
+                  value={form.body}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, body: e.target.value }));
+                  }}
+                />
+              </FormField>
+              <FormActions>
+                <Button type="button" onClick={closeForm}>
                   Cancel
                 </Button>
-              )}
-              <Button type="submit" variant="primary" loading={busy}>
-                {form.id === null ? 'Create template' : 'Save template'}
-              </Button>
-            </FormActions>
-          </Stack>
-        </form>
-      </Section>
+                <Button type="submit" variant="primary" loading={busy}>
+                  {form.id === null ? 'Create template' : 'Save template'}
+                </Button>
+              </FormActions>
+            </Stack>
+          </form>
+        </Section>
+      )}
 
       {loadError !== null ? (
         <LoadFailed error={loadError} what="templates" onRetry={() => void load()} />

@@ -27,6 +27,13 @@ const SLIDE_EVERY_MS = 60 * 1000;
 export type SignInMethod = 'password' | 'oidc';
 
 /**
+ * How a password session's second factor was satisfied (PST-REQ-200). A recovery code stands in for
+ * a lost authenticator, so a session it signed in has to enrol a new TOTP secret before anything
+ * that needs a fresh second factor; completing that re-enrolment marks it 'totp'.
+ */
+export type SecondFactor = 'totp' | 'recovery_code';
+
+/**
  * What a session knows beyond who it belongs to: how it signed in and, for D3 Auth, the (iss, sub)
  * it signed in as and the roles claim at sign-in. Stored on the session row itself.
  */
@@ -35,6 +42,8 @@ export interface SessionMeta {
   roles: string[];
   iss?: string;
   sub?: string;
+  /** Password sessions only: TOTP or a recovery code. Absent for D3 Auth. */
+  secondFactor?: SecondFactor;
 }
 
 export function hashToken(token: string): string {
@@ -75,6 +84,7 @@ export async function issueSession(
       roles: meta.roles,
       oidcIssuer: meta.iss ?? null,
       oidcSubject: meta.sub ?? null,
+      secondFactor: meta.secondFactor ?? null,
     },
   });
   return { id: row.id, token, expiresAt };
@@ -91,20 +101,32 @@ export interface ResolvedSession {
   totpEnabled: boolean;
   stepUpAt: Date | null;
   meta: SessionMeta;
+  /**
+   * Signed in with a recovery code and not yet re-enrolled (PST-REQ-200): every step-up-gated
+   * action answers 403 totp_reenrol_required until a new authenticator is set up.
+   */
+  reenrolRequired: boolean;
 }
 
-/** The session row's sign-in metadata. The column is CHECK-constrained to password|oidc. */
+/**
+ * The session row's sign-in metadata. `method` is CHECK-constrained to password|oidc, and
+ * `second_factor` to totp|recovery_code (or null).
+ */
 export function metaOf(row: {
   method: string;
   roles: string[];
   oidcIssuer: string | null;
   oidcSubject: string | null;
+  secondFactor?: string | null;
 }): SessionMeta {
+  const secondFactor: SecondFactor | null =
+    row.secondFactor === 'recovery_code' ? 'recovery_code' : row.secondFactor === 'totp' ? 'totp' : null;
   return {
     method: row.method === 'oidc' ? 'oidc' : 'password',
     roles: row.roles,
     ...(row.oidcIssuer === null ? {} : { iss: row.oidcIssuer }),
     ...(row.oidcSubject === null ? {} : { sub: row.oidcSubject }),
+    ...(secondFactor === null ? {} : { secondFactor }),
   };
 }
 
@@ -133,6 +155,7 @@ export async function resolveSession(db: Db, token: string, now: Date): Promise<
     totpEnabled: row.account.totpEnabled,
     stepUpAt: row.stepUpAt,
     meta,
+    reenrolRequired: meta.secondFactor === 'recovery_code',
   };
 }
 

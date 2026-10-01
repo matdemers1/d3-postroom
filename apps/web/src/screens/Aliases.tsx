@@ -1,5 +1,5 @@
 import '../settings/settings.css';
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, DataList, DataListRow, EmptyState, FormActions, FormField, Input, Page, PageHeader, Section, Stack } from '@d3cloud/ui';
 import { api, describeError, type Alias } from '../api';
 import { Loading, LoadFailed } from './states';
@@ -15,6 +15,17 @@ const when = (iso: string | null): string =>
 export function Aliases() {
   const [rows, setRows] = useState<Alias[] | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
+  const [creating, setCreating] = useState(false);
+  // PST-T-16.23: the header's New button unmounts while the form is open; folding the form away
+  // (Cancel, or done) hands focus back to it, as Account's Change password does.
+  const newButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (!creating && returnFocus.current) {
+      returnFocus.current = false;
+      newButton.current?.focus();
+    }
+  }, [creating]);
   const [site, setSite] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -34,6 +45,14 @@ export function Aliases() {
     void load();
   }, [load]);
 
+  // PST-T-16.23: the form is not in the DOM until "New alias" is pressed, and closes once it has made one.
+  const closeForm = () => {
+    returnFocus.current = true;
+    setCreating(false);
+    setSite('');
+    setFormError(null);
+  };
+
   const create = (event: SyntheticEvent) => {
     event.preventDefault();
     setFormError(null);
@@ -47,7 +66,7 @@ export function Aliases() {
       .createAlias({ site: site.trim() })
       .then(async (created) => {
         setNotice(`Created ${created.alias.address} for ${created.alias.site}.`);
-        setSite('');
+        closeForm();
         await load();
       })
       .catch((caught: unknown) => {
@@ -102,6 +121,20 @@ export function Aliases() {
         title="Masked aliases"
         description="Give every site its own random address. If it leaks, turn off the alias — mail to it is refused, no warning sent."
         {...(rows === null ? {} : { count: rows.length, countNoun: { one: 'alias', other: 'aliases' } })}
+        actions={
+          creating ? null : (
+            <Button
+              ref={newButton}
+              variant="primary"
+              onClick={() => {
+                setNotice(null);
+                setCreating(true);
+              }}
+            >
+              New alias
+            </Button>
+          )
+        }
       />
       {notice === null ? null : (
         <Alert tone="info" dynamic>
@@ -109,28 +142,34 @@ export function Aliases() {
         </Alert>
       )}
 
-      <Section title="Create an alias">
-        <form onSubmit={create}>
-          <Stack gap="16">
-            <FormField label="Site" width="lg" help="What you're handing this address to, e.g. shop.example." {...(formError === null ? {} : { error: formError })}>
-              <Input appearance="filled"
-                name="site"
-                maxLength={200}
-                required
-                value={site}
-                onChange={(e) => {
-                  setSite(e.target.value);
-                }}
-              />
-            </FormField>
-            <FormActions>
-              <Button type="submit" variant="primary" loading={busy}>
-                Create alias
-              </Button>
-            </FormActions>
-          </Stack>
-        </form>
-      </Section>
+      {!creating ? null : (
+        <Section title="New alias">
+          <form onSubmit={create}>
+            <Stack gap="16">
+              <FormField label="Site" width="lg" help="What you're handing this address to, e.g. shop.example." {...(formError === null ? {} : { error: formError })}>
+                <Input appearance="filled"
+                  autoFocus
+                  name="site"
+                  maxLength={200}
+                  required
+                  value={site}
+                  onChange={(e) => {
+                    setSite(e.target.value);
+                  }}
+                />
+              </FormField>
+              <FormActions>
+                <Button type="button" onClick={closeForm}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" loading={busy}>
+                  Create alias
+                </Button>
+              </FormActions>
+            </Stack>
+          </form>
+        </Section>
+      )}
 
       {loadError !== null ? (
         <LoadFailed error={loadError} what="aliases" onRetry={() => void load()} />

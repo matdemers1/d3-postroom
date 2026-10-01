@@ -6,6 +6,7 @@
 // or its prefix matches a row: an unknown user, an unknown prefix and a wrong password cost the
 // same time. Nothing is cached, so a revocation, a disabled account or a freeze applies to the
 // very next login.
+import { recordAudit } from '@postroom/audit';
 import { AddressKind, type AppPasswordScope, type Db, normalizeDomain, normalizeLocalPart } from '@postroom/db';
 import { decoyAppPasswordHash, verifyAppPasswordHash } from './hash.js';
 import { parseAppPassword } from './generate.js';
@@ -105,11 +106,34 @@ export async function verifyProtocolLogin(
   if (request.scope === 'smtp' && candidate.frozenAt !== null) return { ok: false, reason: 'frozen' };
 
   // Conditional on still being live, so a revocation that lands between the read and here wins.
-  // Last-used is not audited: it is a login, not a mutation anyone made, and would drown the log.
-  const { count } = await db.appPassword.updateMany({
-    where: { id: candidate.id, revokedAt: null },
-    data: { lastUsedAt: now, lastUsedIp: request.ip },
-  });
+  // Last-used is not audited on every login: it is a login, not a mutation anyone made, and would
+  // drown the log. The FIRST use is (PST-T-16.27), once per credential: an `app_password.use` row
+  // naming the protocol, which the Connect a device screen reads to say "Connected over CalDAV"
+  // rather than guess. Same transaction as lastUsedAt, so a poll never sees one without the other.
+  // Only a first use pays for a transaction: every later login is the single update it always was.
+  // The first-use claim is conditional on lastUsedAt still being null, so two racing first logins
+  // write one row between them.
+  const firstUse = candidate.lastUsedAt === null;
+  const count = !firstUse
+    ? (await db.appPassword.updateMany({ where: { id: candidate.id, revokedAt: null }, data: { lastUsedAt: now, lastUsedIp: request.ip } })).count
+    : await db.$transaction(async (tx) => {
+        const claimed = await tx.appPassword.updateMany({
+          where: { id: candidate.id, revokedAt: null, lastUsedAt: null },
+          data: { lastUsedAt: now, lastUsedIp: request.ip },
+        });
+        if (claimed.count > 0) {
+          await recordAudit(tx, {
+            actor: { kind: 'account', accountId: candidate.accountId },
+            action: 'app_password.use',
+            entityType: 'app_password',
+            entityId: candidate.id,
+            after: { scope: request.scope },
+          });
+          return claimed.count;
+        }
+        // Another first login won the claim: still a live password, so just record this use.
+        return (await tx.appPassword.updateMany({ where: { id: candidate.id, revokedAt: null }, data: { lastUsedAt: now, lastUsedIp: request.ip } })).count;
+      });
   if (count === 0) return { ok: false, reason: 'revoked' };
 
   const addresses = await db.address.findMany({

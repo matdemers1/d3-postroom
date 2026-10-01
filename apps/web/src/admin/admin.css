@@ -123,3 +123,51 @@
   padding-block: var(--space-8);
   white-space: normal;
 }
+
+/* Admin › Outbound queue (PST-T-16.13, PST-DA-031). The recipient is the button that opens the row's
+ * drawer; a long address ellipsizes inside its column rather than widening the table, and on a phone
+ * card it wraps instead, so nothing needs a sideways scroll. */
+.pr-queue-addr {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-admin-table .d3-tbl__td > .d3-btn {
+  max-width: 100%;
+  min-width: 0;
+  margin-inline-start: calc(var(--space-8) * -1);
+}
+
+.d3-dlrow__title .pr-queue-addr {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.d3-dlrow__title > .d3-btn {
+  max-width: 100%;
+  height: auto;
+  min-height: 44px;
+  margin-inline-start: calc(var(--space-8) * -1);
+}
+
+/* The drawer's two blocks: the last reply, then the attempts (the reading pane's DeliveryEvidence). */
+.pr-queue-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.pr-queue-drawer__reply {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* PST-T-16.5: a failing Health row's next step, on its own line under the detail. */
+.pr-health-action {
+  display: block;
+  margin-top: var(--space-4);
+}

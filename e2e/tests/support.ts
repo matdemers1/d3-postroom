@@ -169,6 +169,9 @@ export interface SeedMessage {
   /** PST-T-14.9: the stored sorting decision, with authVerdicts. */
   bucket?: 'priority' | 'people' | 'newsletters' | 'updates' | 'receipts' | 'notifications' | 'junk';
   reasons?: string[];
+  /** PST-T-16.1: give it a real thread at once (assignThread, as filing does), so thread actions such
+   * as Snooze are offered on it. Seeded mail is otherwise unthreaded until the worker's sweep. */
+  threaded?: boolean;
 }
 
 export interface SeededMessage {

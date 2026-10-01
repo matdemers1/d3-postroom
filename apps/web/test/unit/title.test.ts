@@ -21,9 +21,9 @@ describe('titleForPath (PST-DA-043, from the route table since PST-T-14.3)', () 
     expect(titleForPath('/contacts/book/card.vcf')).toBe('Contacts — Postroom');
     expect(titleForPath('/senders/someone%40example.org')).toBe('Sender — Postroom');
     expect(titleForPath('/settings/account')).toBe('Account — Postroom');
-    expect(titleForPath('/settings/security')).toBe('Browser sessions — Postroom');
+    expect(titleForPath('/settings/security')).toBe('Connect a device — Postroom');
+    expect(titleForPath('/settings/security/sessions')).toBe('Browser sessions — Postroom');
     expect(titleForPath('/settings/security/devices')).toBe('Devices — Postroom');
-    expect(titleForPath('/settings/security/device-setup')).toBe('Set up iPhone / Mac — Postroom');
     expect(titleForPath('/settings/addresses')).toBe('Addresses — Postroom');
     expect(titleForPath('/settings/rules')).toBe('Rules — Postroom');
     expect(titleForPath('/settings/templates')).toBe('Templates — Postroom');

@@ -27,7 +27,7 @@ import { composerKey } from './compose/session';
 import { Feed } from './Feed';
 import { findSpecial, mailboxLabel } from './format';
 import { ComposeIcon, mailboxIcon } from './icons';
-import { describeTarget, resolveKey, type MailAction } from './keys';
+import { describeTarget, requestInspect, resolveKey, type MailAction } from './keys';
 import { applyFlags, FLAGGED, initialList, isStarred, isUnread, listReducer, SEEN, sortsAboveTop } from './list';
 import { useMail } from './MailContext';
 import { SelectionToolbar } from './list/SelectionToolbar';
@@ -39,12 +39,15 @@ import {
   nextAfterRemoval,
   pruneSelected,
   selectedMessages,
+  settleSnooze,
+  snoozeUnavailable,
   threadMembersInMailbox,
   toggleSelected,
   triageMessage,
   undoPatches,
   type MovedRecord,
   type RowSummary,
+  type SnoozeAttempt,
 } from './list/triage';
 import './list/list.css';
 import { ReadingPane, type OpenMessage } from './ReadingPane';
@@ -55,10 +58,27 @@ import { mailSidebar } from './sidebar';
 import { ContextBar, PushFrame, usePushDirection } from '../mobile/ContextBar';
 import { PhoneAccountMenu, PushRow } from '../mobile/PlaceIndex';
 import { pushDepth } from '../mobile/push';
-import { composesInPane, draftPath, mailPath, narrowView, parseMailRoute, type ComposeMode, type MailRoute } from './route';
+import {
+  canonicalMailPath,
+  composesInPane,
+  draftPath,
+  isMailboxSlug,
+  mailboxKey,
+  mailPath,
+  narrowView,
+  parseMailListState,
+  parseMailRoute,
+  resolveMailbox,
+  withListState,
+  type ComposeMode,
+  type MailListState,
+  type MailRoute,
+} from './route';
+import { MAIL_HOME } from '../routes';
 import { ShortcutsOverlay } from './ShortcutsOverlay';
 import { emptyMailboxCopy, inSegment, isInboxSegment, segmentItems, segmentKeyword, type InboxSegment } from './split';
 import { showsKeyHints, SPLIT_QUERY, useMediaQuery } from './useMedia';
+import { PaneBoundary } from '../screens/PaneBoundary';
 import { SessionEnded } from '../screens/states';
 // PST-T-14.9: sorting you can see and correct where you read.
 import { sortingApi } from './sorting/api';
@@ -71,6 +91,13 @@ const PAGE = 50;
 /** --motion-row-exit's duration: a leaving row's slot is dropped when its content has faded out. */
 const EXIT_MS = 180;
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
+
+/** PST-T-16.4: whether the open message's Inspect drawer is on screen. The drawer keeps its own open
+ *  state (InspectDrawer.tsx), so the URL follows it by watching for its dialog. */
+function inspectDrawerOpen(): boolean {
+  // Inspect only: the Delivery details sheet shares the pr-inspect look but is not ?panel=inspect.
+  return document.querySelector('.d3-modal.pr-inspect--message[data-state="open"]') !== null;
+}
 
 type Notice = { tone: 'info' | 'danger'; text: string; key: number };
 
@@ -102,7 +129,7 @@ function summaryOf(m: MessageDetail | MessageSummary): RowSummary {
 export function MailView() {
   const location = useLocation();
   const route = parseMailRoute(location.pathname, location.search);
-  if (route === null) return <Navigate to="/" replace />;
+  if (route === null) return <Navigate to={MAIL_HOME} replace />;
   return <MailPanes route={route} />;
 }
 
@@ -113,14 +140,21 @@ function MailPanes({ route }: { route: MailRoute }) {
   const split = useMediaQuery(SPLIT_QUERY);
 
   const inbox = mailboxes === null ? undefined : (findSpecial(mailboxes, 'inbox') ?? mailboxes[0]);
-  const mailboxId = route.mailboxId ?? inbox?.id ?? null;
+  // PST-T-16.4: the path names its mailbox by slug or UUID. A slug waits for the mailbox list; an
+  // unknown UUID is still asked for (as before); the Inbox falls back to the first mailbox.
+  const routeKey = route.mailboxId;
+  const resolved = resolveMailbox(routeKey, mailboxes);
+  const mailboxId =
+    resolved?.id ?? (routeKey === null || routeKey === 'inbox' ? (inbox?.id ?? null) : isMailboxSlug(routeKey) ? null : routeKey);
   const mailbox: Mailbox | null = mailboxes?.find((m) => m.id === mailboxId) ?? null;
+  // PST-T-16.4 (PST-REQ-198): the search, the Inbox segment and the open panel are the URL's.
+  const listState = parseMailListState(location.search);
   const archive = mailboxes === null ? undefined : findSpecial(mailboxes, 'archive');
   const trash = mailboxes === null ? undefined : findSpecial(mailboxes, 'trash');
   const junk = mailboxes === null ? undefined : findSpecial(mailboxes, 'junk');
 
-  const [searchQuery, setSearchQuery] = useState<string | null>(null);
-  const [searchText, setSearchText] = useState('');
+  const searchQuery = listState.q;
+  const [searchText, setSearchText] = useState(searchQuery ?? '');
   const [searchUnavailable, setSearchUnavailable] = useState(false);
   const [listSignedOut, setListSignedOut] = useState(false);
   const [list, dispatch] = useReducer(listReducer, initialList);
@@ -140,14 +174,17 @@ function MailPanes({ route }: { route: MailRoute }) {
   const toast = useToast();
   const undoRef = useRef<{ id: string; run: () => void } | null>(null);
   const reducedMotion = useMediaQuery(REDUCED_MOTION);
-  // PST-T-11.4: the Inbox's Priority / People split. Held here, not in the URL, so opening a message
-  // (a new URL under the same layout route) keeps the segment; Everything is the default.
+  // PST-T-11.4: the Inbox's Priority / People split; Everything is the default.
   // PST-T-14.9: still Everything by default (the reply graph is young), but each browser remembers
   // the last segment it used (localStorage, and quietly nothing when storage is unavailable).
-  const [segment, setSegmentState] = useState<InboxSegment>(loadSegment);
+  // PST-T-16.4: the segment is in the URL (?view=), carried onto every message opened from the list;
+  // a URL without one shows the remembered segment, so choosing one both remembers it and names it.
+  const [remembered, setRemembered] = useState<InboxSegment>(loadSegment);
+  const segment = listState.view ?? remembered;
   const setSegment = (next: InboxSegment) => {
-    setSegmentState(next);
+    setRemembered(next);
     saveSegment(next);
+    void navigate(withListState(location.pathname + location.search, { view: next === 'all' ? null : next }), { replace: true });
   };
   // PST-T-14.9: the row chip's "Why it's here" popover, for the message whose chip was clicked.
   const [why, setWhy] = useState<{ message: MessageSummary; anchor: DOMRect } | null>(null);
@@ -173,11 +210,34 @@ function MailPanes({ route }: { route: MailRoute }) {
   const keyword = segmentKeyword(activeSegment);
 
   // Latest state for handlers that outlive a render (keys, SSE, queued writes).
-  const latest = useRef({ list, open, route, mailboxId, searchQuery, activeSegment, selected, reducedMotion });
-  latest.current = { list, open, route, mailboxId, searchQuery, activeSegment, selected, reducedMotion };
+  const latest = useRef({ list, open, route, mailboxId, searchQuery, activeSegment, selected, reducedMotion, listState, mailboxes });
+  latest.current = { list, open, route, mailboxId, searchQuery, activeSegment, selected, reducedMotion, listState, mailboxes };
+
+  /** A mail path with the list's search and segment carried along (PST-T-16.4), so opening, walking
+   *  and closing messages never drops the list you were in. A panel is never carried. */
+  const carry = (path: string, extra: Partial<MailListState> = {}): string =>
+    withListState(path, { q: latest.current.listState.q, view: latest.current.listState.view, panel: null, ...extra });
+  /** A mailbox's path segment: its slug when it has one (PST-T-16.4). */
+  const keyOf = (id: string): string => {
+    const all = latest.current.mailboxes;
+    const m = all?.find((x) => x.id === id);
+    return m === undefined ? id : mailboxKey(m, all);
+  };
 
   const listKey = searchQuery !== null ? `search:${searchQuery}` : mailboxId;
-  const listPath = mailPath(route.mailboxId);
+  const listPath = carry(mailPath(route.mailboxId ?? 'inbox'));
+
+  // PST-T-16.4: an old UUID URL for a slugged mailbox is replaced by its slug, in place.
+  const canonical = canonicalMailPath(location.pathname, location.search, mailboxes);
+  useEffect(() => {
+    if (canonical !== null) void navigate(canonical, { replace: true });
+  }, [canonical, navigate]);
+
+  // The field shows the URL's search whenever it changes (Back, a reload, Clear search).
+  useEffect(() => {
+    setSearchText(searchQuery ?? '');
+    setSearchUnavailable(false);
+  }, [searchQuery]);
 
   const say = useCallback((tone: Notice['tone'], text: string): number => {
     noticeKey.current += 1;
@@ -458,8 +518,8 @@ function MailPanes({ route }: { route: MailRoute }) {
     if (r.messageId === null || !removed.has(r.messageId)) return;
     const nextId = nextAfterRemoval(l.messages, new Set([...removed, ...gone.current]), r.messageId);
     const next = nextId === null ? undefined : l.messages.find((m) => m.id === nextId);
-    if (next === undefined) void navigate(mailPath(r.mailboxId), { replace: true });
-    else void navigate(mailPath(r.mailboxId ?? next.mailboxId, next.id), { replace: true });
+    if (next === undefined) void navigate(carry(mailPath(r.mailboxId ?? 'inbox')), { replace: true });
+    else void navigate(carry(mailPath(r.mailboxId ?? keyOf(next.mailboxId), next.id)), { replace: true });
   };
 
   /** The Toast with Undo (z). Only the toast on screen can be undone; z does nothing once it has gone. */
@@ -537,7 +597,7 @@ function MailPanes({ route }: { route: MailRoute }) {
         if (restored === 0) return;
         toast.show({ message: from === null ? 'Moved back.' : `Moved back to ${mailboxLabel(from)}.` });
         // Back to the message you were reading — under the new id it has now.
-        if (back !== null) void navigate(mailPath(latest.current.route.mailboxId ?? back.mailboxId, back.id), { replace: true });
+        if (back !== null) void navigate(carry(mailPath(latest.current.route.mailboxId ?? keyOf(back.mailboxId), back.id)), { replace: true });
         reloadList(true);
         void refreshMailboxes();
       });
@@ -549,40 +609,57 @@ function MailPanes({ route }: { route: MailRoute }) {
     const { messages: targets } = scopeOf(explicit);
     const first = targets[0];
     const threads = [...new Set(targets.map((m) => m.threadId).filter((t): t is string => t !== null))];
-    if (first === undefined || threads.length === 0) return;
+    if (first === undefined) return;
+    if (threads.length === 0) {
+      say('danger', snoozeUnavailable(targets.length));
+      return;
+    }
     const ids = new Set(targets.map((m) => m.id));
     for (const m of latest.current.list.messages) if (m.threadId !== null && threads.includes(m.threadId) && m.mailboxId === first.mailboxId) ids.add(m.id);
-    advancePast(ids);
-    exitRows([...ids]);
-    setSelected(new Set());
     const done: string[] = [];
+    const when = until.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    // PST-T-16.1 (PST-DA-071): unlike archive/delete/move, nothing leaves, advances or is announced
+    // until the server has answered — a failed snooze leaves the message exactly where it was.
     enqueue(async () => {
+      const attempts: SnoozeAttempt[] = [];
       for (const t of threads) {
         try {
           await api.snoozeThread(t, until.toISOString());
-          done.push(t);
+          attempts.push({ threadId: t, ok: true });
         } catch (error) {
-          recover(error);
+          attempts.push({ threadId: t, ok: false, status: error instanceof ApiError ? error.status : null });
         }
       }
+      const settled = settleSnooze(attempts);
+      done.push(...settled.done);
+      if (settled.error !== null) say('danger', settled.error);
+      if (settled.done.length === 0) return;
+      const snoozed = new Set(settled.done);
+      const leaving = new Set([...ids].filter((id) => {
+        const m = latest.current.list.messages.find((x) => x.id === id) ?? targets.find((x) => x.id === id);
+        return m?.threadId !== null && m?.threadId !== undefined && snoozed.has(m.threadId);
+      }));
+      advancePast(leaving);
+      exitRows([...leaving]);
+      setSelected(new Set());
       void refreshMailboxes();
-    });
-    const when = until.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-    offerUndo(triageMessage(`Snoozed until ${when}`, targets.length, first.subject), () => {
-      enqueue(async () => {
-        let back = 0;
-        for (const t of done) {
-          try {
-            await api.unsnoozeThread(t);
-            back += 1;
-          } catch (error) {
-            recover(error);
+      const snoozedTargets = targets.filter((m) => m.threadId !== null && snoozed.has(m.threadId));
+      offerUndo(triageMessage(`Snoozed until ${when}`, snoozedTargets.length, (snoozedTargets[0] ?? first).subject), () => {
+        enqueue(async () => {
+          let back = 0;
+          for (const t of done) {
+            try {
+              await api.unsnoozeThread(t);
+              back += 1;
+            } catch (error) {
+              recover(error);
+            }
           }
-        }
-        if (back === 0) return;
-        toast.show({ message: 'Back in Inbox.' });
-        reloadList(true);
-        void refreshMailboxes();
+          if (back === 0) return;
+          toast.show({ message: 'Back in Inbox.' });
+          reloadList(true);
+          void refreshMailboxes();
+        });
       });
     });
   };
@@ -632,7 +709,7 @@ function MailPanes({ route }: { route: MailRoute }) {
         }
       }
       if (wasOpen && (stays || !inList)) {
-        if (moved.id !== m.id) void navigate(mailPath(latest.current.route.mailboxId ?? moved.mailboxId, moved.id), { replace: true });
+        if (moved.id !== m.id) void navigate(carry(mailPath(latest.current.route.mailboxId ?? keyOf(moved.mailboxId), moved.id)), { replace: true });
         else setOpenReload((n) => n + 1);
       } else if (!wasOpen && m.threadId !== null && m.threadId === latest.current.open?.detail?.threadId) {
         // A member of the open conversation: the thread shows it in its new bucket.
@@ -645,7 +722,7 @@ function MailPanes({ route }: { route: MailRoute }) {
             const undone = await sortingApi.undo(result.correction.id);
             if (undone.message !== null) modseqs.current.set(undone.message.id, undone.message.modseq);
             toast.show({ message: undone.movedBack ? `Correction undone · back in ${BUCKET_LABEL[isFilingBucket(m.bucket) ? m.bucket : bucket]}` : 'Correction undone.' });
-            if (wasOpen && undone.message !== null) void navigate(mailPath(latest.current.route.mailboxId ?? undone.message.mailboxId, undone.message.id), { replace: true });
+            if (wasOpen && undone.message !== null) void navigate(carry(mailPath(latest.current.route.mailboxId ?? keyOf(undone.message.mailboxId), undone.message.id)), { replace: true });
             reloadList(true);
             setOpenReload((n) => n + 1);
             setReplyEpoch((n) => n + 1);
@@ -705,17 +782,18 @@ function MailPanes({ route }: { route: MailRoute }) {
   const openMessage = (m: MessageSummary) => {
     // PST-T-14.7: a draft opens in the composer, editable, never read-only (TF-09).
     const isDraft = mailboxes?.find((b) => b.id === m.mailboxId)?.specialUse === 'drafts';
-    void navigate(mailPath(latest.current.searchQuery === null ? (latest.current.route.mailboxId ?? m.mailboxId) : m.mailboxId, m.id, isDraft ? 'draft' : null));
+    const key = latest.current.searchQuery === null ? (latest.current.route.mailboxId ?? keyOf(m.mailboxId)) : keyOf(m.mailboxId);
+    void navigate(carry(mailPath(key, m.id, isDraft ? 'draft' : null)));
   };
 
   const compose = (mode: ComposeMode, m: MessageSummary | null) => {
     const r = latest.current.route;
     if (mode === 'new') {
-      void navigate(mailPath(r.mailboxId, r.messageId, 'new'));
+      void navigate(carry(mailPath(r.mailboxId ?? 'inbox', r.messageId, 'new')));
       return;
     }
     if (m === null) return;
-    void navigate(mailPath(r.mailboxId ?? m.mailboxId, m.id, mode));
+    void navigate(carry(mailPath(r.mailboxId ?? keyOf(m.mailboxId), m.id, mode)));
   };
 
   const perform = (action: MailAction) => {
@@ -732,7 +810,7 @@ function MailPanes({ route }: { route: MailRoute }) {
         if (r.messageId !== null) {
           const index = l.messages.findIndex((m) => m.id === r.messageId);
           const next = index < 0 ? undefined : l.messages[index + delta];
-          if (next !== undefined) void navigate(mailPath(r.mailboxId ?? next.mailboxId, next.id), { replace: true });
+          if (next !== undefined) void navigate(carry(mailPath(r.mailboxId ?? keyOf(next.mailboxId), next.id)), { replace: true });
         } else dispatch({ type: 'move', delta });
         return;
       }
@@ -742,7 +820,7 @@ function MailPanes({ route }: { route: MailRoute }) {
         return;
       }
       case 'back':
-        if (r.compose !== null) void navigate(mailPath(r.mailboxId, r.messageId));
+        if (r.compose !== null) void navigate(carry(mailPath(r.mailboxId ?? 'inbox', r.messageId)));
         else if (r.messageId !== null) void navigate(listPath);
         else if (!split && !r.mailboxIndex) void navigate('/mail');
         setTimeout(() => listRef.current?.focus(), 0);
@@ -801,8 +879,8 @@ function MailPanes({ route }: { route: MailRoute }) {
         openPalette();
         return;
       case 'goInbox':
-        setSearchQuery(null);
-        if (inbox !== undefined) void navigate(mailPath(inbox.id));
+        // The Inbox's one URL: no search, and the segment this browser last chose.
+        void navigate(MAIL_HOME);
         return;
       case 'help':
         setOverlay((v) => !v);
@@ -849,18 +927,51 @@ function MailPanes({ route }: { route: MailRoute }) {
   }, []);
 
   // --- Search (GET /api/search; says so plainly while it answers 501) --------------------------------
+  // PST-T-16.4: the query is the URL's ?q=, so a reload or Back shows the same results. Each search
+  // is a history entry of its own; the open message stays open.
+  const searchPath = (q: string | null): string => withListState(mailPath(route.mailboxId ?? 'inbox', route.messageId), { q, view: listState.view, panel: null });
+
   const submitSearch = (e: SyntheticEvent) => {
     e.preventDefault();
     const q = searchText.trim();
     setSearchUnavailable(false);
-    setSearchQuery(q === '' ? null : q);
+    void navigate(searchPath(q === '' ? null : q));
   };
 
   const clearSearch = () => {
-    setSearchQuery(null);
     setSearchText('');
     setSearchUnavailable(false);
+    void navigate(searchPath(null));
   };
+
+  // --- The Inspect drawer, in the URL (PST-T-16.4, PST-REQ-198) ---------------------------------------
+  // ?panel=inspect opens the open message's drawer once it is on screen (a reload, Back, a shared
+  // link); opening or closing the drawer — `i`, ⋯, a chip's Details, the palette, Escape, Close —
+  // writes or clears the parameter in place, so the history gains no entry for it.
+  const wantsInspect = listState.panel === 'inspect';
+  const openReadyId = open?.status === 'ready' ? open.id : null;
+  useEffect(() => {
+    if (!wantsInspect || openReadyId === null || openReadyId !== route.messageId || inspectDrawerOpen()) return;
+    requestInspect();
+  }, [wantsInspect, openReadyId, route.messageId]);
+
+  useEffect(() => {
+    let wasOpen = inspectDrawerOpen();
+    const observer = new MutationObserver(() => {
+      const isOpen = inspectDrawerOpen();
+      if (isOpen === wasOpen) return;
+      wasOpen = isOpen;
+      const { pathname, search } = window.location;
+      const panel = parseMailListState(search).panel;
+      if (isOpen && panel === null) void navigate(withListState(pathname + search, { panel: 'inspect' }), { replace: true });
+      else if (!isOpen && panel === 'inspect') void navigate(withListState(pathname + search, { panel: null }), { replace: true });
+    });
+    // The drawer is a portal: its dialog comes and goes as a child of <body>.
+    observer.observe(document.body, { childList: true });
+    return () => {
+      observer.disconnect();
+    };
+  }, [navigate]);
 
   // --- Render ------------------------------------------------------------------------------------------------
   if (mailboxesFailed && mailboxes === null) {
@@ -1048,6 +1159,13 @@ function MailPanes({ route }: { route: MailRoute }) {
             else if (action === 'delete' && trash !== undefined) triage(trash, m);
             else if (action === 'move') setPicker({ mode: 'move', explicit: m });
             else if (action === 'snooze' && canSnoozeScope(m)) setPicker({ mode: 'snooze', explicit: m });
+            else if (action === 'toggleRead') {
+              // PST-T-16.15: a right swipe on a phone. Read becomes unread and back, through the same
+              // flag path as Mark read; remembered so opening the row does not undo the choice.
+              const seen = !isUnread(m);
+              markedSeen.current.add(m.id);
+              setFlags(m.id, seen ? [] : [SEEN], seen ? [SEEN] : []);
+            }
           }}
           onShowNew={showNew}
           onNearEnd={loadMore}
@@ -1094,7 +1212,7 @@ function MailPanes({ route }: { route: MailRoute }) {
     // A draft opened from Drafts is replaced as it saves: close back to its mailbox's list. A new
     // message's draft rides in ?id=, so closing goes back to whatever was open behind it.
     const draftInPath = route.compose === 'draft' && route.messageId !== null && route.messageId === route.composeDraftId;
-    void navigate(draftInPath ? mailPath(route.mailboxId) : mailPath(route.mailboxId, route.messageId));
+    void navigate(carry(draftInPath ? mailPath(route.mailboxId ?? 'inbox') : mailPath(route.mailboxId ?? 'inbox', route.messageId)));
   };
   // PST-T-14.7: new and resumed drafts take the reading pane's place; replies and forwards open
   // inline under the thread (ReadingPane's composer slot).
@@ -1118,7 +1236,7 @@ function MailPanes({ route }: { route: MailRoute }) {
           ? {
               // Each save names the draft in the URL, so a reload resumes it (PST-T-14.7).
               onDraftSaved: (id: string) => {
-                void navigate(draftPath(route, id), { replace: true });
+                void navigate(carry(draftPath(route, id)), { replace: true });
               },
             }
           : {})}
@@ -1166,7 +1284,7 @@ function MailPanes({ route }: { route: MailRoute }) {
           triage(to, summaryOf(d));
         }}
         onEditDraft={(d) => {
-          void navigate(mailPath(route.mailboxId ?? d.mailboxId, d.id, 'draft'));
+          void navigate(carry(mailPath(route.mailboxId ?? keyOf(d.mailboxId), d.id, 'draft')));
         }}
         composer={route.compose === null ? undefined : composer}
         snooze={
@@ -1178,7 +1296,7 @@ function MailPanes({ route }: { route: MailRoute }) {
             snoozed={open?.detail?.mailboxId !== undefined && mailboxes?.find((m) => m.id === open.detail?.mailboxId)?.name === 'Snoozed'}
             onDone={(text) => {
               say('info', text);
-              void navigate(mailPath(route.mailboxId));
+              void navigate(carry(mailPath(route.mailboxId ?? 'inbox')));
             }}
           />
         }
@@ -1202,22 +1320,45 @@ function MailPanes({ route }: { route: MailRoute }) {
     </section>
   );
 
+  // PST-T-16.2: the list and the reading pane each have their own boundary, so a throw in the
+  // thread (or the composer) leaves the message list on screen and the other way round. The list
+  // recovers when the mailbox or the search changes, the reader when another message opens.
+  const listPaneKey = `${route.mailboxId ?? ''}|${searchQuery ?? ''}`;
+  // Keyed on the message the pane actually renders as well as the route's: `open` swaps in an effect,
+  // so a render can still hold the broken message after the route moves on. The second key change,
+  // when `open` catches up, resets the boundary onto the good message (PST-T-16.2).
+  const readerKey = `${route.messageId ?? ''}|${open?.id ?? ''}|${route.compose ?? ''}`;
+  const guardedList = (
+    <PaneBoundary name="The message list" resetKey={listPaneKey} compact fallbackClassName="pr-pane-error--list">
+      {listPane}
+    </PaneBoundary>
+  );
+  const guardedReader = (
+    <PaneBoundary name="The reading pane" resetKey={readerKey} compact fallbackClassName="pr-pane-error--reader">
+      {readerPane}
+    </PaneBoundary>
+  );
+
   let content;
   if (isNewslettersFeed) {
-    content = feedPane;
+    content = (
+      <PaneBoundary name="The feed" resetKey={listPaneKey} compact fallbackClassName="pr-pane-error--reader">
+        {feedPane}
+      </PaneBoundary>
+    );
   } else if (split) {
     content = (
       <>
-        {listPane}
-        {readerPane}
+        {guardedList}
+        {guardedReader}
       </>
     );
   } else if (view === 'mailboxes') {
     content = <MailboxIndex mailboxes={mailboxes} headingRef={viewHeading} onCompose={() => { compose('new', null); }} />;
   } else if (view === 'list') {
-    content = listPane;
+    content = guardedList;
   } else {
-    content = readerPane;
+    content = guardedReader;
   }
 
   // PST-T-14.8: at phone width each level is a push screen — it slides in from the right when you
@@ -1378,7 +1519,7 @@ function MailboxIndex({ mailboxes, headingRef, onCompose }: { mailboxes: Mailbox
   const row = (m: Mailbox) => (
     <PushRow
       key={m.id}
-      to={mailPath(m.id)}
+      to={mailPath(mailboxKey(m, mailboxes))}
       icon={mailboxIcon(m.specialUse, m.name)}
       label={mailboxLabel(m)}
       count={m.specialUse === 'trash' ? 0 : m.unseen}

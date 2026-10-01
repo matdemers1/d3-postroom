@@ -9,6 +9,12 @@ interface Props {
   name: string;
   /** Changing it clears a caught error — the pathname, so navigating away recovers. */
   resetKey: string;
+  /** PST-T-16.2: a pane inside the mail view — a short fallback sized to the pane, not the page. */
+  compact?: boolean;
+  /** An extra class on the fallback, so it takes the failed pane's place in a flex row. */
+  fallbackClassName?: string;
+  /** Also offer a full reload — for the root, where "try again" may meet the same error. */
+  reload?: boolean;
   children?: ReactNode;
 }
 
@@ -36,22 +42,38 @@ export class PaneBoundary extends Component<Props, State> {
   override render(): ReactNode {
     if (!this.state.failed) return this.props.children;
     return (
-      <div className="pr-pane-error">
+      <div className={['pr-pane-error', this.props.compact === true ? 'pr-pane-error--compact' : '', this.props.fallbackClassName ?? ''].filter(Boolean).join(' ')}>
         <Alert
+          dynamic
           tone="danger"
           title={`${this.props.name} stopped working`}
           actions={
-            <Button
-              size="sm"
-              onClick={() => {
-                this.setState({ failed: false });
-              }}
-            >
-              Try again
-            </Button>
+            <>
+              <Button
+                size="sm"
+                onClick={() => {
+                  this.setState({ failed: false });
+                }}
+              >
+                Try again
+              </Button>
+              {this.props.reload === true ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    window.location.reload();
+                  }}
+                >
+                  Reload
+                </Button>
+              ) : null}
+            </>
           }
         >
-          Something in this part of Postroom went wrong. The rest of the app still works — use the navigation to go elsewhere, or try again.
+          {this.props.compact === true
+            ? 'Something went wrong here. The rest of your mail still works — try again.'
+            : 'Something in this part of Postroom went wrong. The rest of the app still works — use the navigation to go elsewhere, or try again.'}
         </Alert>
       </div>
     );

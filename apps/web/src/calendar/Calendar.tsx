@@ -3,10 +3,12 @@ import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState }
 import { useSearchParams } from 'react-router-dom';
 import { Alert, Button, Cluster, EmptyState, IconButton, Page, PageHeader, SegmentedControl } from '@d3cloud/ui';
 import { calendarApi, type Calendar as CalendarJson, type EventInstance } from '../api';
-import { useMediaQuery } from '../mail/useMedia';
+import { SPLIT_QUERY, useMediaQuery } from '../mail/useMedia';
 import { EventEditor, type EditorTarget } from './EventEditor';
 import {
   addDays,
+  agendaTimeLines,
+  chipText,
   dayLabel,
   instancesOnDay,
   layoutTimed,
@@ -20,12 +22,16 @@ import {
   viewHeading,
   VIEWS,
   visibleDays,
+  weekStrip,
   type View,
 } from './layout';
 import { Loading, LoadFailed } from '../screens/states';
 
-/** Below this the grid is an agenda list (PST-REQ-136's 390 px phone layout). */
-const GRID_QUERY = '(min-width: 640px)';
+/**
+ * Below this the grid is an agenda list (PST-REQ-136's 390 px phone layout). The same query as the
+ * mail split (768 wide, 500 tall): one breakpoint scale, and a landscape phone gets the agenda.
+ */
+const GRID_QUERY = SPLIT_QUERY;
 const HOUR_PX = 48;
 const MONTH_CELL_MAX = 3;
 const VIEW_LABEL: Record<View, string> = { month: 'Month', week: 'Week', day: 'Day' };
@@ -43,32 +49,56 @@ function ChevronIcon({ dir }: { dir: 'left' | 'right' }) {
   );
 }
 
+function eventWhen(i: EventInstance, tz: string): string {
+  return i.allDay ? 'All day' : `${timeLabel(i.start, tz)} to ${timeLabel(i.end, tz)}`;
+}
+
 function eventLabel(i: EventInstance, tz: string): string {
-  const when = i.allDay ? 'All day' : `${timeLabel(i.start, tz)} to ${timeLabel(i.end, tz)}`;
+  const when = eventWhen(i, tz);
   return `${i.summary === '' ? 'Untitled event' : i.summary}, ${when}${i.location === '' ? '' : `, ${i.location}`}${i.recurring ? ', repeats' : ''}`;
 }
 
-function EventChip({ instance, tz, compact, onOpen }: { instance: EventInstance; tz: string; compact: boolean; onOpen: (i: EventInstance) => void }) {
+/**
+ * A month chip leads with the title and puts the time after it (`titleFirst`); the week and day
+ * views keep the time on top, where the chip is tall enough for both.
+ */
+function EventChip({
+  instance,
+  tz,
+  compact,
+  titleFirst = false,
+  onOpen,
+}: {
+  instance: EventInstance;
+  tz: string;
+  compact: boolean;
+  titleFirst?: boolean;
+  onOpen: (i: EventInstance) => void;
+}) {
+  const text = chipText(instance, tz, compact);
+  const time = text.time === null ? null : <span className="pr-cal-chip__time">{text.time}</span>;
   return (
     <button
       type="button"
       className="pr-cal-chip"
       data-all-day={instance.allDay ? 'true' : undefined}
+      data-title-first={titleFirst ? 'true' : undefined}
       aria-label={eventLabel(instance, tz)}
       onClick={(e) => {
         e.stopPropagation();
         onOpen(instance);
       }}
     >
-      {instance.allDay || compact ? null : <span className="pr-cal-chip__time">{timeLabel(instance.start, tz)}</span>}
-      <span className="pr-cal-chip__title">{instance.summary === '' ? 'Untitled event' : instance.summary}</span>
+      {titleFirst ? null : time}
+      <span className="pr-cal-chip__title">{text.title}</span>
+      {titleFirst ? time : null}
     </button>
   );
 }
 
 /**
  * The calendar (PST-T-8.5, PST-REQ-136): month, week and day views of every calendar the account
- * syncs over CalDAV, recurrences expanded by the server; below 640 px an agenda list. Keyboard:
+ * syncs over CalDAV, recurrences expanded by the server; below 768 px (or 500 px tall) an agenda list. Keyboard:
  * arrows move between days in the month grid, Enter opens a day; j/k next/previous, t today,
  * m/w/d switch view, n new event.
  */
@@ -94,7 +124,9 @@ export function Calendar() {
   const moveFocus = useRef(false);
 
   const days = useMemo(() => visibleDays(view, anchor), [view, anchor]);
-  const range = useMemo(() => rangeOf(days, tz), [days, tz]);
+  // The phone's week strip shows event dots for the anchor's week, so a one-day agenda still loads it.
+  const rangeDays = useMemo(() => (!grid && view === 'day' ? visibleDays('week', anchor) : days), [grid, view, anchor, days]);
+  const range = useMemo(() => rangeOf(rangeDays, tz), [rangeDays, tz]);
 
   const navigate = useCallback(
     (next: { view?: View; date?: string }) => {
@@ -244,7 +276,20 @@ export function Calendar() {
   } else if (instances === null) {
     body = <Loading label="Loading the calendar" height={320} />;
   } else if (!grid) {
-    body = <Agenda days={days} instances={list} tz={tz} todayDay={todayDay} onOpen={openEdit} onNew={openNew} />;
+    body = (
+      <>
+        <WeekStrip
+          anchor={anchor}
+          instances={list}
+          tz={tz}
+          todayDay={todayDay}
+          onDay={(d) => {
+            navigate({ view: 'day', date: d });
+          }}
+        />
+        <Agenda days={days} instances={list} tz={tz} todayDay={todayDay} onOpen={openEdit} onNew={openNew} />
+      </>
+    );
   } else if (view === 'month') {
     body = (
       <table className="pr-cal-month" ref={gridRef} onKeyDown={onGridKey}>
@@ -295,20 +340,22 @@ export function Calendar() {
                     <ul className="pr-cal-daylist">
                       {all.slice(0, more > 0 ? MONTH_CELL_MAX - 1 : MONTH_CELL_MAX).map((i) => (
                         <li key={`${i.calendarId}/${i.name}/${i.recurrenceId}`}>
-                          <EventChip instance={i} tz={tz} compact={false} onOpen={openEdit} />
+                          <EventChip instance={i} tz={tz} compact={false} titleFirst onOpen={openEdit} />
                         </li>
                       ))}
                       {more > 0 ? (
                         <li>
-                          <button
+                          <Button
                             type="button"
+                            size="sm"
+                            variant="ghost"
                             className="pr-cal-more"
                             onClick={() => {
                               navigate({ view: 'day', date: d });
                             }}
                           >
                             {more + 1} more
-                          </button>
+                          </Button>
                         </li>
                       ) : null}
                     </ul>
@@ -535,7 +582,14 @@ function Agenda({
                     onOpen(i);
                   }}
                 >
-                  <span className="pr-cal-agenda__time">{i.allDay ? 'All day' : `${timeLabel(i.start, tz)} – ${timeLabel(i.end, tz)}`}</span>
+                  <span className="pr-cal-agenda__time">
+                    {agendaTimeLines(i, tz).map((line, n) => (
+                      <span key={line} className="pr-cal-agenda__line">
+                        {n === 0 ? null : <span className="pr-cal-vh"> to </span>}
+                        {line}
+                      </span>
+                    ))}
+                  </span>
                   <span className="pr-cal-agenda__title">{i.summary === '' ? 'Untitled event' : i.summary}</span>
                   {i.location === '' ? null : <span className="pr-cal-agenda__where">{i.location}</span>}
                 </button>
@@ -545,5 +599,41 @@ function Agenda({
         </li>
       ))}
     </ol>
+  );
+}
+
+/**
+ * The phone's one-row week strip (the week holding the date in the URL): a dot under each day that
+ * has events, and a tap opens that day.
+ */
+function WeekStrip({ anchor, instances, tz, todayDay, onDay }: { anchor: string; instances: EventInstance[]; tz: string; todayDay: string; onDay: (day: string) => void }) {
+  const strip = weekStrip(anchor, instances, tz, todayDay);
+  return (
+    <div className="pr-cal-strip" role="group" aria-label="Days of this week">
+      {strip.map((d) => (
+        <button
+          key={d.day}
+          type="button"
+          className="pr-cal-strip__day"
+          data-day={d.day}
+          data-today={d.isToday ? 'true' : undefined}
+          data-events={d.events > 0 ? 'true' : undefined}
+          aria-label={d.label}
+          aria-pressed={d.isSelected}
+          aria-current={d.isToday ? 'date' : undefined}
+          onClick={() => {
+            onDay(d.day);
+          }}
+        >
+          <span className="pr-cal-strip__dow" aria-hidden="true">
+            {d.dow}
+          </span>
+          <span className="pr-cal-strip__dom" aria-hidden="true">
+            {d.dom}
+          </span>
+          <span className="pr-cal-strip__dot" aria-hidden="true" />
+        </button>
+      ))}
+    </div>
   );
 }

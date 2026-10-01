@@ -38,7 +38,15 @@ describe('the route table', () => {
     ]);
     const security = navEntries('settings', false).find((e) => e.label === 'Security & devices');
     expect(security?.path).toBe('/settings/security');
-    expect(security?.routes.map((r) => r.title)).toEqual(['Browser sessions', 'Devices', 'Set up iPhone / Mac']);
+    expect(security?.routes.map((r) => r.title)).toEqual(['Connect a device', 'Browser sessions', 'Devices']);
+  });
+
+  it('Security & devices opens on device setup, with Browser sessions after it (PST-DA-053)', () => {
+    expect(routeForPath('/settings/security')?.id).toBe('settingsDeviceSetup');
+    expect(routeForPath('/settings/security/sessions')?.id).toBe('settingsBrowsers');
+    const security = navEntries('settings', false).find((e) => e.label === 'Security & devices');
+    expect(security?.routes[0]?.id).toBe('settingsDeviceSetup');
+    expect(security?.routes[1]?.id).toBe('settingsBrowsers');
   });
 
   it('the Admin console has its own nav, and none at all for a non-admin', () => {
@@ -90,9 +98,10 @@ describe('redirects from the old URLs', () => {
     ['/app-passwords', '/settings/security/devices'],
     ['/account/aliases', '/settings/addresses'],
     ['/account/password', '/settings/account'],
-    ['/account/sessions', '/settings/security'],
+    ['/account/sessions', '/settings/security/sessions'],
     ['/account/import', '/settings/import'],
-    ['/account/device-setup', '/settings/security/device-setup'],
+    ['/account/device-setup', '/settings/security'],
+    ['/settings/security/device-setup', '/settings/security'],
     ['/account/rules', '/settings/rules'],
     ['/account/templates', '/settings/templates'],
     ['/account/keys', '/settings/keys'],

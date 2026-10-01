@@ -80,8 +80,15 @@ describe.skipIf(!baseUrl)('app passwords against PostgreSQL (PST-T-1.3)', () => 
     const row = await db.appPassword.findUniqueOrThrow({ where: { id: appPassword.id } });
     expect(row.lastUsedAt).not.toBeNull();
     expect(row.lastUsedIp).toBe('192.0.2.7');
-    // Last-used is not an audited mutation.
-    expect(await db.auditEvent.count({ where: { entityId: appPassword.id } })).toBe(1);
+    // Last-used is not audited on every login, but the FIRST use is, once, naming the protocol —
+    // Connect a device reads it to say which one connected (PST-T-16.27).
+    const used = await db.auditEvent.findMany({ where: { entityId: appPassword.id, action: 'app_password.use' } });
+    expect(used).toHaveLength(1);
+    expect(used[0]?.after).toEqual({ scope });
+    expect(await db.auditEvent.count({ where: { entityId: appPassword.id } })).toBe(2);
+    // A later login writes nothing more.
+    expect((await login(acct.address, password, scope)).ok).toBe(true);
+    expect(await db.auditEvent.count({ where: { entityId: appPassword.id } })).toBe(2);
   });
 
   it('accepts the username in any case and the password however it is typed', async () => {

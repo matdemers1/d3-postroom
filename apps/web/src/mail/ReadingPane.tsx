@@ -52,12 +52,16 @@
 // transparent page in the app's ink, and its frame has no border, radius or background, flush with
 // the text around it. A designed one keeps its own white page, framed by a radius-lg hairline and no
 // shadow. A theme change asks for a fresh ticket, so the frame reloads in the new theme.
-import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type ForwardedRef, type ReactNode } from 'react';
+import { forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ForwardedRef, type ReactNode } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Alert, Avatar, Button, EmptyState, Modal, ModalClose, Skeleton, Stack, useTheme } from '@d3cloud/ui';
 import { AttachmentList } from './AttachmentCard';
 import { deliveryPhase, isPending, NO_DELIVERY_RECORD_TEXT } from './delivery';
-import { DeliveryEvidence, DeliveryRecipientRow } from './DeliveryRows';
+import { PaletteRoleContext } from './CommandPalette';
+import { DeliveryEvidence, DeliveryRecipientRow, DeliverySkeleton } from './DeliveryRows';
 import { InspectDrawer } from './InspectDrawer';
+import { queuePath, resendDraftInput, resendNotes, resendTargets } from './resend';
+import { draftPath, mailPath, parseMailRoute } from './route';
 import { InviteSection } from '../invites/InviteSection';
 import { ReceiptPrompt } from './ReceiptPrompt';
 import { wantsReceipt } from './receipt';
@@ -67,7 +71,9 @@ import { trackersBlockedNote } from './trackers';
 import {
   api,
   ApiError,
+  describeError,
   type DeliveryDetail,
+  type DeliveryRecipient,
   type Mailbox,
   type MessageBody,
   type MessageDetail,
@@ -515,7 +521,7 @@ function MessageContent({
         <MessageText body={body} status={bodyStatus} onRetry={onRetry} fill={fill} />
       </div>
       <AttachmentList messageId={detail.id} attachments={body?.attachments} />
-      <DeliverySection messageId={detail.id} mailboxId={detail.mailboxId} />
+      <DeliverySection messageId={detail.id} mailboxId={detail.mailboxId} body={body} />
     </div>
   );
 }
@@ -534,8 +540,14 @@ const LOADING_DELIVERY: DeliverySectionState = { status: 'loading', data: null }
  *  the lookup finds no linked OutboundMessage row — never sent through Postroom at all, or a Sent
  *  copy another client APPENDed directly — an explicit note is shown rather than nothing, since that
  *  silence used to look identical to "still loading". */
-function DeliverySection({ messageId, mailboxId }: { messageId: string; mailboxId: string }) {
+function DeliverySection({ messageId, mailboxId, body }: { messageId: string; mailboxId: string; body: MessageBody | null }) {
   const { subscribe, mailboxes } = useMail();
+  // Admins get each recipient's row in the outbound queue; the server enforces it regardless.
+  const isAdmin = useContext(PaletteRoleContext);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [resending, setResending] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
   // Received mail has no delivery of ours to show; only a copy in Sent says so out loud.
   const inSent = mailboxes?.find((m) => m.id === mailboxId)?.specialUse === 'sent';
   const [state, setState] = useState<DeliverySectionState>(LOADING_DELIVERY);
@@ -577,7 +589,9 @@ function DeliverySection({ messageId, mailboxId }: { messageId: string; mailboxI
     return subscribe(() => { load(); });
   }, [pending, subscribe, load]);
 
-  if (state.status === 'loading') return null;
+  // PST-T-16.14: a sent copy's section holds its place while the lookup runs, so what is below it
+  // does not jump. (A received message has no delivery to show, and says nothing.)
+  if (state.status === 'loading') return inSent ? <DeliverySkeleton /> : null;
   if (state.status === 'error') {
     return (
       <Alert tone="warning" title="The delivery timeline could not be loaded" actions={<Button size="sm" onClick={load}>Try again</Button>}>
@@ -596,6 +610,32 @@ function DeliverySection({ messageId, mailboxId }: { messageId: string; mailboxI
       </section>
     );
   }
+  const delivery = state.data;
+  const notes = resendNotes(body);
+  const anyResend = delivery.recipients.some((r) => r.state === 'bounced' || r.state === 'cancelled');
+  // Edit and resend: a new draft with the same Subject and text, to the recipients it failed for, and
+  // the composer open on it. Nothing is sent until the reader says so.
+  const resend = (recipient: DeliveryRecipient) => {
+    if (resending !== null) return;
+    // The draft is made from the loaded body; before it arrives there is nothing to copy (PST-T-16.14).
+    if (body === null) {
+      setResendError('The message is still loading. Try Edit and resend again in a moment.');
+      return;
+    }
+    setResending(recipient.id);
+    setResendError(null);
+    const input = resendDraftInput({ subject: delivery.message.subject, text: body.text }, resendTargets(delivery.recipients, recipient));
+    api.createDraft(input).then(
+      (saved) => {
+        const route = parseMailRoute(location.pathname, location.search);
+        void navigate(route === null ? mailPath(saved.mailboxId, saved.id, 'draft') : draftPath(route, saved.id));
+      },
+      (error: unknown) => {
+        setResending(null);
+        setResendError(describeError(error));
+      },
+    );
+  };
   return (
     <section aria-label="Delivery" className="pr-delivery" data-testid="delivery">
       <div className="pr-delivery__top">
@@ -623,9 +663,25 @@ function DeliverySection({ messageId, mailboxId }: { messageId: string; mailboxI
       </div>
       <ul className="pr-delivery__list">
         {state.data.recipients.map((r) => (
-          <DeliveryRecipientRow key={r.id} recipient={r} />
+          <DeliveryRecipientRow
+            key={r.id}
+            recipient={r}
+            onResend={resend}
+            resending={resending === r.id}
+            queueTo={isAdmin ? queuePath(delivery.message.id) : null}
+          />
         ))}
       </ul>
+      {anyResend && notes.length > 0 ? (
+        <p className="pr-reader__note" data-testid="resend-note">
+          {notes.join(' ')}
+        </p>
+      ) : null}
+      {resendError !== null ? (
+        <p className="pr-reader__note" role="alert" data-testid="resend-error">
+          {resendError}
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -6,6 +6,7 @@ import { randomInt } from 'node:crypto';
 import { recordAudit, type RequestContext } from '@postroom/audit';
 import type { Kek } from '@postroom/crypto';
 import { AddressKind, DEFAULT_MAILBOXES, normalizeDomain, randomUidValidity, type Db, type Prisma } from '@postroom/db';
+import { replaceRecoveryCodes } from './recovery.js';
 import { burnStep, sealTotpSecret } from './totp.js';
 import { issueSession, type IssuedSession } from './sessions.js';
 import type { Request } from 'express';
@@ -32,6 +33,8 @@ export interface CompleteSetupInput {
   totpSecret: string;
   step: number;
   domain: string;
+  /** Argon2id hashes of the ten recovery codes this enrolment issues (PST-REQ-197). */
+  recoveryCodeHashes: string[];
 }
 
 export interface CompletedSetup {
@@ -91,6 +94,16 @@ export async function completeSetup(
       },
     });
     await burnStep(tx, operator.id, input.step);
+    // Completing TOTP enrolment issues the recovery codes, in the same commit (PST-REQ-197).
+    const replaced = await replaceRecoveryCodes(tx, operator.id, input.recoveryCodeHashes, now);
+    await recordAudit(tx, {
+      actor: { kind: 'account', accountId: operator.id },
+      action: 'auth.recovery-codes.issue',
+      entityType: 'account',
+      entityId: operator.id,
+      after: { count: input.recoveryCodeHashes.length, replaced, reason: 'enrolment' },
+      context,
+    });
     const session = await issueSession(tx, operator.id, { method: 'password', roles: [] }, req, now);
     const address = `${input.login}@${domain.name}`;
     await recordAudit(tx, {
@@ -99,7 +112,7 @@ export async function completeSetup(
       entityType: 'account',
       entityId: operator.id,
       before,
-      after: { displayName: input.displayName, address, isAdmin: true, secondFactor: 'enrolled', sessionId: session.id },
+      after: { displayName: input.displayName, address, isAdmin: true, secondFactor: 'enrolled', recoveryCodes: input.recoveryCodeHashes.length, sessionId: session.id },
       context,
     });
     return { accountId: operator.id, address, session };

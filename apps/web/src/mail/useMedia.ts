@@ -1,7 +1,11 @@
 import { useSyncExternalStore } from 'react';
 
-/** Tablet and up: the list and the reading pane side by side. Below it, push navigation. */
-export const SPLIT_QUERY = '(min-width: 768px)';
+/**
+ * Tablet and up: the list and the reading pane side by side. Below it, push navigation. The height
+ * condition (PST-T-16.18, PST-DA-047) keeps a landscape phone (844×390) on the push layout: two
+ * panes in 390px of height leave neither a usable list nor a readable message.
+ */
+export const SPLIT_QUERY = '(min-width: 768px) and (min-height: 500px)';
 /** The shell's `lg`: the sidebar is a column rather than a drawer. */
 export const WIDE_QUERY = '(min-width: 1024px)';
 

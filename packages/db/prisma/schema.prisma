@@ -174,6 +174,9 @@ model Account {
   // PST-T-15.10: files uploaded in the composer, waiting to be attached (PST-ADR-013).
   composeUploads ComposeUpload[]
 
+  // PST-T-16.7: single-use TOTP recovery codes (PST-REQ-197).
+  recoveryCodes RecoveryCode[]
+
   @@map("account")
 }
 
@@ -332,6 +335,9 @@ model Session {
   /// For an OIDC session: the identity it came from, so back-channel logout can find it.
   oidcIssuer  String?   @map("oidc_issuer")
   oidcSubject String?   @map("oidc_subject")
+  /// How a password session's second factor was satisfied: "totp" or "recovery_code" (PST-REQ-200).
+  /// A recovery-code session must enrol a new authenticator before any step-up action. Null for OIDC.
+  secondFactor String? @map("second_factor")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -469,6 +475,13 @@ model Message {
   /// at filing time; snippet NULL means "not summarised yet" — the worker's summary sweep fills it.
   fromName         String?   @map("from_name")
   snippet          String?
+  /// PST-T-16.12 (PST-REQ-199): who the message is addressed to, for Sent and Drafts rows. The first
+  /// recipient (To, then Cc, then Bcc) by its decoded display name, else its address, and how many
+  /// recipients there are across To + Cc + Bcc (Bcc only survives on our own Sent/Drafts copies).
+  /// to_count NULL means "not summarised yet" — the worker's to-summary sweep fills it; a message
+  /// with no recipients is to_count 0, to_name NULL.
+  toName           String?   @map("to_name")
+  toCount          Int?      @map("to_count")
   sentAt           DateTime? @map("sent_at") @db.Timestamptz(6)
   /// Threading headers (PST-T-3.8): In-Reply-To's first msg-id and the References chain.
   inReplyTo        String?   @map("in_reply_to")
@@ -1500,4 +1513,23 @@ model CryptoKey {
   @@unique([accountId, kind, fingerprint])
   @@index([accountId, address])
   @@map("crypto_key")
+}
+
+/// A single-use TOTP recovery code (PST-T-16.7, PST-REQ-197): ten are issued when an account
+/// completes TOTP enrolment, and one is accepted once in place of a TOTP code at sign-in. Only the
+/// Argon2id hash (with the server pepper) is stored; the code itself is shown once and never again.
+/// Regenerating deletes the whole set and issues a new one in the same transaction.
+model RecoveryCode {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String    @map("account_id") @db.Uuid
+  /// Argon2id (peppered) of the normalised code: ten symbols, no dash.
+  codeHash  String    @map("code_hash")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Set by the conditional update that accepts it (`WHERE used_at IS NULL`): used once, never twice.
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("recovery_code")
 }

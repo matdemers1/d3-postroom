@@ -8,6 +8,8 @@ export interface AuthState {
   signedIn: boolean;
   account?: { id: string; displayName: string; isAdmin: boolean; totpEnabled: boolean; address: string | null };
   method?: 'password' | 'oidc';
+  /** PST-T-16.26: signed in with a recovery code; a new authenticator comes first. */
+  reenrolRequired?: boolean;
 }
 
 export class ApiError extends Error {
@@ -560,6 +562,10 @@ export interface MessageSummary {
   fromName?: string | null;
   /** PST-T-14.2: a one-line body preview (≤ 140 chars); null until the message is summarised. */
   snippet?: string | null;
+  /** PST-T-16.12 (PST-REQ-199): who it is addressed to — the first recipient's display name (else
+   * its address; null only when there are none) and how many recipients across To, Cc and Bcc. What
+   * a Sent or Drafts row shows in place of the sender. Null until the message is summarised. */
+  to?: { name: string | null; count: number } | null;
   date: string;
   internalDate: string;
   size: number;
@@ -804,6 +810,8 @@ export interface DeliveryRecipient {
   lastEnhanced: string | null;
   lastText: string | null;
   deliveredAt: string | null;
+  /** When the row last changed; for a cancelled recipient, when it was cancelled (PST-T-16.14). */
+  updatedAt?: string;
   dsn: { delaySentAt: string | null; failureSentAt: string | null };
   transport: string;
   attemptsLog: DeliveryAttemptView[];
@@ -1078,6 +1086,8 @@ export function describeError(error: unknown): string {
       return 'This account signs in with D3 Auth and has no password here to change.';
     case 'step_up_required':
       return 'That needs a fresh authentication code.';
+    case 'totp_reenrol_required':
+      return 'You signed in with a recovery code. Set up a new authenticator first.';
     default:
       return 'Something went wrong on the server. Try again, and if it keeps happening, check Health.';
   }

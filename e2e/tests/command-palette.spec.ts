@@ -141,7 +141,7 @@ test('typing searches messages: debounced, marked, "sender · date", and Enter o
 
   await page.keyboard.press('Enter');
   await expect(palette(page)).toBeHidden();
-  await expect(page).toHaveURL(new RegExp(`/mail/${m.mailboxId}/${m.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/mail/inbox/${m.id}$`));
   await expect(page.getByRole('heading', { name: m.subject, level: 2 })).toBeVisible();
 });
 
@@ -287,6 +287,9 @@ test('the command palette has no axe violations, in light and dark', async ({ pa
     }, theme);
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    // The theme is on <html> before the mail view mounts ('/' is still redirecting to /mail/inbox, and
+    // ⌘K is the mail view's own chord there), so wait for the view, as every other test here does.
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
     await page.keyboard.press('Control+k');
     await expect(palette(page)).toBeVisible();
     // With everything drawn: a query, a Messages group with its avatars, and a chip pressed.

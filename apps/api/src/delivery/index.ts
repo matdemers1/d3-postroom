@@ -48,6 +48,8 @@ function recipientJson(r: OutboundRecipient & { attemptsLog: DeliveryAttempt[] }
     lastEnhanced: r.lastEnhanced,
     lastText: r.lastText,
     deliveredAt: r.deliveredAt?.toISOString() ?? null,
+    // PST-T-16.14: when the row last changed — for a cancelled recipient, when it was cancelled.
+    updatedAt: r.updatedAt.toISOString(),
     dsn: {
       delaySentAt: r.delayDsnSentAt?.toISOString() ?? null,
       failureSentAt: r.failureDsnSentAt?.toISOString() ?? null,

@@ -94,7 +94,7 @@
 }
 
 /* At phone width the card spans the column: one 52px row, a full-width tap target. */
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 499px) {
   .pr-files__list > li {
     flex: 1 1 100%;
   }

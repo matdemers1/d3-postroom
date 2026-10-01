@@ -17,13 +17,16 @@
 // renders only the rows in view, inside the groups they belong to; ./groups does the geometry.
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import type { MessageSummary } from '../../api';
+import { COARSE_POINTER_QUERY } from '../../mobile/swipe';
+import { useRowSwipe, type SwipeCommit } from '../../mobile/useRowSwipe';
 import { useMediaQuery } from '../useMedia';
 import { blockTop, dayGroups, layoutRows, rangeFor, revealRow, rowAt, weekStartDay } from './groups';
 import { MessageRow, ROW_HEIGHT, rowId } from './MessageRow';
 import { RowActions } from './RowActions';
 import { UpIcon } from './glyphs';
 
-export type RowAction = 'archive' | 'delete' | 'snooze' | 'move';
+/** `toggleRead` is the phone swipe's leading action (PST-T-16.15): the row's read state flips. */
+export type RowAction = 'archive' | 'delete' | 'snooze' | 'move' | 'toggleRead';
 
 export interface TriageListHandle {
   focus: () => void;
@@ -83,6 +86,8 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
   const [keyboard, setKeyboard] = useState(false);
   // Hover reveals the cluster only for a real hovering pointer; on touch it would cover the row.
   const canHover = useMediaQuery('(hover: hover) and (pointer: fine)');
+  // PST-T-16.15: swipe is for a touch screen, and only while no x-selection is in progress.
+  const coarse = useMediaQuery(COARSE_POINTER_QUERY);
   const [barFocused, setBarFocused] = useState(false);
   const [pinned, setPinned] = useState<string | null>(null);
   const pointerInside = useRef(false);
@@ -193,6 +198,17 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
   // PST-T-14.11: the row the cluster sits on reserves room for it, so it never covers the subject.
   const actingId = target !== undefined && (showActions || barFocused) ? target.id : null;
 
+  const swipe = useRowSwipe({
+    enabled: coarse && selected.size === 0,
+    canArchive,
+    onCommit: (action: SwipeCommit, index: number) => {
+      const m = messages[index];
+      if (m === undefined) return;
+      // The row's own path: MailView's onRowAction runs triage (row exit, Undo toast) for archive.
+      onRowAction(action === 'archive' ? 'archive' : 'toggleRead', m, index);
+    },
+  });
+
   const act = (action: RowAction) => {
     if (target === undefined) return;
     // The toolbar is about to lose its row: keep focus in the list, not on the page body.
@@ -241,9 +257,14 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
         onKeyDown={() => {
           setKeyboard(true);
         }}
-        onPointerDown={() => {
+        onPointerDown={(e) => {
           setKeyboard(false);
+          swipe.onPointerDown(e);
         }}
+        onPointerMove={swipe.onPointerMove}
+        onPointerUp={swipe.onPointerUp}
+        onPointerCancel={swipe.onPointerCancel}
+        onClickCapture={swipe.onClickCapture}
         onBlur={(e) => {
           if (e.target !== e.currentTarget) return;
           setListFocused(false);
@@ -288,6 +309,8 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
                     acting={m.id === actingId}
                     threadCount={m.threadId === null ? 1 : (threadCounts.get(m.threadId) ?? 1)}
                     showPriority={showPriority}
+                    swipeable={coarse && !selecting}
+                    swipeArchive={canArchive}
                   />
                 );
               })}

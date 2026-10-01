@@ -11,14 +11,27 @@
 //     apps/web/src/styles/mobile-targets.css);
 //   - the primary action for the screen is reachable without ever scrolling sideways.
 //
-// This test skips itself outside the 'mobile' Playwright project — the desktop project's exit demo
-// is the other specs' 1280 px assertions.
-import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
+// This test skips itself outside the phone Playwright projects — the desktop project's exit demo
+// is the other specs' 1280 px assertions. The 'mobile' project (390×844) runs the sweeps below;
+// the 'landscape' project (844×390, PST-T-16.18) runs only the last suite, because the sweeps
+// above it measure against portrait numbers (390 wide, 844 tall).
+import { AxeBuilder } from '@axe-core/playwright';
+import { expect, test, type APIRequestContext, type BrowserContext, type Locator, type Page } from '@playwright/test';
 
 import { ensureOperator, seedMail, signInCookies, tag, type Operator } from './support.js';
 
 test.describe.configure({ mode: 'serial', timeout: 300_000 });
 test.skip(({ isMobile }) => !isMobile, 'this is the mobile project’s own pass');
+
+// PST-T-16.18: the suite that is the landscape project's, and only its. Everything else in this file
+// asserts portrait geometry (390 px wide, a viewport 844 tall) and runs in the 'mobile' project.
+const LANDSCAPE_SUITE = 'Landscape phone (PST-T-16.18)';
+test.beforeEach(({ isMobile }, testInfo) => {
+  if (!isMobile) return; // the file-level skip above already covers it
+  const inLandscapeProject = testInfo.project.name === 'landscape';
+  const isLandscapeTest = testInfo.titlePath.includes(LANDSCAPE_SUITE);
+  test.skip(inLandscapeProject !== isLandscapeTest, inLandscapeProject ? 'portrait-only: asserts 390×844 geometry; the mobile project runs it' : 'landscape-only: the landscape project runs it');
+});
 
 const CSRF = { 'x-postroom-csrf': '1' };
 
@@ -333,6 +346,7 @@ test.describe('signed in', () => {
     // menu — where the list's Back goes.
     await page.getByTestId('context-bar').getByRole('link', { name: 'Inbox', exact: true }).click();
     await page.getByTestId('context-bar').getByRole('link', { name: 'Mailboxes', exact: true }).click();
+    // /mail is the stack's root: the mailbox list alone (MailView draws no message list there).
     await expect(page).toHaveURL(/\/mail$/);
     await expect(page.getByRole('navigation', { name: 'Mailboxes' }).getByRole('link', { name: /^Inbox/ })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Places' }).getByRole('link')).toHaveText(['Calendar', 'Contacts']);
@@ -453,17 +467,17 @@ test.describe('signed in', () => {
     await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/account');
 
-    await page.goto('/settings/security');
+    await page.goto('/settings/security/sessions');
     await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/settings/security');
+    await assertMobileFriendly(page, '/settings/security/sessions');
 
     await page.goto('/settings/import');
     await expect(page.getByRole('heading', { name: 'Import mail', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/import');
 
-    await page.goto('/settings/security/device-setup');
-    await expect(page.getByRole('heading', { name: 'Set up iPhone / Mac', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/settings/security/device-setup');
+    await page.goto('/settings/security');
+    await expect(page.getByRole('heading', { name: 'Connect a device', level: 1 })).toBeVisible();
+    await assertMobileFriendly(page, '/settings/security');
 
     // PST-T-14.8: Settings pushes like the mailboxes — '/settings' is its index on a phone, each
     // screen's context bar goes Back to it, and the index goes Back to Mailboxes.
@@ -480,7 +494,9 @@ test.describe('signed in', () => {
     // Another test (or an earlier run against this database) may have left a rule here already —
     // "Add rule" always appends, so the newest one is always last.
     await page.getByRole('textbox', { name: 'Text' }).last().fill(`billing-${t}@shop.example`);
-    await page.getByRole('textbox', { name: 'Folder' }).last().fill('Receipts');
+    // PST-T-16.9: one Destination picker of real places, not a free-text Folder field.
+    await page.getByRole('combobox', { name: 'Destination' }).last().click();
+    await page.getByRole('option', { name: 'Archive', exact: true }).click();
     await page.getByRole('button', { name: 'Save and turn on' }).click();
     await expect(page.getByText('now runs on new mail')).toBeVisible();
     await assertMobileFriendly(page, '/settings/rules');
@@ -613,5 +629,264 @@ test.describe('signed in', () => {
       return { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth };
     });
     expect(widths.scrollWidth, 'the message is wider than its frame: its right edge is clipped').toBeLessThanOrEqual(widths.clientWidth);
+  });
+});
+
+// PST-T-16.13 (PST-DA-031, PST-REQ-155): the Outbound queue below 640px is a list of cards, and
+// every action is reachable without sideways scroll. Self-contained: later tasks edit this file too.
+test.describe('Outbound queue as cards (PST-T-16.13)', () => {
+  test.beforeAll(async () => {
+    if (cookies.length === 0) {
+      operator = await ensureOperator(api);
+      cookies = await signInCookies(api, operator);
+    }
+  });
+
+  test('rows are DataList cards with an Actions menu and a details drawer, and the page never scrolls sideways', async ({ page }) => {
+    const t = tag();
+    const domain = `cards-${t}.test`;
+    const seeded = await api.post('/api/admin/queue/dev-seed-deferred', { headers: CSRF, data: { domain } });
+    if (seeded.status() === 404) throw new Error('the stack has no dev-seed-deferred route: start the api with POSTROOM_E2E_SEED=1');
+
+    await page.goto(`/admin/queue?domain=${domain}`);
+    await expect(page.getByRole('heading', { name: 'Outbound queue', level: 1 })).toBeVisible();
+    await expect(page.getByRole('table')).toHaveCount(0);
+    const list = page.getByRole('list', { name: 'Outbound queue' });
+    await expect(list).toBeVisible();
+    const card = list.getByRole('listitem').filter({ hasText: `first@${domain}` });
+    await expect(card).toBeVisible();
+    await assertMobileFriendly(page, '/admin/queue (cards)');
+
+    // Every action, with the menu open, sits inside the viewport.
+    await card.getByRole('button', { name: /^Actions for / }).click();
+    for (const name of ['Retry now', 'Force SES', 'Bounce', 'Delete']) {
+      const item = page.getByRole('menuitem', { name });
+      await expect(item).toBeVisible();
+      const box = await item.boundingBox();
+      expect((box?.x ?? 0) + (box?.width ?? 0), `${name} runs past the right edge`).toBeLessThanOrEqual(390);
+      expect(box?.x ?? -1, `${name} starts left of the screen`).toBeGreaterThanOrEqual(0);
+    }
+    await page.keyboard.press('Escape');
+
+    // The evidence is a sheet over the whole phone.
+    await card.getByRole('button', { name: `Delivery details for first@${domain}` }).click();
+    const drawer = page.getByRole('dialog', { name: 'Delivery details' });
+    await expect(drawer.getByTestId('queue-last-response')).toContainText('greylisted (seeded for e2e)');
+    await assertMobileFriendly(page, '/admin/queue (details drawer)');
+  });
+});
+
+// PST-T-16.15 (PST-DA-066, PST-DA-035, PST-REQ-190, PST-REQ-155): triage by swipe on a phone. A row
+// dragged left past 40% of its width archives through the triage path (so the Undo toast appears and
+// Undo restores it); dragged right it toggles read/unread; a short drag snaps back; reduced motion
+// still commits without the slide; axe is clean with the swipe surfaces drawn and mid-drag. The
+// gesture is driven as Pointer Events with pointerType "touch" dispatched on the row (Playwright has
+// no drag-by-finger), which is exactly what a touch screen delivers to the handlers.
+test.describe('Swipe triage (PST-T-16.15)', () => {
+  test.beforeAll(async () => {
+    if (cookies.length === 0) {
+      operator = await ensureOperator(api);
+      cookies = await signInCookies(api, operator);
+    }
+  });
+
+  const rowFor = (page: Page, subject: string): Locator =>
+    page.getByRole('listbox', { name: 'Messages in Inbox' }).getByRole('option', { name: new RegExp(subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
+  const toasts = (page: Page): Locator => page.getByRole('region', { name: 'Notifications' });
+
+  /**
+   * One touch drag across a row: `fraction` of the row's width (negative: leftwards), in six moves,
+   * with `dy` of vertical drift. `release: false` stops mid-drag (no pointerup) for a look at the
+   * revealed surface; `finish()` then lets go.
+   */
+  async function drag(row: Locator, fraction: number, options: { dy?: number; release?: boolean } = {}): Promise<void> {
+    await row.evaluate(
+      (el, input) => {
+        const g = globalThis as unknown as { PointerEvent: new (type: string, init: Record<string, unknown>) => unknown };
+        const node = el as unknown as {
+          getBoundingClientRect(): { left: number; top: number; width: number; height: number };
+          dispatchEvent(e: unknown): boolean;
+        };
+        const r = node.getBoundingClientRect();
+        const x0 = r.left + r.width * (input.fraction < 0 ? 0.85 : 0.15);
+        const y0 = r.top + r.height / 2;
+        const fire = (type: string, x: number, y: number): void => {
+          node.dispatchEvent(
+            new g.PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y, buttons: type === 'pointerup' ? 0 : 1 }),
+          );
+        };
+        fire('pointerdown', x0, y0);
+        for (let i = 1; i <= 6; i++) fire('pointermove', x0 + (input.fraction * r.width * i) / 6, y0 + (input.dy * i) / 6);
+        if (input.release) fire('pointerup', x0 + input.fraction * r.width, y0 + input.dy);
+      },
+      { fraction, dy: options.dy ?? 0, release: options.release ?? true },
+    );
+  }
+
+  /** Lets go of a drag left open by `release: false`, back where it started (a cancel). */
+  async function cancelDrag(row: Locator): Promise<void> {
+    await row.evaluate((el) => {
+      const g = globalThis as unknown as { PointerEvent: new (type: string, init: Record<string, unknown>) => unknown };
+      (el as unknown as { dispatchEvent(e: unknown): boolean }).dispatchEvent(new g.PointerEvent('pointercancel', { bubbles: true, pointerId: 7, pointerType: 'touch', isPrimary: true }));
+    });
+  }
+
+  async function seedOne(label: string): Promise<{ id: string; mailboxId: string; subject: string }> {
+    const t = tag();
+    const [m] = await seedMail(api, [{ subject: `${label} ${t}`, from: `Grace Hopper <grace.${t}@example.org>`, text: `Swipe me ${t}.` }]);
+    if (m === undefined) throw new Error('seed returned nothing');
+    return m;
+  }
+
+  async function archivedSubjects(): Promise<string[]> {
+    const { mailboxes } = (await (await api.get('/api/mailboxes')).json()) as { mailboxes: { id: string; specialUse: string | null }[] };
+    const archive = mailboxes.find((b) => b.specialUse === 'archive');
+    if (archive === undefined) throw new Error('no Archive mailbox');
+    const res = await api.get(`/api/mailboxes/${archive.id}/messages?limit=200`);
+    return ((await res.json()) as { messages: { subject: string }[] }).messages.map((m) => m.subject);
+  }
+
+  test('a left swipe past 40% archives the row, shows the Undo toast, and Undo restores it', async ({ page }) => {
+    const m = await seedOne('Swipe archive');
+    await page.goto('/');
+    const row = rowFor(page, m.subject);
+    await expect(row).toBeVisible();
+
+    await drag(row, -0.6);
+    await expect(row).toHaveCount(0);
+    await expect(toasts(page)).toContainText(`Moved to Archive · ${m.subject}`);
+    await expect.poll(async () => (await archivedSubjects()).includes(m.subject)).toBe(true);
+    // It did not open: a swipe is not a tap.
+    await expect(page).toHaveURL(/\/mail\/inbox\/?$|\/$/);
+
+    await toasts(page).getByRole('button', { name: 'Undo' }).click();
+    await expect(rowFor(page, m.subject)).toHaveCount(1);
+    await expect.poll(async () => (await archivedSubjects()).includes(m.subject)).toBe(false);
+  });
+
+  test('a short drag snaps back and does nothing; a vertical drag is left to the list', async ({ page }) => {
+    const m = await seedOne('Swipe short');
+    await page.goto('/');
+    const row = rowFor(page, m.subject);
+    await expect(row).toBeVisible();
+
+    await drag(row, -0.2);
+    // Vertical: more down than across from the first move, though its sideways part alone (half the
+    // row) would be past the 40% that archives — the list's scroll, not the row's swipe.
+    const width = (await row.boundingBox())?.width ?? 0;
+    expect(width).toBeGreaterThan(0);
+    await drag(row, -0.5, { dy: width * 0.75 });
+    await expect(row).toHaveCount(1);
+    await expect(row).not.toHaveAttribute('data-swipe', /.+/);
+    await expect(toasts(page)).not.toContainText(m.subject);
+    expect(await archivedSubjects()).not.toContain(m.subject);
+  });
+
+  test('a right swipe past 40% toggles read/unread', async ({ page }) => {
+    const m = await seedOne('Swipe read');
+    await page.goto('/');
+    const row = rowFor(page, m.subject);
+    await expect(row).toHaveClass(/pr-mrow--unread/);
+
+    await drag(row, 0.6);
+    await expect(row).not.toHaveClass(/pr-mrow--unread/);
+    await drag(row, 0.6);
+    await expect(row).toHaveClass(/pr-mrow--unread/);
+  });
+
+  test('the swipe surfaces are decorative: axe is clean at rest and mid-drag, and the row gains no focus stop', async ({ page }) => {
+    const m = await seedOne('Swipe axe');
+    await page.goto('/');
+    const row = rowFor(page, m.subject);
+    await expect(row).toBeVisible();
+    await expect(row.locator('button, a, [tabindex]')).toHaveCount(0);
+
+    const check = async (label: string): Promise<void> => {
+      const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).include('[role="listbox"]').analyze();
+      expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`), label).toEqual([]);
+    };
+    await check('at rest');
+    await drag(row, -0.25, { release: false });
+    await expect(row).toHaveAttribute('data-swipe', 'reveal-archive');
+    await check('revealing Archive');
+    await cancelDrag(row);
+    await expect(row).not.toHaveAttribute('data-swipe', /.+/);
+    await drag(row, 0.25, { release: false });
+    await expect(row).toHaveAttribute('data-swipe', 'reveal-read');
+    await check('revealing Read');
+    await cancelDrag(row);
+  });
+
+  test.describe('with reduced motion', () => {
+    test.use({ reducedMotion: 'reduce' });
+
+    test('the row does not slide, and the action still commits', async ({ page }) => {
+      const m = await seedOne('Swipe reduced');
+      await page.goto('/');
+      const row = rowFor(page, m.subject);
+      await expect(row).toBeVisible();
+
+      await drag(row, -0.6, { release: false });
+      await expect(row).toHaveAttribute('data-swipe', 'commit-archive');
+      const moved = await row.locator('.pr-mrow__inner').evaluate((el) => (globalThis as unknown as { getComputedStyle(e: unknown): { translate: string } }).getComputedStyle(el).translate);
+      expect(moved === 'none' || moved === '0px' || moved === '0px 0px').toBe(true);
+      await cancelDrag(row);
+
+      await drag(row, -0.6);
+      await expect(row).toHaveCount(0);
+      await expect(toasts(page)).toContainText(`Moved to Archive · ${m.subject}`);
+      await toasts(page).getByRole('button', { name: 'Undo' }).click();
+      await expect(rowFor(page, m.subject)).toHaveCount(1);
+    });
+  });
+});
+
+// PST-T-16.18 (PST-DA-047, PST-REQ-155, PST-REQ-077): an 844×390 phone is wider than the tablet edge
+// (768) but too short for two panes, so SPLIT_QUERY's (min-height: 500px) keeps it on the push
+// layout, and its touch pointer is `coarse`, which is what the 44px rules are keyed to.
+test.describe(LANDSCAPE_SUITE, () => {
+  test.beforeAll(async () => {
+    if (cookies.length === 0) {
+      operator = await ensureOperator(api);
+      cookies = await signInCookies(api, operator);
+    }
+  });
+
+  test('the Inbox and an open message are the push layout with 44px targets and no sideways scroll', async ({ page }) => {
+    expect(page.viewportSize()).toEqual({ width: 844, height: 390 });
+    const t = tag();
+    const [msg] = await seedMail(api, [{ subject: `Landscape ${t}`, text: `A body line.\n\n${'x'.repeat(120)}` }]);
+    if (msg === undefined) throw new Error('seed returned nothing');
+
+    await page.goto('/');
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
+    // Push, not split: the stack's own bars, no hamburger drawer, no reading pane beside the list.
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden();
+    await expect(page.getByTestId('context-bar').getByRole('link', { name: 'Mailboxes', exact: true })).toBeVisible();
+    await expect(page.getByTestId('list-bar').getByRole('button', { name: 'New message' })).toBeVisible();
+    for (const radio of await page.getByRole('radiogroup', { name: 'Show in Inbox' }).getByRole('radio').all()) {
+      expect((await radio.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    await assertMobileFriendly(page, '/ (landscape inbox)');
+
+    await page.goto('/');
+    await page.getByRole('option', { name: new RegExp(`Landscape ${t}`) }).click();
+    await expect(page.getByRole('heading', { name: msg.subject, level: 2 })).toBeVisible();
+    // Opening a message replaces the list (a push), so the list is not beside it.
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeHidden();
+    await expect(page.getByRole('group', { name: 'Message actions' })).toBeVisible();
+    await assertMobileFriendly(page, `/mail/${msg.mailboxId}/${msg.id} (landscape open message)`);
+  });
+
+  test('other screens keep 44px targets and never scroll the page sideways', async ({ page }) => {
+    for (const [path, heading] of [
+      ['/settings/account', 'Account'],
+      ['/settings/security/sessions', 'Browser sessions'],
+      ['/calendar', 'Calendar'],
+    ] as const) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
+      await assertMobileFriendly(page, `${path} (landscape)`);
+    }
   });
 });

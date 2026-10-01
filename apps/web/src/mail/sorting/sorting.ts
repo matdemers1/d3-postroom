@@ -43,7 +43,9 @@ export type ChipContext =
 /**
  * A chip only where the bucket is NOT implied by what you are looking at: search results, the Inbox's
  * Everything (which mixes Priority and People), and thread members filed in a different bucket from
- * the message you opened. Inside Notifications there is no "Notifications" chip on every row.
+ * the message you opened. Inside Notifications there is no "Notifications" chip on every row — a
+ * deliberate choice. The question is not lost there: the open message's header carries a quiet
+ * "Why it's here" control instead (`whyControlShows`, PST-T-16.21), which opens the same popover.
  */
 export function chipShows(bucket: string | null | undefined, context: ChipContext): boolean {
   if (!isFilingBucket(bucket)) return false;
@@ -58,6 +60,37 @@ export function chipShows(bucket: string | null | undefined, context: ChipContex
       return bucket !== context.openBucket;
   }
 }
+
+/**
+ * The quiet "Why it's here" control in the open message's header: the chip's complement. The chip stays
+ * away where the folder already says the bucket (see above, deliberately), but a person reading in
+ * Receipts or Junk still gets to ask why the message is there and correct it, so the control shows
+ * exactly there: the open message, in a bucket folder or Junk, sorted into a bucket.
+ */
+export function whyControlShows(bucket: string | null | undefined, context: ChipContext): boolean {
+  return isFilingBucket(bucket) && context.kind === 'mailbox' && context.bucket !== null && context.bucket !== undefined;
+}
+
+/** Where a "Why it’s here" control is, and whether the message got there by Postroom’s sorting or by hand. */
+export interface WhyPlacement {
+  /** The bucket the message is in NOW: the folder it sits in. */
+  bucket: FilingBucket;
+  /**
+   * The stored verdict names a different bucket from the folder. A manual move only moves the message,
+   * never its verdict (the API's move path), so the stored bucket would describe the Inbox the message
+   * left; the popover says plainly that the person moved it, and corrects from where it is now.
+   */
+  byHand: boolean;
+}
+
+/** The placement for the control, or null where it does not show (see `whyControlShows`). */
+export function whyPlacement(bucket: string | null | undefined, context: ChipContext): WhyPlacement | null {
+  if (!whyControlShows(bucket, context) || context.kind !== 'mailbox' || !isFilingBucket(context.bucket)) return null;
+  return { bucket: context.bucket, byHand: bucket !== context.bucket };
+}
+
+/** What the popover says for a message the person moved into this folder themselves. */
+export const MOVED_BY_HAND_SENTENCE = 'You moved this here.';
 
 /** The bucket a mailbox IS (a bucket folder, or Junk), or null for the Inbox and everything else. */
 export function mailboxBucket(mailbox: { name: string; specialUse: string | null } | null): FilingBucket | null {

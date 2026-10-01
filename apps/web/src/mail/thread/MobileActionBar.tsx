@@ -1,7 +1,9 @@
 // PST-T-14.8 (PST-REQ-155, PST-ADR-011; design audit RSP-01, IA-15, TF-04): at phone width the
 // thread shows its body first and the actions sit in a sticky bar at the bottom, in thumb reach from
 // anywhere in a long thread — Archive, Delete, Move, Reply, and ⋯ for Reply all, Forward, Snooze,
-// Mark unread, Star and Inspect. No swipe gestures.
+// Mark unread, Star and Inspect. The bar is for the open message; swiping is the list's (PST-T-16.15:
+// a row dragged left archives, right toggles read, through the same triage path and Undo toast), an
+// accelerator over buttons that remain for everyone.
 //
 // PST-T-15.8 (PST-REQ-194): drawn to the canvas's PhoneThread with @d3cloud/ui's ActionBar (D-083) —
 // a labelled group of plain buttons in tab order, an icon over a word, never under 44 px, the home

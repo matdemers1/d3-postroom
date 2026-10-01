@@ -6,8 +6,9 @@
 // actions reachable from the keyboard; mail arriving under the pointer waits behind "N new"; reduced
 // motion removes the row without an exit animation; axe over the list in selection mode.
 //
-// Seeded mail has no threadId (admin-dev seed files independent messages), so the "whole thread in
-// this mailbox" scope is covered by apps/web/test/unit/triage.test.ts rather than here.
+// Seeded mail has no threadId unless it asks for one (admin-dev seed files independent messages), so
+// the "whole thread in this mailbox" scope is covered by apps/web/test/unit/triage.test.ts rather
+// than here.
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 import { ensureOperator, seedMail, signInCookies, tag, type SeededMessage } from './support.js';
@@ -50,11 +51,11 @@ async function subjectsIn(mailboxId: string): Promise<string[]> {
   return ((await res.json()) as { messages: { subject: string }[] }).messages.map((m) => m.subject);
 }
 
-async function seedThree(t: string): Promise<[SeededMessage, SeededMessage, SeededMessage]> {
+async function seedThree(t: string, threaded = false): Promise<[SeededMessage, SeededMessage, SeededMessage]> {
   const [a, b, c] = await seedMail(api, [
-    { subject: `Oldest ${t}`, from: `Ada Lovelace <ada.${t}@example.org>`, text: `First one ${t}.` },
-    { subject: `Middle ${t}`, from: `Grace Hopper <grace.${t}@example.org>`, text: `Second one ${t}.` },
-    { subject: `Newest ${t}`, from: `Alan Turing <alan.${t}@example.org>`, text: `Third one ${t}.` },
+    { subject: `Oldest ${t}`, from: `Ada Lovelace <ada.${t}@example.org>`, text: `First one ${t}.`, threaded },
+    { subject: `Middle ${t}`, from: `Grace Hopper <grace.${t}@example.org>`, text: `Second one ${t}.`, threaded },
+    { subject: `Newest ${t}`, from: `Alan Turing <alan.${t}@example.org>`, text: `Third one ${t}.`, threaded },
   ]);
   if (a === undefined || b === undefined || c === undefined) throw new Error('seed returned too few');
   return [a, b, c];
@@ -75,7 +76,7 @@ test('keyboard: e archives the open message, the next (older) one opens, z moves
   await page.keyboard.press('e');
   await expect(row(page, b.subject)).toHaveCount(0);
   // The next message — the one below, older — is open at once; no empty "No message open" pane.
-  await expect(page).toHaveURL(new RegExp(`/mail/${a.mailboxId}/${a.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/mail/inbox/${a.id}$`));
   await expect(page.getByRole('heading', { name: a.subject, level: 2 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'No message open' })).toHaveCount(0);
   await expect(toasts(page)).toContainText(`Moved to Archive · ${b.subject}`);
@@ -262,4 +263,63 @@ test('reduced motion: the row goes without an exit animation', async ({ page }) 
   await page.keyboard.press('e');
   await expect(row(page, b.subject)).toHaveCount(0);
   expect(await page.locator('.pr-mrow--leaving').count()).toBe(0);
+});
+
+// PST-T-16.1 (PST-REQ-142, PST-DA-071): a snooze the server refuses is not announced. Snooze needs a
+// thread, so this mail is seeded threaded — a real threadId on the row, the detail and every message
+// the app reads back (opening it marks it read, and the PATCH answer replaces the row). Only the
+// snooze endpoint itself is answered with a 500. Archive/delete/move stay optimistic on purpose —
+// only snooze waits.
+test.describe('a failed snooze says so', () => {
+  let snoozeCalls = 0;
+
+  test.beforeEach(async ({ page }) => {
+    snoozeCalls = 0;
+    await page.route(/\/api\/threads\/[^/]+\/snooze$/, async (route) => {
+      snoozeCalls += 1;
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal' }) });
+    });
+  });
+
+  const failure = (page: Page) => page.getByRole('alert').filter({ hasText: 'Couldn’t snooze that — it’s still here.' });
+
+  test('b: the picker choice fails, no "Snoozed until" toast, the message stays open, an error shows', async ({ page }) => {
+    const t = tag();
+    const [a, b] = await seedThree(t, true);
+    await page.goto('/');
+    await row(page, b.subject).click();
+    await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+
+    await page.keyboard.press('b');
+    const dialog = page.getByRole('dialog', { name: 'Snooze until' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: /Tomorrow morning/ }).click();
+
+    await expect(failure(page)).toBeVisible();
+    expect(snoozeCalls).toBe(1);
+    await expect(toasts(page)).not.toContainText('Snoozed until');
+    await expect(row(page, b.subject)).toHaveCount(1);
+    await expect(page).toHaveURL(new RegExp(`/${b.id}$`));
+    await expect(page).not.toHaveURL(new RegExp(`/${a.id}$`));
+    await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+  });
+
+  test('the row action: the same — nothing leaves, nothing is announced, an error shows', async ({ page }) => {
+    const t = tag();
+    const [, b] = await seedThree(t, true);
+    await page.goto('/');
+    await row(page, b.subject).click();
+    await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+
+    await row(page, b.subject).hover();
+    await page.getByRole('toolbar', { name: `Actions for ${b.subject}` }).getByRole('button', { name: 'Snooze' }).click();
+    await page.getByRole('dialog', { name: 'Snooze until' }).getByRole('button', { name: /Tomorrow morning/ }).click();
+
+    await expect(failure(page)).toBeVisible();
+    expect(snoozeCalls).toBe(1);
+    await expect(toasts(page)).not.toContainText('Snoozed until');
+    await expect(row(page, b.subject)).toHaveCount(1);
+    await expect(page).toHaveURL(new RegExp(`/${b.id}$`));
+    await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+  });
 });

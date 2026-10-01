@@ -23,6 +23,7 @@ import {
   certificateValue,
   durationShort,
   healthSummary,
+  humanizeDetail,
   inboundQueueCounts,
   lastRunFootnote,
   lastRunStat,
@@ -31,6 +32,8 @@ import {
   relativeTime,
   servicesMeta,
   sinceText,
+  sortTiles,
+  tileAction,
   tileById,
 } from '../admin/health/model';
 import '../admin/admin.css';
@@ -103,9 +106,9 @@ function SummaryStats({ tiles, now }: { tiles: HealthTile[]; now: Date }) {
           label="Inbound queue"
           value={q === null ? (queue === undefined ? '—' : TILE_TONE[queue.state].label) : String(q.dead)}
           unit={q === null ? undefined : q.dead === 1 ? 'dead job' : 'dead jobs'}
-          footnote={q === null ? (queue?.detail ?? 'Not reported') : `${String(q.failed)} failed ${q.failed === 1 ? 'message' : 'messages'}`}
+          footnote={q === null ? (queue === undefined ? 'Not reported' : humanizeDetail(queue.detail)) : `${String(q.failed)} failed ${q.failed === 1 ? 'message' : 'messages'}`}
         />
-        <TileStat tile={cert} label="Certificates" value={cert === undefined ? '—' : certificateValue(cert)} footnote={cert?.detail ?? 'Not reported'} />
+        <TileStat tile={cert} label="Certificates" value={cert === undefined ? '—' : certificateValue(cert)} footnote={cert === undefined ? 'Not reported' : humanizeDetail(cert.detail)} />
         <TileStat
           tile={backup}
           label="Backups"
@@ -137,7 +140,33 @@ function Services({ tiles, now }: { tiles: HealthTile[]; now: Date }) {
         </span>
       ),
     },
-    { key: 'detail', header: 'Detail', cell: (t) => <span className="pr-muted pr-wrap">{t.detail}</span> },
+    {
+      key: 'detail',
+      header: 'Detail',
+      cell: (t) => {
+        const action = tileAction(t);
+        return (
+          <>
+            <span className="pr-muted pr-wrap">{humanizeDetail(t.detail)}</span>
+            {/* The next step sits on its own line: a link inline in muted text differs from it by
+                colour alone (1.61:1), which axe's link-in-text-block refuses (PST-REQ-154). */}
+            {action === null ? null : (
+              <span className="pr-health-action">
+                {action.external ? (
+                  <Link href={action.href} external target="_blank" rel="noopener noreferrer">
+                    {action.label}
+                  </Link>
+                ) : (
+                  <Link asChild>
+                    <RouterLink to={action.href}>{action.label}</RouterLink>
+                  </Link>
+                )}
+              </span>
+            )}
+          </>
+        );
+      },
+    },
     {
       key: 'state',
       header: 'Status',
@@ -156,7 +185,7 @@ function Services({ tiles, now }: { tiles: HealthTile[]; now: Date }) {
   ];
   return (
     <Section title="Services" description={servicesMeta(tiles)} className="pr-admin-card" data-section="services">
-      <Table className="pr-admin-table" caption="Services" captionHidden columns={columns} rows={tiles} rowKey={(t) => t.id} />
+      <Table className="pr-admin-table" caption="Services" captionHidden columns={columns} rows={sortTiles(tiles)} rowKey={(t) => t.id} />
     </Section>
   );
 }
@@ -174,7 +203,7 @@ function Edge({ tiles }: { tiles: HealthTile[] }) {
             <DescriptionItem key={t.id} term={t.label}>
               <span className="pr-health__kv">
                 <TileDot tile={t} />
-                <span className="pr-muted">{t.detail}</span>
+                <span className="pr-muted">{humanizeDetail(t.detail)}</span>
               </span>
             </DescriptionItem>
           ))}

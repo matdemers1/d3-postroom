@@ -67,7 +67,7 @@
 
 .pr-cal-chip:focus-visible,
 .pr-cal-daynum:focus-visible,
-.pr-cal-more:focus-visible,
+.pr-cal-strip__day:focus-visible,
 .pr-cal-week__daybtn:focus-visible,
 .pr-cal-week__scroll:focus-visible,
 .pr-cal-agenda__event:focus-visible {
@@ -86,6 +86,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: var(--weight-medium);
+}
+
+/* A month chip leads with its title; the time follows it, and goes when the cell is too narrow to
+   hold both (the daylist is the container, so this follows the cell, not the viewport). */
+.pr-cal-chip[data-title-first='true'] .pr-cal-chip__time {
+  margin-left: auto;
+  padding-left: var(--space-4);
+}
+
+.pr-cal-month .pr-cal-daylist {
+  container-type: inline-size;
+}
+
+@container (max-width: 7rem) {
+  .pr-cal-chip[data-title-first='true'] .pr-cal-chip__time {
+    display: none;
+  }
 }
 
 /* --- Month ------------------------------------------------------------------------------------ */
@@ -118,7 +135,7 @@
 }
 
 .pr-cal-month td[data-outside='true'] {
-  background: var(--color-bg-sunken);
+  background: transparent;
 }
 
 .pr-cal-daynum {
@@ -139,7 +156,7 @@
 }
 
 .pr-cal-month td[data-outside='true'] .pr-cal-daynum {
-  color: var(--color-fg-muted);
+  color: var(--color-fg-faint);
 }
 
 .pr-cal-daynum:hover {
@@ -163,19 +180,10 @@
   min-width: 0;
 }
 
-.pr-cal-more {
-  padding: 0 var(--space-4);
-  border: 0;
-  background: transparent;
-  color: var(--color-fg-muted);
-  font: inherit;
-  font-size: var(--text-12);
-  cursor: pointer;
-}
-
-.pr-cal-more:hover {
-  color: var(--color-fg);
-  text-decoration: underline;
+/* "N more" is a small ghost Button (the design system's); this only left-aligns it under the chips. */
+.pr-cal-month .pr-cal-more {
+  align-self: flex-start;
+  max-width: 100%;
 }
 
 /* --- Week and day ----------------------------------------------------------------------------- */
@@ -302,7 +310,7 @@
   align-items: stretch;
 }
 
-/* --- Agenda (below 640 px) -------------------------------------------------------------------- */
+/* --- Agenda (below 768 px, or under 500 px tall) -------------------------------------------------------------------- */
 
 .pr-cal-agenda {
   display: flex;
@@ -334,7 +342,7 @@
 
 .pr-cal-agenda__event {
   display: grid;
-  grid-template-columns: 7.5rem minmax(0, 1fr);
+  grid-template-columns: 4.5rem minmax(0, 1fr);
   gap: var(--space-2) var(--space-12);
   width: 100%;
   padding: var(--space-8) var(--space-12);
@@ -358,10 +366,82 @@
   font-size: var(--text-13);
 }
 
+/* The time is two short lines (start over end) in a column that never wraps them. */
+.pr-cal-agenda__time {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pr-cal-agenda__line {
+  white-space: nowrap;
+}
+
 .pr-cal-agenda__title {
   font-weight: var(--weight-medium);
 }
 
 .pr-cal-agenda__where {
   grid-column: 2;
+}
+
+/* --- Week strip (phone) ----------------------------------------------------------------------- */
+
+.pr-cal-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.pr-cal-strip__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 44px;
+  padding: var(--space-4) 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pr-cal-strip__day:hover {
+  background: var(--color-surface-hover);
+}
+
+.pr-cal-strip__day[aria-pressed='true'] {
+  background: var(--color-accent-muted);
+}
+
+.pr-cal-strip__dow {
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+}
+
+.pr-cal-strip__dom {
+  font-size: var(--text-14);
+}
+
+.pr-cal-strip__day[data-today='true'] .pr-cal-strip__dom {
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold);
+}
+
+/* The dot is always laid out, so a day with events does not make its column taller. */
+.pr-cal-strip__dot {
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: var(--radius-full);
+  background: transparent;
+}
+
+.pr-cal-strip__day[data-events='true'] .pr-cal-strip__dot {
+  background: var(--color-accent);
 }

@@ -49,6 +49,40 @@
   color: var(--color-fg-muted);
 }
 
+.pr-why-control {
+  flex: none;
+  min-height: var(--space-24);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-fg-muted);
+  font: inherit;
+  font-size: var(--text-12);
+  text-decoration: underline dotted var(--color-fg-faint);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--motion-hover);
+}
+
+/* The Newsletters feed item's header: the control sits beside Unsubscribe. */
+.pr-feed__item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.pr-why-control:hover {
+  color: var(--color-accent);
+}
+
+.pr-why-control:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
 .pr-mrow__chip {
   margin-right: var(--space-6);
   vertical-align: 1px;
@@ -370,9 +404,15 @@
 
 /* --- Phone: every control a real 44×44 hit area (PST-T-11.2's rule; e2e/tests/mobile.spec.ts) ------- */
 
-@media (max-width: 599px) {
+/* 767px, not 599: the phone edge of the one 768/1024 scale (PST-T-16.18). */
+@media (max-width: 767px), (max-height: 499px) {
   /* The header's bucket chip keeps its 20 px pill: its 44 px hit area is an invisible extension
    * above and below (a 44 px-tall filled pill crowded the recipient summary to "to …"). */
+  .pr-mhead .pr-why-control {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
   .pr-mhead .pr-chip {
     position: relative;
     min-width: 44px;

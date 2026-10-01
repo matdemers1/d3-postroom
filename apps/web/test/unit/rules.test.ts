@@ -8,6 +8,8 @@ import { compileScript, SieveSyntaxError } from '../../../../packages/sieve/src/
 
 // The component library ships CSS, which Node cannot import; nothing here renders.
 vi.mock('@d3cloud/ui', () => ({}));
+import { applyDestination, destinationOptions, destinationValue, isGroupHeader } from '../../src/screens/rules/destinations';
+import type { Mailbox } from '../../src/api';
 import { describeCompileError, newRule, ruleProblem, rulesToSieve, sieveString, sieveToRules, type Rule } from '../../src/screens/Rules';
 
 const ALL: Rule[] = [
@@ -61,7 +63,7 @@ describe('the rules builder (PST-REQ-150)', () => {
 
   it('says what is missing from a row before it is saved', () => {
     expect(ruleProblem(newRule())).toBe('Say what to look for.');
-    expect(ruleProblem({ ...newRule(), value: 'x' })).toBe('Name the folder to move it to.');
+    expect(ruleProblem({ ...newRule(), value: 'x' })).toBe('Choose where to move it.');
     expect(ruleProblem({ ...newRule(), value: 'x', action: 'bucket', target: 'nope' })).toBe('Choose a bucket.');
     expect(ruleProblem({ ...newRule(), value: 'x', action: 'read' })).toBeNull();
   });
@@ -81,5 +83,82 @@ describe('the rules builder (PST-REQ-150)', () => {
     const refused = new ApiError(422, 'invalid_script', { error: 'invalid_script', message: e.message, compileError: { line: 4, column: 1, message: e.message } });
     expect(compileErrorOf(refused)).toEqual({ line: 4, column: 1, message: e.message });
     expect(compileErrorOf(new ApiError(409, 'script_active', {}))).toBeNull();
+  });
+});
+
+// PST-T-16.9: one destination picker of real mailboxes and buckets.
+const box = (name: string, specialUse: Mailbox['specialUse'] = null): Mailbox => ({
+  id: name,
+  name,
+  specialUse,
+  uidvalidity: 1,
+  uidnext: 1,
+  highestModseq: '1',
+  subscribed: true,
+  total: 0,
+  unseen: 0,
+});
+const MAILBOXES: Mailbox[] = [
+  box('INBOX', 'inbox'),
+  box('Sent', 'sent'),
+  box('Drafts', 'drafts'),
+  box('Trash', 'trash'),
+  box('Junk', 'junk'),
+  box('Archive', 'archive'),
+  box('Rejects', 'rejects'),
+  box('Newsletters'),
+  box('Updates'),
+  box('Receipts'),
+  box('Notifications'),
+  box('Projects'),
+  box('Family'),
+];
+const draft = { action: 'move', target: '' };
+
+describe('the rule destination picker (PST-T-16.9)', () => {
+  it('lists the mailboxes, the Sorted for you buckets, then your folders — grouped like the sidebar', () => {
+    const options = destinationOptions(MAILBOXES, draft);
+    expect(options.map((o) => (isGroupHeader(o.value) ? `# ${o.label}` : o.label))).toEqual([
+      '# Mailboxes', 'Inbox', 'Inbox · Priority', 'Inbox · People', 'Archive', 'Junk', 'Trash',
+      '# Sorted for you', 'Updates', 'Receipts', 'Notifications', 'Newsletters',
+      '# Your folders', 'Family', 'Projects',
+    ]);
+    expect(options.filter((o) => isGroupHeader(o.value)).every((o) => o.disabled === true)).toBe(true);
+    // Never Sent, Drafts or Rejects, and a bucket folder is offered once, as a bucket.
+    expect(options.map((o) => o.label)).not.toContain('Sent');
+    expect(options.map((o) => o.label).filter((l) => l === 'Receipts')).toHaveLength(1);
+  });
+
+  it('compiles a folder choice as move to folder and a bucket choice as sort into bucket, unchanged', () => {
+    const folder = applyDestination({ ...newRule(), value: 'x' }, 'folder:Projects');
+    expect(folder).toMatchObject({ action: 'move', target: 'Projects' });
+    expect(rulesToSieve([folder])).toContain('fileinto :create "Projects";');
+    const bucket = applyDestination({ ...newRule(), value: 'x' }, 'bucket:receipts');
+    expect(bucket).toMatchObject({ action: 'bucket', target: 'receipts' });
+    expect(rulesToSieve([bucket])).toContain('bucket "receipts";');
+    expect(rulesToSieve([bucket])).toContain('require ["vnd.postroom.bucket"];');
+    // A heading chooses nothing.
+    expect(applyDestination(folder, 'group:sorted')).toBe(folder);
+  });
+
+  it('selects the right option for a saved rule of either kind', () => {
+    const [moved, bucketed] = sieveToRules(rulesToSieve([ALL[0] as Rule, ALL[1] as Rule])) as Rule[];
+    expect(destinationValue(bucketed as Rule)).toBe('bucket:newsletters');
+    expect(destinationOptions(MAILBOXES, bucketed as Rule).some((o) => o.value === 'bucket:newsletters')).toBe(true);
+    // A saved move to a bucket folder is a folder choice: kept, and told apart from the bucket.
+    expect(destinationValue(moved as Rule)).toBe('folder:Receipts');
+    const kept = destinationOptions(MAILBOXES, moved as Rule).find((o) => o.value === 'folder:Receipts');
+    expect(kept?.label).toBe('Receipts (folder only)');
+    expect(destinationValue({ action: 'flag', target: '' })).toBe('');
+    expect(destinationValue(draft)).toBe('');
+  });
+
+  it('keeps a saved destination that no longer exists, as missing', () => {
+    const gone = { action: 'move', target: 'Old project' };
+    const kept = destinationOptions(MAILBOXES, gone).find((o) => o.value === 'folder:Old project');
+    expect(kept?.label).toBe('Old project (missing)');
+    expect(destinationOptions(MAILBOXES, { action: 'bucket', target: 'junk' }).find((o) => o.value === 'bucket:junk')?.label).toBe('Junk bucket');
+    // Before the list loads, the saved folder shows as itself, not as missing.
+    expect(destinationOptions(null, gone).find((o) => o.value === 'folder:Old project')?.label).toBe('Old project');
   });
 });

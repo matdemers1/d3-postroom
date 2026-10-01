@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -21,6 +21,8 @@ import {
 } from '@d3cloud/ui';
 import { api, describeError, type AppPassword, type AppPasswordScope } from '../api';
 import { relativeTime } from './app-passwords-format';
+import { ConnectionStatus } from './device/FirstUse';
+import { ServerSettings } from './device/ServerSettings';
 import { Loading, LoadFailed } from './states';
 import { SubNav } from './SubNav';
 
@@ -43,11 +45,22 @@ export function AppPasswords() {
   const [rows, setRows] = useState<AppPassword[] | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  // PST-T-16.23: the header's New button unmounts while the form is open; folding the form away
+  // (Cancel, or done) hands focus back to it, as Account's Change password does.
+  const newButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (!creating && returnFocus.current) {
+      returnFocus.current = false;
+      newButton.current?.focus();
+    }
+  }, [creating]);
   const [label, setLabel] = useState('');
   const [scopes, setScopes] = useState<AppPasswordScope[]>(['imap', 'smtp']);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [revealed, setRevealed] = useState<{ label: string; password: string } | null>(null);
+  const [revealed, setRevealed] = useState<{ id: string; label: string; password: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState<AppPassword | null>(null);
   const [revoking, setRevoking] = useState(false);
@@ -69,6 +82,15 @@ export function AppPasswords() {
     setScopes((current) => (on ? [...current.filter((s) => s !== scope), scope] : current.filter((s) => s !== scope)));
   };
 
+  // PST-T-16.23: the form is not in the DOM until "New app password" is pressed, and closes on create.
+  const closeForm = () => {
+    returnFocus.current = true;
+    setCreating(false);
+    setLabel('');
+    setScopes(['imap', 'smtp']);
+    setFormError(null);
+  };
+
   const create = (event: SyntheticEvent) => {
     event.preventDefault();
     setFormError(null);
@@ -85,9 +107,9 @@ export function AppPasswords() {
     api
       .createAppPassword({ label: label.trim(), scopes })
       .then(async (created) => {
-        setRevealed({ label: created.label, password: created.password });
+        setRevealed({ id: created.id, label: created.label, password: created.password });
         setCopied(false);
-        setLabel('');
+        closeForm();
         await load();
       })
       .catch((caught: unknown) => {
@@ -137,6 +159,20 @@ export function AppPasswords() {
         title="Devices"
         description="Mail, calendar and contacts apps on your devices sign in with an app password, never your account password."
         {...(rows === null ? {} : { count: rows.length, countNoun: { one: 'password', other: 'passwords' } })}
+        actions={
+          creating ? null : (
+            <Button
+              ref={newButton}
+              variant="primary"
+              onClick={() => {
+                setNotice(null);
+                setCreating(true);
+              }}
+            >
+              New app password
+            </Button>
+          )
+        }
       />
       <SubNav />
       {notice === null ? null : (
@@ -171,48 +207,57 @@ export function AppPasswords() {
                 Done
               </Button>
             </Cluster>
+            <ConnectionStatus key={revealed.id} watch={{ kind: 'password', id: revealed.id }} waiting="Waiting for the app to sign in." />
+            {/* PST-T-16.16: the same settings block as Connect a device › Other, beside the password. */}
+            <ServerSettings />
           </Stack>
         </Section>
       )}
 
-      <Section title="Create an app password">
-        <form onSubmit={create}>
-          <Stack gap="16">
-            <FormField label="Name" width="lg" help="The device or app it is for, e.g. iPhone Mail." {...(formError === null ? {} : { error: formError })}>
-              <Input appearance="filled"
-                name="label"
-                maxLength={100}
-                required
-                value={label}
-                onChange={(e) => {
-                  setLabel(e.target.value);
-                }}
-              />
-            </FormField>
-            <FormField label="Permissions" as="group">
-              <Stack gap="8">
-                {SCOPES.map(({ scope, label: scopeLabel }) => (
-                  <Checkbox
-                    key={scope}
-                    name="scopes"
-                    value={scope}
-                    label={scopeLabel}
-                    checked={scopes.includes(scope)}
-                    onCheckedChange={(checked) => {
-                      toggle(scope, checked === true);
-                    }}
-                  />
-                ))}
-              </Stack>
-            </FormField>
-            <FormActions>
-              <Button type="submit" variant="primary" loading={busy}>
-                Create password
-              </Button>
-            </FormActions>
-          </Stack>
-        </form>
-      </Section>
+      {!creating ? null : (
+        <Section title="New app password">
+          <form onSubmit={create}>
+            <Stack gap="16">
+              <FormField label="Name" width="lg" help="The device or app it is for, e.g. iPhone Mail." {...(formError === null ? {} : { error: formError })}>
+                <Input appearance="filled"
+                  autoFocus
+                  name="label"
+                  maxLength={100}
+                  required
+                  value={label}
+                  onChange={(e) => {
+                    setLabel(e.target.value);
+                  }}
+                />
+              </FormField>
+              <FormField label="Permissions" as="group">
+                <Stack gap="8">
+                  {SCOPES.map(({ scope, label: scopeLabel }) => (
+                    <Checkbox
+                      key={scope}
+                      name="scopes"
+                      value={scope}
+                      label={scopeLabel}
+                      checked={scopes.includes(scope)}
+                      onCheckedChange={(checked) => {
+                        toggle(scope, checked === true);
+                      }}
+                    />
+                  ))}
+                </Stack>
+              </FormField>
+              <FormActions>
+                <Button type="button" onClick={closeForm}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" loading={busy}>
+                  Create password
+                </Button>
+              </FormActions>
+            </Stack>
+          </form>
+        </Section>
+      )}
 
       {loadError !== null ? (
         <LoadFailed error={loadError} what="app passwords" onRetry={() => void load()} />
@@ -225,7 +270,7 @@ export function AppPasswords() {
             aria-label="Your app passwords"
             empty={
               <EmptyState kind="empty" heading="No app passwords yet" headingLevel={3} size="inline">
-                Create one above for each mail, calendar or contacts app you sign in to.
+                Press New app password for each mail, calendar or contacts app you sign in to.
               </EmptyState>
             }
           >

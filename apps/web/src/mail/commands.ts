@@ -10,8 +10,9 @@ import type { Mailbox, MessageSummary } from '../api';
 import { snoozeChoices } from './compose';
 import { mailboxLabel } from './format';
 import { requestInspect, SHORTCUTS, type MailAction } from './keys';
-import { mailPath } from './route';
+import { mailboxKey, mailPath } from './route';
 import { paletteRoutes } from '../routes';
+import { COARSE_POINTER_QUERY } from '../mobile/swipe';
 
 /** The palette's groups, in the order it shows them (PST-T-14.3). */
 export const COMMAND_GROUPS = ['Actions', 'Go to', 'Settings', 'Admin'] as const;
@@ -71,8 +72,20 @@ export const LEAD_ACTIONS: readonly MailAction[] = ['archive', 'snooze', 'moveTo
 
 const PLACE_GROUP: Readonly<Record<'mail' | 'settings' | 'admin', CommandGroup>> = { mail: 'Go to', settings: 'Settings', admin: 'Admin' };
 
-/** Builds the full command list for the current context, in COMMAND_GROUPS order. */
-export function buildCommands(ctx: CommandContext, isAdmin = false): Command[] {
+/** Keyboard-only navigation: j/k move a cursor, o/Enter open, u goes back. Meaningless on a touch
+ * screen, where a tap opens a row and the back button goes back (PST-T-16.15, PST-DA-035). */
+export const KEYBOARD_ONLY_ACTIONS: readonly MailAction[] = ['next', 'prev', 'open', 'back'];
+
+/** Whether the primary pointer is a finger. With no matchMedia (tests, SSR) it is not. */
+export function isCoarsePointer(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(COARSE_POINTER_QUERY).matches;
+}
+
+/**
+ * Builds the full command list for the current context, in COMMAND_GROUPS order. With `coarse` (a
+ * touch screen; read from the device when omitted) the keyboard-only navigation commands are left out.
+ */
+export function buildCommands(ctx: CommandContext, isAdmin = false, coarse: boolean = isCoarsePointer()): Command[] {
   const commands: Command[] = [];
   const perform = ctx.perform;
 
@@ -87,6 +100,7 @@ export function buildCommands(ctx: CommandContext, isAdmin = false): Command[] {
       // The palette opens itself; a command that opens the thing it is already inside of is noise.
       // Go to Inbox is listed with the mailboxes below, carrying g then i as its keycaps.
       if (s.action === 'commandPalette' || (s.action === 'goInbox' && ctx.mailboxes !== null)) continue;
+      if (coarse && KEYBOARD_ONLY_ACTIONS.includes(s.action)) continue;
       commands.push({
         id: `action:${s.action}`,
         label: s.description,
@@ -146,7 +160,7 @@ export function buildCommands(ctx: CommandContext, isAdmin = false): Command[] {
         mailbox,
         ...(keycaps === undefined ? {} : { keycaps }),
         run: () => {
-          ctx.navigate(mailPath(mailbox.id));
+          ctx.navigate(mailPath(mailboxKey(mailbox)));
         },
       });
     }

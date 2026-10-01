@@ -82,6 +82,10 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'DELETE /api/threads/{id}/snooze',
         // PST-T-8.6: the signed .mobileconfig.
         'POST /api/mobileconfig',
+        'GET /api/mobileconfig/settings',
+        'POST /api/mobileconfig/links',
+        'GET /api/mobileconfig/links/{linkId}',
+        'GET /api/mobileconfig/once/{token}',
         // PST-T-9.5: Sieve scripts for the rules builder.
         'GET /api/sieve/scripts',
         'GET /api/sieve/scripts/{name}',

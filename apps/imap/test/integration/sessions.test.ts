@@ -231,7 +231,8 @@ describe.skipIf(!canRun)('imap daemon (PST-T-3.2)', () => {
     r1.close();
 
     const audit = await h.db.auditEvent.findMany({ where: { actorAccountId: account.id }, orderBy: { at: 'asc' } });
-    expect(audit.map((a) => a.action)).toEqual(['message.expunge', 'mailbox.create', 'mailbox.create']);
+    // The login's first use of the app password is recorded once, with its protocol (PST-T-16.27).
+    expect(audit.map((a) => a.action)).toEqual(['app_password.use', 'message.expunge', 'mailbox.create', 'mailbox.create']);
   });
 
   it('accepts app passwords scoped to imap only — never the account password', async () => {
@@ -329,7 +330,7 @@ describe.skipIf(!canRun)('imap daemon (PST-T-3.2)', () => {
     expect((await c.command('STATUS Saved (MESSAGES)', 'DE')).untagged).toEqual(['* STATUS "Saved" (MESSAGES 1)']);
     c.close();
     const actions = (await h.db.auditEvent.findMany({ where: { actorAccountId: account.id }, orderBy: { at: 'asc' } })).map((a) => a.action);
-    expect(actions).toEqual(['mailbox.create', 'mailbox.create', 'mailbox.create', 'mailbox.rename', 'mailbox.delete', 'mailbox.rename']);
+    expect(actions).toEqual(['app_password.use', 'mailbox.create', 'mailbox.create', 'mailbox.create', 'mailbox.rename', 'mailbox.delete', 'mailbox.rename']);
   });
 
   it('delivers another session’s changes at the allowed points', async () => {

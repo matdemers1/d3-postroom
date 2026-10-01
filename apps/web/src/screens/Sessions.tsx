@@ -1,12 +1,41 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
-import { Alert, Badge, Button, DataList, DataListRow, EmptyState, FormField, Input, Modal, ModalClose, Page, PageHeader, Section } from '@d3cloud/ui';
+import { Alert, Badge, Button, DataList, DataListRow, DescriptionItem, DescriptionList, EmptyState, FormField, Input, Modal, ModalClose, Page, PageHeader, Section } from '@d3cloud/ui';
 import { ApiError, api, describeError, type AccountSession } from '../api';
 import { describeAgent } from './agent';
 import { Loading, LoadFailed } from './states';
 import { SubNav } from './SubNav';
+import { RecoveryCodesSection } from '../settings/RecoveryCodesSection';
 
 const when = (iso: string): string =>
   new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+/** PST-T-16.17: one verb for ending a browser session, and one name for the one you are using. */
+export const END_SESSION_LABEL = 'Sign out';
+export const CURRENT_SESSION_LABEL = 'This browser';
+
+// A 200-character user agent has no spaces to break on; wrap it rather than widen the row.
+const WRAP = { overflowWrap: 'anywhere' } as const;
+
+/**
+ * The evidence behind a session's friendly name: the full user agent and the IP, behind a native
+ * disclosure (keyboard-operable, no state to keep). Shared by the account and admin screens.
+ */
+export function SessionDetails({ userAgent, ip }: { userAgent: string | null; ip: string | null }) {
+  return (
+    <details className="pr-session-details">
+      {/* Named for its session, so ten rows are not ten identical "Details" (the visible word leads, WCAG 2.5.3). */}
+      <summary aria-label={`Details for ${describeAgent(userAgent)}`}>Details</summary>
+      <DescriptionList>
+        <DescriptionItem term="User agent">
+          <span className="pr-mono" style={WRAP}>{userAgent === null || userAgent.trim() === '' ? 'Unknown' : userAgent}</span>
+        </DescriptionItem>
+        <DescriptionItem term="IP address">
+          <span className="pr-mono" style={WRAP}>{ip ?? 'Unknown'}</span>
+        </DescriptionItem>
+      </DescriptionList>
+    </details>
+  );
+}
 
 /**
  * Your own live web sessions (PST-REQ-091; ASVS 5.0 7.5.2): every device signed in as you, right
@@ -99,20 +128,26 @@ export function Sessions() {
               <DataListRow
                 key={s.id}
                 title={describeAgent(s.userAgent)}
-                description={`Signed in ${when(s.createdAt)} · from ${s.ip ?? 'an unknown address'}`}
-                meta={s.current ? <Badge size="sm">This session</Badge> : null}
+                truncate={false}
+                description={
+                  <>
+                    <span>{`Signed in ${when(s.createdAt)} · from ${s.ip ?? 'an unknown address'}`}</span>
+                    <SessionDetails userAgent={s.userAgent} ip={s.ip} />
+                  </>
+                }
+                meta={s.current ? <Badge size="sm">{CURRENT_SESSION_LABEL}</Badge> : null}
                 actions={
                   s.current ? null : (
                     <Button
                       variant="danger-ghost"
                       size="sm"
                       data-session-id={s.id}
-                      aria-label={`Sign out the session from ${s.ip ?? 'an unknown address'}`}
+                      aria-label={`${END_SESSION_LABEL} the session from ${s.ip ?? 'an unknown address'}`}
                       onClick={() => {
                         setConfirming(s);
                       }}
                     >
-                      Sign out
+                      {END_SESSION_LABEL}
                     </Button>
                   )
                 }
@@ -121,6 +156,9 @@ export function Sessions() {
           </DataList>
         </Section>
       )}
+
+      {/* PST-T-16.7 (PST-REQ-197): a fresh set of recovery codes, behind step-up. */}
+      <RecoveryCodesSection />
 
       <Modal
         open={confirming !== null}

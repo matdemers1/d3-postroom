@@ -89,7 +89,9 @@ test('the Newsletters feed scrolls three newsletters, marks them all read, and t
   // Mark all read.
   expect((await mailboxByName('Newsletters')).unseen).toBeGreaterThan(0);
   await page.getByTestId('mark-all-read').click();
-  await expect(page.getByTestId('mark-all-read')).toBeDisabled();
+  // PST-T-16.23: nothing unread is a quiet status, not a disabled button.
+  await expect(page.getByTestId('all-read')).toHaveText('All read');
+  await expect(page.getByTestId('mark-all-read')).toHaveCount(0);
   await expect.poll(async () => (await mailboxByName('Newsletters')).unseen).toBe(0);
 
   // The sender profile, linked from a feed item's From line, for this fixture sender.
@@ -99,4 +101,89 @@ test('the Newsletters feed scrolls three newsletters, marks them all read, and t
   // Scoped to the page body: the sidebar's unread badges can show the same number.
   await expect(page.locator('#content').getByText('3', { exact: true })).toBeVisible();
   await expect(page.getByText('Never attempted')).toBeVisible();
+});
+
+// PST-T-16.21 (PST-DA-016): the feed has no open message, so each item's header carries its own quiet
+// "Why it's here" control, wired to the same correction path as the reading pane's.
+test('a Newsletters feed item offers "Why it’s here", and says so plainly when you moved it there', async ({ page }) => {
+  const t = tag();
+  // The stored sorting decision lives on the message's verdict row, which the seed route creates only
+  // with authVerdicts (as smtp-in does); without one there is no stored bucket to explain.
+  const authVerdicts = { spf: { result: 'pass', domain: 'example.news' }, dkim: [{ result: 'pass', domain: 'example.news' }], dmarc: { result: 'pass', policy: 'none', domain: 'example.news' }, arc: { result: 'none' } };
+  const [sorted, byHand] = await seedMail(api, [
+    {
+      mailbox: 'newsletters',
+      authVerdicts,
+      bucket: 'newsletters',
+      subject: `Sorted digest ${t}`,
+      from: `Digest <sorted-${t}@example.news>`,
+      reasons: ['newsletters: List-Id/List-Unsubscribe present (mailing list)'],
+      text: `Sorted ${t}.`,
+    },
+    // Still 'people' in the stored verdict: a manual move only moves the message.
+    { authVerdicts, bucket: 'people', subject: `Moved digest ${t}`, from: `Pal <moved-${t}@example.news>`, text: `Moved ${t}.` },
+  ]);
+  if (sorted === undefined || byHand === undefined) throw new Error('seed returned nothing');
+  const newsletters = await mailboxByName('Newsletters');
+  await moveTo(byHand, newsletters.id);
+
+  await page.goto(`/mail/${newsletters.id}`);
+  await expect(page.getByTestId('feed')).toBeVisible();
+
+  const sortedItem = page.getByTestId('feed-item').filter({ hasText: `Sorted digest ${t}` });
+  const control = sortedItem.getByRole('button', { name: 'Why it’s here' });
+  await expect(control).toBeVisible();
+  await control.click();
+  const why = page.getByRole('dialog', { name: "Why it's here" });
+  await expect(why).toBeVisible();
+  await expect(why.getByTestId('why-sentence')).toHaveText('Filed in Newsletters because it came through a mailing list.');
+  await expect(why.getByRole('button', { name: /^Always put .* in Newsletters$/ })).toBeVisible();
+  await expect(why.getByRole('button', { name: /^Move this message to / }).first()).toBeVisible();
+  await expect(why.getByRole('button', { name: 'Open Rules' })).toBeVisible();
+  await expect(sortedItem).not.toContainText(/verified/i);
+  await page.keyboard.press('Escape');
+  await expect(why).toBeHidden();
+
+  // Moved by hand: it says so, and corrects from where the message is now.
+  const movedItem = page.getByTestId('feed-item').filter({ hasText: `Moved digest ${t}` });
+  await movedItem.getByRole('button', { name: 'Why it’s here' }).click();
+  await expect(why.getByTestId('why-sentence')).toHaveText('You moved this here.');
+  await expect(why.getByRole('button', { name: /^Always put .* in Newsletters$/ })).toBeVisible();
+  await expect(why.getByText(/Filed in your Inbox/)).toHaveCount(0);
+
+  // A correction away from Newsletters takes the item out of the feed.
+  await why.getByRole('button', { name: 'Move this message to Priority' }).click();
+  await expect(movedItem).toHaveCount(0);
+  await expect(sortedItem).toBeVisible();
+});
+
+// PST-T-16.23 (PST-DA-057): a contact row shows the whole address — a 30-character local part must
+// not cost the domain at 1280px — with the address-book name as a quiet badge under the name.
+test('a contact with a 30-character local part shows its full domain, and its address book as a badge', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the 1280px list layout is the desktop project');
+  const t = tag();
+  const email = `${'a'.repeat(30 - t.length)}${t}@a-long-domain-name.example.org`;
+  const { addressBooks } = (await (await api.get('/api/contacts/address-books')).json()) as { addressBooks: { id: string; displayName: string }[] };
+  const book = addressBooks[0];
+  if (book === undefined) throw new Error('no address book');
+  const made = await api.post(`/api/contacts/address-books/${encodeURIComponent(book.id)}/cards`, {
+    headers: { 'x-postroom-csrf': '1' },
+    data: { fn: `Long Address ${t}`, given: 'Long', family: `Address ${t}`, emails: [{ address: email, type: null }], tels: [], org: '', note: '' },
+  });
+  expect(made.ok()).toBe(true);
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`/contacts?q=${t}`);
+  const row = page.getByRole('listitem').filter({ hasText: `Long Address ${t}` });
+  await expect(row).toBeVisible();
+  const address = row.getByText(email);
+  await expect(address).toBeVisible();
+  // Not clipped: the text fits its box (it wraps rather than ending in an ellipsis).
+  // The e2e project has no DOM lib, so the element is narrowed the way admin-queue.spec does it.
+  const fits = await address.evaluate((el) => {
+    const box = el as unknown as { scrollWidth: number; clientWidth: number };
+    return box.scrollWidth <= box.clientWidth + 1;
+  });
+  expect(fits).toBe(true);
+  await expect(row.getByText(book.displayName)).toBeVisible();
 });

@@ -35,7 +35,7 @@ import { sieveRoutes } from './sieve/index.js';
 import { sortingRoutes } from './sorting/index.js';
 import { sesSnsRoutes } from './ses/index.js';
 import { importRoutes } from './import/index.js';
-import { mobileconfigRoutes } from './mobileconfig/index.js';
+import { mobileconfigOnceRoutes, mobileconfigRoutes } from './mobileconfig/index.js';
 import { adminRoutes, authRoutes, csrfGuard, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import { isSecureOrigin } from './auth/sessions.js';
 import type { ApiDeps } from './deps.js';
@@ -155,6 +155,7 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/messages', requireSession(deps), mdnRoutes(deps));
   app.use('/api/templates', requireSession(deps), templateRoutes(deps));
   app.use('/api/import', requireSession(deps), importRoutes(deps));
+  app.use('/api/mobileconfig/once', mobileconfigOnceRoutes(deps));
   app.use('/api/mobileconfig', requireSession(deps), mobileconfigRoutes(deps));
   app.use('/api/calendar', requireSession(deps), calendarRoutes(deps));
   app.use('/api/contacts', requireSession(deps), contactsRoutes(deps));

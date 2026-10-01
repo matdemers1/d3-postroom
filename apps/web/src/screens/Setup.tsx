@@ -1,11 +1,12 @@
 import '../styles/fields.css';
+import './setup/totp.css';
 import { type SyntheticEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   AuthLayout,
   Button,
   Card,
+  Cluster,
   DescriptionItem,
   DescriptionList,
   FormActions,
@@ -16,25 +17,33 @@ import {
   Stack,
 } from '@d3cloud/ui';
 import { api, ApiError, describeError } from '../api';
+import { recoveryApi } from './recovery/api';
+import { RecoveryCodes } from './recovery/RecoveryCodes';
 import { DOMAIN, type Field, localPartOf, loginProblem, serverFieldErrors } from '../setup-login';
+import { CopyButton } from './AdminDns';
+import { AFTER_SETUP, afterCompleteFailure, EMPTY_SETUP_FORM, keyGroups, type SetupForm, startOver } from './setup/enrolment';
+import { TotpQr } from './setup/TotpQr';
 
 const MIN_PASSWORD = 12;
 /**
  * First run, once (PST-REQ-006): name the operator, choose a login and password, then enrol an
  * authenticator. Setup is not complete — and nothing is saved — until a code proves it works.
+ * The key is shown as a QR drawn in the browser and in four-character groups (PST-REQ-196); an
+ * enrolment that expired goes back to the first step with what was typed (PST-DA-038); and the
+ * operator then lands on the setup wizard, not an empty Inbox (PST-DA-036) — after the ten recovery
+ * codes enrolment issued have been shown, once, behind an "I have saved these" checkbox (PST-REQ-197).
  */
-export function Setup({ onDone }: { onDone: () => Promise<void> }) {
-  const navigate = useNavigate();
-  const [setupToken, setSetupToken] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [login, setLogin] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [enrol, setEnrol] = useState<{ enrolToken: string; secret: string; otpauthUri: string } | null>(null);
-  const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
+// `onDone` (App's auth refresh) is no longer called: see `complete` for why the page loads afresh.
+export function Setup(_props: { onDone: () => Promise<void> }) {
+  const [form, setForm] = useState<SetupForm>(EMPTY_SETUP_FORM);
+  const { setupToken, displayName, login, password, confirm, enrol, code, error } = form;
+  const set = (patch: Partial<SetupForm>) => {
+    setForm((f) => ({ ...f, ...patch }));
+  };
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<Field, string>>>({});
+  /** The recovery codes setup/complete returned: shown once, then gone with the page. */
+  const [recovery, setRecovery] = useState<{ codes: string[]; address: string; at: Date } | null>(null);
 
   const loginError = loginProblem(login) ?? fieldErrors.login;
   const mismatch = confirm !== '' && confirm !== password;
@@ -43,44 +52,57 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
   const begin = (event: SyntheticEvent) => {
     event.preventDefault();
     if (mismatch || tooShort || loginProblem(login) !== null) return;
-    setError(null);
     setFieldErrors({});
     setBusy(true);
     const local = localPartOf(login);
-    setLogin(local);
+    set({ login: local, error: null });
     api
       .setupBegin({ setupToken, displayName, login: local, password })
       .then((result) => {
-        setEnrol(result);
+        set({ enrol: result, code: '' });
       })
       .catch((caught: unknown) => {
         const fields = serverFieldErrors(caught);
         setFieldErrors(fields);
         // The banner names the fields only when one of them is actually marked.
         const named = Object.keys(fields).length > 0;
-        setError(named ? 'Fix the marked field and continue.' : caught instanceof ApiError && caught.code === 'invalid_request' ? 'The server refused the form. Check every field and try again.' : describeError(caught));
+        set({ error: named ? 'Fix the marked field and continue.' : caught instanceof ApiError && caught.code === 'invalid_request' ? 'The server refused the form. Check every field and try again.' : describeError(caught) });
       })
       .finally(() => {
         setBusy(false);
       });
   };
 
+  const finish = () => {
+    setBusy(true);
+    // A full load, not a router navigation: refreshing the auth state first would let the Gate
+    // send /setup to /signin and on to '/' (its redirect renders at a higher priority than the
+    // router's transition), so the operator would land on the empty Inbox instead of the wizard.
+    // The session cookie is already set; the fresh load reads the new state and renders it.
+    window.location.replace(AFTER_SETUP);
+  };
+
   const complete = (event: SyntheticEvent) => {
     event.preventDefault();
     if (enrol === null) return;
-    setError(null);
+    set({ error: null });
     setBusy(true);
-    api
+    recoveryApi
       .setupComplete({ setupToken, enrolToken: enrol.enrolToken, code })
-      .then(async () => {
-        await onDone();
-        void navigate('/', { replace: true });
+      .then((result) => {
+        const codes = result.recoveryCodes ?? [];
+        if (codes.length === 0) {
+          finish();
+          return;
+        }
+        // Setup is complete and the session is live; the codes are on screen until Continue.
+        setRecovery({ codes, address: result.account.address, at: new Date() });
+        setBusy(false);
       })
       .catch((caught: unknown) => {
-        setCode('');
-        setError(describeError(caught));
-      })
-      .finally(() => {
+        // An expired enrolment can't be retried: back to the first step, keeping what was typed.
+        setForm((f) => afterCompleteFailure(f, caught));
+        // Only on failure: on success the button stays busy until the page has gone.
         setBusy(false);
       });
   };
@@ -88,7 +110,13 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
   return (
     <AuthLayout
       title="Set up Postroom"
-      description={enrol === null ? 'Create the operator account. This screen is shown once.' : 'Enrol your authenticator.'}
+      description={
+        recovery !== null
+          ? 'Save your recovery codes.'
+          : enrol === null
+            ? 'Create the operator account. This screen is shown once.'
+            : 'Enrol your authenticator.'
+      }
       focusOnMount={false}
     >
       <Card>
@@ -98,7 +126,22 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
               {error}
             </Alert>
           )}
-          {enrol === null ? (
+          {recovery !== null ? (
+            <Stack gap="16">
+              <p>
+                Postroom is set up and your authenticator works. If you ever lose it, sign in with one of
+                these codes instead.
+              </p>
+              <RecoveryCodes
+                codes={recovery.codes}
+                address={recovery.address}
+                createdAt={recovery.at}
+                continueLabel="Continue"
+                onContinue={finish}
+                busy={busy}
+              />
+            </Stack>
+          ) : enrol === null ? (
             <Stack as="form" gap="16" onSubmit={begin} aria-label="Operator account">
               <FormField label="Setup token" help="Printed in the server's env file (SETUP_TOKEN)." {...(fieldErrors.setupToken === undefined ? {} : { error: fieldErrors.setupToken })}>
                 <PasswordInput
@@ -107,7 +150,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                   autoFocus
                   value={setupToken}
                   onChange={(e) => {
-                    setSetupToken(e.target.value.trim());
+                    set({ setupToken: e.target.value.trim() });
                   }}
                 />
               </FormField>
@@ -118,7 +161,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                   required
                   value={displayName}
                   onChange={(e) => {
-                    setDisplayName(e.target.value);
+                    set({ displayName: e.target.value });
                   }}
                 />
               </FormField>
@@ -131,11 +174,11 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                   required
                   value={login}
                   onChange={(e) => {
-                    setLogin(e.target.value.toLowerCase());
+                    set({ login: e.target.value.toLowerCase() });
                     setFieldErrors(({ login: _dropped, ...rest }) => rest);
                   }}
                   onBlur={() => {
-                    setLogin((v) => localPartOf(v));
+                    setForm((f) => ({ ...f, login: localPartOf(f.login) }));
                   }}
                 />
               </FormField>
@@ -150,7 +193,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                   required
                   value={password}
                   onChange={(e) => {
-                    setPassword(e.target.value);
+                    set({ password: e.target.value });
                   }}
                 />
               </FormField>
@@ -161,7 +204,7 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                   required
                   value={confirm}
                   onChange={(e) => {
-                    setConfirm(e.target.value);
+                    set({ confirm: e.target.value });
                   }}
                 />
               </FormField>
@@ -174,12 +217,20 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
           ) : (
             <Stack as="form" gap="16" onSubmit={complete} aria-label="Enrol an authenticator">
               <p>
-                Add this account to your authenticator app, then enter the six-digit code it shows. Open the link on
-                a phone, or type the key by hand.
+                Scan this code with your authenticator app, then enter the six-digit code it shows. Can’t scan
+                it? Type the key by hand, or open the link on this phone.
               </p>
+              <TotpQr uri={enrol.otpauthUri} />
               <DescriptionList>
                 <DescriptionItem term="Setup key">
-                  <code data-testid="totp-secret">{enrol.secret}</code>
+                  <Cluster gap="8" align="center">
+                    <code className="pr-totp-key" data-testid="totp-secret">
+                      {keyGroups(enrol.secret).map((group, i) => (
+                        <span key={String(i)}>{group}</span>
+                      ))}
+                    </code>
+                    <CopyButton value={enrol.secret} label="setup key" />
+                  </Cluster>
                 </DescriptionItem>
                 <DescriptionItem term="Authenticator link">
                   <Link href={enrol.otpauthUri} variant="inline" data-testid="totp-uri">
@@ -197,13 +248,23 @@ export function Setup({ onDone }: { onDone: () => Promise<void> }) {
                   required
                   value={code}
                   onChange={(e) => {
-                    setCode(e.target.value);
+                    set({ code: e.target.value });
                   }}
                 />
               </FormField>
               <FormActions layout="stack">
                 <Button type="submit" variant="primary" loading={busy}>
                   Finish setup
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setForm(startOver);
+                  }}
+                >
+                  Start over
                 </Button>
               </FormActions>
             </Stack>

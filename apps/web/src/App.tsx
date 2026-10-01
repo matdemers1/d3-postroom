@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Alert, AuthLayout, Button, Spinner, ThemeProvider, ToastRegion } from '@d3cloud/ui';
 import { api, redirectFor, serverUnreachable, type AuthState } from './api';
-import { REDIRECTS, ROUTES, type RouteId } from './routes';
+import { MAIL_HOME, REDIRECTS, ROUTES, type RouteId } from './routes';
 import { titleForPath } from './title';
 import { Calendar } from './calendar/Calendar';
 import { Contacts } from './contacts/Contacts';
@@ -28,8 +28,10 @@ import { SenderProfile } from './screens/SenderProfile';
 import { Sessions } from './screens/Sessions';
 import { Setup } from './screens/Setup';
 import { SetupWizard } from './screens/SetupWizard';
+import { PaneBoundary } from './screens/PaneBoundary';
 import { Shell } from './screens/Shell';
 import { SignIn } from './screens/SignIn';
+import { ReEnrol } from './screens/reenrol/ReEnrol';
 
 export const THEME_KEY = 'postroom-theme';
 
@@ -122,6 +124,9 @@ function Gate() {
 
   const target = redirectFor(state, location.pathname, location.search);
   if (target !== null && target !== location.pathname) return <Navigate to={target} replace />;
+  // PST-T-16.26 (PST-REQ-200): signed in with a recovery code, the account replaces its lost
+  // authenticator before anything else — on every load, so a reload cannot skip it.
+  if (state.signedIn && state.reenrolRequired === true) return <ReEnrol onDone={refresh} />;
 
   return (
     <Routes>
@@ -134,9 +139,10 @@ function Gate() {
           </MailProvider>
         }
       >
+        {/* PST-T-16.4: one Inbox URL — '/' (and '/?compose=new', sign-in's landing) goes to /mail/inbox. */}
+        <Route index element={<Moved to={MAIL_HOME} />} />
         {/* One layout route for every mail URL, so moving between them never remounts the view. */}
         <Route element={<Mail />}>
-          <Route index element={null} />
           <Route path="/mail/*" element={null} />
         </Route>
         {ROUTES.filter((r) => isShellRoute(r.id)).map((r) => (
@@ -145,9 +151,20 @@ function Gate() {
         {REDIRECTS.map((r) => (
           <Route key={r.from} path={r.from} element={<Moved to={r.to} />} />
         ))}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to={MAIL_HOME} replace />} />
       </Route>
     </Routes>
+  );
+}
+
+/** PST-T-16.2: the root boundary. A throw in Gate, SignIn or Setup used to unmount the whole app
+ * and leave an empty #root; now the page says it stopped working and offers Try again or Reload. */
+function RootBoundary({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  return (
+    <PaneBoundary name="Postroom" resetKey={location.pathname} reload>
+      {children}
+    </PaneBoundary>
   );
 }
 
@@ -157,7 +174,9 @@ export function App() {
       {/* PST-T-14.5: one polite live region for every toast (the triage Undo). */}
       <ToastRegion>
         <BrowserRouter>
-          <Gate />
+          <RootBoundary>
+            <Gate />
+          </RootBoundary>
         </BrowserRouter>
       </ToastRegion>
     </ThemeProvider>

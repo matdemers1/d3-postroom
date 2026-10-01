@@ -102,6 +102,21 @@ test('pressing i opens the drawer with every section, each with content', async 
   await expect(drawer).toBeHidden();
 });
 
+test('the verdict badges share one left edge (PST-DA-041)', async ({ page }) => {
+  const m = await seedOne(tag());
+  const drawer = await openInspect(page, m);
+  const lefts: number[] = [];
+  for (const term of ['SPF', 'DKIM', 'DMARC', 'ARC']) {
+    const badge = drawer.locator(`[data-testid="verdict"][data-verdict="${term}"] .pr-inspect__verdict-head > :nth-child(2)`);
+    await expect(badge).toBeVisible();
+    const box = await badge.boundingBox();
+    if (box === null) throw new Error(`${term} badge has no box`);
+    lefts.push(box.x);
+  }
+  expect(lefts).toHaveLength(4);
+  for (const x of lefts) expect(Math.abs(x - (lefts[0] ?? 0))).toBeLessThanOrEqual(1);
+});
+
 test('learn mode links headers and verdicts to rfc-editor sections, and is remembered', async ({ page }) => {
   const m = await seedOne(tag());
   let drawer = await openInspect(page, m);

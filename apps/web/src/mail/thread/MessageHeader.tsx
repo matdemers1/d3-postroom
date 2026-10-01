@@ -17,7 +17,7 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { Avatar, Tooltip } from '@d3cloud/ui';
 import type { MessageBody, MessageDetail } from '../../api';
-import { HeaderBucketChip } from '../sorting/BucketChip';
+import { HeaderBucketChip, HeaderWhyControl } from '../sorting/BucketChip';
 import { PersonCard } from '../sorting/PersonCard';
 import { fullDate, header } from '../format';
 import { useMail } from '../MailContext';
@@ -64,6 +64,7 @@ export function MessageHeader({ detail, body, extra, actions }: { detail: Messag
               </button>
             )}
             <HeaderBucketChip message={detail} />
+            <HeaderWhyControl message={detail} />
           </span>
           <button type="button" className="pr-mhead__to" aria-expanded={open} aria-controls={blockId} onClick={() => { setOpen((v) => !v); }}>
             <span>{summary}</span>

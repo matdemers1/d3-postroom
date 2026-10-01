@@ -3,6 +3,7 @@
 // one-line message header says ("to me, Jonah Reyes", "3 days ago"), and the exception chips' words.
 // Kept free of @d3cloud/ui (and so of its CSS) so it is unit tested directly under Node.
 import type { DeliveryRecipient, PhishWarning, SpecialUse } from '../../api';
+import { cancelledSentence, type CancelledFields } from '../delivery';
 import { addressOf, displayName, splitAddresses } from '../format';
 
 // --- The toolbar -----------------------------------------------------------------------------------
@@ -273,10 +274,12 @@ export function deliveryChipTone(state: DeliveryRecipient['state']): ChipTone | 
   return null;
 }
 
-/** The plain sentence after a delivery chip: what happened, and the next step. Never the remote's text. */
-export function deliverySentence(r: Pick<DeliveryRecipient, 'state' | 'address'>): string | null {
+/** The plain sentence after a delivery chip: what happened, and the next step. Never the remote's text.
+ *  A cancelled recipient gets one too (PST-T-16.14): why, and when, with no chip — it is neutral. */
+export function deliverySentence(r: Pick<DeliveryRecipient, 'state' | 'address'> & CancelledFields, now?: Date, locale?: string): string | null {
   const domain = r.address.includes('@') ? r.address.slice(r.address.lastIndexOf('@') + 1) : r.address;
   if (r.state === 'deferred') return `${domain} isn’t accepting it yet. Postroom keeps trying and will tell you if it gives up.`;
   if (r.state === 'bounced') return `This never reached ${r.address}. Check the address, then send it again.`;
+  if (r.state === 'cancelled') return cancelledSentence(r, now, locale);
   return null;
 }
