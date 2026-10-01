@@ -56,7 +56,7 @@ yourself has no slug and keeps its UUID, and a UUID in the path still works. `/`
 | Settings: Browser sessions | `/settings/security/sessions` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
 | Settings: Devices (app passwords) | `/settings/security/devices` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
 | Settings: Addresses | `/settings/addresses` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
-| Settings: Import & export | `/settings/import` | ✅ | ✅ *No imports yet* | ✅ | ✅ | n/a | n/a | ✅ |
+| Settings: Import | `/settings/import` | ✅ | ✅ the form alone (no history card) | ✅ | ✅ | n/a | n/a | ✅ |
 | Settings: Rules & sorting | `/settings/rules` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
 | Settings: Templates | `/settings/templates` | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ |
 | Settings: Encryption keys | `/settings/keys` | — ² | — ² | — | — | n/a | n/a | — |

@@ -17,8 +17,8 @@ const CSRF = { 'x-postroom-csrf': '1' };
 const PORTRAIT = { width: 390, height: 844 };
 const LANDSCAPE = { width: 844, height: 390 };
 
-let api: APIRequestContext;
-let other: APIRequestContext;
+let api: APIRequestContext | undefined;
+let other: APIRequestContext | undefined;
 let operator: Operator;
 let cookies: Awaited<ReturnType<BrowserContext['cookies']>> = [];
 let otherSessionId = '';
@@ -33,6 +33,9 @@ function landscapeProjectRunsThis(testInfo: TestInfo): boolean {
 }
 
 test.beforeAll(async ({ playwright }, testInfo) => {
+  // The file-level skip covers the tests, not this hook: on the desktop project there is nothing to set up.
+  if (testInfo.project.use.isMobile !== true) return;
+  testInfo.setTimeout(120_000);
   const baseURL = testInfo.project.use.baseURL;
   const options = baseURL === undefined ? {} : { baseURL };
   api = await playwright.request.newContext(options);
@@ -58,8 +61,8 @@ test.beforeAll(async ({ playwright }, testInfo) => {
 });
 
 test.afterAll(async () => {
-  await other.dispose();
-  await api.dispose();
+  await other?.dispose();
+  await api?.dispose();
 });
 
 test.beforeEach(async ({ context }) => {

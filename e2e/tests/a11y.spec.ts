@@ -173,11 +173,13 @@ const SCREENS: Screen[] = [
   { name: 'Settings — Connect a device', path: () => '/settings/security', ready: h1('Security & devices') },
   { name: 'Settings — Addresses', path: () => '/settings/addresses', ready: h1('Addresses'), data: /\/api\/aliases(\?|$)/ },
   {
-    name: 'Settings — Import & export',
+    name: 'Settings — Import',
     path: () => '/settings/import',
     ready: h1('Import'),
     data: /\/api\/import(\?|$)/,
     empty: (body) => ({ ...body, import: null }),
+    // PST-T-17.11 (critique X7): with no import yet the page is just the form — no empty state above it.
+    emptyShows: (page) => page.getByRole('button', { name: 'Start import' }),
   },
   { name: 'Settings — Rules', path: () => '/settings/rules', ready: h1('Rules & sorting'), data: /\/api\/sieve\/scripts(\?|$)/ },
   { name: 'Settings — Templates', path: () => '/settings/templates', ready: h1('Templates'), data: /\/api\/templates(\?|$)/ },
