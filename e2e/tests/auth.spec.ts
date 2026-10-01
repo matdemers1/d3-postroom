@@ -155,7 +155,7 @@ test('sign out, then sign in with password + TOTP and reach the admin Sign-in se
   await openNav(page);
   await page.getByRole('navigation', { name: 'Admin console' }).getByRole('link', { name: 'Sign-in sessions' }).click();
   await expect(page.getByRole('heading', { name: /^Sign-in sessions/, level: 1 })).toBeVisible();
-  await expect(page.getByText('This session')).toBeVisible();
+  await expect(page.getByText('This browser')).toBeVisible();
 
   // Sign out from the account menu, and the shell is gone.
   await openNav(page);
@@ -198,7 +198,7 @@ test('revoking another session asks for a fresh TOTP (step-up)', async ({ page, 
   const dialog = page.getByRole('dialog', { name: 'Confirm it is you' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
-  await dialog.getByRole('button', { name: 'Verify and revoke' }).click();
+  await dialog.getByRole('button', { name: 'Verify and sign out' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByText(/^Signed out .+'s session\.$/)).toBeVisible();
 

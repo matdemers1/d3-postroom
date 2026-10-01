@@ -168,9 +168,9 @@ const SCREENS: Screen[] = [
   },
   // PST-T-14.3: Settings, under /settings/* (the old /account/* and /app-passwords URLs redirect).
   { name: 'Settings — Account', path: () => '/settings/account', ready: h1('Account') },
-  { name: 'Settings — Browser sessions', path: () => '/settings/security', ready: h1('Browser sessions'), data: /\/api\/auth\/sessions(\?|$)/ },
+  { name: 'Settings — Browser sessions', path: () => '/settings/security/sessions', ready: h1('Browser sessions'), data: /\/api\/auth\/sessions(\?|$)/ },
   { name: 'Settings — Devices (app passwords)', path: () => '/settings/security/devices', ready: h1('Devices'), data: /\/api\/app-passwords(\?|$)/ },
-  { name: 'Settings — Set up iPhone / Mac', path: () => '/settings/security/device-setup', ready: h1('Set up iPhone / Mac') },
+  { name: 'Settings — Set up iPhone / Mac', path: () => '/settings/security', ready: h1('Set up iPhone / Mac') },
   { name: 'Settings — Addresses', path: () => '/settings/addresses', ready: h1('Masked aliases'), data: /\/api\/aliases(\?|$)/ },
   {
     name: 'Settings — Import & export',

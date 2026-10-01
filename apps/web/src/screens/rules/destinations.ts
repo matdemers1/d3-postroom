@@ -33,6 +33,12 @@ const MAIL_GROUP: readonly { use: SpecialUse; label: string }[] = [
   { use: 'trash', label: 'Trash' },
 ];
 
+/** INBOX's own buckets — keywords, not folders — offered beside Inbox. */
+const INBOX_BUCKETS: readonly SelectOption[] = [
+  { value: 'bucket:priority', label: 'Inbox · Priority' },
+  { value: 'bucket:people', label: 'Inbox · People' },
+];
+
 const FOLDER = 'folder:';
 const BUCKET = 'bucket:';
 const GROUP = 'group:';
@@ -65,7 +71,12 @@ export function destinationOptions(mailboxes: readonly Mailbox[] | null, rule: D
   const known = mailboxes ?? [];
   const mail = MAIL_GROUP.flatMap(({ use, label }) => {
     const m = findSpecial(known, use);
-    return m === undefined ? [] : [{ value: `${FOLDER}${m.name}`, label }];
+    if (m === undefined) return [];
+    const option = { value: `${FOLDER}${m.name}`, label };
+    // Priority and People live inside INBOX as keywords (PST-ADR-004), so they sit under Inbox: the
+    // old "Sort into bucket" action offered them, and a rule that pins a sender there must still be
+    // possible to make.
+    return use === 'inbox' ? [option, ...INBOX_BUCKETS] : [option];
   });
   const own = known
     .filter((m) => m.specialUse === null && !(SORTED_FOLDERS as readonly string[]).includes(m.name))

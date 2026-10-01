@@ -88,10 +88,11 @@ test('the account menu opens Settings and the Admin console; each has its own na
   const settingsLinks = settings.getByRole('group', { name: 'Settings' }).getByRole('link');
   await expect(settingsLinks).toHaveText(['Account', 'Security & devices', 'Addresses', 'Rules & sorting', 'Templates', 'Import & export', 'Encryption keys']);
   await settings.getByRole('link', { name: 'Security & devices' }).click();
-  await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
+  // PST-T-16.3: Security & devices leads with connecting a device, then Browser sessions.
+  await expect(page.getByRole('heading', { name: 'Set up iPhone / Mac', level: 1 })).toBeVisible();
   // One vocabulary: the section's own links name Browser sessions and Devices.
   const sub = page.getByRole('navigation', { name: 'Security & devices' });
-  await expect(sub.getByRole('link')).toHaveText(['Browser sessions', 'Devices', 'Set up iPhone / Mac']);
+  await expect(sub.getByRole('link')).toHaveText(['Set up iPhone / Mac', 'Browser sessions', 'Devices']);
   await sub.getByRole('link', { name: 'Devices' }).click();
   await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
   await expect(settings.getByRole('link', { name: 'Security & devices' })).toHaveAttribute('aria-current', 'page');
@@ -123,8 +124,9 @@ test('the old URLs redirect to their new homes', async ({ page }) => {
   const moved: [string, RegExp, string][] = [
     ['/app-passwords', /\/settings\/security\/devices$/, 'Devices'],
     ['/account/password', /\/settings\/account$/, 'Account'],
-    ['/account/sessions', /\/settings\/security$/, 'Browser sessions'],
-    ['/account/device-setup', /\/settings\/security\/device-setup$/, 'Set up iPhone / Mac'],
+    ['/account/sessions', /\/settings\/security\/sessions$/, 'Browser sessions'],
+    ['/account/device-setup', /\/settings\/security$/, 'Set up iPhone / Mac'],
+    ['/settings/security/device-setup', /\/settings\/security$/, 'Set up iPhone / Mac'],
     ['/account/aliases', /\/settings\/addresses$/, 'Masked aliases'],
     ['/account/rules', /\/settings\/rules$/, 'Rules'],
     ['/account/templates', /\/settings\/templates$/, 'Compose templates'],

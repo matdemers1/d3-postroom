@@ -453,17 +453,17 @@ test.describe('signed in', () => {
     await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/account');
 
-    await page.goto('/settings/security');
+    await page.goto('/settings/security/sessions');
     await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/settings/security');
+    await assertMobileFriendly(page, '/settings/security/sessions');
 
     await page.goto('/settings/import');
     await expect(page.getByRole('heading', { name: 'Import mail', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/import');
 
-    await page.goto('/settings/security/device-setup');
+    await page.goto('/settings/security');
     await expect(page.getByRole('heading', { name: 'Set up iPhone / Mac', level: 1 })).toBeVisible();
-    await assertMobileFriendly(page, '/settings/security/device-setup');
+    await assertMobileFriendly(page, '/settings/security');
 
     // PST-T-14.8: Settings pushes like the mailboxes — '/settings' is its index on a phone, each
     // screen's context bar goes Back to it, and the index goes Back to Mailboxes.

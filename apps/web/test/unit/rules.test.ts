@@ -119,7 +119,7 @@ describe('the rule destination picker (PST-T-16.9)', () => {
   it('lists the mailboxes, the Sorted for you buckets, then your folders — grouped like the sidebar', () => {
     const options = destinationOptions(MAILBOXES, draft);
     expect(options.map((o) => (isGroupHeader(o.value) ? `# ${o.label}` : o.label))).toEqual([
-      '# Mailboxes', 'Inbox', 'Archive', 'Junk', 'Trash',
+      '# Mailboxes', 'Inbox', 'Inbox · Priority', 'Inbox · People', 'Archive', 'Junk', 'Trash',
       '# Sorted for you', 'Updates', 'Receipts', 'Notifications', 'Newsletters',
       '# Your folders', 'Family', 'Projects',
     ]);
