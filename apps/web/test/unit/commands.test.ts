@@ -154,7 +154,7 @@ describe('buildCommands', () => {
   it('old names survive as searchable hints: "devices" finds Security & devices and Sign-in sessions', () => {
     const labels = filterCommands(buildCommands(context(), true), 'devices').map((m) => m.command.label);
     expect(labels).toContain('Browser sessions');
-    expect(labels).toContain('Devices');
+    expect(labels).toContain('App passwords');
     expect(labels).toContain('Sign-in sessions');
   });
 
@@ -194,7 +194,7 @@ describe('buildCommands', () => {
   it('offers the Settings screens, and the Admin screens only for an admin', () => {
     const asOperator = buildCommands(context(), false).map((c) => c.label);
     const asAdmin = buildCommands(context(), true).map((c) => c.label);
-    expect(asOperator).toContain('Devices');
+    expect(asOperator).toContain('App passwords');
     expect(asOperator).toContain('Encryption keys');
     expect(asOperator).not.toContain('Health');
     expect(asAdmin).toContain('Health');

@@ -57,6 +57,6 @@ describe('context bar', () => {
     expect(placeIndexFor('/settings/')).toBe('settings');
     expect(placeIndexFor('/settings/rules')).toBeNull();
     expect(contextTitle('/admin')).toBe('Admin console');
-    expect(contextTitle('/settings/rules')).toBe('Rules');
+    expect(contextTitle('/settings/rules')).toBe('Rules & sorting');
   });
 });

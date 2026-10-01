@@ -33,12 +33,12 @@ describe('the route table', () => {
       'Addresses',
       'Rules & sorting',
       'Templates',
-      'Import & export',
+      'Import',
       'Encryption keys',
     ]);
     const security = navEntries('settings', false).find((e) => e.label === 'Security & devices');
     expect(security?.path).toBe('/settings/security');
-    expect(security?.routes.map((r) => r.title)).toEqual(['Connect a device', 'Browser sessions', 'Devices']);
+    expect(security?.routes.map((r) => r.title)).toEqual(['Connect a device', 'Browser sessions', 'App passwords']);
   });
 
   it('Security & devices opens on device setup, with Browser sessions after it (PST-DA-053)', () => {

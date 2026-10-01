@@ -256,7 +256,7 @@ const NAV_ICONS: Readonly<Record<string, () => ReactNode>> = {
   Addresses: MaskIcon,
   'Rules & sorting': FilterIcon,
   Templates: TemplatesIcon,
-  'Import & export': ImportIcon,
+  Import: ImportIcon,
   'Encryption keys': SealIcon,
   Health: HeartbeatIcon,
   'Outbound queue': OutboxIcon,

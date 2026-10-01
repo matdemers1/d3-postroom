@@ -40,7 +40,7 @@ test('empty is one caption, no table header, and Generate reaches the form', asy
   const ownKeysExist = keys.some((row) => row.owner === 'own');
 
   await page.goto('/settings/keys');
-  await expect(page.getByRole('heading', { name: 'Keys', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Encryption keys', level: 1 })).toBeVisible();
 
   // "Contacts' keys" is always forced empty: one caption (the Section heading), no header, an
   // EmptyState with no doubled Table caption.

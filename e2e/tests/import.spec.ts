@@ -31,7 +31,7 @@ test.beforeEach(async ({ context, page }) => {
 
 async function open(page: Page): Promise<void> {
   await page.goto('/settings/import');
-  await expect(page.getByRole('heading', { name: 'Import mail', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Import', level: 1 })).toBeVisible();
 }
 
 test('choosing a provider fills the server and port', async ({ page }) => {

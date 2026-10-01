@@ -144,9 +144,9 @@ test('Browser sessions lists sessions and revokes one after step-up', async ({ p
   await openNav(page);
   await page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Security & devices' }).click();
   // PST-T-16.3: the section opens on device setup; Browser sessions is its second page.
-  await expect(page.getByRole('heading', { name: 'Connect a device', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   await page.goto('/settings/security/sessions');
-  await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   await expect(page.getByText('This browser')).toBeVisible();
 
   await page.locator(`button[data-session-id="${otherId}"]`).click();
@@ -337,7 +337,7 @@ test('Account and Browser sessions have no axe violations', async ({ page }) => 
   expect(passwordResults.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 
   await page.goto('/settings/security/sessions');
-  await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   const sessionsResults = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(sessionsResults.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 });
@@ -354,7 +354,7 @@ test('App passwords, Addresses and Templates list first and open their create fo
 
   // App passwords (Devices).
   await page.goto('/settings/security/devices');
-  await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   await firstSection(/^Your app passwords/);
   await expect(page.getByRole('textbox', { name: 'Name' })).toHaveCount(0);
   await expect(page.locator('form')).toHaveCount(0);
@@ -372,7 +372,7 @@ test('App passwords, Addresses and Templates list first and open their create fo
 
   // Addresses (masked aliases).
   await page.goto('/settings/addresses');
-  await expect(page.getByRole('heading', { name: 'Masked aliases', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Addresses', level: 1 })).toBeVisible();
   await firstSection(/^Your masked aliases/);
   await expect(page.getByRole('textbox', { name: 'Site' })).toHaveCount(0);
   await page.getByRole('button', { name: 'New alias' }).click();
@@ -388,7 +388,7 @@ test('App passwords, Addresses and Templates list first and open their create fo
 
   // Templates.
   await page.goto('/settings/templates');
-  await expect(page.getByRole('heading', { name: 'Compose templates', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Templates', level: 1 })).toBeVisible();
   await firstSection(/^Your templates/);
   await expect(page.getByRole('textbox', { name: 'Shortcut' })).toHaveCount(0);
   await page.getByRole('button', { name: 'New template' }).click();

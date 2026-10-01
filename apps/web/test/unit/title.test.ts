@@ -23,11 +23,11 @@ describe('titleForPath (PST-DA-043, from the route table since PST-T-14.3)', () 
     expect(titleForPath('/settings/account')).toBe('Account — Postroom');
     expect(titleForPath('/settings/security')).toBe('Connect a device — Postroom');
     expect(titleForPath('/settings/security/sessions')).toBe('Browser sessions — Postroom');
-    expect(titleForPath('/settings/security/devices')).toBe('Devices — Postroom');
+    expect(titleForPath('/settings/security/devices')).toBe('App passwords — Postroom');
     expect(titleForPath('/settings/addresses')).toBe('Addresses — Postroom');
-    expect(titleForPath('/settings/rules')).toBe('Rules — Postroom');
+    expect(titleForPath('/settings/rules')).toBe('Rules & sorting — Postroom');
     expect(titleForPath('/settings/templates')).toBe('Templates — Postroom');
-    expect(titleForPath('/settings/import')).toBe('Import & export — Postroom');
+    expect(titleForPath('/settings/import')).toBe('Import — Postroom');
     expect(titleForPath('/settings/keys')).toBe('Encryption keys — Postroom');
     expect(titleForPath('/admin/sessions')).toBe('Sign-in sessions — Postroom');
     expect(titleForPath('/admin/health')).toBe('Health — Postroom');

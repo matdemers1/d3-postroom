@@ -33,7 +33,7 @@ test.beforeEach(async ({ context }) => {
 
 test('a builder rule round-trips through Sieve, and a compile error names its line — axe clean', async ({ page }) => {
   await page.goto('/settings/rules');
-  await expect(page.getByRole('heading', { name: 'Rules', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Rules & sorting', level: 1 })).toBeVisible();
   expect((await new AxeBuilder({ page }).include('main').withTags(WCAG).analyze()).violations).toEqual([]);
 
   await page.getByRole('button', { name: 'Add rule' }).click();

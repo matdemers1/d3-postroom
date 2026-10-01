@@ -104,16 +104,16 @@ export const ROUTES: readonly AppRoute[] = [
   r({
     id: 'settingsDevices',
     path: '/settings/security/devices',
-    title: 'Devices',
+    title: 'App passwords',
     place: 'settings',
     navGroup: 'Security & devices',
     keywords: 'security app passwords mail apps iphone thunderbird',
     hint: 'Mail apps and their app passwords',
   }),
   r({ id: 'settingsAddresses', path: '/settings/addresses', title: 'Addresses', place: 'settings', navGroup: 'Addresses', keywords: 'aliases masked aliases', hint: 'Aliases, masked aliases' }),
-  r({ id: 'settingsRules', path: '/settings/rules', title: 'Rules', place: 'settings', navGroup: 'Rules & sorting', keywords: 'filters sieve sorting corrections' }),
+  r({ id: 'settingsRules', path: '/settings/rules', title: 'Rules & sorting', place: 'settings', navGroup: 'Rules & sorting', keywords: 'filters sieve sorting corrections' }),
   r({ id: 'settingsTemplates', path: '/settings/templates', title: 'Templates', place: 'settings', navGroup: 'Templates', keywords: 'compose templates canned replies' }),
-  r({ id: 'settingsImport', path: '/settings/import', title: 'Import & export', place: 'settings', navGroup: 'Import & export', keywords: 'import mail imap migrate' }),
+  r({ id: 'settingsImport', path: '/settings/import', title: 'Import', place: 'settings', navGroup: 'Import', keywords: 'import mail imap migrate export' }),
   r({ id: 'settingsKeys', path: '/settings/keys', title: 'Encryption keys', place: 'settings', navGroup: 'Encryption keys', keywords: 'keys openpgp pgp s/mime smime certificates' }),
 
   // The Admin console: admins only, reached from the account menu.

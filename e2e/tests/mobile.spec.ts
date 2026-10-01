@@ -455,12 +455,12 @@ test.describe('signed in', () => {
 
     await api.post('/api/app-passwords', { headers: CSRF, data: { label: `Phone Mail ${t}`, scopes: ['imap', 'smtp'] } }).catch(() => undefined);
     await page.goto('/settings/security/devices');
-    await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/security/devices');
 
     await api.post('/api/aliases', { headers: CSRF, data: { site: `shop-${t}.example` } }).catch(() => undefined);
     await page.goto('/settings/addresses');
-    await expect(page.getByRole('heading', { name: 'Masked aliases', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Addresses', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/addresses');
 
     await page.goto('/settings/account');
@@ -468,15 +468,15 @@ test.describe('signed in', () => {
     await assertMobileFriendly(page, '/settings/account');
 
     await page.goto('/settings/security/sessions');
-    await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/security/sessions');
 
     await page.goto('/settings/import');
-    await expect(page.getByRole('heading', { name: 'Import mail', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Import', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/import');
 
     await page.goto('/settings/security');
-    await expect(page.getByRole('heading', { name: 'Connect a device', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/security');
 
     // PST-T-14.8: Settings pushes like the mailboxes — '/settings' is its index on a phone, each
@@ -489,7 +489,7 @@ test.describe('signed in', () => {
     await assertMobileFriendly(page, '/settings (index)');
 
     await page.goto('/settings/rules');
-    await expect(page.getByRole('heading', { name: 'Rules', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Rules & sorting', level: 1 })).toBeVisible();
     await page.getByRole('button', { name: 'Add rule' }).click();
     // Another test (or an earlier run against this database) may have left a rule here already —
     // "Add rule" always appends, so the newest one is always last.
@@ -503,7 +503,7 @@ test.describe('signed in', () => {
 
     await api.post('/api/templates', { headers: CSRF, data: { shortcut: `ty${t}`, name: `Thank you ${t}`, body: 'Thanks for reaching out.' } }).catch(() => undefined);
     await page.goto('/settings/templates');
-    await expect(page.getByRole('heading', { name: 'Compose templates', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Templates', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/templates');
 
     // Keys (PST-T-12.2): one generated own key as the seeded data; a rerun against the same
@@ -512,7 +512,7 @@ test.describe('signed in', () => {
     const own = state.account?.address;
     if (own !== null && own !== undefined) await api.post('/api/keys/generate', { headers: CSRF, data: { address: own } }).catch(() => undefined);
     await page.goto('/settings/keys');
-    await expect(page.getByRole('heading', { name: 'Keys', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Encryption keys', level: 1 })).toBeVisible();
     await assertMobileFriendly(page, '/settings/keys');
   });
 

@@ -88,7 +88,7 @@ test('the settings are IMAP 993, SMTP 465 and 587, and the address as username',
 
 test('Connect a device offers four clients; Other is the settings block with a Copy on each', async ({ page }) => {
   await page.goto('/settings/security');
-  await expect(page.getByRole('heading', { name: 'Connect a device', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   const tabs = page.getByRole('tablist', { name: 'Device' }).getByRole('tab');
   await expect(tabs).toHaveText(['iPhone', 'Mac', 'Thunderbird', 'Other']);
 
@@ -101,7 +101,7 @@ test('Connect a device offers four clients; Other is the settings block with a C
 
 test('the app-password reveal shows the same settings block', async ({ page }) => {
   await page.goto('/settings/security/devices');
-  await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   const label = `e2e device ${tag()}`;
   // PST-T-16.23: the create form opens on demand, from the page header.
   await page.getByRole('button', { name: 'New app password' }).click();
@@ -115,7 +115,7 @@ test('the app-password reveal shows the same settings block', async ({ page }) =
 test('the iPhone QR is a one-time URL: the first open is the profile, the second is 410', async ({ page, playwright }, testInfo) => {
   const operator = requireOperator();
   await page.goto('/settings/security');
-  await expect(page.getByRole('heading', { name: 'Connect a device', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   await page.getByRole('button', { name: 'Show QR code' }).click();
   const dialog = page.getByRole('dialog', { name: 'Confirm it is you' });
   await expect(dialog).toBeVisible();
