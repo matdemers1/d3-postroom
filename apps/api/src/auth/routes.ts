@@ -37,6 +37,16 @@ import {
   sessionCookieName,
   setSessionCookie,
 } from './sessions.js';
+import {
+  formatRecoveryCode,
+  generateRecoveryCodes,
+  hashRecoveryCodes,
+  matchRecoveryCode,
+  normalizeRecoveryCode,
+  RECOVERY_CODE_COUNT,
+  replaceRecoveryCodes,
+  spendRecoveryCode,
+} from './recovery.js';
 import { completeSetup, isSetupRequired, SetupConflict } from './setup.js';
 import { checkSetupGate } from './setup-gate.js';
 import { burnStep, generateTotpSecret, matchStep, openTotpSecret, provisioningUri } from './totp.js';
@@ -76,7 +86,8 @@ export function setupLoginLocalPart(body: unknown, primaryDomain: string): unkno
 
 const SetupComplete = z.object({ enrolToken: z.string().min(1).max(200), code: Code });
 const SignIn = z.object({ login: Login, password: Password });
-const SignInTotp = z.object({ challenge: z.string().min(1).max(200), code: Code });
+/** The second step takes a six-digit TOTP code or a recovery code (`ABCDE-FGHJK`, any case or spacing). */
+const SignInTotp = z.object({ challenge: z.string().min(1).max(200), code: z.string().trim().min(6).max(32) });
 const StepUp = z.object({ code: Code });
 const PasswordChange = z.object({
   currentPassword: Password,
@@ -324,18 +335,29 @@ export function authRoutes(deps: ApiDeps): Router {
         res.status(400).json({ error: 'invalid_code' });
         return;
       }
+      // The code proved the authenticator works, so enrolment completes now — and issues the ten
+      // recovery codes with it (PST-REQ-197). Hashed before the transaction: ten Argon2id runs are
+      // too slow to hold the setup lock through.
+      const recoveryCodes = generateRecoveryCodes();
+      const recoveryCodeHashes = await hashRecoveryCodes(recoveryCodes, rt.pepper);
       try {
         const done = await completeSetup(
           db,
           rt.kek,
-          { ...pending, step, domain: rt.domain },
+          { ...pending, step, domain: rt.domain, recoveryCodeHashes },
           req,
           getAuditContext(req),
           rt.now(),
         );
         rt.setups.delete(parsed.data.enrolToken);
         setSessionCookie(res, done.session.token, rt.secure);
-        res.json({ ok: true, account: { id: done.accountId, address: done.address } });
+        // The only time these codes are ever sent: the server keeps their hashes alone.
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({
+          ok: true,
+          account: { id: done.accountId, address: done.address },
+          recoveryCodes: recoveryCodes.map(formatRecoveryCode),
+        });
       } catch (error) {
         if (error instanceof SetupConflict) {
           res.status(409).json({ error: error.code });
@@ -451,29 +473,69 @@ export function authRoutes(deps: ApiDeps): Router {
         return;
       }
       const account = await db.account.findUnique({ where: { id: pending.accountId } });
-      const secret =
-        account?.totpSecret === null || account?.totpSecret === undefined
-          ? null
-          : openTotpSecret(kek, account.totpSecret, account.id);
-      const step = secret === null ? null : matchStep(secret, parsed.data.code, rt.now());
+      // A recovery code in place of the TOTP code (PST-REQ-197): same challenge, same throttle and
+      // attempt cap (PST-REQ-075), and spent in the transaction that issues the session.
+      const recoveryCode = normalizeRecoveryCode(parsed.data.code);
+      const factor = recoveryCode === null ? 'totp' : 'recovery_code';
+      const pepper = rt.pepper;
 
-      const issued =
-        step === null || account === null
-          ? null
-          : await db.$transaction(async (tx) => {
-              if (!(await burnStep(tx, account.id, step))) return null;
-              const replaced = await endPresentedSession(rt, tx, req);
-              const session = await issueSession(tx, account.id, { method: 'password', roles: [] }, req, rt.now());
-              await recordAudit(tx, {
-                actor: asAccount(account.id),
-                action: 'auth.signin',
-                entityType: 'session',
-                entityId: session.id,
-                after: { method: 'password', accountId: account.id, replacedSessionId: replaced },
-                context: getAuditContext(req),
+      let issued: Awaited<ReturnType<typeof issueSession>> | null = null;
+      if (account !== null && recoveryCode !== null) {
+        const unused = await db.recoveryCode.findMany({
+          where: { accountId: account.id, usedAt: null },
+          select: { id: true, codeHash: true },
+          orderBy: { createdAt: 'asc' },
+        });
+        const codeId = await matchRecoveryCode(unused, recoveryCode, pepper);
+        issued =
+          codeId === null
+            ? null
+            : await db.$transaction(async (tx) => {
+                const at = rt.now();
+                if (!(await spendRecoveryCode(tx, account.id, codeId, at))) return null;
+                const remaining = await tx.recoveryCode.count({ where: { accountId: account.id, usedAt: null } });
+                await recordAudit(tx, {
+                  actor: asAccount(account.id),
+                  action: 'auth.recovery-code.use',
+                  entityType: 'recovery_code',
+                  entityId: codeId,
+                  before: { usedAt: null },
+                  after: { usedAt: at, remaining },
+                  context: getAuditContext(req),
+                });
+                const replaced = await endPresentedSession(rt, tx, req);
+                const session = await issueSession(tx, account.id, { method: 'password', roles: [] }, req, at);
+                await recordAudit(tx, {
+                  actor: asAccount(account.id),
+                  action: 'auth.signin',
+                  entityType: 'session',
+                  entityId: session.id,
+                  after: { method: 'password', factor, accountId: account.id, replacedSessionId: replaced },
+                  context: getAuditContext(req),
+                });
+                return session;
               });
-              return session;
-            });
+      } else if (account !== null) {
+        const secret = account.totpSecret === null ? null : openTotpSecret(kek, account.totpSecret, account.id);
+        const step = secret === null ? null : matchStep(secret, parsed.data.code, rt.now());
+        issued =
+          step === null
+            ? null
+            : await db.$transaction(async (tx) => {
+                if (!(await burnStep(tx, account.id, step))) return null;
+                const replaced = await endPresentedSession(rt, tx, req);
+                const session = await issueSession(tx, account.id, { method: 'password', roles: [] }, req, rt.now());
+                await recordAudit(tx, {
+                  actor: asAccount(account.id),
+                  action: 'auth.signin',
+                  entityType: 'session',
+                  entityId: session.id,
+                  after: { method: 'password', factor, accountId: account.id, replacedSessionId: replaced },
+                  context: getAuditContext(req),
+                });
+                return session;
+              });
+      }
 
       if (issued === null || account === null) {
         pending.attempts += 1;
@@ -484,7 +546,7 @@ export function authRoutes(deps: ApiDeps): Router {
           action: 'auth.signin.rejected',
           entityType: 'account',
           entityId: pending.accountId,
-          after: { login: pending.login, factor: 'totp', attempts: pending.attempts },
+          after: { login: pending.login, factor, attempts: pending.attempts },
           context: getAuditContext(req),
         });
         res.status(401).json({ error: 'invalid_code' });
@@ -654,6 +716,66 @@ export function authRoutes(deps: ApiDeps): Router {
         return others.length;
       });
       res.json({ ok: true, ended });
+    }),
+  );
+
+  // ─── Recovery codes (PST-REQ-197) ────────────────────────────────────────
+  // How many of the set are left, and a new set behind step-up. The codes themselves are only ever
+  // in the response that issues them.
+
+  router.get(
+    '/recovery-codes',
+    requireSession(deps),
+    handle(async (req, res) => {
+      const me = currentSession(req);
+      const rows = await db.recoveryCode.findMany({
+        where: { accountId: me.accountId },
+        select: { createdAt: true, usedAt: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({
+        total: rows.length,
+        remaining: rows.filter((r) => r.usedAt === null).length,
+        createdAt: rows[0]?.createdAt.toISOString() ?? null,
+      });
+    }),
+  );
+
+  router.post(
+    '/recovery-codes',
+    requireSession(deps),
+    requireStepUp(deps),
+    handle(async (req, res) => {
+      const pepper = rt.pepper;
+      if (pepper === null) {
+        notConfigured(res);
+        return;
+      }
+      const me = currentSession(req);
+      const account = await db.account.findUnique({ where: { id: me.accountId }, select: { totpEnabled: true, totpSecret: true } });
+      if (account === null || !account.totpEnabled || account.totpSecret === null) {
+        // Recovery codes stand in for a TOTP code; an account with no authenticator has nothing to recover.
+        res.status(409).json({ error: 'totp_not_enrolled' });
+        return;
+      }
+      const codes = generateRecoveryCodes();
+      const hashes = await hashRecoveryCodes(codes, pepper);
+      const at = rt.now();
+      await db.$transaction(async (tx) => {
+        const replaced = await replaceRecoveryCodes(tx, me.accountId, hashes, at);
+        await recordAudit(tx, {
+          actor: asAccount(me.accountId),
+          action: 'auth.recovery-codes.regenerate',
+          entityType: 'account',
+          entityId: me.accountId,
+          before: { count: replaced },
+          after: { count: RECOVERY_CODE_COUNT, reason: 'regenerate' },
+          context: getAuditContext(req),
+        });
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ recoveryCodes: codes.map(formatRecoveryCode), createdAt: at.toISOString() });
     }),
   );
 

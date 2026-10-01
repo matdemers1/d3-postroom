@@ -10,6 +10,9 @@
 // finishes setup over the API (ensureOperator) before auth.spec.ts's own setup test runs (which
 // already skips once an earlier file has done it). Changing the operator's password here persists
 // the new value into the shared operator file, so every spec after this one keeps working.
+//
+// PST-T-16.7 (PST-REQ-197): a recovery code signs in once in place of the TOTP code and is refused
+// the second time, and Security & devices makes a new set behind step-up that retires the old one.
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { ensureOperator, freshCode, isPhone, loadOperator, openNav, openPlace, saveOperator, signInWithPassword, type Operator } from './support.js';
@@ -153,6 +156,107 @@ test('Browser sessions lists sessions and revokes one after step-up', async ({ p
 
   expect((await other.get('/api/auth/state').then((r) => r.json()) as { signedIn: boolean }).signedIn).toBe(false);
   await other.dispose();
+});
+
+/** A fresh set of recovery codes over the API: sign in, step up, regenerate. */
+async function regenerateOverApi(playwright: { request: { newContext: (opts: object) => Promise<APIRequestContext> } }, baseURL: string | undefined, operator: Operator): Promise<string[]> {
+  const ctx = await signInOtherContext(playwright, baseURL, operator);
+  try {
+    const stepUp = await ctx.post('/api/auth/step-up', { headers: CSRF, data: { code: await freshCode(operator) } });
+    if (!stepUp.ok()) throw new Error(`step-up answered ${String(stepUp.status())}`);
+    const regen = await ctx.post('/api/auth/recovery-codes', { headers: CSRF });
+    if (!regen.ok()) throw new Error(`recovery-codes answered ${String(regen.status())}`);
+    return ((await regen.json()) as { recoveryCodes: string[] }).recoveryCodes;
+  } finally {
+    await ctx.dispose();
+  }
+}
+
+/** Password, then a recovery code in place of the TOTP code, over the API: the status it answers. */
+async function recoverySignInStatus(request: APIRequestContext, operator: Operator, code: string): Promise<number> {
+  const first = await request.post('/api/auth/signin', { headers: CSRF, data: { login: operator.login, password: operator.password } });
+  if (!first.ok()) throw new Error(`signin answered ${String(first.status())}`);
+  const { challenge } = (await first.json()) as { challenge: string };
+  return (await request.post('/api/auth/signin/totp', { headers: CSRF, data: { challenge, code } })).status();
+}
+
+test('signs in with a recovery code once; the second use is refused', async ({ page, playwright, baseURL }) => {
+  const operator = requireOperator();
+  const codes = await regenerateOverApi(playwright, baseURL, operator);
+  expect(codes).toHaveLength(10);
+  const code = codes[0] ?? '';
+  expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5}$/);
+
+  await page.goto('/signin');
+  await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
+  await page.getByLabel('Password', { exact: true }).fill(operator.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Authentication code' })).toBeVisible();
+  await page.getByRole('button', { name: 'Use a recovery code instead' }).click();
+  await expect(page.getByRole('textbox', { name: 'Authentication code' })).toHaveCount(0);
+  // Typed the way a person copies it off paper: lower case, a space for the dash.
+  await page.getByRole('textbox', { name: 'Recovery code' }).fill(code.toLowerCase().replace('-', ' '));
+  await page.getByRole('button', { name: 'Verify' }).click();
+  await expect(page.getByRole('heading', { name: 'Mail', level: 1 })).toBeVisible();
+
+  const status = (await page.request.get('/api/auth/recovery-codes').then((r) => r.json())) as { total: number; remaining: number };
+  expect(status).toMatchObject({ total: 10, remaining: 9 });
+
+  // The same code again, in a browser with no session: refused, and the reason is on screen.
+  const fresh = await page.context().browser()?.newContext(baseURL === undefined ? {} : { baseURL });
+  if (fresh === undefined) throw new Error('no browser to open a second context in');
+  const again = await fresh.newPage();
+  await again.goto('/signin');
+  await again.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
+  await again.getByLabel('Password', { exact: true }).fill(operator.password);
+  await again.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await again.getByRole('button', { name: 'Use a recovery code instead' }).click();
+  await again.getByRole('textbox', { name: 'Recovery code' }).fill(code);
+  await again.getByRole('button', { name: 'Verify' }).click();
+  await expect(again.getByText('That recovery code didn’t match, or it’s already been used.')).toBeVisible();
+  await expect(again.getByRole('heading', { name: 'Mail', level: 1 })).toHaveCount(0);
+  await fresh.close();
+});
+
+test('Security & devices makes a new set of recovery codes behind step-up, retiring the old set', async ({ page, request, playwright, baseURL }) => {
+  const operator = requireOperator();
+  const old = await regenerateOverApi(playwright, baseURL, operator);
+
+  await signInWithPassword(page, operator);
+  await page.goto('/settings/security/sessions');
+  const section = page.getByRole('region', { name: 'Recovery codes' });
+  await expect(section).toBeVisible();
+  await expect(section.getByTestId('recovery-status')).toHaveText(/^10 of 10 left/);
+
+  await section.getByRole('button', { name: 'Make new codes' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Make new recovery codes?' });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: 'Make new codes' }).click();
+  const stepUp = page.getByRole('dialog', { name: 'Confirm it is you' });
+  await expect(stepUp).toBeVisible();
+  await stepUp.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
+  await stepUp.getByRole('button', { name: 'Verify and make new codes' }).click();
+  await expect(stepUp).toBeHidden();
+
+  const list = section.getByRole('list', { name: 'Recovery codes' });
+  await expect(list.getByRole('listitem')).toHaveCount(10);
+  const shown = (await list.getByRole('listitem').allTextContents()).map((t) => t.trim());
+  for (const code of shown) expect(old).not.toContain(code);
+  await expect(section.getByRole('button', { name: 'Copy all' })).toBeVisible();
+  await expect(section.getByRole('button', { name: 'Download .txt' })).toBeVisible();
+
+  // Done waits for the checkbox.
+  const done = section.getByRole('button', { name: 'Done' });
+  await expect(done).toBeDisabled();
+  await section.getByRole('checkbox', { name: 'I have saved these' }).click();
+  await expect(done).toBeEnabled();
+  await done.click();
+  await expect(list).toHaveCount(0);
+  await expect(section.getByTestId('recovery-status')).toHaveText(/^10 of 10 left/);
+
+  // The old set is gone; the new one works.
+  expect(await recoverySignInStatus(request, operator, old[1] ?? '')).toBe(401);
+  expect(await recoverySignInStatus(request, operator, shown[0] ?? '')).toBe(200);
 });
 
 test('Account and Browser sessions have no axe violations', async ({ page }) => {
