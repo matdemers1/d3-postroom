@@ -1,6 +1,6 @@
 import './contacts.css';
 import { type SyntheticEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link as RouterLink, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Button,
@@ -55,8 +55,23 @@ export function Contacts() {
   const [books, setBooks] = useState<AddressBook[] | null>(null);
   const [contacts, setContacts] = useState<ContactSummary[] | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
-  const [query, setQuery] = useState('');
-  const [bookFilter, setBookFilter] = useState('all');
+  // PST-T-16.4 (PST-REQ-198): the search (?q=) and the address book (?book=, by slug) are the URL's,
+  // rewritten in place as they change and carried to a contact and back, so a reload or Back keeps them.
+  const [filterParams, setFilterParams] = useSearchParams();
+  const query = filterParams.get('q') ?? '';
+  const bookSlug = filterParams.get('book');
+  const setFilter = (key: 'q' | 'book', value: string | null): void => {
+    setFilterParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (value === null || value === '') out.delete(key);
+        else out.set(key, value);
+        return out;
+      },
+      { replace: true },
+    );
+  };
+  const filterSearch = filterParams.toString() === '' ? '' : `?${filterParams.toString()}`;
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -75,6 +90,7 @@ export function Contacts() {
   }, [load]);
 
   const bookName = useMemo(() => new Map((books ?? []).map((b) => [b.id, b.displayName])), [books]);
+  const bookFilter = bookSlug === null ? 'all' : (books?.find((b) => b.slug === bookSlug)?.id ?? 'all');
   const needle = query.trim().toLowerCase();
   const shown = (contacts ?? []).filter(
     (c) => (bookFilter === 'all' || c.addressBookId === bookFilter) && (needle === '' || [c.displayName, c.org, ...c.emails].some((x) => x.toLowerCase().includes(needle))),
@@ -92,7 +108,7 @@ export function Contacts() {
           placeholder="Search by name, email or organization"
           value={query}
           onChange={(e) => {
-            setQuery(e.target.value);
+            setFilter('q', e.target.value);
           }}
         />
         {books !== null && books.length > 1 ? (
@@ -100,7 +116,9 @@ export function Contacts() {
             aria-label="Address book"
             options={[{ value: 'all', label: 'All address books' }, ...books.map((b) => ({ value: b.id, label: `${b.displayName} (${String(b.count)})` }))]}
             value={bookFilter}
-            onValueChange={setBookFilter}
+            onValueChange={(id) => {
+              setFilter('book', id === 'all' ? null : (books.find((b) => b.id === id)?.slug ?? null));
+            }}
           />
         ) : null}
       </FilterBar>
@@ -121,7 +139,7 @@ export function Contacts() {
             <DataListRow
               key={`${c.addressBookId}/${c.name}`}
               aria-current={selected?.addressBookId === c.addressBookId && selected.name === c.name ? 'true' : undefined}
-              title={<RouterLink to={contactPath(c.addressBookId, c.name)}>{c.displayName === '' ? 'No name' : c.displayName}</RouterLink>}
+              title={<RouterLink to={`${contactPath(c.addressBookId, c.name)}${filterSearch}`}>{c.displayName === '' ? 'No name' : c.displayName}</RouterLink>}
               description={[c.org, ...c.emails].filter((x) => x !== '').join(' · ')}
               meta={bookName.get(c.addressBookId) ?? ''}
               truncate
@@ -140,12 +158,12 @@ export function Contacts() {
         books={books ?? []}
         existing={null}
         onCancel={() => {
-          void navigate('/contacts');
+          void navigate(`/contacts${filterSearch}`);
         }}
         onSaved={(saved, message) => {
           setNotice(message);
           void load();
-          void navigate(contactPath(saved.addressBookId, saved.name), { replace: true });
+          void navigate(`${contactPath(saved.addressBookId, saved.name)}${filterSearch}`, { replace: true });
         }}
       />
     );
@@ -159,7 +177,7 @@ export function Contacts() {
         onChanged={(message, gone) => {
           setNotice(message);
           void load();
-          if (gone) void navigate('/contacts', { replace: true });
+          if (gone) void navigate(`/contacts${filterSearch}`, { replace: true });
         }}
       />
     );
@@ -176,7 +194,7 @@ export function Contacts() {
       <PageHeader
         title="Contacts"
         {...(contacts === null ? {} : { count: contacts.length, countNoun: { one: 'contact', other: 'contacts' } })}
-        {...(!split && (selected !== null || creating) ? { back: <RouterLink to="/contacts">All contacts</RouterLink> } : {})}
+        {...(!split && (selected !== null || creating) ? { back: <RouterLink to={`/contacts${filterSearch}`}>All contacts</RouterLink> } : {})}
         actions={
           <Button
             variant="primary"

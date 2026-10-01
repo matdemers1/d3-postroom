@@ -143,6 +143,10 @@ export const REDIRECTS: readonly { from: string; to: string }[] = [
   { from: '/admin', to: '/admin/health' },
 ];
 
+/** PST-T-16.4 (PST-REQ-198, PST-DA-027): the Inbox has one URL. '/' redirects here (App.tsx) and keeps
+ * its query; the 'mail' route above stays at '/' so the shell's home still names the Mail place. */
+export const MAIL_HOME = '/mail/inbox';
+
 export const PLACE_HOME: Readonly<Record<'settings' | 'admin', string>> = {
   settings: '/settings/account',
   admin: '/admin/health',
