@@ -41,13 +41,14 @@ describe('DayChart without colour', () => {
   it('defines a hatch pattern from tokens and fills every fail segment with it', () => {
     const id = /<pattern id="([^"]+)"/.exec(html)?.[1];
     expect(id).toBeTruthy();
-    expect(html).toContain('stroke="var(--color-surface)"');
+    // D3 UI 1.5: the chart sits on a card, so the separator is the card's own surface.
+    expect(html).toContain('stroke="var(--color-surface-card)"');
     expect(html).toContain('fill="var(--color-danger)"');
     const fails = html.match(/<rect data-segment="fail"[^>]*>/g) ?? [];
     expect(fails).toHaveLength(2);
     for (const rect of fails) {
       expect(rect).toContain(`fill:url(#${id ?? ''})`);
-      expect(rect).toContain('stroke:var(--color-surface)');
+      expect(rect).toContain('stroke:var(--color-surface-card)');
       expect(rect).toContain('stroke-width:2');
     }
   });
@@ -131,10 +132,10 @@ describe('the chart at its real width (PST-T-17.1, admin critique 2.3 #1)', () =
 });
 
 describe('Deliverability words and tones (PST-T-17.1, admin critique 2.3)', () => {
-  it('a healthy rate is plain text; a low one takes a dot, never a pill', () => {
+  it('a healthy rate is plain text; a low one takes a dot (warning, D-086 — not the link violet), never a pill', () => {
     expect(rateTone(1)).toBeNull();
     expect(rateTone(0.98)).toBeNull();
-    expect(rateTone(0.94)).toBe('attention');
+    expect(rateTone(0.94)).toBe('warning');
     expect(rateTone(0)).toBe('danger');
   });
 
@@ -158,5 +159,35 @@ describe('Deliverability words and tones (PST-T-17.1, admin critique 2.3)', () =
     expect(src).not.toMatch(/<FormField\b/);
     expect(src).toContain('className="pr-table-card"');
     expect(src).toContain("from ${plural(data.dmarc.byOrg.length, 'reporter')}");
+  });
+});
+
+describe('Deliverability layout (PST-T-17.1 verifier)', () => {
+  const src = readFileSync(join(__dirname, '../../src/screens/AdminDeliverability.tsx'), 'utf8');
+  const css = readFileSync(join(__dirname, '../../src/admin/admin.css'), 'utf8');
+
+  it('draws a pass in --color-fg-faint (6.0:1 on the dark card, 7.4:1 light: still ≥3:1), so the failure is what reads first', () => {
+    const html = render(data([{ day: '2026-09-01', pass: 3, fail: 0 }]));
+    const passRect = /<rect [^>]*style="fill:([^"]+)"><title>[^<]*passed<\/title>/.exec(html)?.[1];
+    expect(passRect).toBe('var(--color-fg-faint)');
+  });
+
+  it('puts By source and By reporter side by side from 1200px', () => {
+    expect(css).toMatch(/@media \(min-width: 1200px\) \{\s*\.pr-deliv-pair \{\s*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/);
+  });
+
+  it('both cards fit side by side: By source has no Messages column (it is Pass + Fail) and its reporters sit under the address', () => {
+    expect(src).not.toMatch(/key: 'messages', header: 'Messages', width: NUM, numeric: true, align: 'end', cell: \(s\)/);
+    expect(src).not.toMatch(/key: 'orgs', header: 'Reported by'/);
+    expect(src).toContain('pr-cell-stack');
+  });
+
+  it('shows the policy progression (the TXT value to publish) in the empty and load-error states too, above them', () => {
+    expect(src).toMatch(/loadError !== null \? \(\s*<>\s*\{progressCard\}\s*<LoadFailed/);
+    expect(src).toMatch(/empty \? \(\s*<>\s*\{progressCard\}\s*<EmptyState/);
+  });
+
+  it('on a phone Refresh goes to the context bar (X11)', () => {
+    expect(src).toContain('useContextBarAction(');
   });
 });

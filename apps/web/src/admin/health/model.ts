@@ -2,7 +2,8 @@
 // pulled out of the screen so every word and tone is unit-tested without rendering.
 //
 // Tones follow D-016: a healthy check is neutral (grey, never green); only a check that needs you
-// takes a hue — attention for degraded, danger for down — and a check that has not run yet is idle.
+// takes a hue — warning for degraded (D3 UI 1.5, D-086), danger for down — and a check that has not
+// run yet is idle. Warning, never attention: attention's violet is the link colour (admin critique X4).
 // Nothing here invents a fact: every value is read from a tile the server sent, or from the
 // outbound-queue list the Queue screen already uses.
 import type { StatusDotTone } from '@d3cloud/ui';
@@ -11,7 +12,7 @@ import type { AdminQueueRecipient, HealthTile, HealthTileState } from '../../api
 /** Each tile state as a StatusDot: the word carries the meaning, the dot only decorates it. */
 export const TILE_TONE: Readonly<Record<HealthTileState, { label: string; tone: StatusDotTone }>> = {
   ok: { label: 'Healthy', tone: 'neutral' },
-  warn: { label: 'Degraded', tone: 'attention' },
+  warn: { label: 'Degraded', tone: 'warning' },
   down: { label: 'Down', tone: 'danger' },
   unknown: { label: 'Not checked', tone: 'idle' },
 };
@@ -49,7 +50,7 @@ function counts(tiles: readonly HealthTile[]): Record<HealthTileState, number> {
 /**
  * The header's one line: neutral "All systems normal" when nothing is down or degraded (a check
  * that has not run yet does not make the system abnormal — the Services list says which), danger
- * when anything is down, attention when something is degraded, idle when nothing has run at all.
+ * when anything is down, warning when something is degraded, idle when nothing has run at all.
  */
 export function healthSummary(tiles: readonly HealthTile[]): { tone: StatusDotTone; text: string } {
   const c = counts(tiles);
@@ -57,7 +58,7 @@ export function healthSummary(tiles: readonly HealthTile[]): { tone: StatusDotTo
     const also = c.warn > 0 ? `, ${String(c.warn)} degraded` : '';
     return { tone: 'danger', text: `${String(c.down)} ${c.down === 1 ? 'check' : 'checks'} down${also}` };
   }
-  if (c.warn > 0) return { tone: 'attention', text: `${String(c.warn)} ${c.warn === 1 ? 'check' : 'checks'} degraded` };
+  if (c.warn > 0) return { tone: 'warning', text: `${String(c.warn)} ${c.warn === 1 ? 'check' : 'checks'} degraded` };
   if (c.ok === 0) return { tone: 'idle', text: 'Nothing checked yet' };
   return { tone: 'neutral', text: 'All systems normal' };
 }
@@ -74,13 +75,13 @@ export function servicesMeta(tiles: readonly HealthTile[]): string {
 }
 
 /**
- * When a tile's `since` is: a backup or drill tile carries when it last ran; a monitor tile carries
- * when its state last changed. A daemon tile has none.
+ * What a tile's `since` means, as the word before its time: a backup or drill tile carries when it
+ * last ran; a monitor tile carries when its state last changed. A daemon tile has none. The time
+ * itself is the shared <RelativeTime> (PST-T-17.1), so the full timestamp is one hover away.
  */
-export function sinceText(tile: HealthTile, now: Date): string | null {
+export function sincePrefix(tile: Pick<HealthTile, 'id' | 'since'>): 'ran' | 'changed' | null {
   if (tile.since === null) return null;
-  const rel = relativeTime(tile.since, now);
-  return tile.id === 'backup' || tile.id === 'drill' ? `ran ${rel}` : `since ${rel.replace(/ ago$/, '')}`;
+  return tile.id === 'backup' || tile.id === 'drill' ? 'ran' : 'changed';
 }
 
 export const tileById = (tiles: readonly HealthTile[], id: string): HealthTile | undefined => tiles.find((t) => t.id === id);
@@ -121,7 +122,7 @@ export function lastRunFootnote(tile: HealthTile, what: string): string {
 /** A queued recipient's state as a StatusDot: waiting is neutral, deferred asks, bounced failed. */
 export const QUEUE_STATE: Readonly<Record<string, { label: string; tone: StatusDotTone }>> = {
   queued: { label: 'Queued', tone: 'neutral' },
-  deferred: { label: 'Deferred', tone: 'attention' },
+  deferred: { label: 'Deferred', tone: 'warning' },
   bounced: { label: 'Bounced', tone: 'danger' },
 };
 
@@ -215,7 +216,9 @@ export interface StatView {
   unit?: string;
   /** The StatusDot under the value. */
   status: { label: string; tone: StatusDotTone };
-  /** One line; the screen truncates it and puts the whole text in `title`. */
+  /** A time that leads the footnote ("Local dump ran" + <RelativeTime>), so a clamp never cuts it. */
+  ran?: { prefix: string; iso: string };
+  /** The rest of the footnote; the screen clamps it and puts the whole text in `title`. */
   footnote: string;
 }
 
@@ -261,18 +264,18 @@ export function backupNotConfigured(tile: HealthTile): boolean {
 
 /**
  * A last-run tile (backup, restore drill) as a Stat: when it last ran. A backup with no offsite
- * bucket is "Local only" with an attention status — no copy leaves the machine, and that needs the
- * operator (D-016) — rather than a time over a "Not checked" dot.
+ * bucket is "Local only" with a warning status — no copy leaves the machine, which needs a look
+ * (D-016, D-086) — rather than a time over a "Not checked" dot.
  */
 export function lastRunView(tile: HealthTile | undefined, what: 'backup' | 'drill', now: Date): StatView {
   if (tile === undefined) return NOT_REPORTED;
   if (what === 'backup' && backupNotConfigured(tile)) {
     const missing = /\(([^)]+) not set\)/.exec(tile.detail)?.[1];
-    const ran = tile.since === null ? null : `local dump ran ${relativeTime(tile.since, now)}`;
     return {
       value: 'Local only',
-      status: { label: 'No offsite copy', tone: 'attention' },
-      footnote: [missing === undefined ? 'Offsite backups not configured' : `${missing} not set`, ran].filter((p) => p !== null).join(' · '),
+      status: { label: 'No offsite copy', tone: 'warning' },
+      ...(tile.since === null ? {} : { ran: { prefix: 'Local dump ran', iso: tile.since } }),
+      footnote: missing === undefined ? 'Offsite backups not configured' : `${missing} not set`,
     };
   }
   const stat = lastRunStat(tile, now);

@@ -143,7 +143,7 @@ describe('small helpers', () => {
   it('tones, delays and TLS labels', () => {
     expect(resultTone('pass')).toBe('neutral');
     expect(resultTone('fail')).toBe('danger');
-    expect(resultTone('softfail')).toBe('attention');
+    expect(resultTone('softfail')).toBe('warning'); // D3 UI 1.5 warning tone (D-086), via STATUS_TONE
     expect(delayText(null)).toBeNull();
     expect(delayText(5)).toBe('+5 s');
     expect(delayText(-3)).toBe('−3 s');

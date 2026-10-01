@@ -1,7 +1,7 @@
 // PST-T-16.13 (PST-DA-031, PST-REQ-121/155/198): the pure half of the Outbound queue screen — what
 // the URL filters mean, which actions a row offers, what the drawer shows. No React, so a unit test
 // can hold every rule without rendering.
-import type { AdminQueueRecipient, QueueStateFilter } from '../../api';
+import type { AdminQueueMessage, AdminQueueRecipient, QueueStateFilter } from '../../api';
 import { PHONE_QUERY } from '../../mail/useMedia';
 
 /** On a phone, either orientation, the queue is a list of cards (a DataList), not a table. */
@@ -91,40 +91,73 @@ export const QUEUE_STATE_SEGMENTS: readonly { value: '' | QueueStateFilter; labe
   { value: 'failed', label: 'Failed' },
 ];
 
+/** The API's own ceiling on one list (apps/api/src/admin-queue MAX_LIST_LIMIT). */
+export const QUEUE_LIST_CAP = 500;
+
+export type QueueStateKey = '' | QueueStateFilter;
+
+/** One recipient as the queue screen shows it: the recipient, with its message's subject and From. */
+export type QueueRow = AdminQueueRecipient & { subject: string | null; headerFrom: string };
+
+export interface QueueStateList {
+  rows: QueueRow[];
+  /** How many came back; when `capped`, there are more than this. */
+  count: number;
+  /** The list reached the API's ceiling, so the count is "500+" and the list is the first 500. */
+  capped: boolean;
+}
+
+export type QueueFetcher = (opts: { domain?: string; state?: QueueStateFilter; limit: number }) => Promise<{ messages: AdminQueueMessage[]; sesConfigured: boolean }>;
+
 /**
- * Whether a recipient belongs under a state filter, as apps/api/src/admin-queue reads ?state=:
- * pending is `queued`, failed is `bounced`. Held cannot be told from the row (it is a frozen app
- * password on the message), so the screen asks the API for that one; here it matches nothing.
+ * Every state's list, each filtered by the API itself (?state=, apps/api/src/admin-queue), never
+ * sliced out of the All list here — so a Deferred row past the first 500 of All is still listed and
+ * counted under Deferred. Five requests at once; switching segments then asks the server nothing.
  */
-export function matchesQueueState(state: string, filter: '' | QueueStateFilter): boolean {
-  switch (filter) {
-    case '':
-      return true;
-    case 'pending':
-      return state === 'queued';
-    case 'deferred':
-      return state === 'deferred';
-    case 'failed':
-      return state === 'bounced';
-    case 'held':
-      return false;
-  }
+export async function loadQueueStates(fetch: QueueFetcher, domain: string): Promise<{ lists: Record<QueueStateKey, QueueStateList>; sesConfigured: boolean }> {
+  const scope = domain === '' ? {} : { domain };
+  const results = await Promise.all(
+    QUEUE_STATE_SEGMENTS.map((seg) => fetch({ ...scope, ...(seg.value === '' ? {} : { state: seg.value }), limit: QUEUE_LIST_CAP })),
+  );
+  const lists = {} as Record<QueueStateKey, QueueStateList>;
+  QUEUE_STATE_SEGMENTS.forEach((seg, i) => {
+    const rows = (results[i]?.messages ?? []).flatMap((m) => m.recipients.map((r) => ({ ...r, subject: m.subject, headerFrom: m.headerFrom })));
+    lists[seg.value] = { rows, count: rows.length, capped: rows.length >= QUEUE_LIST_CAP };
+  });
+  return { lists, sesConfigured: results[0]?.sesConfigured ?? true };
 }
 
-/** The count beside each segment: every row the domain filter left, by state; held as the API said. */
-export function queueStateCounts(rows: readonly Pick<AdminQueueRecipient, 'state'>[], held: number): Record<'' | QueueStateFilter, number> {
-  const count = (f: '' | QueueStateFilter): number => rows.filter((r) => matchesQueueState(r.state, f)).length;
-  return { '': rows.length, pending: count('pending'), deferred: count('deferred'), held, failed: count('failed') };
+/**
+ * The segments with their counts: a list at the ceiling says "500+" rather than a number that is
+ * silently wrong. On a phone the five only fit 390px without counts (the toolbar still says how many).
+ */
+export function queueSegmentItems(
+  lists: Readonly<Record<QueueStateKey, Pick<QueueStateList, 'count' | 'capped'>>> | null,
+  phone: boolean,
+): { value: QueueStateKey; label: string; count?: number }[] {
+  return QUEUE_STATE_SEGMENTS.map((seg) => {
+    const list = lists?.[seg.value];
+    if (list === undefined || phone) return { value: seg.value, label: seg.label };
+    if (list.capped) return { value: seg.value, label: `${seg.label} ${String(QUEUE_LIST_CAP)}+` };
+    return { value: seg.value, label: seg.label, count: list.count };
+  });
 }
 
-/** The rows a state filter shows: the held list comes from its own request. */
-export function rowsForState<T extends Pick<AdminQueueRecipient, 'state'>>(all: readonly T[], held: readonly T[], filter: '' | QueueStateFilter): T[] {
-  return filter === 'held' ? [...held] : all.filter((r) => matchesQueueState(r.state, filter));
+/** Only the newest request's answer counts: each load takes a token, and a stale one is dropped. */
+export function latestOnly(): { next: () => number; isLatest: (token: number) => boolean } {
+  let current = 0;
+  return {
+    next: () => {
+      current += 1;
+      return current;
+    },
+    isLatest: (token) => token === current,
+  };
 }
 
-/** "1 recipient", "12 recipients". */
-export function recipientCount(n: number): string {
-  return `${n.toLocaleString()} ${n === 1 ? 'recipient' : 'recipients'}`;
+/** "1 recipient", "12 recipients", "500+ recipients" when the list reached the ceiling. */
+export function recipientCount(n: number, capped = false): string {
+  return `${n.toLocaleString()}${capped ? '+' : ''} ${n === 1 && !capped ? 'recipient' : 'recipients'}`;
 }
 
 /** The bulk actions offered once a domain is typed into the filter: the same four, worded for a domain. */
