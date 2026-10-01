@@ -434,8 +434,8 @@ importers:
   apps/web:
     dependencies:
       '@d3cloud/ui':
-        specifier: https://github.com/matdemers1/d3-design-system/releases/download/v1.4.1/d3cloud-ui-1.4.1.tgz
-        version: https://github.com/matdemers1/d3-design-system/releases/download/v1.4.1/d3cloud-ui-1.4.1.tgz(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: https://github.com/matdemers1/d3-design-system/releases/download/v1.4.2/d3cloud-ui-1.4.2.tgz
+        version: https://github.com/matdemers1/d3-design-system/releases/download/v1.4.2/d3cloud-ui-1.4.2.tgz(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       qrcode-generator:
         specifier: 2.0.4
         version: 2.0.4
@@ -873,9 +873,9 @@ packages:
   '@cacheable/utils@2.5.0':
     resolution: {integrity: sha512-buipgOVDkkPXNR5+xBpDw7Zk2n1EvU7qBJCNUcL7rhQ//kfpOXPAvQ511Os0vpLYJ1pZnvudNytkQt2hst3wqA==}
 
-  '@d3cloud/ui@https://github.com/matdemers1/d3-design-system/releases/download/v1.4.1/d3cloud-ui-1.4.1.tgz':
-    resolution: {integrity: sha512-yz/cT8Lxm2sfFG2PkX6AuKvugN30LODGGFWlYFwIdSfpBX8jd2gSyPGMqU1LVugI/lzv63G/2nyUG+VbhImK1Q==, tarball: https://github.com/matdemers1/d3-design-system/releases/download/v1.4.1/d3cloud-ui-1.4.1.tgz}
-    version: 1.4.1
+  '@d3cloud/ui@https://github.com/matdemers1/d3-design-system/releases/download/v1.4.2/d3cloud-ui-1.4.2.tgz':
+    resolution: {integrity: sha512-X9nZ3YQzfbWbqupvRStaTyVqoPSC8i01XY4i6HF/h4ScbinJH78L/vWa4Q0sneC8w8J2BsYfqjGtriqMmidq/A==, tarball: https://github.com/matdemers1/d3-design-system/releases/download/v1.4.2/d3cloud-ui-1.4.2.tgz}
+    version: 1.4.2
     engines: {node: '>=20.0.0'}
     hasBin: true
     peerDependencies:
@@ -3757,7 +3757,7 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@d3cloud/ui@https://github.com/matdemers1/d3-design-system/releases/download/v1.4.1/d3cloud-ui-1.4.1.tgz(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@d3cloud/ui@https://github.com/matdemers1/d3-design-system/releases/download/v1.4.2/d3cloud-ui-1.4.2.tgz(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@radix-ui/react-checkbox': 1.3.11(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@radix-ui/react-dialog': 1.1.23(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
