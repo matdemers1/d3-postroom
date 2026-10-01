@@ -167,8 +167,9 @@ test('sign out, then sign in with password + TOTP and reach the admin Sign-in se
   await openNav(page);
   await page.getByRole('button', { name: new RegExp(`^${operator.displayName}`) }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
-  // PST-DA-040: signed out away from '/', the page it left is remembered as ?next=.
-  await expect(page).toHaveURL(/\/signin\?next=%2Fadmin%2Fsessions$/);
+  // PST-DA-040: signed out away from '/', the page it left is remembered as ?next=. On a phone the
+  // account menu lives on the place index (PST-T-17.8), so that is the page it left.
+  await expect(page).toHaveURL(/\/signin\?next=%2Fadmin(%2Fsessions)?$/);
   await page.goto('/admin/sessions');
   await expect(page).toHaveURL(/\/signin\?next=%2Fadmin%2Fsessions$/);
 });

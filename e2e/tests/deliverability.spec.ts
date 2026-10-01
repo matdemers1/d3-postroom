@@ -98,7 +98,7 @@ test('Google and Microsoft fixtures render on Deliverability, axe clean in both 
   await expect(reporters.getByRole('row').or(reporters.getByRole('listitem')).filter({ hasText: 'Enterprise Outlook' })).toContainText('19');
 
   const tls = page.getByRole('table', { name: 'TLS sessions by policy' }).or(page.getByRole('list', { name: 'TLS sessions by policy' }));
-  await expect(tls.getByRole('row').or(tls.getByRole('listitem')).filter({ has: page.getByRole('cell', { name: 'sts', exact: true }) })).toContainText('58');
+  await expect(tls.getByRole('row').filter({ has: page.getByRole('cell', { name: 'sts', exact: true }) }).or(tls.getByRole('listitem').filter({ hasText: /\bsts\b/ }))).toContainText('58');
   await expect(page.getByRole('table', { name: 'TLS failures by type' }).or(page.getByRole('list', { name: 'TLS failures by type' }))).toContainText('certificate-expired');
 
   const light = await new AxeBuilder({ page }).include('main').analyze();

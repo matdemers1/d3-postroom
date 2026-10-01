@@ -118,8 +118,9 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   await openNav(page);
   await page.getByRole('button', { name: new RegExp(`^${operator.displayName}`) }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
-  // PST-DA-040: signing out away from '/' remembers the page as ?next=.
-  await expect(page).toHaveURL(/\/signin\?next=%2Fsettings%2Faccount$/);
+  // PST-DA-040: signing out away from '/' remembers the page as ?next=. On a phone the account menu
+  // lives on the place index (PST-T-17.8), so that is the page it left.
+  await expect(page).toHaveURL(/\/signin\?next=%2Fsettings(%2Faccount)?$/);
 
   await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
   await page.getByLabel('Password', { exact: true }).fill(operator.password);

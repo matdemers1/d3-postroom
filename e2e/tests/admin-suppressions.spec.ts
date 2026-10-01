@@ -45,7 +45,8 @@ test('lists a seeded hard bounce with the reply that caused it, axe clean', asyn
   await page.goto('/admin/suppressions');
   await expect(page.getByRole('heading', { name: 'Suppressions', level: 1 })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search' }).fill(address);
-  const row = page.getByRole('row').filter({ hasText: address });
+  // A table row on desktop, a card on a phone (PST-T-17.2).
+  const row = page.getByRole('row').or(page.getByRole('listitem')).filter({ hasText: address });
   await expect(row).toBeVisible();
   await expect(row).toContainText('Hard bounce');
   await expect(row).toContainText('550 5.1.1 No such user');
