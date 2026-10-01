@@ -21,13 +21,33 @@ export interface TotpChallenge {
   accountId: string;
   login: string;
   exp: number;
+  /** Code checks claimed on this challenge, counted BEFORE any hashing (PST-T-16.26). */
   attempts: number;
+  /**
+   * A code check is running on this challenge. Only one at a time: a recovery-code check is up to
+   * ten Argon2id verifies, and concurrent guesses must not each get to run them.
+   */
+  checking: boolean;
+}
+
+/**
+ * A TOTP re-enrolment in flight for one session that signed in with a recovery code (PST-REQ-200).
+ * Keyed by session id; nothing is written to the account until a code from the new secret proves it.
+ */
+export interface PendingReenrol {
+  accountId: string;
+  secret: string;
+  exp: number;
+  attempts: number;
+  checking: boolean;
 }
 
 export const SETUP_TTL_MS = 15 * 60 * 1000;
 /** Failed password sign-ins from one address, across all logins, before the delay starts. */
 export const IP_FREE_ATTEMPTS = 20;
 export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+/** How long a re-enrolment key waits for its first code before Begin has to be pressed again. */
+export const REENROL_TTL_MS = 15 * 60 * 1000;
 export const MAX_CODE_ATTEMPTS = 5;
 /** Step-up is fresh for five minutes (PST-REQ-008). */
 export const STEP_UP_MS = 5 * 60 * 1000;
@@ -53,6 +73,7 @@ export interface AuthRuntime {
   oidc: OidcProvider;
   setups: BoundedMap<PendingSetup>;
   challenges: BoundedMap<TotpChallenge>;
+  reenrols: BoundedMap<PendingReenrol>;
 }
 
 /** A Map that forgets its oldest entry past `limit`, and entries whose `exp` has passed. */
@@ -135,6 +156,7 @@ export function runtimeFor(deps: ApiDeps): AuthRuntime {
     oidc,
     setups: new BoundedMap(32),
     challenges: new BoundedMap(1_000),
+    reenrols: new BoundedMap(256),
   };
   runtimes.set(deps, rt);
   // Discovery at boot, never awaited and never fatal: the password path does not wait on it.

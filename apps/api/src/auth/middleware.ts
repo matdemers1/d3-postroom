@@ -82,7 +82,22 @@ export function requireAdmin(deps: ApiDeps): RequestHandler {
   });
 }
 
-/** Destructive admin actions need a second factor within the last five minutes (PST-REQ-008). */
+/**
+ * A session that signed in with a recovery code has no authenticator to step up with until it
+ * enrols a new one (PST-REQ-200). Answers 403 totp_reenrol_required, audited, and returns true
+ * when it did.
+ */
+export async function refuseUntilReenrolled(rt: AuthRuntime, req: Request, res: Response, session: ResolvedSession): Promise<boolean> {
+  if (!session.reenrolRequired) return false;
+  await recordDenied(rt, req, session.accountId, 'totp_reenrol_required');
+  res.status(403).json({ error: 'totp_reenrol_required' });
+  return true;
+}
+
+/**
+ * Destructive admin actions need a second factor within the last five minutes (PST-REQ-008) — and
+ * a recovery-code session must re-enrol its authenticator first (PST-REQ-200).
+ */
 export function requireStepUp(deps: ApiDeps): RequestHandler {
   const rt = runtimeFor(deps);
   return handle(async (req, res, next) => {
@@ -91,6 +106,7 @@ export function requireStepUp(deps: ApiDeps): RequestHandler {
       res.status(401).json({ error: 'unauthenticated' });
       return;
     }
+    if (await refuseUntilReenrolled(rt, req, res, session)) return;
     const at = session.stepUpAt;
     const age = at === null ? Infinity : rt.now().getTime() - at.getTime();
     if (!(age >= 0 && age <= STEP_UP_MS)) {
