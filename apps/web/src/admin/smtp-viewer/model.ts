@@ -13,6 +13,60 @@ export function appendCapped<T>(prev: readonly T[], incoming: readonly T[], max:
   return joined.length > max ? joined.slice(joined.length - max) : joined;
 }
 
+/** The live feed's lines, as one reducer so a pause, a resume and a line arriving between them can
+ * never disagree: resume flushes exactly what was held, in arrival order, in one step. While paused,
+ * held lines are capped like the view, and `dropped` counts the oldest ones that fell off. */
+export interface LiveFeedState<T> {
+  lines: T[];
+  held: T[];
+  paused: boolean;
+  dropped: number;
+  max: number;
+}
+
+export type LiveFeedAction<T> =
+  | { type: 'line'; line: T }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'clear' }
+  | { type: 'cap'; max: number };
+
+export function initialLiveFeed<T>(max: number = MAX_LIVE_LINES): LiveFeedState<T> {
+  return { lines: [], held: [], paused: false, dropped: 0, max };
+}
+
+export function liveFeedReducer<T>(state: LiveFeedState<T>, action: LiveFeedAction<T>): LiveFeedState<T> {
+  switch (action.type) {
+    case 'line': {
+      if (!state.paused) return { ...state, lines: appendCapped(state.lines, [action.line], state.max) };
+      const held = appendCapped(state.held, [action.line], state.max);
+      const dropped = state.dropped + (state.held.length + 1 - held.length);
+      return { ...state, held, dropped };
+    }
+    case 'pause':
+      return state.paused ? state : { ...state, paused: true };
+    case 'resume':
+      if (!state.paused) return state;
+      return { ...state, paused: false, lines: appendCapped(state.lines, state.held, state.max), held: [], dropped: 0 };
+    case 'clear':
+      return { ...state, lines: [], held: [], dropped: 0 };
+    case 'cap': {
+      const max = Math.max(0, action.max);
+      const held = appendCapped([], state.held, max);
+      return { ...state, max, lines: appendCapped([], state.lines, max), held, dropped: state.dropped + (state.held.length - held.length) };
+    }
+  }
+}
+
+/** The live card's count: "12 lines", plus what a pause is holding — and when the hold overflowed,
+ * that the oldest of it is gone ("500+ new while paused (oldest dropped)"). */
+export function liveCount(state: Pick<LiveFeedState<unknown>, 'lines' | 'held' | 'dropped'>): string {
+  const shown = `${String(state.lines.length)} ${state.lines.length === 1 ? 'line' : 'lines'}`;
+  if (state.held.length === 0) return shown;
+  if (state.dropped > 0) return `${shown} · ${String(state.held.length)}+ new while paused (oldest dropped)`;
+  return `${shown} · ${String(state.held.length)} new while paused`;
+}
+
 /** What the live stream is doing, as a StatusDot reads it. Neutral when it is simply working (D-016);
  * a hue only when it needs you. */
 export type LiveConnection = 'connecting' | 'open' | 'retrying' | 'closed';
@@ -48,19 +102,21 @@ export function clock(iso: string): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-/** A byte count for people: "512 B", "1.2 KB", "3.4 MB" (1024-based, one decimal under 10). */
+/** A byte count for people: "512 B", "1.2 KB", "3.4 MB" (1024-based, one decimal under 10). The
+ * value is rounded before the unit is settled, so 1048575 bytes reads "1 MB", never "1024 KB". */
 export function humanBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '—';
-  if (bytes < 1024) return `${String(Math.round(bytes))} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = bytes / 1024;
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const shown = (v: number): number => (v < 10 ? Math.round(v * 10) / 10 : Math.round(v));
+  let value = bytes;
   let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
+  // Carry while the value as it would be printed has reached the next unit.
+  while (unit < units.length - 1 && (unit === 0 ? Math.round(value) : shown(value)) >= 1024) {
     value /= 1024;
     unit += 1;
   }
-  const shown = value < 10 ? value.toFixed(1).replace(/\.0$/, '') : String(Math.round(value));
-  return `${shown} ${units[unit] ?? 'TB'}`;
+  if (unit === 0) return `${String(Math.round(value))} B`;
+  return `${String(shown(value))} ${units[unit] ?? 'TB'}`;
 }
 
 /** How long a session lasted: "800 ms", "4 s", "2 min 5 s", or null while it is still open. */

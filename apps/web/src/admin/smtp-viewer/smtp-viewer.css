@@ -47,7 +47,39 @@
 
 .pr-smtp-count {
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The live card's toolbar end holds a count that grows ("500 lines · 500+ new while paused (oldest
+ * dropped)") beside Pause and Clear. The card clips its overflow (pr-table-card), so this end wraps
+ * rather than ever pushing a button past the card's edge; the two buttons stay together. */
+.pr-smtp-live .pr-table-toolbar__end {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pr-smtp-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/* Jump to latest floats on the log pane's bottom edge (outside the role=log region), so the toolbar
+ * never has to make room for it. A secondary button has its own edge; no shadow. */
+.pr-smtp-logwrap {
+  position: relative;
+  min-width: 0;
+}
+
+.pr-smtp-jump {
+  position: absolute;
+  right: var(--space-16);
+  bottom: var(--space-12);
+  z-index: 1;
 }
 
 /* The log pane. Inside a card it runs edge to edge under the toolbar; in the transcript drawer it
@@ -159,5 +191,24 @@
 
   .pr-smtp-search {
     width: 100%;
+  }
+
+  .pr-smtp-head {
+    flex: 1 1 100%;
+  }
+
+  /* On a phone the count takes its own line, start-aligned, and the buttons sit under it. */
+  .pr-smtp-live .pr-table-toolbar__end {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    margin-inline-start: 0;
+  }
+
+  .pr-smtp-live .pr-smtp-count {
+    flex: 1 1 100%;
+  }
+
+  .pr-smtp-jump {
+    right: var(--space-12);
   }
 }
