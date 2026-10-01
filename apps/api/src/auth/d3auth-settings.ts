@@ -106,7 +106,6 @@ export function resolveD3Auth(
       ? { state: { source: 'none', enabled: false, issuer: null, clientId: null, secretSet: false, error }, settings: null }
       : { state: { source: 'server_file', enabled: true, issuer: env.issuer, clientId: env.clientId, secretSet: true, error }, settings: env };
   if (stored === null) return fromEnv(null);
-  if (kek === null) return fromEnv(KEK_NOT_LOADED);
   if (stored === 'invalid') {
     return { state: { source: 'console', enabled: false, issuer: null, clientId: null, secretSet: false, error: ROW_UNREADABLE }, settings: null };
   }
@@ -117,7 +116,9 @@ export function resolveD3Auth(
     clientId: stored.clientId ?? null,
     secretSet: stored.sealedSecret !== undefined,
   };
+  // Turned off needs no key to read: it wins over the env whether or not the KEK is loaded.
   if (!stored.enabled) return { state: { ...base, error: null }, settings: null };
+  if (kek === null) return fromEnv(KEK_NOT_LOADED);
   if (stored.issuer === undefined || stored.clientId === undefined || stored.sealedSecret === undefined) {
     return { state: { ...base, error: ROW_UNREADABLE }, settings: null };
   }
@@ -165,6 +166,8 @@ export function normalizeIssuer(raw: string): string | null {
 
 export const ISSUER_MESSAGE = 'an https URL (plain http only for localhost), with no query, fragment or credentials';
 
+export const RETYPE_SECRET = 'Enter the client secret again when the issuer or client ID changes.';
+
 export const D3AuthSaveBody = z.object({
   issuer: z.string().trim().min(1).max(500).describe(`The D3 Auth issuer: ${ISSUER_MESSAGE}. A trailing slash is dropped.`),
   clientId: z
@@ -211,6 +214,10 @@ export const D3AuthView = z.object({
   backchannelLogoutUri: z.string(),
   postLogoutRedirectUri: z.string(),
   manifest: D3AuthManifest,
+  signedOut: z
+    .boolean()
+    .optional()
+    .describe('PUT and DELETE only: the change ended D3 Auth sessions and the caller’s own was one of them; its cookie is cleared.'),
 });
 export type D3AuthView = z.infer<typeof D3AuthView>;
 

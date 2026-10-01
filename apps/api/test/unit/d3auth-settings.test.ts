@@ -51,6 +51,13 @@ describe('resolveD3Auth precedence', () => {
     expect(resolveD3Auth({ enabled: false, updatedAt: 'now' }, kek, env, REDIRECT)).toMatchObject({ state: { source: 'console', enabled: false }, settings: null });
   });
 
+  it('turned off wins over the env with no KEK loaded too', () => {
+    expect(resolveD3Auth({ enabled: false, updatedAt: 'now' }, null, env, REDIRECT)).toEqual({
+      state: { source: 'console', enabled: false, issuer: null, clientId: null, secretSet: false, error: null },
+      settings: null,
+    });
+  });
+
   it('with no KEK the env applies and the reason is given; a secret sealed under another KEK does not open', () => {
     expect(resolveD3Auth(saved, null, env, REDIRECT)).toMatchObject({ state: { source: 'server_file', error: KEK_NOT_LOADED }, settings: env });
     expect(resolveD3Auth(saved, otherKek, env, REDIRECT)).toMatchObject({ state: { source: 'console', error: SECRET_UNOPENABLE }, settings: null });
@@ -105,6 +112,25 @@ describe('OidcProvider.replace', () => {
     late(settings('https://boot.example'));
     await provider.ready();
     expect(provider.settings?.issuer).toBe('https://saved.example');
+  });
+
+  it('a reset for settings since replaced leaves the new client alone', async () => {
+    let calls = 0;
+    const provider = new OidcProvider(settings('https://first.example'), (o) => {
+      calls += 1;
+      return Promise.resolve(fakeClient(o.issuer));
+    });
+    const first = await provider.snapshot(0);
+    expect(first?.settings.issuer).toBe('https://first.example');
+    provider.replace(settings('https://second.example'));
+    const second = await provider.snapshot(0);
+    expect(second?.settings.issuer).toBe('https://second.example');
+    provider.reset(0, first?.generation);
+    expect((await provider.snapshot(0))?.client).toBe(second?.client);
+    expect(calls).toBe(2);
+    // A reset for the settings in force does forget the client.
+    provider.reset(0, second?.generation);
+    expect(await provider.get(1)).toBeNull();
   });
 
   it('records why discovery failed, as lastError', async () => {

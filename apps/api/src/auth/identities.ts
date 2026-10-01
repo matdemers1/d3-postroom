@@ -71,6 +71,12 @@ export function accountIdentityRoutes(deps: ApiDeps): Router {
       }
       const context = getAuditContext(req);
       const ended = await db.$transaction(async (tx) => {
+        // The last way in: an account with no password whose only identity this is would be locked
+        // out for good. Counted inside the commit, so two unlinks cannot each leave the other last.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'postroom-identity-unlink:' + me.accountId}, 0))`;
+        const account = await tx.account.findUniqueOrThrow({ where: { id: me.accountId }, select: { passwordHash: true } });
+        const links = await tx.identityLink.count({ where: { accountId: me.accountId } });
+        if (account.passwordHash === null && links <= 1) return null;
         await tx.identityLink.delete({ where: { id: link.id } });
         await recordAudit(tx, {
           actor: { kind: 'account', accountId: me.accountId },
@@ -103,6 +109,10 @@ export function accountIdentityRoutes(deps: ApiDeps): Router {
         }
         return ids;
       });
+      if (ended === null) {
+        res.status(409).json({ error: 'last_sign_in_method' });
+        return;
+      }
       const signedOut = ended.includes(me.sessionId);
       if (signedOut) clearSessionCookie(res, rt.secure);
       res.json({ ok: true, endedSessions: ended.length, signedOut });
