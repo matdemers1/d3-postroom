@@ -201,6 +201,8 @@ test('the go-to chords reach Sent, Drafts, Calendar and Contacts from a place wi
   await expect(page.getByRole('heading', { name: 'Contacts', level: 1 })).toBeVisible();
   await page.keyboard.press('g');
   await page.keyboard.press('s');
+  // Each chord waits for the screen it lands on: on a slow runner a 'g' pressed before the new
+  // page mounts its listener is lost, and the bare second key goes to that page instead.
   await expect(page).toHaveURL(/\/mail\/sent$/);
   await page.keyboard.press('g');
   await page.keyboard.press('d');
