@@ -340,7 +340,9 @@
 
 /* D3 UI 1.5 zeroes a DataList row's inline padding inside a card (the card pads); a pr-table-card
  * runs edge to edge with no padding, so its rows take the toolbar's 16px inset back. */
-.pr-table-card .pr-card-list .d3-dlrow {
+/* Every admin list card, not only Health/Queue/Deliverability's: DNS, Jobs, Suppressions, Sign-in
+ * sessions and Live SMTP put their phone DataLists in a pr-table-card too. */
+.pr-table-card .d3-dlist .d3-dlrow {
   padding-inline: var(--space-16);
 }
 
