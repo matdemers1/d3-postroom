@@ -176,7 +176,8 @@ describe('buildCommands', () => {
     const goToReceipts = commands.find((c) => c.label === 'Go to Receipts');
     expect(goToReceipts).toBeDefined();
     goToReceipts?.run();
-    expect(navigate).toHaveBeenCalledWith(`/mail/${RECEIPTS.id}`);
+    // A bucket routes by its slug (PST-T-16.4, PST-REQ-198).
+    expect(navigate).toHaveBeenCalledWith('/mail/receipts');
   });
 
   it('offers the Settings screens, and the Admin screens only for an admin', () => {
