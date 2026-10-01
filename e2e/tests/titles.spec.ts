@@ -90,7 +90,12 @@ test('on a phone the context bar is empty until the h1 scrolls under it, then ta
     await expect(bar, path).toHaveAttribute('data-large-title', 'expanded');
     await expect(title, path).toHaveText('');
     // Room to scroll on any page, however short.
-    await page.addStyleTag({ content: '.pr-push--page { padding-bottom: 3000px; }' });
+    // The CSP refuses an injected <style> (style-src 'self'), which is the point of it; the CSSOM is
+    // not inline markup, so give the page room to scroll through it instead.
+    await page.evaluate(() => {
+      const el = (globalThis as unknown as { document: { querySelector(s: string): { style: { paddingBottom: string } } | null } }).document.querySelector('.pr-push--page');
+      if (el !== null) el.style.paddingBottom = '3000px';
+    });
     await page.evaluate(() => {
       (globalThis as unknown as { scrollTo: (x: number, y: number) => void }).scrollTo(0, 800);
     });

@@ -987,7 +987,7 @@ test.describe(LANDSCAPE_SUITE, () => {
   test('other screens keep 44px targets and never scroll the page sideways', async ({ page }) => {
     for (const [path, heading] of [
       ['/settings/account', 'Account'],
-      ['/settings/security/sessions', 'Browser sessions'],
+      ['/settings/security/sessions', 'Security & devices'],
       ['/calendar', 'Calendar'],
     ] as const) {
       await page.goto(path);

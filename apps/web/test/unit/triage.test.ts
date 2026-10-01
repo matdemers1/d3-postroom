@@ -537,8 +537,12 @@ describe('TriageList day groups (PST-T-15.2)', () => {
     expect(html).toContain('>Priority<');
   });
 
-  it('pads the scroll box for its header above the first row', () => {
+  it('keeps the rows it does not render as spacers, never as the scroll box\'s own padding', () => {
     expect(GROUP_HEAD_HEIGHT).toBe(36);
-    expect(html).toContain('padding-top:0');
+    // A box is never shorter than its padding: padding on the scroller made a long list as tall as
+    // its content, so the page scrolled instead of the list (PST-P-17, the phone's bottom bar).
+    expect(html).not.toMatch(/role="listbox"[^>]*style="[^"]*padding/);
+    // From the top of the list nothing sits above the first row.
+    expect(html).not.toMatch(/role="listbox"[^>]*>\s*<div class="pr-tlist__spacer"/);
   });
 });

@@ -355,7 +355,8 @@ test('the wizard and the DNS checker are axe-clean in light and dark, and fit 39
     await page.goto('/admin/dns');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await expect(page.getByRole('heading', { name: 'DNS & DKIM', level: 1 })).toBeVisible();
-    await expect(page.getByRole('row').filter({ hasText: /SPF\s*TXT/ })).toBeVisible({ timeout: 30_000 });
+    // A table row on desktop, a card on a phone (PST-T-17.2).
+    await expect(page.getByRole('row').or(page.getByRole('listitem')).filter({ hasText: /SPF\s*TXT/ }).first()).toBeVisible({ timeout: 30_000 });
     await axe(page, `${theme} /admin/dns`);
     expect(await fitsWidth(page)).toBe(true);
 
