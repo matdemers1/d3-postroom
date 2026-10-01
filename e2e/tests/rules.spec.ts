@@ -38,20 +38,26 @@ test('a builder rule round-trips through Sieve, and a compile error names its li
 
   await page.getByRole('button', { name: 'Add rule' }).click();
   await page.getByRole('textbox', { name: 'Text' }).fill('billing@shop.example');
-  await page.getByRole('textbox', { name: 'Folder' }).fill('Receipts');
+  // One destination picker: the real mailboxes, then the Sorted for you buckets (PST-T-16.9).
+  await page.getByRole('combobox', { name: 'Destination' }).click();
+  await page.getByRole('option', { name: 'Archive' }).click();
   await page.getByRole('button', { name: 'Save and turn on' }).click();
   await expect(page.getByText('now runs on new mail')).toBeVisible();
 
   // Builder → Sieve.
   await page.getByRole('tab', { name: 'Edit as Sieve' }).click();
   const source = page.getByRole('textbox', { name: 'Sieve script' });
-  await expect(source).toHaveValue(/if address :contains "from" "billing@shop\.example" \{\n {2}fileinto :create "Receipts";\n\}/);
+  await expect(source).toHaveValue(/if address :contains "from" "billing@shop\.example" \{\n {2}fileinto :create "Archive";\n\}/);
   expect((await new AxeBuilder({ page }).include('main').withTags(WCAG).analyze()).violations).toEqual([]);
 
   // Sieve → builder: the same row.
   await page.getByRole('tab', { name: 'Rules' }).click();
   await expect(page.getByRole('textbox', { name: 'Text' })).toHaveValue('billing@shop.example');
-  await expect(page.getByRole('textbox', { name: 'Folder' })).toHaveValue('Receipts');
+  await expect(page.getByRole('combobox', { name: 'Destination' })).toHaveText('Archive');
+  // Remove follows the fields of its rule.
+  const remove = page.getByRole('button', { name: 'Remove rule 1' });
+  const destination = page.getByRole('combobox', { name: 'Destination' });
+  expect((await remove.boundingBox())?.y ?? 0).toBeGreaterThan(((await destination.boundingBox())?.y ?? 0) + 1);
 
   // A compile error in the Sieve view is shown by line.
   await page.getByRole('tab', { name: 'Edit as Sieve' }).click();

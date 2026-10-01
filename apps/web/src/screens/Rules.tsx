@@ -22,9 +22,11 @@ import {
   Textarea,
   type TableColumn,
 } from '@d3cloud/ui';
-import { ApiError, compileErrorOf, describeError, sieveApi, type SieveCompileError, type SieveScriptSummary } from '../api';
+import { ApiError, compileErrorOf, describeError, sieveApi, type Mailbox, type SieveCompileError, type SieveScriptSummary } from '../api';
 import { Loading, LoadFailed } from './states';
 import { SortingCorrections } from '../mail/sorting/SortingCorrections';
+import { applyDestination, BUCKETS, destinationOptions, destinationValue } from './rules/destinations';
+import { useMailboxes } from './rules/useMailboxes';
 
 // ─── The builder's model, and its Sieve (PST-REQ-150) ────────────────────────────────────────────
 //
@@ -60,20 +62,10 @@ export const MATCHES: { value: RuleMatch; label: string }[] = [
 ];
 
 export const ACTIONS: { value: RuleAction; label: string }[] = [
-  { value: 'move', label: 'Move to folder' },
-  { value: 'bucket', label: 'Sort into bucket' },
+  // PST-T-16.9: a folder and a bucket are both "move it to", chosen in one destination picker.
+  { value: 'move', label: 'Move it to' },
   { value: 'flag', label: 'Flag it' },
   { value: 'read', label: 'Mark as read' },
-];
-
-export const BUCKETS: { value: string; label: string }[] = [
-  { value: 'priority', label: 'Priority' },
-  { value: 'people', label: 'People' },
-  { value: 'newsletters', label: 'Newsletters' },
-  { value: 'updates', label: 'Updates' },
-  { value: 'receipts', label: 'Receipts' },
-  { value: 'notifications', label: 'Notifications' },
-  { value: 'junk', label: 'Junk' },
 ];
 
 const HEADER = '# Postroom rules: written by the webmail rules builder. Rules run from top to bottom.';
@@ -180,7 +172,7 @@ export function sieveToRules(source: string): Rule[] | null {
 export function ruleProblem(rule: Rule): string | null {
   if (rule.value.trim() === '') return 'Say what to look for.';
   if (/[\r\n]/.test(rule.value)) return 'What to look for must be on one line.';
-  if (rule.action === 'move' && rule.target.trim() === '') return 'Name the folder to move it to.';
+  if (rule.action === 'move' && rule.target.trim() === '') return 'Choose where to move it.';
   if (rule.action === 'bucket' && !BUCKETS.some((b) => b.value === rule.target)) return 'Choose a bucket.';
   return null;
 }
@@ -196,74 +188,72 @@ export function describeCompileError(e: SieveCompileError): { title: string; det
 
 type Mode = 'builder' | 'sieve';
 
-function RuleRow({ rule, index, onChange, onRemove }: { rule: Rule; index: number; onChange: (next: Rule) => void; onRemove: () => void }) {
+function RuleRow({ rule, index, mailboxes, onChange, onRemove }: { rule: Rule; index: number; mailboxes: Mailbox[] | null; onChange: (next: Rule) => void; onRemove: () => void }) {
   const n = String(index + 1);
   return (
     // PST-T-15.6: a rule is a region of the editing card, not a card inside it — rules are divided by
     // hairlines (settings.css), never boxed.
-    <Section title={`Rule ${n}`} headingLevel={3} surface="plain" className="pr-rule" actions={<Button variant="danger-ghost" size="sm" aria-label={`Remove rule ${n}`} onClick={onRemove}>Remove</Button>}>
-      <Cluster gap="12" align="end">
-        <FormField label="When">
-          <Select appearance="filled"
-            options={FIELDS}
-            value={rule.field}
-            onValueChange={(v) => {
-              onChange({ ...rule, field: v as RuleField });
-            }}
-          />
-        </FormField>
-        <FormField label="Match">
-          <Select appearance="filled"
-            options={MATCHES}
-            value={rule.match}
-            onValueChange={(v) => {
-              onChange({ ...rule, match: v as RuleMatch });
-            }}
-          />
-        </FormField>
-        <FormField label="Text" width="md">
-          <Input appearance="filled"
-            value={rule.value}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => {
-              onChange({ ...rule, value: e.target.value });
-            }}
-          />
-        </FormField>
-        <FormField label="Then">
-          <Select appearance="filled"
-            options={ACTIONS}
-            value={rule.action}
-            onValueChange={(v) => {
-              const action = v as RuleAction;
-              onChange({ ...rule, action, target: action === 'bucket' ? 'newsletters' : action === 'move' ? rule.target : '' });
-            }}
-          />
-        </FormField>
-        {rule.action === 'move' ? (
-          <FormField label="Folder" width="md">
-            <Input appearance="filled"
-              value={rule.target}
-              autoComplete="off"
-              onChange={(e) => {
-                onChange({ ...rule, target: e.target.value });
-              }}
-            />
-          </FormField>
-        ) : null}
-        {rule.action === 'bucket' ? (
-          <FormField label="Bucket">
+    <Section title={`Rule ${n}`} headingLevel={3} surface="plain" className="pr-rule">
+      <Stack gap="12">
+        <Cluster gap="12" align="end">
+          <FormField label="When">
             <Select appearance="filled"
-              options={BUCKETS}
-              value={rule.target}
+              options={FIELDS}
+              value={rule.field}
               onValueChange={(v) => {
-                onChange({ ...rule, target: v });
+                onChange({ ...rule, field: v as RuleField });
               }}
             />
           </FormField>
-        ) : null}
-      </Cluster>
+          <FormField label="Match">
+            <Select appearance="filled"
+              options={MATCHES}
+              value={rule.match}
+              onValueChange={(v) => {
+                onChange({ ...rule, match: v as RuleMatch });
+              }}
+            />
+          </FormField>
+          <FormField label="Text" width="md">
+            <Input appearance="filled"
+              value={rule.value}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => {
+                onChange({ ...rule, value: e.target.value });
+              }}
+            />
+          </FormField>
+          <FormField label="Then">
+            <Select appearance="filled"
+              options={ACTIONS}
+              // A bucket is a kind of move: the destination picker holds both.
+              value={rule.action === 'bucket' ? 'move' : rule.action}
+              onValueChange={(v) => {
+                const action = v as RuleAction;
+                onChange({ ...rule, action, target: action === 'move' ? rule.target : '' });
+              }}
+            />
+          </FormField>
+          {rule.action === 'move' || rule.action === 'bucket' ? (
+            <FormField label="Destination" width="md">
+              <Select appearance="filled"
+                options={destinationOptions(mailboxes, rule)}
+                value={destinationValue(rule)}
+                placeholder="Choose where"
+                onValueChange={(v) => {
+                  onChange(applyDestination(rule, v));
+                }}
+              />
+            </FormField>
+          ) : null}
+        </Cluster>
+        <Cluster justify="end">
+          <Button variant="danger-ghost" size="sm" aria-label={`Remove rule ${n}`} onClick={onRemove}>
+            Remove
+          </Button>
+        </Cluster>
+      </Stack>
     </Section>
   );
 }
@@ -286,6 +276,7 @@ export function Rules() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const mailboxes = useMailboxes();
 
   const open = useCallback(async (scriptName: string) => {
     setCompileError(null);
@@ -501,6 +492,7 @@ export function Rules() {
                             key={i}
                             rule={rule}
                             index={i}
+                            mailboxes={mailboxes}
                             onChange={(next) => {
                               setRules((all) => all.map((r, j) => (j === i ? next : r)));
                             }}
