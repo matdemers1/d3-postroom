@@ -15,7 +15,7 @@
 // the second time, and Security & devices makes a new set behind step-up that retires the old one.
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { ensureOperator, freshCode, isPhone, loadOperator, openNav, openPlace, saveOperator, signInWithPassword, type Operator } from './support.js';
+import { ensureOperator, freshCode, isPhone, loadOperator, openNav, openPlace, saveOperator, signInWithPassword, tag, type Operator } from './support.js';
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 });
 
@@ -275,4 +275,67 @@ test('Account and Browser sessions have no axe violations', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
   const sessionsResults = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(sessionsResults.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
+});
+
+// PST-T-16.23 (PST-DA-054): App passwords, Addresses and Templates open on their list; the create
+// form is not in the DOM until the header "New …" button is pressed, Cancel removes it, and a create
+// closes it with the new item in the list.
+test('App passwords, Addresses and Templates list first and open their create form on demand', async ({ page }) => {
+  const operator = requireOperator();
+  await signInWithPassword(page, operator);
+  const t = tag();
+
+  const firstSection = (name: RegExp) => expect(page.locator('section.d3-sec').first()).toHaveAccessibleName(name);
+
+  // App passwords (Devices).
+  await page.goto('/settings/security/devices');
+  await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
+  await firstSection(/^Your app passwords/);
+  await expect(page.getByRole('textbox', { name: 'Name' })).toHaveCount(0);
+  await expect(page.locator('form')).toHaveCount(0);
+  await page.getByRole('button', { name: 'New app password' }).click();
+  await expect(page.getByRole('textbox', { name: 'Name' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('textbox', { name: 'Name' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'New app password' }).click();
+  const label = `e2e device ${t}`;
+  await page.getByRole('textbox', { name: 'Name' }).fill(label);
+  await page.getByRole('button', { name: 'Create password' }).click();
+  await expect(page.getByRole('heading', { name: `Password for ${label}` })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Name' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: `Revoke ${label}` })).toBeVisible();
+
+  // Addresses (masked aliases).
+  await page.goto('/settings/addresses');
+  await expect(page.getByRole('heading', { name: 'Masked aliases', level: 1 })).toBeVisible();
+  await firstSection(/^Your masked aliases/);
+  await expect(page.getByRole('textbox', { name: 'Site' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'New alias' }).click();
+  await expect(page.getByRole('textbox', { name: 'Site' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('textbox', { name: 'Site' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'New alias' }).click();
+  const site = `shop-${t}.example`;
+  await page.getByRole('textbox', { name: 'Site' }).fill(site);
+  await page.getByRole('button', { name: 'Create alias' }).click();
+  await expect(page.getByRole('textbox', { name: 'Site' })).toHaveCount(0);
+  await expect(page.getByText(`For ${site} ·`)).toBeVisible();
+
+  // Templates.
+  await page.goto('/settings/templates');
+  await expect(page.getByRole('heading', { name: 'Compose templates', level: 1 })).toBeVisible();
+  await firstSection(/^Your templates/);
+  await expect(page.getByRole('textbox', { name: 'Shortcut' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'New template' }).click();
+  await expect(page.getByRole('textbox', { name: 'Shortcut' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('textbox', { name: 'Shortcut' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'New template' }).click();
+  const name = `Thank you ${t}`;
+  await page.getByRole('textbox', { name: 'Shortcut' }).fill(`ty${t}`);
+  await page.getByRole('textbox', { name: 'Name' }).fill(name);
+  await page.getByRole('textbox', { name: 'Body' }).fill('Thanks for reaching out.');
+  await page.getByRole('button', { name: 'Create template' }).click();
+  await expect(page.getByRole('button', { name: `Edit ${name}` })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Shortcut' })).toHaveCount(0);
 });

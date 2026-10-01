@@ -5,7 +5,7 @@
 // offers RFC 8058 one-click unsubscribe gets its own button (PST-REQ-110), right there in the feed.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Alert, Button, EmptyState, Modal, ModalClose, Skeleton, Stack, useTheme } from '@d3cloud/ui';
+import { Alert, Button, EmptyState, Modal, ModalClose, Skeleton, Stack, StatusDot, useTheme } from '@d3cloud/ui';
 import { api, ApiError, senderProfilePath, type Mailbox, type MessageSummary, type RenderTicket } from '../api';
 import { fullDate } from './format';
 import { isUnread, SEEN } from './list';
@@ -284,9 +284,16 @@ export function Feed({ mailbox }: FeedProps) {
   return (
     <Stack gap="16" data-testid="feed">
       <div className="pr-feed__toolbar">
-        <Button size="sm" variant="ghost" disabled={marking || !messages.some(isUnread)} onClick={() => { void markAllRead(); }} data-testid="mark-all-read">
-          {marking ? 'Marking…' : 'Mark all read'}
-        </Button>
+        {/* PST-T-16.23: nothing unread is a status, not a disabled button. */}
+        {marking || messages.some(isUnread) ? (
+          <Button size="sm" variant="ghost" disabled={marking} onClick={() => { void markAllRead(); }} data-testid="mark-all-read">
+            {marking ? 'Marking…' : 'Mark all read'}
+          </Button>
+        ) : (
+          <StatusDot tone="idle" role="status" data-testid="all-read">
+            All read
+          </StatusDot>
+        )}
       </div>
       {messages.map((m) => (
         <FeedItem key={m.id} message={m} list={list} onUnsubscribed={forgetSender} onCorrected={corrected} />
