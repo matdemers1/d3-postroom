@@ -480,7 +480,9 @@ test.describe('signed in', () => {
     // Another test (or an earlier run against this database) may have left a rule here already —
     // "Add rule" always appends, so the newest one is always last.
     await page.getByRole('textbox', { name: 'Text' }).last().fill(`billing-${t}@shop.example`);
-    await page.getByRole('textbox', { name: 'Folder' }).last().fill('Receipts');
+    // PST-T-16.9: one Destination picker of real places, not a free-text Folder field.
+    await page.getByRole('combobox', { name: 'Destination' }).last().click();
+    await page.getByRole('option', { name: 'Archive', exact: true }).click();
     await page.getByRole('button', { name: 'Save and turn on' }).click();
     await expect(page.getByText('now runs on new mail')).toBeVisible();
     await assertMobileFriendly(page, '/settings/rules');
