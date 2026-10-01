@@ -7,6 +7,10 @@
 // PST-T-16.27: an unspent link dies (the same 410) once the account's password changes, "sign out
 // everywhere" runs, or a newer link is made; and the status names the protocol of the newest
 // recorded use of the minted password, or none.
+//
+// PST-T-16.28: 50 replays of a spent (or superseded) link all answer 410 without taking the
+// advisory lock, each costing at most the two reads of the non-locking check, and none past the
+// per-link limit.
 import { recordAudit } from '@postroom/audit';import { missingAuditCount, waitForAuditGuard } from '@postroom/audit';
 import { verifyProtocolLogin } from '@postroom/credentials';
 import { seed, type Db } from '@postroom/db';
@@ -14,6 +18,7 @@ import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
 import type { Express } from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
+import { onceLinkStats, OPENS_PER_LINK } from '../../src/mobileconfig/index.js';
 import { LINK_TTL_MS } from '../../src/mobileconfig/link.js';
 import { request } from '../loopback.js';
 import { PEPPER, TestClock, WEB_ORIGIN, baseConfig, cookieHeader, cookiesOf, createAccount, randomLogin, totpCode } from './helpers.js';
@@ -327,6 +332,75 @@ describe.skipIf(!baseUrl)('one-time profile links (PST-T-16.16)', () => {
     expect(((await status(me.cookie, link.linkId)).body as LinkStatus).protocol).toBe('imap');
     // Only to its owner.
     expect((await status(other.cookie, link.linkId)).status).toBe(404);
+  });
+
+  describe('replays of a dead link (PST-T-16.28)', () => {
+    /**
+     * A second app over the same database whose client counts every query it runs, raw ones (the
+     * advisory lock) included. Its own limiters, so the replays below start from a clean count.
+     */
+    const counted = (): { app: Express; stats: { queries: number; locks: number } } => {
+      const stats = { queries: 0, locks: 0 };
+      const client = db.$extends({
+        query: {
+          $allOperations({ operation, args, query }) {
+            stats.queries += 1;
+            if (operation === '$executeRaw') stats.locks += 1;
+            return query(args);
+          },
+        },
+      });
+      return { app: createApp({ db: client as unknown as Db, env: {}, config: baseConfig(clock) }), stats };
+    };
+
+    const replay = async (path: string): Promise<void> => {
+      const { app: replayApp, stats } = counted();
+      const locksBefore = onceLinkStats.locks;
+      const perOpen: number[] = [];
+      const results = [];
+      for (let i = 0; i < 50; i += 1) {
+        const before = stats.queries;
+        results.push(await open(replayApp, path));
+        perOpen.push(stats.queries - before);
+      }
+      for (const r of results) expect(r.status).toBe(410);
+      // No replay took the lock or opened the transaction it lives in.
+      expect(stats.locks).toBe(0);
+      expect(onceLinkStats.locks).toBe(locksBefore);
+      // The counter is live (the first opens did query), each open ran at most the two reads of the
+      // non-locking check, and past the per-link limit none at all.
+      expect(perOpen[0]).toBeGreaterThan(0);
+      expect(Math.max(...perOpen)).toBeLessThanOrEqual(2);
+      expect(perOpen.slice(OPENS_PER_LINK).every((n) => n === 0)).toBe(true);
+    };
+
+    it('50 replays of a spent link: all 410, none takes the lock, at most two queries each', async () => {
+      const me = await person();
+      const link = await createLink(me);
+      expect((await open(app, pathOf(link))).status).toBe(200);
+      await replay(pathOf(link));
+      expect(await db.appPassword.count({ where: { accountId: me.id } })).toBe(1);
+      expect(await db.auditEvent.count({ where: { entityType: 'mobileconfig_link', entityId: link.linkId, action: 'mobileconfig.link.redeem' } })).toBe(1);
+    });
+
+    it('50 replays of a superseded link: all 410, none takes the lock, and the newer link still works', async () => {
+      const me = await person();
+      const older = await createLink(me);
+      const newer = await createLink(me);
+      await replay(pathOf(older));
+      expect(await db.appPassword.count({ where: { accountId: me.id } })).toBe(0);
+      expect((await open(app, pathOf(newer))).status).toBe(200);
+    });
+
+    it('the first open still goes through the lock', async () => {
+      const me = await person();
+      const link = await createLink(me);
+      const { app: replayApp, stats } = counted();
+      const locksBefore = onceLinkStats.locks;
+      expect((await open(replayApp, pathOf(link))).status).toBe(200);
+      expect(stats.locks).toBe(1);
+      expect(onceLinkStats.locks).toBe(locksBefore + 1);
+    });
   });
 
   it('left no mutation unaudited', async () => {

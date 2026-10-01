@@ -20,6 +20,8 @@ const CSRF = { 'x-postroom-csrf': '1' };
 const ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
 const SESSION_ID = '00000000-0000-4000-8000-000000000002';
 const COOKIE = 'postroom_session=unit-session-token';
+const OTHER_SESSION_A = '00000000-0000-4000-8000-0000000000a1';
+const OTHER_SESSION_B = '00000000-0000-4000-8000-0000000000b2';
 
 interface Audit {
   action: string;
@@ -34,6 +36,8 @@ interface Fake {
   session: { secondFactor: string | null; stepUpAt: Date | null };
   created: { codeHash: string }[];
   findManyCalls: number;
+  /** The account's other sessions; session.deleteMany removes from here (PST-T-16.28). */
+  otherSessions: string[];
 }
 
 /** A Db with just what the auth routes touch. `codes` is what recoveryCode.findMany answers, after `delayMs`. */
@@ -51,7 +55,7 @@ function fakeDb(opts: { secondFactor?: string | null; codes?: { id: string; code
   };
   const session = { secondFactor: opts.secondFactor ?? null, stepUpAt: null as Date | null };
   const created: { codeHash: string }[] = [];
-  const fake: Fake = { db: {} as Db, audits, account, session, created, findManyCalls: 0 };
+  const fake: Fake = { db: {} as Db, audits, account, session, created, findManyCalls: 0, otherSessions: [OTHER_SESSION_A, OTHER_SESSION_B] };
   const db = {
     account: {
       count: () => Promise.resolve(1),
@@ -90,6 +94,13 @@ function fakeDb(opts: { secondFactor?: string | null; codes?: { id: string; code
           account: { displayName: 'Matt', isAdmin: true, totpEnabled: true, disabledAt: null },
         }),
       update: () => Promise.resolve({}),
+      findMany: ({ where }: { where: { accountId: string; id: { not: string } } }) =>
+        Promise.resolve(where.accountId === ACCOUNT_ID ? fake.otherSessions.filter((id) => id !== where.id.not).map((id) => ({ id })) : []),
+      deleteMany: ({ where }: { where: { id: { in: string[] } } }) => {
+        const before = fake.otherSessions.length;
+        fake.otherSessions = fake.otherSessions.filter((id) => !where.id.in.includes(id));
+        return Promise.resolve({ count: before - fake.otherSessions.length });
+      },
       updateMany: ({ where, data }: { where: { secondFactor?: string }; data: { secondFactor: string } }) => {
         if (where.secondFactor !== undefined && where.secondFactor !== session.secondFactor) return Promise.resolve({ count: 0 });
         session.secondFactor = data.secondFactor;
@@ -300,4 +311,71 @@ describe('re-enrolment replaces the authenticator, the recovery codes and the se
     expect(again.status).toBe(409);
     expect(again.body).toEqual({ error: 'reenrol_not_required' });
   }, 30_000);
+});
+
+describe('second-factor hardening (PST-T-16.28)', () => {
+  it('completing re-enrolment ends every other session of the account, audited as "sign out everywhere"', async () => {
+    const fake = fakeDb({ secondFactor: 'recovery_code' });
+    const app = createApp(depsFor(fake.db));
+    const begin = await request(app).post('/api/auth/totp/reenrol/begin').set(CSRF).set('cookie', COOKIE);
+    const { secret } = begin.body as { secret: string };
+    const done = await request(app).post('/api/auth/totp/reenrol/complete').set(CSRF).set('cookie', COOKIE).send({ code: totpNow(secret) });
+    expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ endedSessions: 2 });
+    expect(fake.otherSessions).toEqual([]);
+    const revoked = fake.audits.filter((a) => a.action === 'auth.session.revoke-others');
+    expect(revoked).toHaveLength(1);
+    expect(revoked[0]?.after).toEqual({ ended: [OTHER_SESSION_A, OTHER_SESSION_B], reason: 'reenrol' });
+  }, 30_000);
+
+  it('a wrong code ends no session', async () => {
+    const fake = fakeDb({ secondFactor: 'recovery_code' });
+    const app = createApp(depsFor(fake.db));
+    const begin = await request(app).post('/api/auth/totp/reenrol/begin').set(CSRF).set('cookie', COOKIE);
+    const { secret } = begin.body as { secret: string };
+    const wrong = await request(app)
+      .post('/api/auth/totp/reenrol/complete')
+      .set(CSRF)
+      .set('cookie', COOKIE)
+      .send({ code: totpNow(secret, Date.now() + 10 * 60_000) });
+    expect(wrong.status).toBe(401);
+    expect(fake.otherSessions).toHaveLength(2);
+    expect(fake.audits.map((a) => a.action)).not.toContain('auth.session.revoke-others');
+  });
+
+  it('a repeat begin answers the same pending secret with no new audit row; the sixth in the window is 429', async () => {
+    const fake = fakeDb({ secondFactor: 'recovery_code' });
+    const app = createApp(depsFor(fake.db));
+    const secrets = new Set<string>();
+    const expiries = new Set<string>();
+    for (let i = 0; i < 5; i += 1) {
+      const res = await request(app).post('/api/auth/totp/reenrol/begin').set(CSRF).set('cookie', COOKIE);
+      expect(res.status).toBe(200);
+      const body = res.body as { secret: string; expiresAt: string };
+      secrets.add(body.secret);
+      expiries.add(body.expiresAt);
+    }
+    expect(secrets.size).toBe(1);
+    expect(expiries.size).toBe(1);
+    expect(fake.audits.filter((a) => a.action === 'auth.totp.reenrol.begin')).toHaveLength(1);
+
+    const sixth = await request(app).post('/api/auth/totp/reenrol/begin').set(CSRF).set('cookie', COOKIE);
+    expect(sixth.status).toBe(429);
+    expect(sixth.body).toMatchObject({ error: 'too_many_attempts' });
+    expect(Number(sixth.headers['retry-after'])).toBeGreaterThan(0);
+    expect(fake.audits.filter((a) => a.action === 'auth.totp.reenrol.begin')).toHaveLength(1);
+  });
+
+  it('a repeat begin does not reset the attempts a pending enrolment has used', async () => {
+    const fake = fakeDb({ secondFactor: 'recovery_code' });
+    const deps = depsFor(fake.db);
+    const app = createApp(deps);
+    const rt = runtimeFor(deps);
+    await request(app).post('/api/auth/totp/reenrol/begin').set(CSRF).set('cookie', COOKIE);
+    const pending = rt.reenrols.get(SESSION_ID, Date.now());
+    expect(pending).toBeDefined();
+    if (pending !== undefined) pending.attempts = 3;
+    await request(app).post('/api/auth/totp/reenrol/begin').set(CSRF).set('cookie', COOKIE);
+    expect(rt.reenrols.get(SESSION_ID, Date.now())).toMatchObject({ attempts: 3 });
+  });
 });

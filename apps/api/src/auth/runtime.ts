@@ -4,6 +4,7 @@
 import { kekFromBase64, type Kek } from '@postroom/crypto';
 import type { Db } from '@postroom/db';
 import type { ApiDeps } from '../deps.js';
+import { WindowLimiter } from '../mobileconfig/link.js';
 import { OidcProvider, type OidcSettings } from './oidc.js';
 import { isSecureOrigin } from './sessions.js';
 import { SignInThrottle } from './throttle.js';
@@ -49,6 +50,11 @@ export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 /** How long a re-enrolment key waits for its first code before Begin has to be pressed again. */
 export const REENROL_TTL_MS = 15 * 60 * 1000;
 export const MAX_CODE_ATTEMPTS = 5;
+/**
+ * Re-enrolment Begins one session may make per REENROL_TTL_MS (PST-T-16.28). A repeat inside the
+ * window answers the same pending secret; past this many it is refused 429.
+ */
+export const REENROL_BEGINS_PER_WINDOW = 5;
 /** Step-up is fresh for five minutes (PST-REQ-008). */
 export const STEP_UP_MS = 5 * 60 * 1000;
 
@@ -74,6 +80,8 @@ export interface AuthRuntime {
   setups: BoundedMap<PendingSetup>;
   challenges: BoundedMap<TotpChallenge>;
   reenrols: BoundedMap<PendingReenrol>;
+  /** Re-enrolment Begins per session id (PST-T-16.28). */
+  reenrolBegins: WindowLimiter;
 }
 
 /** A Map that forgets its oldest entry past `limit`, and entries whose `exp` has passed. */
@@ -157,6 +165,7 @@ export function runtimeFor(deps: ApiDeps): AuthRuntime {
     setups: new BoundedMap(32),
     challenges: new BoundedMap(1_000),
     reenrols: new BoundedMap(256),
+    reenrolBegins: new WindowLimiter(REENROL_BEGINS_PER_WINDOW, REENROL_TTL_MS, 1_000),
   };
   runtimes.set(deps, rt);
   // Discovery at boot, never awaited and never fatal: the password path does not wait on it.

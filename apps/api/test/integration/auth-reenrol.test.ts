@@ -5,6 +5,9 @@
 //   (step-up itself included) answers 403 totp_reenrol_required until it re-enrols;
 // - re-enrolment enrols a new TOTP secret, invalidates the old one, issues a fresh set of recovery
 //   codes and audits all three — after which step-up works with the new authenticator.
+// PST-T-16.28: completing re-enrolment ends every other session of the account, audited as
+// auth.session.revoke-others (as "sign out everywhere" is); a repeat Begin answers the same pending
+// secret without another audit row, and the sixth Begin in the window is 429.
 import { missingAuditCount, waitForAuditGuard } from '@postroom/audit';
 import { kekFromBase64 } from '@postroom/crypto';
 import { seed, type Db } from '@postroom/db';
@@ -34,6 +37,8 @@ describe.skipIf(!baseUrl)('TOTP re-enrolment after a recovery-code sign-in (PST-
   let fresh: string[] = [];
   let recoveryJar: Record<string, string> = {};
   let recoverySessionId = '';
+  let totpJar: Record<string, string> = {};
+  let totpSessionId = '';
   let guardMissesBefore = 0;
 
   const challenge = async (): Promise<string> => {
@@ -118,8 +123,11 @@ describe.skipIf(!baseUrl)('TOTP re-enrolment after a recovery-code sign-in (PST-
     const totp = await second(await challenge(), totpCode(oldSecret, clock.now()));
     expect(totp.status).toBe(200);
     expect(totp.body).toMatchObject({ reenrolRequired: false });
-    const totpState = await request(app).get('/api/auth/state').set('cookie', cookieHeader(cookiesOf(totp)));
+    totpJar = cookiesOf(totp);
+    const totpState = await request(app).get('/api/auth/state').set('cookie', cookieHeader(totpJar));
     expect(totpState.body).toMatchObject({ reenrolRequired: false });
+    totpSessionId = (await db.session.findFirstOrThrow({ where: { accountId: operatorId }, orderBy: { createdAt: 'desc' } })).id;
+    expect(totpSessionId).not.toBe(recoverySessionId);
   });
 
   it('re-enrols: a new secret, the old one invalidated, a fresh set of recovery codes — all three audited', async () => {
@@ -141,9 +149,14 @@ describe.skipIf(!baseUrl)('TOTP re-enrolment after a recovery-code sign-in (PST-
     expect(wrong.status).toBe(401);
     expect(wrong.body).toEqual({ error: 'invalid_code' });
 
+    // Before completing, the account has another live session (the TOTP sign-in above).
+    const othersBefore = await db.session.findMany({ where: { accountId: operatorId, id: { not: recoverySessionId } }, select: { id: true } });
+    expect(othersBefore.map((o) => o.id)).toContain(totpSessionId);
+
     clock.advance(31_000);
     const done = await request(app).post('/api/auth/totp/reenrol/complete').set(CSRF).set('cookie', cookie).send({ code: totpCode(newSecret, clock.now()) });
     expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ endedSessions: othersBefore.length });
     expect(done.headers['cache-control']).toBe('no-store');
     fresh = (done.body as { recoveryCodes: string[] }).recoveryCodes;
     expect(fresh).toHaveLength(10);
@@ -167,6 +180,18 @@ describe.skipIf(!baseUrl)('TOTP re-enrolment after a recovery-code sign-in (PST-
     const regen = await db.auditEvent.findFirstOrThrow({ where: { action: 'auth.recovery-codes.regenerate', entityId: operatorId } });
     expect(regen.before).toMatchObject({ count: 10 });
     expect(regen.after).toMatchObject({ count: 10, reason: 'reenrol' });
+
+    // PST-T-16.28: every other session ended in the same commit, audited as "sign out everywhere".
+    const remaining = await db.session.findMany({ where: { accountId: operatorId }, select: { id: true } });
+    expect(remaining.map((r) => r.id)).toEqual([recoverySessionId]);
+    const revoked = await db.auditEvent.findMany({ where: { action: 'auth.session.revoke-others', entityType: 'account', entityId: operatorId } });
+    expect(revoked).toHaveLength(1);
+    expect(revoked[0]?.actorAccountId).toBe(operatorId);
+    const ended = (revoked[0]?.after as { ended: string[]; reason: string }).ended;
+    expect(ended.slice().sort()).toEqual(othersBefore.map((o) => o.id).sort());
+    expect(revoked[0]?.after).toMatchObject({ reason: 'reenrol' });
+    const signedOut = await request(app).get('/api/auth/state').set('cookie', cookieHeader(totpJar));
+    expect(signedOut.body).toMatchObject({ signedIn: false });
 
     const state = await request(app).get('/api/auth/state').set('cookie', cookie);
     expect(state.body).toMatchObject({ reenrolRequired: false });
@@ -193,6 +218,32 @@ describe.skipIf(!baseUrl)('TOTP re-enrolment after a recovery-code sign-in (PST-
     expect((await second(await challenge(), issued[1] ?? '')).status).toBe(401);
     clock.advance(31_000);
     expect((await second(await challenge(), totpCode(newSecret, clock.now()))).status).toBe(200);
+  }, 60_000);
+
+  it('a repeat Begin answers the same pending secret with no new audit row; the sixth in the window is 429 (PST-T-16.28)', async () => {
+    // A fresh recovery-code sign-in, with a code from the set issued after re-enrolment.
+    const res = await second(await challenge(), fresh[0] ?? '');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ reenrolRequired: true });
+    const cookie = cookieHeader(cookiesOf(res));
+    const sessionId = (await db.session.findFirstOrThrow({ where: { accountId: operatorId, secondFactor: 'recovery_code' }, orderBy: { createdAt: 'desc' } })).id;
+
+    const secrets = new Set<string>();
+    for (let i = 0; i < 5; i += 1) {
+      const begin = await request(app).post('/api/auth/totp/reenrol/begin').set(CSRF).set('cookie', cookie);
+      expect(begin.status).toBe(200);
+      secrets.add((begin.body as { secret: string }).secret);
+    }
+    expect(secrets.size).toBe(1);
+    expect(await db.auditEvent.count({ where: { action: 'auth.totp.reenrol.begin', entityType: 'session', entityId: sessionId } })).toBe(1);
+
+    const sixth = await request(app).post('/api/auth/totp/reenrol/begin').set(CSRF).set('cookie', cookie);
+    expect(sixth.status).toBe(429);
+    expect(sixth.body).toMatchObject({ error: 'too_many_attempts' });
+    expect(await db.auditEvent.count({ where: { action: 'auth.totp.reenrol.begin', entityType: 'session', entityId: sessionId } })).toBe(1);
+    // The secret handed out is never in the audit trail either.
+    const text = JSON.stringify((await db.auditEvent.findMany()).map((e) => [e.before, e.after]));
+    for (const secret of secrets) expect(text).not.toContain(secret);
   }, 60_000);
 
   it('never writes a secret or a code into the audit trail', async () => {
