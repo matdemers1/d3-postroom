@@ -17,6 +17,11 @@ import { Router } from 'express';
 import { handle } from '../auth/middleware.js';
 import type { ApiDeps } from '../deps.js';
 
+/** "1 session", "2 sessions": the count and its noun in the right number. */
+export function countOf(n: number, noun: string): string {
+  return `${String(n)} ${noun}${n === 1 ? '' : 's'}`;
+}
+
 export type TileState = 'ok' | 'warn' | 'down' | 'unknown';
 
 export interface HealthTile {
@@ -90,7 +95,7 @@ const MONITOR_LABELS: Record<string, string> = {
 
 async function monitorTile(db: Db, name: string, label: string): Promise<HealthTile> {
   const row = await db.setting.findUnique({ where: { key: `monitor:${name}` } });
-  if (row === null) return { id: name, label, state: 'unknown', detail: 'not yet checked', since: null };
+  if (row === null) return { id: name, label, state: 'unknown', detail: 'Not yet checked', since: null };
   const value = row.value as unknown as PersistedMonitorState;
   return { id: name, label, state: value.state === 'firing' ? 'down' : 'ok', detail: value.detail, since: value.since };
 }
@@ -104,7 +109,7 @@ interface LastRun {
 
 async function lastRunTile(db: Db, id: string, label: string, key: string): Promise<HealthTile> {
   const row = await db.setting.findUnique({ where: { key } });
-  if (row === null) return { id, label, state: 'unknown', detail: 'never run', since: null };
+  if (row === null) return { id, label, state: 'unknown', detail: 'Never run', since: null };
   const value = row.value as unknown as LastRun;
   if (value.skipped !== undefined) return { id, label, state: 'unknown', detail: value.skipped, since: value.at };
   return { id, label, state: value.ok ? 'ok' : 'down', detail: value.ok ? 'ok' : (value.reason ?? 'failed'), since: value.at };
@@ -120,7 +125,7 @@ async function transcriptsTile(db: Db): Promise<HealthTile> {
     id: 'smtp-transcripts',
     label: 'SMTP transcripts',
     state: 'ok',
-    detail: `${String(count)} session(s), ${String(compressedBytes)} bytes compressed (${String(rawBytes)} raw)`,
+    detail: `${countOf(count, 'session')}, ${countOf(compressedBytes, 'byte')} compressed (${String(rawBytes)} raw)`,
     since: null,
   };
 }
@@ -131,9 +136,9 @@ async function queueTile(db: Db): Promise<HealthTile> {
     db.inboundMessage.count({ where: { state: InboundState.failed } }),
   ]);
   if (deadJobs > 0 || failedMessages > 0) {
-    return { id: 'queue', label: 'Inbound queue', state: 'down', detail: `${String(deadJobs)} dead job(s), ${String(failedMessages)} failed message(s)`, since: null };
+    return { id: 'queue', label: 'Inbound queue', state: 'down', detail: `${countOf(deadJobs, 'dead job')}, ${countOf(failedMessages, 'failed message')}`, since: null };
   }
-  return { id: 'queue', label: 'Inbound queue', state: 'ok', detail: 'no dead jobs', since: null };
+  return { id: 'queue', label: 'Inbound queue', state: 'ok', detail: 'No dead jobs', since: null };
 }
 
 export async function buildHealthTiles(deps: ApiDeps): Promise<HealthTile[]> {
