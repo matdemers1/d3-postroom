@@ -61,58 +61,6 @@
   line-height: var(--leading-12);
 }
 
-/* A section's own sub-navigation (Security & devices). */
-.pr-subnav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.pr-subnav a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 var(--space-12);
-  border-radius: var(--radius-full);
-  color: var(--color-fg-muted);
-  font-size: var(--text-13);
-  font-weight: var(--weight-medium);
-  text-decoration: none;
-  transition: background-color var(--motion-hover), color var(--motion-hover);
-}
-
-.pr-subnav a:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-fg);
-}
-
-.pr-subnav a[aria-current='page'] {
-  background: var(--color-accent-muted);
-  color: var(--color-accent);
-  font-weight: var(--weight-semibold);
-}
-
-.pr-subnav a:focus-visible {
-  outline: var(--focus-width) solid var(--color-focus);
-  outline-offset: calc(var(--focus-width) * -1);
-}
-
-/* At phone width every tap target is 44×44 of its own (PST-T-11.2, mobile-targets.css): grown for
- * real, since the chips wrap into rows where an invisible extension would reach the next one. */
-@media (max-width: 767px), (max-height: 499px) {
-  .pr-subnav {
-    gap: var(--space-8);
-  }
-
-  .pr-subnav a {
-    min-height: 44px;
-    min-width: 44px;
-  }
-}
-
 /* --- A pane that failed ------------------------------------------------------------------------- */
 
 .pr-pane-error {

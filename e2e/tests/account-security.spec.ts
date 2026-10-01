@@ -243,7 +243,7 @@ test('signs in with a recovery code once, re-enrols a new authenticator, and ste
   expect(state.reenrolRequired).toBe(false);
 
   // Regenerate behind step-up, made with the new authenticator.
-  await page.goto('/settings/security/sessions');
+  await page.goto('/settings/account');
   const section = page.getByRole('region', { name: 'Recovery codes' });
   await expect(section.getByTestId('recovery-status')).toHaveText(/^10 of 10 left/);
   await section.getByRole('button', { name: 'Make new codes' }).click();
@@ -283,12 +283,12 @@ test('signs in with a recovery code once, re-enrols a new authenticator, and ste
   await fresh.close();
 });
 
-test('Security & devices makes a new set of recovery codes behind step-up, retiring the old set', async ({ page, request, playwright, baseURL }) => {
+test('Account makes a new set of recovery codes behind step-up, retiring the old set', async ({ page, request, playwright, baseURL }) => {
   const operator = requireOperator();
   const old = await regenerateOverApi(playwright, baseURL, operator);
 
   await signInWithPassword(page, operator);
-  await page.goto('/settings/security/sessions');
+  await page.goto('/settings/account');
   const section = page.getByRole('region', { name: 'Recovery codes' });
   await expect(section).toBeVisible();
   await expect(section.getByTestId('recovery-status')).toHaveText(/^10 of 10 left/);
@@ -355,7 +355,7 @@ test('App passwords, Addresses and Templates list first and open their create fo
   // App passwords (Devices).
   await page.goto('/settings/security/devices');
   await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
-  await firstSection(/^Your app passwords/);
+  await firstSection(/^App passwords/);
   await expect(page.getByRole('textbox', { name: 'Name' })).toHaveCount(0);
   await expect(page.locator('form')).toHaveCount(0);
   await page.getByRole('button', { name: 'New app password' }).click();
