@@ -107,6 +107,22 @@ test.describe('at 1280 px', () => {
     await expect(page).toHaveURL(new RegExp(`/${b.id}$`));
   });
 
+  test('Sent names the recipients, not the operator (PST-T-16.12, PST-REQ-199)', async ({ page }) => {
+    const t = tag();
+    const [sent] = await seedMail(api, [
+      { mailbox: 'sent', subject: `Sent to Alice ${t}`, from: 'E2E Operator <operator@e2e.postroom.invalid>', to: '"Alice Ng" <alice@example.org>', cc: 'bob@example.org', flags: ['\\Seen'] },
+    ]);
+    if (sent === undefined) throw new Error('seed returned nothing');
+
+    await page.goto('/mail/sent');
+    const list = page.getByRole('listbox', { name: 'Messages in Sent' });
+    await expect(list).toBeVisible();
+    const sentRow = row(page, sent.subject);
+    await expect(sentRow.locator('.pr-mrow__name')).toHaveText('To: Alice Ng (+1)');
+    await expect(sentRow).not.toContainText('E2E Operator');
+    await expect(sentRow).not.toContainText('operator@e2e.postroom.invalid');
+  });
+
   test('the reading pane links the From line to the sender profile, through the Person card (PST-DA-028, PST-T-14.9)', async ({ page }) => {
     const t = tag();
     const from = `sender-link-${t}@example.test`;

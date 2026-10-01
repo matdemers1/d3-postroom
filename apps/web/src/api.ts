@@ -560,6 +560,10 @@ export interface MessageSummary {
   fromName?: string | null;
   /** PST-T-14.2: a one-line body preview (≤ 140 chars); null until the message is summarised. */
   snippet?: string | null;
+  /** PST-T-16.12 (PST-REQ-199): who it is addressed to — the first recipient's display name (else
+   * its address; null only when there are none) and how many recipients across To, Cc and Bcc. What
+   * a Sent or Drafts row shows in place of the sender. Null until the message is summarised. */
+  to?: { name: string | null; count: number } | null;
   date: string;
   internalDate: string;
   size: number;

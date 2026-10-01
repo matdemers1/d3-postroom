@@ -8,15 +8,21 @@
 // the name, subject, and a third line that leads with the row's Badges (Priority is `attention`,
 // New sender `neutral`) before the snippet. One fixed height still, so the list stays virtual.
 //
+// PST-T-16.12 (PST-REQ-199): in Sent and Drafts the name slot names the recipients ("To: Alice
+// (+1)") and the avatar follows the first of them; the mailbox's specialUse comes from the row's own
+// mailbox in the mail context, so a Sent message reads the same in a search result.
+//
 // A leaving row keeps its height — its slot is the placeholder — while its content fades and slides
 // out; the list then drops the slot in one frame, so nothing inside the virtual window animates its
 // layout.
 import { memo } from 'react';
 import { Avatar, Badge } from '@d3cloud/ui';
+import type { SpecialUse } from '../../api';
 import { listDate } from '../format';
 import { PaperclipIcon, StarIcon } from '../icons';
 import { isStarred, isUnread } from '../list';
-import { avatarName, senderLine, snippetLine, type RowSummary } from './triage';
+import { useOptionalMail } from '../MailContext';
+import { rowAvatarName, senderLine, snippetLine, type RowSummary } from './triage';
 
 /** Must match .pr-mrow's height in list.css. */
 export const ROW_HEIGHT = 80;
@@ -58,6 +64,9 @@ export interface MessageRowProps {
   threadCount?: number;
   /** PST-T-15.2: draw the Priority badge for a $Priority message (not where the list is Priority). */
   showPriority?: boolean;
+  /** PST-T-16.12: the specialUse of the row's mailbox; when absent it is looked up from the mail
+   *  context by the message's mailboxId. Sent and Drafts rows name the recipients. */
+  specialUse?: SpecialUse | null;
 }
 
 export const MessageRow = memo(function MessageRow({
@@ -74,10 +83,13 @@ export const MessageRow = memo(function MessageRow({
   acting = false,
   threadCount = 1,
   showPriority = true,
+  specialUse,
 }: MessageRowProps) {
+  const mail = useOptionalMail();
+  const use = specialUse !== undefined ? specialUse : (mail?.mailboxes?.find((b) => b.id === m.mailboxId)?.specialUse ?? null);
   const unread = isUnread(m);
   const starred = isStarred(m);
-  const sender = senderLine(m, warned);
+  const sender = senderLine(m, warned, use);
   const snippet = snippetLine(m.snippet);
   const expiry = deletesIn(m.expiresAt, now);
   // One Priority label per row: where the bucket chip already says Priority, the badge would repeat it.
@@ -106,7 +118,7 @@ export const MessageRow = memo(function MessageRow({
             the same from the keyboard). It is part of the option, not a control of its own; the
             check lies over it on hover and while the row is selected. */}
         <span className="pr-mrow__avatar" data-select="true" aria-hidden="true" title={checked === true ? 'Deselect' : 'Select'}>
-          <Avatar name={avatarName(m.fromName, m.from)} size="lg" tint="auto" />
+          <Avatar name={rowAvatarName(m, use)} size="lg" tint="auto" />
           <span className="pr-mrow__check">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" focusable="false">
               <path d="m5 12 5 5 9-10" />

@@ -389,6 +389,8 @@ export async function fileStage(
     subject: prior.parse.subject,
     fromAddress: prior.parse.fromAddress,
     sentAt: prior.parse.sentAt === null ? null : new Date(prior.parse.sentAt),
+    // PST-T-16.12: stored at filing; a parse marker from before it existed leaves it to the sweep.
+    ...(prior.parse.toCount === undefined ? {} : { toName: prior.parse.toName ?? null, toCount: prior.parse.toCount }),
   };
 
   const result = await deps.db.$transaction(async (tx) => {

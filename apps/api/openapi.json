@@ -2157,6 +2157,37 @@
             ],
             "description": "A one-line preview of the body: at most 140 characters, whitespace collapsed, quoted history dropped. Empty when there is no text; null until the message is summarised."
           },
+          "to": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "description": "The first recipient (To, then Cc, then Bcc): its decoded display name, else its address. Null only when there are no recipients.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "How many distinct recipients across To, Cc and Bcc (Bcc survives only on our own Sent/Drafts copies)."
+                  }
+                },
+                "required": [
+                  "name",
+                  "count"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stored to-summary; null until the message is summarised."
+          },
           "date": {
             "type": "string",
             "format": "date-time",
@@ -2328,6 +2359,7 @@
           "from",
           "fromName",
           "snippet",
+          "to",
           "date",
           "internalDate",
           "size",
@@ -3762,6 +3794,37 @@
             ],
             "description": "A one-line preview of the body: at most 140 characters, whitespace collapsed, quoted history dropped. Empty when there is no text; null until the message is summarised."
           },
+          "to": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "description": "The first recipient (To, then Cc, then Bcc): its decoded display name, else its address. Null only when there are no recipients.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "How many distinct recipients across To, Cc and Bcc (Bcc survives only on our own Sent/Drafts copies)."
+                  }
+                },
+                "required": [
+                  "name",
+                  "count"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stored to-summary; null until the message is summarised."
+          },
           "date": {
             "type": "string",
             "format": "date-time",
@@ -3832,6 +3895,7 @@
           "from",
           "fromName",
           "snippet",
+          "to",
           "date",
           "internalDate",
           "size",
