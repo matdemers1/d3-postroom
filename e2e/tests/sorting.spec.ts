@@ -211,7 +211,7 @@ test.describe('the bucket chip and its corrections', () => {
       await expect(header).toBeVisible();
       // No chip here: the folder already says it.
       await expect(header.getByTestId('bucket-chip')).toHaveCount(0);
-      const control = header.getByRole('button', { name: "Why it's here" });
+      const control = header.getByRole('button', { name: 'Why it’s here' });
       await expect(control).toBeVisible();
       await control.click();
 
@@ -246,7 +246,7 @@ test.describe('a message moved into a folder by hand', () => {
     expect(res.ok()).toBe(true);
 
     await page.goto(`/mail/${receipts}/${m.id}`);
-    await page.getByTestId('message-header').getByRole('button', { name: "Why it's here" }).click();
+    await page.getByTestId('message-header').getByRole('button', { name: 'Why it’s here' }).click();
     const why = page.getByRole('dialog', { name: "Why it's here" });
     await expect(why.getByTestId('why-sentence')).toHaveText('You moved this here.');
     await expect(why.getByRole('button', { name: /^Always put .* in Receipts$/ })).toBeVisible();

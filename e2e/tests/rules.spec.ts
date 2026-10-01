@@ -53,7 +53,8 @@ test('a builder rule round-trips through Sieve, and a compile error names its li
   // Sieve → builder: the same row.
   await page.getByRole('tab', { name: 'Rules' }).click();
   await expect(page.getByRole('textbox', { name: 'Text' })).toHaveValue('billing@shop.example');
-  await expect(page.getByRole('combobox', { name: 'Destination' })).toHaveText('Archive');
+  // The trigger also draws its ▾ glyph, so match the chosen label, not the whole text.
+  await expect(page.getByRole('combobox', { name: 'Destination' })).toHaveText(/^Archive/);
   // Remove follows the fields of its rule.
   const remove = page.getByRole('button', { name: 'Remove rule 1' });
   const destination = page.getByRole('combobox', { name: 'Destination' });

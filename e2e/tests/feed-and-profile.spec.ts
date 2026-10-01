@@ -125,7 +125,7 @@ test('a Newsletters feed item offers "Why it’s here", and says so plainly when
   await expect(page.getByTestId('feed')).toBeVisible();
 
   const sortedItem = page.getByTestId('feed-item').filter({ hasText: `Sorted digest ${t}` });
-  const control = sortedItem.getByRole('button', { name: "Why it's here" });
+  const control = sortedItem.getByRole('button', { name: 'Why it’s here' });
   await expect(control).toBeVisible();
   await control.click();
   const why = page.getByRole('dialog', { name: "Why it's here" });
@@ -140,7 +140,7 @@ test('a Newsletters feed item offers "Why it’s here", and says so plainly when
 
   // Moved by hand: it says so, and corrects from where the message is now.
   const movedItem = page.getByTestId('feed-item').filter({ hasText: `Moved digest ${t}` });
-  await movedItem.getByRole('button', { name: "Why it's here" }).click();
+  await movedItem.getByRole('button', { name: 'Why it’s here' }).click();
   await expect(why.getByTestId('why-sentence')).toHaveText('You moved this here.');
   await expect(why.getByRole('button', { name: /^Always put .* in Newsletters$/ })).toBeVisible();
   await expect(why.getByText(/Filed in your Inbox/)).toHaveCount(0);
