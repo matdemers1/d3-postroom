@@ -93,7 +93,7 @@ export function Corrections() {
 
   return (
     <div ref={ref} id={CORRECTIONS_ANCHOR}>
-      <Section title="Sorting corrections" description="Each correction you made from a bucket chip, with Undo. Nothing is sent to a model.">
+      <Section title="Sorting corrections" description="Each correction you made from a bucket chip or a person card, with Undo. Nothing is sent to a model.">
         {notice === null ? null : (
           <Alert tone={notice.tone} dynamic>
             {notice.text}
