@@ -2,13 +2,15 @@
 // one account and one expiry, unforgeable without the server's secret, and gives one answer for
 // every way it can be wrong. And the Connect a device screen's copyable settings are the same hosts
 // and ports the Thunderbird autoconfig document advertises, for the same environment.
+// PST-T-16.27: the redeem limiter counts only malformed and forged tokens — never an expired one,
+// and never refuses a token the server signed.
 import { randomUUID } from 'node:crypto';
 import { auditContext } from '@postroom/audit';
 import type { Db } from '@postroom/db';
 import express from 'express';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
-import { LINK_ID_RE, LINK_TTL_MS, WindowLimiter, linkKey, mintLinkToken, readLinkToken } from '../../src/mobileconfig/link.js';
+import { LINK_ID_RE, LINK_TTL_MS, WindowLimiter, inspectLinkToken, linkKey, mintLinkToken, readLinkToken } from '../../src/mobileconfig/link.js';
 import { mailHostsOf, mailSettingsOf, mobileconfigOnceRoutes } from '../../src/mobileconfig/index.js';
 import { request } from '../loopback.js';
 
@@ -86,6 +88,14 @@ describe('one-time profile link tokens', () => {
       const forged = `${minted.token.slice(0, at)}${swapped}${minted.token.slice(at + 1)}`;
       expect(readLinkToken(KEY, forged, NOW), `char ${String(at)}`).toBeNull();
     }
+  });
+
+  it('tells the server (never the client) why: malformed, forged or expired', () => {
+    const minted = mintLinkToken(KEY, ACCOUNT, NOW);
+    expect(inspectLinkToken(KEY, minted.token, NOW)).toEqual({ ok: true, link: { accountId: ACCOUNT, linkId: minted.linkId, expiresAt: minted.expiresAt } });
+    expect(inspectLinkToken(KEY, 'not-a-token', NOW)).toEqual({ ok: false, reason: 'malformed' });
+    expect(inspectLinkToken(KEY, mintLinkToken(linkKey('another'), ACCOUNT, NOW).token, NOW)).toEqual({ ok: false, reason: 'forged' });
+    expect(inspectLinkToken(KEY, minted.token, minted.expiresAt)).toEqual({ ok: false, reason: 'expired' });
   });
 
   it('works for any account id', () => {
@@ -177,5 +187,48 @@ describe('the one-time route, before it touches the database', () => {
     const bare = express();
     bare.use('/once', auditContext(), mobileconfigOnceRoutes({ db, env: {}, config: { webDist: undefined, webOrigin: 'https://mail.d3cloud.io', revision: 'test', passwordPepper: 'p'.repeat(32), now: () => NOW } }));
     expect((await request(bare).get(`/once/${forged}`)).status).toBe(503);
+  });
+});
+
+describe('the redeem limiter counts guesses only (PST-T-16.27)', () => {
+  const SECRET = 's'.repeat(32);
+  const real = linkKey(SECRET);
+  // The one query a signed, unexpired token reaches first: no such account, so 410 — never 429.
+  const db = new Proxy(
+    { account: { findUnique: () => Promise.resolve(null) } },
+    {
+      get: (target, prop) => {
+        if (prop in target) return target[prop as keyof typeof target];
+        throw new Error(`the database was touched: ${String(prop)}`);
+      },
+    },
+  ) as unknown as Db;
+  const appWith = () => {
+    const app = express();
+    app.use('/once', auditContext(), mobileconfigOnceRoutes({ db, env: {}, config: { webDist: undefined, webOrigin: 'https://mail.d3cloud.io', revision: 'test', passwordPepper: 'p'.repeat(32), sessionSecret: SECRET, now: () => NOW } }));
+    return app;
+  };
+  const forged = (): string => mintLinkToken(linkKey('not-the-server-secret'), ACCOUNT, NOW).token;
+
+  it('blocks an address after twenty forged or malformed tokens', async () => {
+    const app = appWith();
+    for (let i = 0; i < 20; i += 1) expect((await request(app).get(`/once/${i % 2 === 0 ? forged() : 'nope'}`)).status).toBe(410);
+    expect((await request(app).get(`/once/${forged()}`)).status).toBe(429);
+  });
+
+  it('never counts an expired link — a slow person is not a guesser', async () => {
+    const app = appWith();
+    const expired = mintLinkToken(real, ACCOUNT, new Date(NOW.getTime() - LINK_TTL_MS - 1)).token;
+    for (let i = 0; i < 30; i += 1) expect((await request(app).get(`/once/${expired}`)).status).toBe(410);
+    expect((await request(app).get(`/once/${forged()}`)).status).toBe(410);
+  });
+
+  it('never refuses a token the server signed, even from a blocked address', async () => {
+    const app = appWith();
+    for (let i = 0; i < 20; i += 1) await request(app).get(`/once/${forged()}`);
+    expect((await request(app).get(`/once/${forged()}`)).status).toBe(429);
+    const expired = mintLinkToken(real, ACCOUNT, new Date(NOW.getTime() - LINK_TTL_MS - 1)).token;
+    expect((await request(app).get(`/once/${expired}`)).status).toBe(410);
+    expect((await request(app).get(`/once/${mintLinkToken(real, ACCOUNT, NOW).token}`)).status).toBe(410);
   });
 });

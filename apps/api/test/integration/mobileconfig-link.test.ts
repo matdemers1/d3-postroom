@@ -3,7 +3,11 @@
 // app password and returns the profile — once. A second open, an expired link and a forged one all
 // answer the same 410. Two racing opens produce one profile. The link's status reports the minted
 // password's first use, and only to its owner. The token is never written to the audit log.
-import { missingAuditCount, waitForAuditGuard } from '@postroom/audit';
+//
+// PST-T-16.27: an unspent link dies (the same 410) once the account's password changes, "sign out
+// everywhere" runs, or a newer link is made; and the status names the protocol of the newest
+// recorded use of the minted password, or none.
+import { recordAudit } from '@postroom/audit';import { missingAuditCount, waitForAuditGuard } from '@postroom/audit';
 import { verifyProtocolLogin } from '@postroom/credentials';
 import { seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
@@ -28,6 +32,7 @@ interface LinkStatus {
   redeemed: boolean;
   appPasswordId: string | null;
   lastUsedAt: string | null;
+  protocol: string | null;
 }
 
 /** GET a one-time URL with the body buffered raw (the profile is not JSON). No cookie, ever. */
@@ -231,6 +236,97 @@ describe.skipIf(!baseUrl)('one-time profile links (PST-T-16.16)', () => {
       ],
     });
     expect((await request(app).get('/api/mobileconfig/settings')).status).toBe(401);
+  });
+
+  it('a link made before a password change answers 410, and mints nothing (PST-T-16.27)', async () => {
+    const me = await person();
+    const link = await createLink(me);
+    clock.advance(31_000);
+    const changed = await request(app)
+      .post('/api/auth/password')
+      .set(CSRF)
+      .set('cookie', me.cookie)
+      .send({ currentPassword: PASSWORD, newPassword: 'a brand new long password, honest', code: totpCode(me.totpSecret, clock.now()) });
+    expect(changed.status).toBe(200);
+    const refused = await open(app, pathOf(link));
+    expect(refused.status).toBe(410);
+    expect(await db.appPassword.count({ where: { accountId: me.id } })).toBe(0);
+    // Refused, not spent: no redeem row was written for it.
+    expect(await db.auditEvent.count({ where: { entityType: 'mobileconfig_link', entityId: link.linkId, action: 'mobileconfig.link.redeem' } })).toBe(0);
+    // A link made after the change works.
+    const fresh = await createLink(me);
+    expect((await open(app, pathOf(fresh))).status).toBe(200);
+  });
+
+  it('a link made before "sign out everywhere" answers 410 (PST-T-16.27)', async () => {
+    const me = await person();
+    const link = await createLink(me);
+    await stepUp(me.cookie, me.totpSecret);
+    const ended = await request(app).delete('/api/auth/sessions').set(CSRF).set('cookie', me.cookie);
+    expect(ended.status).toBe(200);
+    const refused = await open(app, pathOf(link));
+    expect(refused.status).toBe(410);
+    expect(await db.appPassword.count({ where: { accountId: me.id } })).toBe(0);
+    const fresh = await createLink(me);
+    expect((await open(app, pathOf(fresh))).status).toBe(200);
+  });
+
+  it('only the newest link works: making another kills the one before (PST-T-16.27)', async () => {
+    const me = await person();
+    const older = await createLink(me);
+    const newer = await createLink(me);
+    const refused = await open(app, pathOf(older));
+    expect(refused.status).toBe(410);
+    expect(await db.appPassword.count({ where: { accountId: me.id } })).toBe(0);
+    expect((await open(app, pathOf(newer))).status).toBe(200);
+    expect(await db.appPassword.count({ where: { accountId: me.id } })).toBe(1);
+    // Another account's newer link is no business of this one.
+    const other = await person();
+    const mine = await createLink(me);
+    await createLink(other);
+    expect((await open(app, pathOf(mine))).status).toBe(200);
+  });
+
+  it('the refusals are the same 410 as a spent link', async () => {
+    const me = await person();
+    const spent = await createLink(me);
+    await open(app, pathOf(spent));
+    const spentAnswer = await open(app, pathOf(spent));
+    const older = await createLink(me);
+    await createLink(me);
+    const superseded = await open(app, pathOf(older));
+    expect(superseded.status).toBe(spentAnswer.status);
+    expect((superseded.body as Buffer).toString('utf8')).toBe((spentAnswer.body as Buffer).toString('utf8'));
+  });
+
+  it('names the protocol of the newest recorded use, or none (PST-T-16.27)', async () => {
+    const me = await person();
+    const other = await person();
+    const link = await createLink(me);
+    const res = await open(app, pathOf(link));
+    const id = String(res.headers['x-postroom-app-password-id']);
+    const plist = (res.body as Buffer).toString('utf8');
+    const password = /<key>IncomingPassword<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)?.[1] ?? '';
+
+    const unused = (await status(me.cookie, link.linkId)).body as LinkStatus;
+    expect(unused).toMatchObject({ redeemed: true, lastUsedAt: null, protocol: null });
+
+    // Used, with no protocol recorded: the time alone.
+    await db.appPassword.update({ where: { id }, data: { lastUsedAt: new Date() } });
+    await db.auditEvent.deleteMany({ where: { entityType: 'app_password', entityId: id, action: 'app_password.use' } });
+    expect(((await status(me.cookie, link.linkId)).body as LinkStatus).protocol).toBeNull();
+
+    // CalDAV signs in first on an iPhone; then IMAP. The newest recorded use names the protocol.
+    expect(await verifyProtocolLogin(db, { username: me.address, password, scope: 'dav', ip: '127.0.0.1' }, { pepper: PEPPER })).toMatchObject({ ok: true });
+    await recordAudit(db, { actor: { kind: 'account', accountId: me.id }, action: 'app_password.use', entityType: 'app_password', entityId: id, after: { scope: 'dav' } });
+    const dav = (await status(me.cookie, link.linkId)).body as LinkStatus;
+    expect(dav.protocol).toBe('dav');
+    expect(dav.lastUsedAt).not.toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await recordAudit(db, { actor: { kind: 'account', accountId: me.id }, action: 'app_password.use', entityType: 'app_password', entityId: id, after: { scope: 'imap' } });
+    expect(((await status(me.cookie, link.linkId)).body as LinkStatus).protocol).toBe('imap');
+    // Only to its owner.
+    expect((await status(other.cookie, link.linkId)).status).toBe(404);
   });
 
   it('left no mutation unaudited', async () => {

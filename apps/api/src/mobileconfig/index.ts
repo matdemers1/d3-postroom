@@ -5,10 +5,13 @@
 //   GET  /api/mobileconfig/settings    the IMAP/SMTP hosts, ports and username a mail app needs
 //   POST /api/mobileconfig/links       step-up: a one-time profile URL for an iPhone to open (10 minutes)
 //   GET  /api/mobileconfig/links/:id   whether that link was used, and the minted password's lastUsedAt
+//                                      and the protocol it was used over
 //
 // and, separately and WITHOUT a session (mobileconfigOnceRoutes, mounted at /api/mobileconfig/once):
 //
-//   GET  /api/mobileconfig/once/:token mints the app password and returns the profile, once; 410 after
+//   GET  /api/mobileconfig/once/:token mints the app password and returns the profile, once; 410 after,
+//                                      and 410 once the password changes, "sign out everywhere" runs,
+//                                      or a newer link is made for the account (PST-T-16.27)
 //
 // With MOBILECONFIG_SIGNING_CERT_FILE / MOBILECONFIG_SIGNING_KEY_FILE set, the profile is signed as
 // CMS SignedData (DER) and iOS shows it as Verified. Unset, the profile is served unsigned — iOS
@@ -22,7 +25,7 @@ import { currentSession, handle, requireStepUp } from '../auth/middleware.js';
 import { runtimeFor, type AuthRuntime } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
 import { signCms, type SigningKeyPair } from './cms.js';
-import { LINK_ID_RE, WindowLimiter, linkKey, mintLinkToken, readLinkToken } from './link.js';
+import { LINK_ID_RE, WindowLimiter, inspectLinkToken, linkKey, mintLinkToken } from './link.js';
 import { writePlist } from './plist.js';
 import { buildProfile } from './profile.js';
 
@@ -34,9 +37,25 @@ const LINK_ENTITY = 'mobileconfig_link';
 const LINK_CREATE = 'mobileconfig.link.create';
 const LINK_REDEEM = 'mobileconfig.link.redeem';
 const GENERATE = 'mobileconfig.generate';
+/**
+ * The account's credential events a link must postdate (PST-T-16.27): written by src/auth (a
+ * password change, "sign out everywhere"), read here. A link made before either is dead.
+ */
+const CREDENTIAL_EVENTS = ['auth.password.change', 'auth.session.revoke-others'];
+/**
+ * The row the protocol login check writes when an app password is used (entity `app_password`, id
+ * the password's, `after.scope` the protocol it verified for). The newest one names the protocol.
+ */
+const APP_PASSWORD_ENTITY = 'app_password';
+const APP_PASSWORD_USE = 'app_password.use';
 /** Links one account may make per window — a loop minting them is a bug or an attack, not a person. */
 const LINKS_PER_WINDOW = 10;
-/** Failed redeems one address may make per window before it is told to wait. */
+/**
+ * Malformed or forged tokens one address may send per window before it is told to wait. Only
+ * guesses count: a spent, expired or superseded link is a person, not an attacker, and counting it
+ * would let anyone behind the same address lock that person out. A token with a good MAC is never
+ * refused by the limiter at all.
+ */
 const REDEEM_FAILURES_PER_WINDOW = 20;
 const LIMIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -64,6 +83,35 @@ function loadSigningKeys(env: NodeJS.ProcessEnv): SigningKeyPair | null {
     process.stderr.write(`${JSON.stringify({ event: 'mobileconfig-signing-key-unreadable', error: error instanceof Error ? error.message : String(error) })}\n`);
     return null;
   }
+}
+
+/** A protocol an app password can be used over, as the status reports it. */
+export type UseProtocol = 'imap' | 'smtp' | 'dav' | 'sieve';
+const PROTOCOLS: readonly string[] = ['imap', 'smtp', 'dav', 'sieve'];
+
+function jsonObject(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * When an app password was last used and over which protocol: the newest `app_password.use` row's
+ * scope, or null when none is recorded (the line then says "Connected at …" without one).
+ */
+async function useOf(db: AuthRuntime['db'], accountId: string, appPasswordId: string): Promise<{ id: string; lastUsedAt: string | null; protocol: UseProtocol | null } | null> {
+  const password = await db.appPassword.findFirst({ where: { id: appPasswordId, accountId }, select: { id: true, lastUsedAt: true } });
+  if (password === null) return null;
+  if (password.lastUsedAt === null) return { id: password.id, lastUsedAt: null, protocol: null };
+  const use = await db.auditEvent.findFirst({
+    where: { entityType: APP_PASSWORD_ENTITY, entityId: password.id, action: APP_PASSWORD_USE },
+    orderBy: [{ at: 'desc' }, { id: 'desc' }],
+    select: { after: true },
+  });
+  const scope = jsonObject(use?.after)?.['scope'];
+  return {
+    id: password.id,
+    lastUsedAt: password.lastUsedAt.toISOString(),
+    protocol: typeof scope === 'string' && PROTOCOLS.includes(scope) ? (scope as UseProtocol) : null,
+  };
 }
 
 function notFound(res: Response): void {
@@ -318,14 +366,13 @@ export function mobileconfigRoutes(deps: ApiDeps): Router {
         return;
       }
       const generated = rows.find((r) => r.action === GENERATE);
-      const after = generated?.after;
-      const minted = typeof after === 'object' && after !== null && !Array.isArray(after) && typeof after['minted'] === 'string' ? after['minted'] : null;
-      const password =
-        minted === null ? null : await db.appPassword.findFirst({ where: { id: minted, accountId: me.accountId }, select: { id: true, lastUsedAt: true } });
+      const minted = jsonObject(generated?.after)?.['minted'];
+      const use = typeof minted === 'string' ? await useOf(db, me.accountId, minted) : null;
       res.json({
         redeemed: generated !== undefined,
-        appPasswordId: password?.id ?? null,
-        lastUsedAt: password?.lastUsedAt?.toISOString() ?? null,
+        appPasswordId: use?.id ?? null,
+        lastUsedAt: use?.lastUsedAt ?? null,
+        protocol: use?.protocol ?? null,
       });
     }),
   );
@@ -347,7 +394,8 @@ export function mobileconfigOnceRoutes(deps: ApiDeps): Router {
   const router = Router();
 
   const gone = (req: Request, res: Response, reason: string): void => {
-    failures.hit(req.ip ?? 'unknown', rt.now().getTime());
+    // Only a guess counts against the address (see REDEEM_FAILURES_PER_WINDOW).
+    if (reason === 'malformed' || reason === 'forged') failures.hit(req.ip ?? 'unknown', rt.now().getTime());
     // Logged, not audited: anyone on the internet can send one. Never the token.
     process.stderr.write(`${JSON.stringify({ event: 'mobileconfig-link-refused', reason, ip: req.ip ?? null })}\n`);
     res.setHeader('Cache-Control', 'no-store');
@@ -368,17 +416,20 @@ export function mobileconfigOnceRoutes(deps: ApiDeps): Router {
         return;
       }
       const now = rt.now();
-      if (failures.blocked(req.ip ?? 'unknown', now.getTime())) {
-        res.setHeader('Retry-After', String(Math.ceil(LIMIT_WINDOW_MS / 1000)));
-        res.status(429).type('text/plain').send('Too many attempts. Wait a few minutes and try again.');
+      // Malformed, forged, expired: one answer, so a caller cannot tell which. The MAC is checked
+      // before the limiter, so an address that has been guessing is refused its guesses but never a
+      // real link (the HMAC costs next to nothing; guessing 256 bits of it gains nothing).
+      const inspected = inspectLinkToken(key, req.params['token'], now);
+      if (!inspected.ok) {
+        if (inspected.reason !== 'expired' && failures.blocked(req.ip ?? 'unknown', now.getTime())) {
+          res.setHeader('Retry-After', String(Math.ceil(LIMIT_WINDOW_MS / 1000)));
+          res.status(429).type('text/plain').send('Too many attempts. Wait a few minutes and try again.');
+          return;
+        }
+        gone(req, res, inspected.reason);
         return;
       }
-      // Malformed, forged, expired: one answer, so a caller cannot tell which.
-      const link = readLinkToken(key, req.params['token'], now);
-      if (link === null) {
-        gone(req, res, 'invalid');
-        return;
-      }
+      const { link } = inspected;
       const account = await db.account.findUnique({ where: { id: link.accountId }, select: { disabledAt: true } });
       if (account === null || account.disabledAt !== null || (await issuer.primaryAddress(link.accountId)) === null) {
         gone(req, res, 'account');
@@ -390,10 +441,26 @@ export function mobileconfigOnceRoutes(deps: ApiDeps): Router {
       // write one" atomic. Under READ COMMITTED the SELECT after the lock sees a racing redeem's
       // committed row. The link is spent before the profile is built: if minting then fails, the
       // person makes a new link — it never stays usable twice.
-      const claimed = await db.$transaction(async (tx) => {
+      //
+      // A link is good only while its creation is the newest thing that happened to the account's
+      // credentials: a later password change, "sign out everywhere" or newer link kills it
+      // (PST-T-16.27). One query, ordered by audit time on both sides so no two clocks are compared;
+      // no create row at all (it cannot happen, but) is refused too.
+      const claimed = await db.$transaction(async (tx): Promise<'ok' | 'spent' | 'superseded'> => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'postroom-mobileconfig-link:' + link.linkId}, 0))`;
         const spent = await tx.auditEvent.findFirst({ where: { entityType: LINK_ENTITY, entityId: link.linkId, action: LINK_REDEEM }, select: { id: true } });
-        if (spent !== null) return false;
+        if (spent !== null) return 'spent';
+        const newest = await tx.auditEvent.findFirst({
+          where: {
+            OR: [
+              { entityType: LINK_ENTITY, action: LINK_CREATE, actorAccountId: link.accountId },
+              { entityType: 'account', entityId: link.accountId, action: { in: CREDENTIAL_EVENTS } },
+            ],
+          },
+          orderBy: [{ at: 'desc' }, { id: 'desc' }],
+          select: { action: true, entityId: true },
+        });
+        if (newest === null || newest.action !== LINK_CREATE || newest.entityId !== link.linkId) return 'superseded';
         await recordAudit(tx, {
           actor: { kind: 'account', accountId: link.accountId },
           action: LINK_REDEEM,
@@ -401,10 +468,10 @@ export function mobileconfigOnceRoutes(deps: ApiDeps): Router {
           entityId: link.linkId,
           context,
         });
-        return true;
+        return 'ok';
       });
-      if (!claimed) {
-        gone(req, res, 'spent');
+      if (claimed !== 'ok') {
+        gone(req, res, claimed);
         return;
       }
       const issued = await issuer.issue(link.accountId, context, { entityType: LINK_ENTITY, entityId: link.linkId, after: { via: 'link' } });

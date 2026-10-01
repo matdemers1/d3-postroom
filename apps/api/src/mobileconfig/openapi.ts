@@ -1,4 +1,4 @@
-// The mobileconfig routes in the OpenAPI document (PST-REQ-085, PST-T-8.6, PST-T-16.16). Spread into
+// The mobileconfig routes in the OpenAPI document (PST-REQ-085, PST-T-8.6, PST-T-16.16, PST-T-16.27). Spread into
 // ROUTES by src/openapi/document.ts. The profile is not JSON; the small JSON answers are described
 // inline, since this module publishes no components.
 import { z } from 'zod';
@@ -43,16 +43,24 @@ const LINK = {
   additionalProperties: false,
 };
 
+const PROTOCOL = {
+  type: ['string', 'null'],
+  enum: ['imap', 'smtp', 'dav', 'sieve', null],
+  description: 'The protocol the password was used over, from the newest recorded use; null when none is recorded.',
+};
+
 const LINK_STATUS = {
   type: 'object',
   properties: {
     redeemed: { type: 'boolean' },
     appPasswordId: { type: ['string', 'null'], format: 'uuid' },
-    lastUsedAt: { type: ['string', 'null'], format: 'date-time', description: 'When a mail app first signed in with the minted password.' },
+    lastUsedAt: { type: ['string', 'null'], format: 'date-time', description: 'When a mail app last signed in with the minted password.' },
+    protocol: PROTOCOL,
   },
-  required: ['redeemed', 'appPasswordId', 'lastUsedAt'],
+  required: ['redeemed', 'appPasswordId', 'lastUsedAt', 'protocol'],
   additionalProperties: false,
 };
+
 
 export const MOBILECONFIG_ROUTES: RouteSpec[] = [
   {
@@ -104,7 +112,7 @@ export const MOBILECONFIG_ROUTES: RouteSpec[] = [
     path: '/api/mobileconfig/links/{linkId}',
     operationId: 'getMobileconfigLink',
     tag: 'Mobileconfig',
-    summary: 'Whether a one-time link was used, and when its app password first signed in.',
+    summary: 'Whether a one-time link was used, and when and over which protocol its app password signed in.',
     params: z.object({ linkId: z.string().regex(/^[0-9a-f]{64}$/) }),
     responses: { '200': { description: 'The link status.', content: json(LINK_STATUS) }, '401': err('No session.'), '404': err('No such link of yours.') },
   },
@@ -115,12 +123,12 @@ export const MOBILECONFIG_ROUTES: RouteSpec[] = [
     tag: 'Mobileconfig',
     summary: 'Install the profile from a one-time link. No session: it is the URL an iPhone camera opens.',
     description:
-      'Mints one app password scoped for imap+smtp+dav and returns the profile, exactly as POST /api/mobileconfig does — the first time. Every later request, and any expired, forged or malformed token, answers 410 with the same plain-text body. HEAD answers 405 and never spends the link. Audited.',
+      'Mints one app password scoped for imap+smtp+dav and returns the profile, exactly as POST /api/mobileconfig does — the first time. Every later request, any expired, forged or malformed token, and a link made before the account’s latest password change, "sign out everywhere" or newer link, answers 410 with the same plain-text body. HEAD answers 405 and never spends the link. Audited.',
     params: z.object({ token: z.string() }),
     responses: {
       '200': { description: 'The .mobileconfig, signed or not.', content: PROFILE, headers: PROFILE_HEADERS },
       '410': { description: 'Expired, already used, or not a link.', content: { 'text/plain': { schema: { type: 'string' } } } },
-      '429': { description: 'Too many failed attempts from this address.', content: { 'text/plain': { schema: { type: 'string' } } } },
+      '429': { description: 'Too many malformed or forged tokens from this address. Never sent for a token the server signed.', content: { 'text/plain': { schema: { type: 'string' } } } },
       '503': { description: 'Auth is not configured.', content: { 'text/plain': { schema: { type: 'string' } } } },
     },
   },

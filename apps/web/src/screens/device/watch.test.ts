@@ -1,11 +1,13 @@
 // PST-T-16.16 (PST-DA-039): the first-use watch asks every five seconds, stops on the first sign-in,
 // on unmount, or after ten minutes; it survives a failed check; and the page is "Connect a device"
-// with its four clients and the copyable settings.
+// with its four clients and the copyable settings. PST-T-16.27: the connected line names the
+// protocol that signed in (or none, when none is recorded), and a link's watch runs two minutes past
+// its expiry so a late install still shows connected.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { routeForPath } from '../../routes';
-import { POLL_INTERVAL_MS, POLL_LIMIT_MS, connectedMessage, securityLabel, startWatch, type Observation } from './watch';
+import { LINK_GRACE_MS, POLL_INTERVAL_MS, POLL_LIMIT_MS, connectedMessage, linkWatchLimit, securityLabel, startWatch, type Observation } from './watch';
 
 const flush = async (): Promise<void> => {
   for (let i = 0; i < 5; i += 1) await Promise.resolve();
@@ -21,11 +23,11 @@ describe('startWatch', () => {
 
   it('asks at once, then every five seconds, and stops at the first sign-in', async () => {
     const answers: Observation[] = [
-      { redeemed: false, lastUsedAt: null },
-      { redeemed: true, lastUsedAt: null },
-      { redeemed: true, lastUsedAt: '2026-09-30T12:00:00.000Z' },
+      { redeemed: false, lastUsedAt: null, protocol: null },
+      { redeemed: true, lastUsedAt: null, protocol: null },
+      { redeemed: true, lastUsedAt: '2026-09-30T12:00:00.000Z', protocol: 'dav' },
     ];
-    const check = vi.fn(() => Promise.resolve(answers.shift() ?? { redeemed: true, lastUsedAt: 'later' }));
+    const check = vi.fn(() => Promise.resolve<Observation>(answers.shift() ?? { redeemed: true, lastUsedAt: 'later', protocol: 'imap' }));
     const updates: Observation[] = [];
     startWatch(check, (o) => updates.push(o), () => undefined, { now: () => Date.now() });
     await flush();
@@ -40,7 +42,7 @@ describe('startWatch', () => {
   });
 
   it('stops asking when stopped (the screen unmounted)', async () => {
-    const check = vi.fn(() => Promise.resolve({ redeemed: false, lastUsedAt: null }));
+    const check = vi.fn(() => Promise.resolve({ redeemed: false, lastUsedAt: null, protocol: null }));
     const stop = startWatch(check, () => undefined, () => undefined, { now: () => Date.now() });
     await flush();
     stop();
@@ -49,7 +51,7 @@ describe('startWatch', () => {
   });
 
   it('keeps asking after a failed check', async () => {
-    const check = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ redeemed: true, lastUsedAt: '2026-09-30T12:00:00.000Z' });
+    const check = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ redeemed: true, lastUsedAt: '2026-09-30T12:00:00.000Z', protocol: 'dav' });
     const updates: Observation[] = [];
     startWatch(check, (o) => updates.push(o), () => undefined, { now: () => Date.now() });
     await flush();
@@ -58,7 +60,7 @@ describe('startWatch', () => {
   });
 
   it('gives up after ten minutes, once', async () => {
-    const check = vi.fn(() => Promise.resolve({ redeemed: false, lastUsedAt: null }));
+    const check = vi.fn(() => Promise.resolve({ redeemed: false, lastUsedAt: null, protocol: null }));
     const timeout = vi.fn();
     startWatch(check, () => undefined, timeout, { now: () => Date.now() });
     await vi.advanceTimersByTimeAsync(POLL_LIMIT_MS + POLL_INTERVAL_MS * 3);
@@ -70,10 +72,60 @@ describe('startWatch', () => {
   });
 });
 
+describe('a one-time link’s watch', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('runs until two minutes past the link’s expiry', () => {
+    const now = Date.parse('2026-09-30T12:00:00.000Z');
+    expect(LINK_GRACE_MS).toBe(2 * 60 * 1000);
+    expect(linkWatchLimit('2026-09-30T12:10:00.000Z', now)).toBe(12 * 60 * 1000);
+    expect(linkWatchLimit('2026-09-30T11:00:00.000Z', now)).toBe(0);
+  });
+
+  it('still sees a sign-in that lands a minute after the link expired', async () => {
+    const start = Date.now();
+    const expiresAt = new Date(start + 10 * 60 * 1000).toISOString();
+    const signedInAt = start + 11 * 60 * 1000;
+    const check = vi.fn(() =>
+      Promise.resolve<Observation>(Date.now() >= signedInAt ? { redeemed: true, lastUsedAt: new Date(signedInAt).toISOString(), protocol: 'dav' } : { redeemed: true, lastUsedAt: null, protocol: null }),
+    );
+    const updates: Observation[] = [];
+    const timeout = vi.fn();
+    startWatch(check, (o) => updates.push(o), timeout, { limitMs: linkWatchLimit(expiresAt, start) });
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000 + POLL_INTERVAL_MS);
+    expect(timeout).not.toHaveBeenCalled();
+    expect(updates.at(-1)?.lastUsedAt).not.toBeNull();
+    expect(updates.at(-1)?.protocol).toBe('dav');
+  });
+
+  it('gives up two minutes after expiry, not at it', async () => {
+    const start = Date.now();
+    const expiresAt = new Date(start + 10 * 60 * 1000).toISOString();
+    const check = vi.fn(() => Promise.resolve<Observation>({ redeemed: true, lastUsedAt: null, protocol: null }));
+    const timeout = vi.fn();
+    startWatch(check, () => undefined, timeout, { limitMs: linkWatchLimit(expiresAt, start) });
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + POLL_INTERVAL_MS);
+    expect(timeout).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    expect(timeout).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('copy', () => {
-  it('says where and when it connected', () => {
-    const message = connectedMessage('2026-09-30T15:42:00.000Z', 'en-US');
-    expect(message).toMatch(/^Connected over IMAP at \d{1,2}:\d{2}/);
+  it('says which protocol connected, and when', () => {
+    const at = '2026-09-30T15:42:00.000Z';
+    expect(connectedMessage(at, 'imap', 'en-US')).toMatch(/^Connected over IMAP at \d{1,2}:\d{2}/);
+    expect(connectedMessage(at, 'smtp', 'en-US')).toMatch(/^Connected over SMTP at \d{1,2}:\d{2}/);
+    expect(connectedMessage(at, 'dav', 'en-US')).toMatch(/^Connected over CalDAV at \d{1,2}:\d{2}/);
+  });
+
+  it('says just when, if no protocol was recorded', () => {
+    expect(connectedMessage('2026-09-30T15:42:00.000Z', null, 'en-US')).toMatch(/^Connected at \d{1,2}:\d{2}/);
   });
 
   it('names transport security the way mail apps do', () => {
