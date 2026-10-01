@@ -233,7 +233,9 @@ test('month cells are quiet outside the month, chips lead with the title, and "N
   expect((await more.boundingBox())?.height ?? Infinity).toBeLessThanOrEqual(32);
 
   // Narrow the cells (still above the phone breakpoint) and the time is dropped, the title kept.
-  await page.setViewportSize({ width: 700, height: 1000 });
+  // Still a month grid (the grid needs 768px, PST-T-16.18), but cells narrower than the 7rem at which
+  // a chip drops its time.
+  await page.setViewportSize({ width: 780, height: 1000 });
   await expect(chip.locator('.pr-cal-chip__time')).toBeHidden();
   await expect(chip.locator('.pr-cal-chip__title')).toBeVisible();
 });
