@@ -7,7 +7,7 @@
 // one row. What changes is the reach of a move made on an OPEN message: it takes every member of
 // that message's thread in the same mailbox with it, so a three-message conversation is archived
 // with one e, not three.
-import type { MessageSummary } from '../../api';
+import { serverUnreachable, type MessageSummary } from '../../api';
 import { sortsAboveTop } from '../list';
 
 /** Fields the API sends on a summary that the web type does not name yet. */
@@ -159,6 +159,49 @@ export function triageMessage(verb: string, count: number, subject: string | nul
     return `${verb} · ${s}`;
   }
   return /^Moved /.test(verb) ? verb.replace(/^Moved/, `Moved ${String(count)} messages`) : `${verb} · ${String(count)} messages`;
+}
+
+// --- Snooze: say so only once the server has (PST-T-16.1, PST-DA-071) ------------------------------------
+
+/** One conversation's snooze request: `status` is the API's refusal, or null when it never answered; `ok` when it went through. */
+export type SnoozeAttempt = { threadId: string; ok: true } | { threadId: string; ok: false; status: number | null };
+
+export interface SnoozeSettled {
+  /** Conversations the server snoozed: these leave the list, and only these are named in the toast. */
+  done: string[];
+  /** Conversations it did not: they stay where they are, open if they were. */
+  failed: string[];
+  /** What to tell the operator when any failed; null when every one went through. */
+  error: string | null;
+}
+
+/**
+ * Decides what a finished snooze means. Nothing is reported or removed before this: the row, the open
+ * message and the "Snoozed until" toast all follow `done`, and `error` is shown for the rest — the
+ * same honesty as the toolbar's attemptSnooze (PST-T-14.1).
+ */
+export function settleSnooze(attempts: readonly SnoozeAttempt[]): SnoozeSettled {
+  const done: string[] = [];
+  const failed: string[] = [];
+  let unreachable = false;
+  let gone = false;
+  for (const a of attempts) {
+    if (a.ok) done.push(a.threadId);
+    else {
+      failed.push(a.threadId);
+      if (a.status === null) unreachable = true;
+      else if (a.status === 404) gone = true;
+    }
+  }
+  if (failed.length === 0) return { done, failed, error: null };
+  const many = failed.length > 1;
+  const stays = many ? 'they’re still here' : 'it’s still here';
+  const error = unreachable
+    ? serverUnreachable(many ? 'Those conversations weren’t snoozed.' : 'It wasn’t snoozed.')
+    : gone && !many
+      ? 'That conversation is gone, so it wasn’t snoozed.'
+      : `Couldn’t snooze ${many ? `${String(failed.length)} conversations` : 'that'} — ${stays}.`;
+  return { done, failed, error };
 }
 
 // --- Selection (x) -------------------------------------------------------------------------------------

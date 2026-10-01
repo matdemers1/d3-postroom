@@ -39,12 +39,14 @@ import {
   nextAfterRemoval,
   pruneSelected,
   selectedMessages,
+  settleSnooze,
   threadMembersInMailbox,
   toggleSelected,
   triageMessage,
   undoPatches,
   type MovedRecord,
   type RowSummary,
+  type SnoozeAttempt,
 } from './list/triage';
 import './list/list.css';
 import { ReadingPane, type OpenMessage } from './ReadingPane';
@@ -608,37 +610,50 @@ function MailPanes({ route }: { route: MailRoute }) {
     if (first === undefined || threads.length === 0) return;
     const ids = new Set(targets.map((m) => m.id));
     for (const m of latest.current.list.messages) if (m.threadId !== null && threads.includes(m.threadId) && m.mailboxId === first.mailboxId) ids.add(m.id);
-    advancePast(ids);
-    exitRows([...ids]);
-    setSelected(new Set());
     const done: string[] = [];
+    const when = until.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    // PST-T-16.1 (PST-DA-071): unlike archive/delete/move, nothing leaves, advances or is announced
+    // until the server has answered — a failed snooze leaves the message exactly where it was.
     enqueue(async () => {
+      const attempts: SnoozeAttempt[] = [];
       for (const t of threads) {
         try {
           await api.snoozeThread(t, until.toISOString());
-          done.push(t);
+          attempts.push({ threadId: t, ok: true });
         } catch (error) {
-          recover(error);
+          attempts.push({ threadId: t, ok: false, status: error instanceof ApiError ? error.status : null });
         }
       }
+      const settled = settleSnooze(attempts);
+      done.push(...settled.done);
+      if (settled.error !== null) say('danger', settled.error);
+      if (settled.done.length === 0) return;
+      const snoozed = new Set(settled.done);
+      const leaving = new Set([...ids].filter((id) => {
+        const m = latest.current.list.messages.find((x) => x.id === id) ?? targets.find((x) => x.id === id);
+        return m?.threadId !== null && m?.threadId !== undefined && snoozed.has(m.threadId);
+      }));
+      advancePast(leaving);
+      exitRows([...leaving]);
+      setSelected(new Set());
       void refreshMailboxes();
-    });
-    const when = until.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-    offerUndo(triageMessage(`Snoozed until ${when}`, targets.length, first.subject), () => {
-      enqueue(async () => {
-        let back = 0;
-        for (const t of done) {
-          try {
-            await api.unsnoozeThread(t);
-            back += 1;
-          } catch (error) {
-            recover(error);
+      const snoozedTargets = targets.filter((m) => m.threadId !== null && snoozed.has(m.threadId));
+      offerUndo(triageMessage(`Snoozed until ${when}`, snoozedTargets.length, (snoozedTargets[0] ?? first).subject), () => {
+        enqueue(async () => {
+          let back = 0;
+          for (const t of done) {
+            try {
+              await api.unsnoozeThread(t);
+              back += 1;
+            } catch (error) {
+              recover(error);
+            }
           }
-        }
-        if (back === 0) return;
-        toast.show({ message: 'Back in Inbox.' });
-        reloadList(true);
-        void refreshMailboxes();
+          if (back === 0) return;
+          toast.show({ message: 'Back in Inbox.' });
+          reloadList(true);
+          void refreshMailboxes();
+        });
       });
     });
   };

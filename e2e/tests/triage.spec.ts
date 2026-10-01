@@ -263,3 +263,66 @@ test('reduced motion: the row goes without an exit animation', async ({ page }) 
   await expect(row(page, b.subject)).toHaveCount(0);
   expect(await page.locator('.pr-mrow--leaving').count()).toBe(0);
 });
+
+// PST-T-16.1 (PST-REQ-142, PST-DA-071): a snooze the server refuses is not announced. Seeded mail has
+// no threadId, which Snooze needs, so the list response is given one here; the snooze endpoint itself
+// is answered with a 500. Archive/delete/move stay optimistic on purpose — only snooze waits.
+test.describe('a failed snooze says so', () => {
+  let snoozeCalls = 0;
+
+  test.beforeEach(async ({ page }) => {
+    snoozeCalls = 0;
+    await page.route(/\/api\/mailboxes\/[^/]+\/messages(\?.*)?$/, async (route) => {
+      const res = await route.fetch();
+      const body = (await res.json()) as { messages: { id: string; threadId: string | null }[] };
+      body.messages = body.messages.map((m) => ({ ...m, threadId: m.threadId ?? `thread-${m.id}` }));
+      await route.fulfill({ response: res, json: body });
+    });
+    await page.route(/\/api\/threads\/[^/]+\/snooze$/, async (route) => {
+      snoozeCalls += 1;
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal' }) });
+    });
+  });
+
+  const failure = (page: Page) => page.getByRole('alert').filter({ hasText: 'Couldn’t snooze that — it’s still here.' });
+
+  test('b: the picker choice fails, no "Snoozed until" toast, the message stays open, an error shows', async ({ page }) => {
+    const t = tag();
+    const [a, b] = await seedThree(t);
+    await page.goto('/');
+    await row(page, b.subject).click();
+    await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+
+    await page.keyboard.press('b');
+    const dialog = page.getByRole('dialog', { name: 'Snooze until' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: /Tomorrow morning/ }).click();
+
+    await expect(failure(page)).toBeVisible();
+    expect(snoozeCalls).toBe(1);
+    await expect(toasts(page)).not.toContainText('Snoozed until');
+    await expect(row(page, b.subject)).toHaveCount(1);
+    await expect(page).toHaveURL(new RegExp(`/${b.id}$`));
+    await expect(page).not.toHaveURL(new RegExp(`/${a.id}$`));
+    await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+  });
+
+  test('the row action: the same — nothing leaves, nothing is announced, an error shows', async ({ page }) => {
+    const t = tag();
+    const [, b] = await seedThree(t);
+    await page.goto('/');
+    await row(page, b.subject).click();
+    await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+
+    await row(page, b.subject).hover();
+    await page.getByRole('toolbar', { name: `Actions for ${b.subject}` }).getByRole('button', { name: 'Snooze' }).click();
+    await page.getByRole('dialog', { name: 'Snooze until' }).getByRole('button', { name: /Tomorrow morning/ }).click();
+
+    await expect(failure(page)).toBeVisible();
+    expect(snoozeCalls).toBe(1);
+    await expect(toasts(page)).not.toContainText('Snoozed until');
+    await expect(row(page, b.subject)).toHaveCount(1);
+    await expect(page).toHaveURL(new RegExp(`/${b.id}$`));
+    await expect(page.getByRole('heading', { name: b.subject, level: 2 })).toBeVisible();
+  });
+});
