@@ -107,7 +107,7 @@ function alignmentText(a: InspectAlignment | null): string | null {
 function Verdict({ label, result, learn, refTo, children }: { label: string; result: string; learn: boolean; refTo: RfcRef | null; children?: ReactNode }) {
   return (
     <div className="pr-inspect__verdict" data-testid="verdict" data-verdict={label}>
-      <div className="pr-inspect__verdict-head">
+      <div className="pr-inspect__verdict-head pr-inspect__verdict-head--grid">
         <span className="pr-inspect__term">{label}</span>
         <StatusBadge kind={verdictKind(result)}>{result}</StatusBadge>
         <RfcLink refTo={refTo} learn={learn} />

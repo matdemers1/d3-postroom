@@ -571,6 +571,14 @@
   gap: var(--space-8);
 }
 
+/* Authentication verdicts: a fixed term column, so SPF, DKIM, DMARC and ARC badges share one left x
+   (PST-DA-041). 8ch holds the longest term ("DKIM 2") at the semibold weight. */
+.pr-inspect__verdict-head--grid {
+  display: grid;
+  grid-template-columns: 8ch auto 1fr;
+  gap: var(--space-8);
+}
+
 .pr-inspect__term {
   font-weight: var(--weight-semibold);
   overflow-wrap: anywhere;
