@@ -30,7 +30,9 @@ import { useMediaQuery } from '../mail/useMedia';
 import { blankContact, contactProblem, EMAIL_TYPES, inputOf, rowKey, TEL_TYPES, toForm, typeOptions, type ContactForm } from './form';
 import { Loading, LoadFailed } from '../screens/states';
 
-const SPLIT_QUERY = '(min-width: 900px)';
+// Wider than mail's split (two panes beside the sidebar need the room), with the same height rule, so
+// a landscape phone in phone chrome never gets a two-pane address book (PST-T-16.18).
+const SPLIT_QUERY = '(min-width: 900px) and (min-height: 500px)';
 
 /**
  * A contact row's second line (PST-T-16.23): the organization, then each address on a line of its
