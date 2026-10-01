@@ -26,7 +26,7 @@ import { api, WIZARD_CHANGED_EVENT, wizardStepsLeft, type AuthState, type Mailbo
 import { CommandPalette, PaletteRoleContext } from '../mail/CommandPalette';
 import { findSpecial, mailboxLabel } from '../mail/format';
 import { ComposeIcon, mailboxIcon } from '../mail/icons';
-import { resolveKey } from '../mail/keys';
+import { describeTarget, resolveGo, resolveKey } from '../mail/keys';
 import { useOptionalMail } from '../mail/MailContext';
 import { mailboxKey, mailPath, parseMailRoute, routeMailbox } from '../mail/route';
 import { LAST_VISIT_KEY, mailSidebar, newSinceVisit, parseVisits, type LastVisits } from '../mail/sidebar';
@@ -510,8 +510,9 @@ function PlaceNav({ place, isAdmin, setupLeft }: { place: 'settings' | 'admin'; 
   );
 }
 
-/** ⌘K outside Mail: MailView owns the palette in Mail (with message actions); Settings and the
- * Admin console get the same palette, with places only. */
+/** ⌘K on every route without a MailView (PST-T-16.19): MailView owns the palette over the mailbox
+ * (with message actions); Calendar, Contacts, Settings and the Admin console get the same palette,
+ * with places only. */
 function PlacePalette({ enabled }: { enabled: boolean }) {
   const navigate = useNavigate();
   const mail = useOptionalMail();
@@ -548,6 +549,40 @@ function PlacePalette({ enabled }: { enabled: boolean }) {
   );
 }
 
+/**
+ * Go-to chords (g then i, s, d, c, p) on every route (PST-T-16.19). MailView resolves g then i
+ * itself and never sees the rest, so inside it this only navigates for s, d, c and p and lets the
+ * event through (MailView clears its own half-typed g from it). On every other route — Calendar,
+ * Contacts, Settings, Admin — all five go through here, and a completed chord stops the event so a
+ * screen's own bare keys (Calendar's d for Day) do not also fire.
+ */
+function useGoChords(inMailView: boolean): void {
+  const navigate = useNavigate();
+  useEffect(() => {
+    let pending: 'g' | null = null;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.isComposing) return;
+      const el = e.target instanceof Element ? e.target : null;
+      if ((el?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]') ?? null) !== null) {
+        pending = null;
+        return;
+      }
+      const { go, pending: next } = resolveGo({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, editable: describeTarget(e.target).editable }, pending);
+      pending = next;
+      if (go === null || (inMailView && go.target === 'inbox')) return;
+      if (!inMailView) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      void navigate(go.path);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [inMailView, navigate]);
+}
+
 /** The signed-in frame: the place's nav (a drawer below `lg`), the account menu, and the page. */
 export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: () => Promise<void> }) {
   const location = useLocation();
@@ -565,6 +600,7 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
   // A non-admin in /admin/* sees the no-access state beside Mail's nav, never the admin nav.
   const navPlace = place === 'admin' && !isAdmin ? 'mail' : place;
   const setupLeft = useSetupStepsLeft(isAdmin, place === 'admin' ? location.pathname : '/');
+  useGoChords(isMailView);
   // One push screen per nav entry, not per URL: the screens under one entry (Contacts' list, new
   // and card; Security & devices' three) are one component that carries state across its own URLs
   // (a "Contact added." notice), so a move between them must not remount it.
@@ -678,7 +714,7 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
         </PlaceFrame>
         {/* PST-T-16.2: the palette sat outside both boundaries; a throw in it blanked the app. */}
         <PaneBoundary name="The command palette" resetKey={location.pathname} compact>
-          <PlacePalette enabled={place !== 'mail'} />
+          <PlacePalette enabled={!isMailView} />
         </PaneBoundary>
       </AppShell>
     </PaletteRoleContext.Provider>

@@ -5,6 +5,9 @@ import { ApiError } from '../../src/api';
 import type { CryptoKeyJson } from '../../src/keys/api';
 import { cryptoAvailability, cryptoRequest, formatFingerprint, isCryptoRefusal, keyErrorText, keyStatus, recipientAddresses, sniffImport, sortKeys } from '../../src/keys/format';
 import { sendErrorText } from '../../src/mail/compose';
+import { GO_CHORDS, resolveGo, resolveKey, SHORTCUTS } from '../../src/mail/keys';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 let n = 0;
 const key = (extra: Partial<CryptoKeyJson>): CryptoKeyJson => ({
@@ -106,5 +109,47 @@ describe('Keys screen helpers', () => {
     expect(sniffImport('-----BEGIN PGP PRIVATE KEY BLOCK-----\n…')).toBe('pgp-secret');
     expect(sniffImport('-----BEGIN CERTIFICATE-----\n…')).toBe('certificate');
     expect(sniffImport('hello')).toBe('unknown');
+  });
+});
+
+// PST-T-16.19 (PST-DA-026, PST-REQ-084): go-to chords, on every Shell route.
+describe('go-to chords', () => {
+  const press = (key: string, extra: Partial<Parameters<typeof resolveGo>[0]> = {}) => ({ key, ctrlKey: false, metaKey: false, altKey: false, editable: false, ...extra });
+
+  it('g then i, s, d, c, p reach Inbox, Sent, Drafts, Calendar and Contacts by their URLs', () => {
+    const paths: [string, string][] = [['i', '/mail/inbox'], ['s', '/mail/sent'], ['d', '/mail/drafts'], ['c', '/calendar'], ['p', '/contacts']];
+    for (const [second, path] of paths) {
+      const first = resolveGo(press('g'), null);
+      expect(first).toEqual({ go: null, pending: 'g' });
+      const done = resolveGo(press(second), first.pending);
+      expect(done.go?.path, second).toBe(path);
+      expect(done.pending).toBeNull();
+    }
+    expect(GO_CHORDS.map((c) => c.key)).toEqual(['i', 's', 'd', 'c', 'p']);
+  });
+
+  it('a second key that is not a chord clears the g and goes nowhere', () => {
+    expect(resolveGo(press('j'), 'g')).toEqual({ go: null, pending: null });
+  });
+
+  it('is typing, not a chord, in a field or with a modifier — and the letters alone do nothing', () => {
+    expect(resolveGo(press('g', { editable: true }), null)).toEqual({ go: null, pending: null });
+    expect(resolveGo(press('s', { editable: true }), 'g')).toEqual({ go: null, pending: null });
+    expect(resolveGo(press('s', { ctrlKey: true }), 'g')).toEqual({ go: null, pending: null });
+    expect(resolveGo(press('g', { metaKey: true }), null)).toEqual({ go: null, pending: null });
+    expect(resolveGo(press('s'), null)).toEqual({ go: null, pending: null });
+  });
+
+  it('MailView’s own resolver still takes only g then i, so the other chords cannot double-fire there', () => {
+    const key = (k: string) => ({ key: k, ctrlKey: false, metaKey: false, altKey: false, editable: false, activatable: false });
+    expect(resolveKey(key('i'), 'g').action).toBe('goInbox');
+    for (const second of ['s', 'd', 'c', 'p']) expect(resolveKey(key(second), 'g')).toEqual({ action: null, pending: null });
+    expect(SHORTCUTS.find((s) => s.action === 'goInbox')?.keys).toBe('g then i');
+  });
+
+  it('the Shell mounts the place palette and the chords on every route without a MailView', () => {
+    const shell = readFileSync(join(import.meta.dirname, '../../src/screens/Shell.tsx'), 'utf8');
+    expect(shell).toContain('<PlacePalette enabled={!isMailView} />');
+    expect(shell).toContain('useGoChords(isMailView);');
   });
 });
