@@ -157,6 +157,47 @@ test('a Newsletters feed item offers "Why it’s here", and says so plainly when
   await expect(sortedItem).toBeVisible();
 });
 
+// PST-T-17.3 (PST-DA-084): a feed frame is sized to its message, without any script in the frame —
+// the render ticket carries a server-side height estimate. A one-line note gets a short frame; a long
+// issue stops at the cap under a fade, with "Read in full" to the reading view.
+test('a one-line newsletter gets a short frame, and a long one is capped with a fade and "Read in full"', async ({ page, isMobile }) => {
+  const t = tag();
+  const paragraphs = Array.from({ length: 40 }, (_, i) => `<p>Part ${String(i + 1)} of ${t}. ${'The long read goes on, and on, as long reads do. '.repeat(8)}</p>`).join('');
+  const [short, long] = await seedMail(api, [
+    { mailbox: 'newsletters', subject: `One-liner ${t}`, from: `Brief <brief-${t}@example.news>`, html: `<p>Just the one line, ${t}.</p>`, text: `Just the one line, ${t}.` },
+    { mailbox: 'newsletters', subject: `Long read ${t}`, from: `Longform <long-${t}@example.news>`, html: `<div>${paragraphs}</div>`, text: `The long read, ${t}.` },
+  ]);
+  if (short === undefined || long === undefined) throw new Error('seed returned nothing');
+  const newsletters = await mailboxByName('Newsletters');
+
+  await page.goto(`/mail/${newsletters.id}`);
+  await expect(page.getByTestId('feed')).toBeVisible();
+
+  const shortItem = page.getByTestId('feed-item').filter({ hasText: `One-liner ${t}` });
+  await shortItem.scrollIntoViewIfNeeded();
+  const shortFrame = shortItem.getByTestId('message-html');
+  await expect(shortFrame).toBeVisible({ timeout: 15_000 });
+  const shortFrameBox = await shortFrame.boundingBox();
+  expect(shortFrameBox?.height ?? Infinity).toBeLessThan(120);
+  // The whole item, header and all, at desktop width. On a phone the header's actions wrap onto a
+  // row of 44px touch targets of their own, so there the frame's own height is the measure.
+  if (!isMobile) expect((await shortItem.boundingBox())?.height ?? Infinity).toBeLessThan(200);
+  await expect(shortItem.getByTestId('feed-read-in-full')).toHaveCount(0);
+  await expect(shortItem.getByTestId('feed-item-fade')).toHaveCount(0);
+
+  const longItem = page.getByTestId('feed-item').filter({ hasText: `Long read ${t}` });
+  await longItem.scrollIntoViewIfNeeded();
+  const longFrame = longItem.getByTestId('message-html');
+  await expect(longFrame).toBeVisible({ timeout: 15_000 });
+  const longFrameBox = await longFrame.boundingBox();
+  expect(longFrameBox?.height ?? 0).toBeGreaterThan(470);
+  expect(longFrameBox?.height ?? Infinity).toBeLessThanOrEqual(481);
+  await expect(longItem.getByTestId('feed-item-fade')).toBeAttached();
+  const readInFull = longItem.getByRole('link', { name: `Read in full: Long read ${t}` });
+  await expect(readInFull).toBeVisible();
+  await expect(readInFull).toHaveAttribute('href', `/mail/newsletters/${long.id}`);
+});
+
 // PST-T-16.23 (PST-DA-057): a contact row shows the whole address — a 30-character local part must
 // not cost the domain at 1280px — with the address-book name as a quiet badge under the name.
 test('a contact with a 30-character local part shows its full domain, and its address book as a badge', async ({ page, isMobile }) => {

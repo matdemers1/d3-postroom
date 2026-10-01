@@ -1,0 +1,31 @@
+/* The Newsletters feed's body frames (PST-T-17.3, PST-DA-084): sized to their message from the
+   server's estimate (Feed.tsx feedFrameSize). A capped one fades out at its foot into the item's
+   surface, with "Read in full" beneath it. */
+
+.pr-feed__frame {
+  position: relative;
+}
+
+.pr-feed__frame-el {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.pr-feed__fade {
+  position: absolute;
+  inset-inline: var(--border-width);
+  bottom: var(--border-width);
+  height: var(--space-48);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  background: linear-gradient(to bottom, transparent, var(--color-surface));
+  pointer-events: none;
+}
+
+.pr-feed__more {
+  display: flex;
+  justify-content: center;
+  font-size: var(--text-14);
+}
