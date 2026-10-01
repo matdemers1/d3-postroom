@@ -51,32 +51,82 @@ function daysIn(fromIso: string, toIso: string, firstReported: string | undefine
 }
 
 // D-016: a pass is the normal case, so it is drawn neutral; only a failure takes a hue.
+// PST-REQ-154 (WCAG 1.4.1/1.4.11): pass and fail are only ~1.6:1 apart, so colour never carries the
+// meaning alone — the fail segment is also hatched, separated by a 2px surface stroke, and its count
+// is printed above the bar.
 const PASS_FILL = { fill: 'var(--color-fg-muted)' };
-const FAIL_FILL = { fill: 'var(--color-danger)' };
 const AXIS_TEXT = { fill: 'var(--color-fg-muted)', fontSize: 'var(--text-12)' };
+const COUNT_TEXT = { fill: 'var(--color-fg)', fontSize: 'var(--text-12)', fontVariantNumeric: 'tabular-nums' } as const;
 const AXIS_LINE = { stroke: 'var(--color-border)' };
+const SEPARATOR_WIDTH = 2;
+
+export interface DayBar {
+  day: string;
+  x: number;
+  pass: number;
+  fail: number;
+  /** Top of the pass segment and its height; null when nothing passed. */
+  passRect: { y: number; height: number } | null;
+  /** Top of the fail segment and its height; null when nothing failed. */
+  failRect: { y: number; height: number } | null;
+  /** The printed failure count, centred above the whole bar; null on a day with no failures. */
+  failLabel: { x: number; y: number; text: string } | null;
+}
+
+export interface BarLayout {
+  left: number;
+  top: number;
+  plotW: number;
+  plotH: number;
+}
+
+/** Per-day bar geometry and failure labels, pure so the chart's non-colour cues can be tested. */
+export function dayBars(days: string[], byDay: Map<string, { pass: number; fail: number }>, layout: BarLayout): { bars: DayBar[]; max: number; barW: number } {
+  const { left, top, plotW, plotH } = layout;
+  const max = Math.max(1, ...days.map((d) => (byDay.get(d)?.pass ?? 0) + (byDay.get(d)?.fail ?? 0)));
+  const slot = plotW / Math.max(1, days.length);
+  const barW = Math.max(1, slot * 0.7);
+  const y = (v: number): number => top + plotH - (v / max) * plotH;
+  const bars = days.map((day, i): DayBar => {
+    const row = byDay.get(day);
+    const pass = row?.pass ?? 0;
+    const fail = row?.fail ?? 0;
+    const x = left + i * slot + (slot - barW) / 2;
+    return {
+      day,
+      x,
+      pass,
+      fail,
+      passRect: pass > 0 ? { y: y(pass), height: top + plotH - y(pass) } : null,
+      failRect: fail > 0 ? { y: y(pass + fail), height: y(pass) - y(pass + fail) } : null,
+      failLabel: fail > 0 ? { x: x + barW / 2, y: y(pass + fail) - 4, text: count(fail) } : null,
+    };
+  });
+  return { bars, max, barW };
+}
 
 /**
  * Stacked bars, pass under fail, one per UTC day — drawn as inline SVG (no chart library, no
  * third-party script: PST-REQ-159). The figure's accessible name says what it shows and its
  * description carries the totals, so the chart is not the only place the numbers live.
  */
-function DayChart({ data }: { data: Deliverability }) {
+export function DayChart({ data }: { data: Deliverability }) {
   const titleId = useId();
   const descId = useId();
+  // One pattern per chart instance, so two charts on a page never share (or clash on) an id.
+  const hatchId = `${useId()}-fail-hatch`;
+  const hatchFill = { fill: `url(#${hatchId})` };
+  const failStyle = { ...hatchFill, stroke: 'var(--color-surface)', strokeWidth: SEPARATOR_WIDTH };
   const byDay = new Map(data.dmarc.byDay.map((d) => [d.day, d]));
   const days = daysIn(data.range.from, data.range.to, data.dmarc.byDay[0]?.day);
   const W = 640;
   const H = 220;
   const left = 44;
   const bottom = 24;
-  const top = 8;
+  const top = 20;
   const plotW = W - left - 8;
   const plotH = H - top - bottom;
-  const max = Math.max(1, ...days.map((d) => (byDay.get(d)?.pass ?? 0) + (byDay.get(d)?.fail ?? 0)));
-  const slot = plotW / Math.max(1, days.length);
-  const barW = Math.max(1, slot * 0.7);
-  const y = (v: number): number => top + plotH - (v / max) * plotH;
+  const { bars, max, barW } = dayBars(days, byDay, { left, top, plotW, plotH });
   const labelEvery = Math.ceil(days.length / 6);
   const { pass, fail } = data.dmarc.totals;
 
@@ -85,6 +135,12 @@ function DayChart({ data }: { data: Deliverability }) {
       <svg viewBox={`0 0 ${String(W)} ${String(H)}`} width="100%" role="img" aria-labelledby={titleId} aria-describedby={descId} preserveAspectRatio="xMidYMid meet">
         <title id={titleId}>DMARC pass and fail by day</title>
         <desc id={descId}>{`${count(pass)} messages passed DMARC and ${count(fail)} failed across ${String(data.dmarc.byDay.length)} reported days.`}</desc>
+        <defs>
+          <pattern id={hatchId} data-pattern="fail-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="var(--color-danger)" />
+            <line x1="0" y1="0" x2="0" y2="6" stroke="var(--color-surface)" strokeWidth="2" />
+          </pattern>
+        </defs>
         <line x1={left} x2={W - 8} y1={top + plotH} y2={top + plotH} style={AXIS_LINE} />
         <line x1={left} x2={left} y1={top} y2={top + plotH} style={AXIS_LINE} />
         <text x={left - 6} y={top + 10} textAnchor="end" style={AXIS_TEXT}>
@@ -93,31 +149,30 @@ function DayChart({ data }: { data: Deliverability }) {
         <text x={left - 6} y={top + plotH} textAnchor="end" style={AXIS_TEXT}>
           0
         </text>
-        {days.map((day, i) => {
-          const row = byDay.get(day);
-          const x = left + i * slot + (slot - barW) / 2;
-          const p = row?.pass ?? 0;
-          const f = row?.fail ?? 0;
-          return (
-            <g key={day} data-day={day}>
-              {p > 0 ? (
-                <rect x={x} width={barW} y={y(p)} height={top + plotH - y(p)} style={PASS_FILL}>
-                  <title>{`${dayLabel(day)}: ${count(p)} passed`}</title>
-                </rect>
-              ) : null}
-              {f > 0 ? (
-                <rect x={x} width={barW} y={y(p + f)} height={y(p) - y(p + f)} style={FAIL_FILL}>
-                  <title>{`${dayLabel(day)}: ${count(f)} failed`}</title>
-                </rect>
-              ) : null}
-              {i % labelEvery === 0 ? (
-                <text x={x + barW / 2} y={H - 6} textAnchor="middle" style={AXIS_TEXT}>
-                  {dayLabel(day)}
-                </text>
-              ) : null}
-            </g>
-          );
-        })}
+        {bars.map((bar, i) => (
+          <g key={bar.day} data-day={bar.day}>
+            {bar.passRect !== null ? (
+              <rect x={bar.x} width={barW} y={bar.passRect.y} height={bar.passRect.height} style={PASS_FILL}>
+                <title>{`${dayLabel(bar.day)}: ${count(bar.pass)} passed`}</title>
+              </rect>
+            ) : null}
+            {bar.failRect !== null ? (
+              <rect data-segment="fail" x={bar.x} width={barW} y={bar.failRect.y} height={bar.failRect.height} style={failStyle}>
+                <title>{`${dayLabel(bar.day)}: ${count(bar.fail)} failed`}</title>
+              </rect>
+            ) : null}
+            {bar.failLabel !== null ? (
+              <text data-fail-count x={bar.failLabel.x} y={bar.failLabel.y} textAnchor="middle" style={COUNT_TEXT}>
+                {bar.failLabel.text}
+              </text>
+            ) : null}
+            {i % labelEvery === 0 ? (
+              <text x={bar.x + barW / 2} y={H - 6} textAnchor="middle" style={AXIS_TEXT}>
+                {dayLabel(bar.day)}
+              </text>
+            ) : null}
+          </g>
+        ))}
       </svg>
       <figcaption>
         <Cluster gap="12">
@@ -129,13 +184,26 @@ function DayChart({ data }: { data: Deliverability }) {
           </span>
           <span>
             <svg width="12" height="12" aria-hidden="true">
-              <rect width="12" height="12" style={FAIL_FILL} />
+              <rect width="12" height="12" style={hatchFill} />
             </svg>{' '}
             Failed DMARC
           </span>
         </Cluster>
       </figcaption>
     </figure>
+  );
+}
+
+/** The failure count, tinted danger once there is one (PST-REQ-154); a zero stays neutral. */
+export function FailedDmarcStat({ fail, quarantine, reject }: { fail: number; quarantine: number; reject: number }) {
+  return (
+    <Stat
+      data-stat="failed"
+      data-tone={fail > 0 ? 'danger' : undefined}
+      label="Failed DMARC"
+      value={fail > 0 ? <span style={{ color: 'var(--color-danger)' }}>{count(fail)}</span> : count(fail)}
+      footnote={`${count(quarantine)} quarantined, ${count(reject)} rejected`}
+    />
   );
 }
 
@@ -336,12 +404,7 @@ export function AdminDeliverability() {
                 value={percent(rateOf(data.dmarc.totals.pass, data.dmarc.totals.messages))}
                 footnote={`${count(data.dmarc.totals.pass)} of ${count(data.dmarc.totals.messages)} messages`}
               />
-              <Stat
-                data-stat="failed"
-                label="Failed DMARC"
-                value={count(data.dmarc.totals.fail)}
-                footnote={`${count(data.dmarc.totals.dispositions.quarantine)} quarantined, ${count(data.dmarc.totals.dispositions.reject)} rejected`}
-              />
+              <FailedDmarcStat fail={data.dmarc.totals.fail} quarantine={data.dmarc.totals.dispositions.quarantine} reject={data.dmarc.totals.dispositions.reject} />
               <Stat data-stat="reports" label="Reports" value={count(data.dmarc.totals.reports)} footnote={`from ${count(data.dmarc.byOrg.length)} reporters`} />
               <Stat
                 data-stat="tls"
