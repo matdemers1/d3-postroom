@@ -137,9 +137,10 @@ describe('copy', () => {
 describe('the Connect a device page', () => {
   const read = (path: string): string => readFileSync(join(__dirname, path), 'utf8');
 
-  it('is titled Connect a device, in the route table and on the page', () => {
+  it('is titled Connect a device in the route table (its tab), under the constant Security & devices header', () => {
     expect(routeForPath('/settings/security')?.title).toBe('Connect a device');
-    expect(read('../DeviceSetup.tsx')).toContain('<PageHeader title="Connect a device"');
+    // PST-T-17.9: the page title is the section's, the same on all three tabs; the tab names the page.
+    expect(read('../DeviceSetup.tsx')).toContain('<PageHeader title="Security & devices"');
   });
 
   it('offers iPhone, Mac, Thunderbird and Other', () => {

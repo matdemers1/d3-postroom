@@ -1,0 +1,97 @@
+/* Security & devices (PST-T-17.9): the section's own tab bar, under one constant PageHeader.
+ * An underline tab bar — a quiet hairline track, the current page marked by an accent underline —
+ * built from router links, because these are pages (navigation), not panels of one page. It never
+ * wraps: below 768px it scrolls sideways instead, so the row is always one line at the same y. */
+
+.pr-sectabs__list {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.pr-sectabs__list > li {
+  flex: none;
+  margin: 0;
+}
+
+.pr-sectabs__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 var(--space-12);
+  border-bottom: 2px solid transparent;
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color var(--motion-hover), border-color var(--motion-hover);
+}
+
+.pr-sectabs__link:hover {
+  color: var(--color-fg);
+}
+
+.pr-sectabs__link[aria-current='page'] {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-fg);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-sectabs__link:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: calc(var(--focus-width) * -1);
+  border-radius: var(--radius-xs);
+}
+
+/* Phone and landscape phone: one row that scrolls, every link a 44px target of its own. */
+@media (max-width: 767.98px), (max-height: 499px) {
+  .pr-sectabs__list {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .pr-sectabs__link {
+    min-height: 44px;
+  }
+}
+
+/* Connect a device: the client chooser spans the card on a phone, one equal segment each. */
+@media (max-width: 767.98px) {
+  .pr-device-tabs .d3-tabs__list {
+    display: flex;
+  }
+
+  .pr-device-tabs .d3-tabs__tab {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* App passwords: the create form and the one-time reveal open inside the list's own card, above the
+ * list, closed off from it by a hairline (the canvas's inline forms, not a second card). */
+.pr-sec-panel {
+  margin: 0;
+  padding-bottom: var(--space-16);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.pr-sec-panel__title {
+  margin: 0;
+  color: var(--color-fg);
+  font-size: var(--text-14);
+  line-height: var(--leading-14);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-sec-panel__desc {
+  margin: var(--space-2) 0 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+}

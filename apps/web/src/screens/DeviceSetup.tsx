@@ -3,7 +3,9 @@ import { Button, FormField, Input, Modal, ModalClose, Page, PageHeader, Section,
 import { ApiError, api, describeError } from '../api';
 import { deviceApi, type MailSettings } from './device/api';
 import { IphonePanel, MacPanel, OtherPanel, ThunderbirdPanel, type WithStepUp } from './device/Panels';
+import { SECURITY_DESCRIPTION } from './device/security';
 import { SubNav } from './SubNav';
+import './device/security.css';
 
 type Client = 'iphone' | 'mac' | 'thunderbird' | 'other';
 
@@ -96,12 +98,14 @@ export function DeviceSetup() {
 
   return (
     // PST-T-15.6: the settings grid — a 680px column of Section cards.
-    <Page width="narrow">
-      <PageHeader title="Connect a device" description="Set up mail, calendars and contacts on a phone, a computer or any mail app." />
+    // PST-T-17.9: one constant header for all of Security & devices, then its tabs, then this card.
+    <Page width="narrow" align="center">
+      <PageHeader title="Security & devices" description={SECURITY_DESCRIPTION} />
       <SubNav />
 
-      <Section title="Which device?">
+      <Section title="Set up a device" description="Mail, calendars and contacts on a phone, a computer or any mail app.">
         <Tabs
+          className="pr-device-tabs"
           aria-label="Device"
           items={CLIENTS}
           value={client}
