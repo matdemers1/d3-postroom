@@ -75,7 +75,7 @@ test('keyboard: e archives the open message, the next (older) one opens, z moves
   await page.keyboard.press('e');
   await expect(row(page, b.subject)).toHaveCount(0);
   // The next message — the one below, older — is open at once; no empty "No message open" pane.
-  await expect(page).toHaveURL(new RegExp(`/mail/${a.mailboxId}/${a.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/mail/inbox/${a.id}$`));
   await expect(page.getByRole('heading', { name: a.subject, level: 2 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'No message open' })).toHaveCount(0);
   await expect(toasts(page)).toContainText(`Moved to Archive · ${b.subject}`);

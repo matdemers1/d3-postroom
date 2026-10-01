@@ -10,7 +10,7 @@ import type { Mailbox, MessageSummary } from '../api';
 import { snoozeChoices } from './compose';
 import { mailboxLabel } from './format';
 import { requestInspect, SHORTCUTS, type MailAction } from './keys';
-import { mailPath } from './route';
+import { mailboxKey, mailPath } from './route';
 import { paletteRoutes } from '../routes';
 
 /** The palette's groups, in the order it shows them (PST-T-14.3). */
@@ -146,7 +146,7 @@ export function buildCommands(ctx: CommandContext, isAdmin = false): Command[] {
         mailbox,
         ...(keycaps === undefined ? {} : { keycaps }),
         run: () => {
-          ctx.navigate(mailPath(mailbox.id));
+          ctx.navigate(mailPath(mailboxKey(mailbox)));
         },
       });
     }

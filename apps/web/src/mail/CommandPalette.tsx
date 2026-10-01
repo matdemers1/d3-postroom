@@ -21,7 +21,7 @@ import { buildCommands, filterCommands, groupMatches, paletteShortcut, type Comm
 import { mailboxIcon } from './icons';
 import { mailboxLabel } from './format';
 import type { MailAction } from './keys';
-import { parseMailRoute, mailPath } from './route';
+import { parseMailRoute, mailPath, routeMailbox } from './route';
 import { CalendarGlyph, PaperclipGlyph, PersonGlyph } from './palette/ChipIcons';
 import { onPaletteOpenRequest } from './palette/open';
 import {
@@ -118,7 +118,8 @@ export function CommandPalette({ open, onOpenChange, mailboxes, target, onAction
   );
 
   const route = parseMailRoute(location.pathname, location.search);
-  const here = route === null ? null : currentMailbox(mailboxes, route.mailboxId);
+  // A slug (/mail/inbox) or an id (a folder of your own) — PST-T-16.4.
+  const here = route === null ? null : route.mailboxIndex ? currentMailbox(mailboxes, null) : routeMailbox(route, mailboxes);
   const hereId = here?.id ?? null;
   const request = useMemo(() => (open ? searchRequest(query, filters, hereId) : null), [open, query, filters, hereId]);
   const key = requestKey(request);

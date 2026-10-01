@@ -141,7 +141,7 @@ test('typing searches messages: debounced, marked, "sender · date", and Enter o
 
   await page.keyboard.press('Enter');
   await expect(palette(page)).toBeHidden();
-  await expect(page).toHaveURL(new RegExp(`/mail/${m.mailboxId}/${m.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/mail/inbox/${m.id}$`));
   await expect(page.getByRole('heading', { name: m.subject, level: 2 })).toBeVisible();
 });
 

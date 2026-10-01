@@ -28,7 +28,7 @@ import { findSpecial, mailboxLabel } from '../mail/format';
 import { ComposeIcon, mailboxIcon } from '../mail/icons';
 import { resolveKey } from '../mail/keys';
 import { useOptionalMail } from '../mail/MailContext';
-import { mailPath, parseMailRoute } from '../mail/route';
+import { mailboxKey, mailPath, parseMailRoute, routeMailbox } from '../mail/route';
 import { LAST_VISIT_KEY, mailSidebar, newSinceVisit, parseVisits, type LastVisits } from '../mail/sidebar';
 import { SPLIT_QUERY, WIDE_QUERY, useMediaQuery } from '../mail/useMedia';
 import { ContextBar, PushFrame, usePushDirection } from '../mobile/ContextBar';
@@ -391,7 +391,7 @@ function MailboxItem({ mailbox, current, count, countNoun }: { mailbox: Mailbox;
       current={current}
       {...(count > 0 ? { count, countLabel: `${label}, ${String(count)} ${countNoun}` } : {})}
     >
-      <RouterLink to={mailPath(mailbox.id)} />
+      <RouterLink to={mailPath(mailboxKey(mailbox))} />
     </SideNavItem>
   );
 }
@@ -406,7 +406,8 @@ function MailNav({ isAdmin }: { isAdmin: boolean }) {
   const mailboxes = mail?.mailboxes ?? null;
   const inbox = mailboxes === null ? undefined : findSpecial(mailboxes, 'inbox');
   // '/' is the inbox; '/mail' (the push-nav mailbox list) is no mailbox in particular.
-  const currentMailbox = mailRoute === null ? null : (mailRoute.mailboxId ?? (mailRoute.mailboxIndex ? null : (inbox?.id ?? null)));
+  // The path may name a mailbox by slug (/mail/inbox) or by id (a folder of your own) — PST-T-16.4.
+  const currentMailbox = mailRoute === null ? null : (routeMailbox(mailRoute, mailboxes)?.id ?? (mailRoute.mailboxIndex ? null : (mailRoute.mailboxId ?? inbox?.id ?? null)));
   const groups = mailboxes === null ? null : mailSidebar(mailboxes);
   const visits = useLastVisits(groups?.safetyNet ?? [], currentMailbox);
   const places = navEntries('mail', isAdmin);
@@ -637,7 +638,7 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
     // The mail view draws its own bars (it knows the mailbox and has Search and Compose to offer);
     // every other screen gets Back with its parent's name, and its title.
     const lastMail = parseMailRoute(lastMailViewPath.split('?')[0] ?? '/', '');
-    const lastBox = lastMail?.mailboxId === null || lastMail === null ? null : (mail?.mailboxes?.find((m) => m.id === lastMail.mailboxId) ?? null);
+    const lastBox = lastMail?.mailboxId === null || lastMail === null ? null : routeMailbox(lastMail, mail?.mailboxes ?? null);
     const lastMailName = lastMail?.mailboxIndex === true ? 'Mailboxes' : lastBox === null ? 'Inbox' : mailboxLabel(lastBox);
     frame = (
       <PushFrame key={pushScreen} direction={direction} className={isMailView ? 'pr-push--mail' : undefined}>
