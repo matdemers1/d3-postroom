@@ -242,6 +242,9 @@ export async function releaseOne(deps: ReleaseDeps, id: string): Promise<Release
               references: row.references,
               bodyText,
               fromName: draft?.fromName ?? null,
+              // The Drafts copy counted To, Cc and Bcc; a sent message carries no Bcc header, so a
+              // backfill from the Sent copy's headers would count fewer (PST-T-16.12).
+              ...(draft === null || draft.toCount === null ? {} : { toSummary: { toName: draft.toName, toCount: draft.toCount } }),
             },
             now,
             takeReference: true,

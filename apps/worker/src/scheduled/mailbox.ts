@@ -64,6 +64,8 @@ export interface Denorm {
   readonly bodyText: string;
   /** The From display name for the list (PST-T-14.2); null or absent when there is none. */
   readonly fromName?: string | null;
+  /** PST-T-16.12: the recipients summary, carried over from the Drafts copy it replaces. */
+  readonly toSummary?: { readonly toName: string | null; readonly toCount: number };
 }
 
 /**
@@ -93,6 +95,7 @@ export async function fileCopy(
       inReplyTo: irt === '' ? null : irt,
       references: d.references.map(normalizeMsgId).filter((r) => r !== ''),
       ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
+      ...(d.toSummary === undefined ? {} : { toName: d.toSummary.toName, toCount: d.toSummary.toCount }),
     },
   });
   await indexMessage(tx, { messageId: filed.id, accountId: input.accountId, subject: d.subject, from: d.fromAddress, to: d.to, bodyText: d.bodyText, fromName: d.fromName ?? null });

@@ -1,8 +1,8 @@
 // PST-T-16.12 (PST-REQ-199): the pure half of the to-summary — what a Sent or Drafts row shows in
 // place of the sender. The first recipient (To, then Cc, then Bcc) by its decoded display name, else
 // its address, and how many distinct recipients there are across all three. Bcc is counted because
-// it is who the message went to; it only survives on our own Sent/Drafts copies, so inbound mail
-// counts To + Cc. The parse stage derives it; ./to-summary.ts backfills it.
+// it is who the message went to; it only survives on our own Drafts copies (a sent message carries no
+// Bcc header), so a Sent copy filed from Drafts keeps the Drafts count, and everything else counts To + Cc. The parse stage derives it; ./to-summary.ts backfills it.
 import { parseMailboxes, type Mailbox } from '@postroom/mime';
 
 /** The longest name a row keeps; a longer one is cut, not rejected (as from_name is, PST-T-14.2). */

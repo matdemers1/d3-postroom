@@ -617,9 +617,14 @@ function DeliverySection({ messageId, mailboxId, body }: { messageId: string; ma
   // the composer open on it. Nothing is sent until the reader says so.
   const resend = (recipient: DeliveryRecipient) => {
     if (resending !== null) return;
+    // The draft is made from the loaded body; before it arrives there is nothing to copy (PST-T-16.14).
+    if (body === null) {
+      setResendError('The message is still loading. Try Edit and resend again in a moment.');
+      return;
+    }
     setResending(recipient.id);
     setResendError(null);
-    const input = resendDraftInput({ subject: delivery.message.subject, text: body?.text ?? null }, resendTargets(delivery.recipients, recipient));
+    const input = resendDraftInput({ subject: delivery.message.subject, text: body.text }, resendTargets(delivery.recipients, recipient));
     api.createDraft(input).then(
       (saved) => {
         const route = parseMailRoute(location.pathname, location.search);
