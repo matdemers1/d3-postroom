@@ -72,12 +72,12 @@ export const LEAD_ACTIONS: readonly MailAction[] = ['archive', 'snooze', 'moveTo
 
 const PLACE_GROUP: Readonly<Record<'mail' | 'settings' | 'admin', CommandGroup>> = { mail: 'Go to', settings: 'Settings', admin: 'Admin' };
 
-/** Keyboard-only navigation: j/k move a cursor, o/Enter open, u goes back. Meaningless on a touch
- * screen, where a tap opens a row and the back button goes back (PST-T-16.15, PST-DA-035). */
 /** Acts on the message in hand; with none open (PST-T-17.5, PST-DA-086) they would do nothing, so the
  * palette leaves them out. Next and Previous move within the open message's list. */
 export const NEEDS_MESSAGE_ACTIONS: readonly MailAction[] = ['archive', 'snooze', 'moveTo', 'next', 'prev'];
 
+/** Keyboard-only navigation: j/k move a cursor, o/Enter open, u goes back. Meaningless on a touch
+ * screen, where a tap opens a row and the back button goes back (PST-T-16.15, PST-DA-035). */
 export const KEYBOARD_ONLY_ACTIONS: readonly MailAction[] = ['next', 'prev', 'open', 'back'];
 
 /** Whether the primary pointer is a finger. With no matchMedia (tests, SSR) it is not. */
