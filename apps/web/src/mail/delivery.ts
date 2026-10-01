@@ -153,3 +153,35 @@ export function deliveryLine(
       return 'Canceled — not sent';
   }
 }
+
+// --- Cancelled (PST-T-16.14, design finding PST-DA-024) ---------------------------------------------
+
+/** A cancelled recipient's own fields: the free-text the API keeps (`lastText`, "deleted by admin: …"
+ *  when an admin pulled it) and when the row last changed — for a cancelled one, when it was
+ *  cancelled. `updatedAt` is `recipientJson`'s (apps/api/src/delivery); absent, the sentence names no time. */
+export interface CancelledFields {
+  lastText?: string | null;
+  updatedAt?: string | null;
+}
+
+/** The admin-written reason out of "deleted by admin: <reason>", or null when there is none. */
+export function adminCancelReason(lastText: string | null | undefined): string | null {
+  const match = /^deleted by admin:\s*(.*)$/is.exec(lastText ?? '');
+  if (match === null) return null;
+  const reason = (match[1] ?? '').trim().replace(/[.\s]+$/, '');
+  return reason === '' ? null : reason;
+}
+
+/**
+ * Why a recipient was cancelled and when, as one sentence. Cancelled by you: "You canceled it at 3:40
+ * PM, so it was never sent." Pulled from the queue by an admin: "An admin canceled it at 3:40 PM: <their
+ * reason>." Never the remote's text — nothing was ever sent to a remote.
+ */
+export function cancelledSentence(r: CancelledFields, now: Date = new Date(), locale?: string): string {
+  const when = r.updatedAt !== undefined && r.updatedAt !== null && !Number.isNaN(new Date(r.updatedAt).getTime()) ? ` at ${retryTime(r.updatedAt, now, locale)}` : '';
+  if ((r.lastText ?? '').toLowerCase().startsWith('deleted by admin')) {
+    const reason = adminCancelReason(r.lastText);
+    return reason === null ? `An admin canceled it${when}, so it was never sent.` : `An admin canceled it${when}: ${reason}.`;
+  }
+  return `You canceled it${when}, so it was never sent.`;
+}
