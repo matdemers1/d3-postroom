@@ -25,6 +25,7 @@ import { ChevronIcon } from '../mail/icons';
 import { PHONE_QUERY, useMediaQuery } from '../mail/useMedia';
 import { Loading, LoadFailed } from './states';
 import { IMPORT_PRESETS, presetById, presetForAddress, presetForHost } from './import/presets';
+import { startImport } from './import/start';
 import { folderCount, folderState, importFormProblem, importState, importTitle, isActive } from './import/status';
 
 const POLL_MS = 2_000;
@@ -213,16 +214,17 @@ export function Import() {
     }
     setBusy(true);
     // A 403 step_up_required opens "Confirm it is you"; once the code is accepted the start runs
-    // again. Cancelling the modal settles with null and leaves the form as it was.
-    withStepUp(() => importApi.start(input()))
-      .then((started) => {
-        if (started === null) return;
-        setCurrent(started);
+    // again. Cancelling the modal settles as `cancelled` and leaves the form as it was.
+    void startImport(withStepUp, () => importApi.start(input()))
+      .then((outcome) => {
+        if (outcome.kind === 'cancelled') return;
+        if (outcome.kind === 'failed') {
+          setFormError(importError(outcome.error));
+          return;
+        }
+        setCurrent(outcome.import);
         setPassword('');
         setNotice('Import started. You can leave this page; it carries on.');
-      })
-      .catch((caught: unknown) => {
-        setFormError(importError(caught));
       })
       .finally(() => {
         setBusy(false);

@@ -34,7 +34,7 @@ import { Loading, LoadFailed } from './states';
 import { Corrections } from './rules/Corrections';
 import { applyDestination, BUCKETS, destinationOptions, destinationValue } from './rules/destinations';
 import { PlusIcon } from './rules/icons';
-import { runningState, scriptActions, showsScripts } from './rules/scripts';
+import { createRunGuard, runningState, scriptActions, showsScripts } from './rules/scripts';
 import { useMailboxes } from './rules/useMailboxes';
 
 // ─── The builder's model, and its Sieve (PST-REQ-150) ────────────────────────────────────────────
@@ -320,6 +320,7 @@ export function Rules() {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const mailboxes = useMailboxes();
+  const guard = useState(createRunGuard)[0];
   // Every write goes through the step-up contract: should the server ask for a fresh code
   // (403 step_up_required), "Confirm it is you" opens at the moment of the write, and the write runs
   // again once the code is accepted. Nothing is asked on the page itself.
@@ -403,24 +404,29 @@ export function Rules() {
     return false;
   };
 
+  // One write at a time, whichever control starts it (scripts.ts createRunGuard): `busy` disables the
+  // buttons, and the guard refuses a second run that slips past them — a menu item, Enter, or a click
+  // while "Confirm it is you" is still open over the first.
   const run = (work: () => Promise<void>) => {
-    setBusy(true);
-    setNotice(null);
-    setFormError(null);
-    setCompileError(null);
-    work()
-      .catch((error: unknown) => {
+    void guard.run(async () => {
+      setBusy(true);
+      setNotice(null);
+      setFormError(null);
+      setCompileError(null);
+      try {
+        await work();
+      } catch (error) {
         const problem = compileErrorOf(error);
         if (problem !== null) setCompileError(problem);
         else setFormError(describeError(error));
-      })
-      .finally(() => {
+      } finally {
         setBusy(false);
-      });
+      }
+    });
   };
 
   const check = () => {
-    if (!validRows()) return;
+    if (guard.running || !validRows()) return;
     run(async () => {
       const result = await sieveApi.check(text());
       if (result.error !== null) setCompileError(result.error);
@@ -430,7 +436,7 @@ export function Rules() {
 
   const save = (activate: boolean) => (event?: SyntheticEvent) => {
     event?.preventDefault();
-    if (!validRows()) return;
+    if (guard.running || !validRows()) return;
     run(async () => {
       const content = text();
       const done = await withStepUp(async () => {
@@ -454,10 +460,16 @@ export function Rules() {
   };
 
   const remove = (target: string) => {
-    // The confirm closes first, so a step-up prompt never stacks on top of it.
-    setConfirming(null);
+    // The confirm stays open until the delete is done: a step-up prompt opens over it, and a
+    // cancelled step-up leaves the confirm where it was, so the delete is never silently dropped.
     run(async () => {
-      if ((await withStepUp(() => sieveApi.remove(target))) === null) return;
+      try {
+        if ((await withStepUp(() => sieveApi.remove(target))) === null) return;
+      } catch (error) {
+        setConfirming(null);
+        throw error;
+      }
+      setConfirming(null);
       const list = await load();
       if (target === name) await open(list?.find((s) => s.active)?.name ?? BUILDER_SCRIPT);
       setNotice(`Deleted “${target}”.`);
@@ -499,7 +511,8 @@ export function Rules() {
               </div>
             }
           >
-            <form onSubmit={save(false)} noValidate>
+            {/* Enter in a field runs the primary action — the SplitButton's main half is the submit. */}
+            <form onSubmit={save(true)} noValidate>
               <Stack gap="16">
                 {mode === 'builder' ? (
                   rules.length === 0 ? (
@@ -585,15 +598,15 @@ export function Rules() {
                     </Button>
                   }
                 >
+                  {/* The main half submits the form (Enter does the same); both halves are
+                      disabled while a write — or its step-up — is in flight. */}
                   <SplitButton
-                    type="button"
+                    type="submit"
                     variant="primary"
                     label="Save and turn on"
                     menuLabel="More ways to save"
+                    disabled={busy}
                     loading={busy}
-                    onClick={() => {
-                      save(true)();
-                    }}
                   >
                     <MenuItem
                       onSelect={() => {
