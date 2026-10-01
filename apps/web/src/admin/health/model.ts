@@ -118,20 +118,6 @@ export function lastRunFootnote(tile: HealthTile, what: string): string {
   return humanizeDetail(tile.detail);
 }
 
-/** The certificate tile's one word: the detail line carries the numbers. */
-export function certificateValue(tile: HealthTile): string {
-  switch (tile.state) {
-    case 'ok':
-      return 'Valid';
-    case 'down':
-      return 'Failing';
-    case 'warn':
-      return 'Degraded';
-    case 'unknown':
-      return 'Not checked';
-  }
-}
-
 /** A queued recipient's state as a StatusDot: waiting is neutral, deferred asks, bounced failed. */
 export const QUEUE_STATE: Readonly<Record<string, { label: string; tone: StatusDotTone }>> = {
   queued: { label: 'Queued', tone: 'neutral' },
@@ -219,4 +205,111 @@ export function tileAction(tile: HealthTile): TileAction | null {
     default:
       return null;
   }
+}
+
+// ─── PST-T-17.1: Health on the canvas (admin critique 2.1) ──────────────────────────────────────
+
+/** What one Stat tile shows: a number (or "—") in the value slot, never a status word (2.1 #5). */
+export interface StatView {
+  value: string;
+  unit?: string;
+  /** The StatusDot under the value. */
+  status: { label: string; tone: StatusDotTone };
+  /** One line; the screen truncates it and puts the whole text in `title`. */
+  footnote: string;
+}
+
+const NOT_REPORTED: StatView = { value: '—', status: { label: 'Not reported', tone: 'idle' }, footnote: 'Not reported' };
+
+/** The inbound queue as a count of dead jobs; "—" when the server's wording is anything else. */
+export function inboundQueueStat(tile: HealthTile | undefined): StatView {
+  if (tile === undefined) return NOT_REPORTED;
+  const status = TILE_TONE[tile.state];
+  const q = inboundQueueCounts(tile);
+  if (q === null) return { value: '—', status, footnote: humanizeDetail(tile.detail) };
+  return {
+    value: String(q.dead),
+    unit: q.dead === 1 ? 'dead job' : 'dead jobs',
+    status,
+    footnote: `${String(q.failed)} failed ${q.failed === 1 ? 'message' : 'messages'}`,
+  };
+}
+
+/**
+ * Certificates as days left, read from the detail apps/worker/src/monitors/cert.ts writes: "all
+ * certificates valid for at least 21 days" (shown "21+"), or "<file>: expires in 3.2 days; …" (the
+ * soonest, rounded down). A check that has not run, or a reason with no number, is "—".
+ */
+export function certificateStat(tile: HealthTile | undefined): StatView {
+  if (tile === undefined) return NOT_REPORTED;
+  const status = TILE_TONE[tile.state];
+  if (tile.state === 'unknown') return { value: '—', status, footnote: 'Not checked yet' };
+  const atLeast = /valid for at least (\d+) days?/i.exec(tile.detail);
+  if (atLeast !== null) return { value: `${atLeast[1] ?? ''}+`, unit: 'days left', status, footnote: 'Every certificate' };
+  const left = [...tile.detail.matchAll(/expires in (-?\d+(?:\.\d+)?) days?/gi)].map((m) => Number(m[1]));
+  if (left.length > 0) {
+    const soonest = Math.max(0, Math.floor(Math.min(...left)));
+    return { value: String(soonest), unit: soonest === 1 ? 'day left' : 'days left', status, footnote: humanizeDetail(tile.detail) };
+  }
+  return { value: '—', status, footnote: humanizeDetail(tile.detail) };
+}
+
+/** True when the backup job skipped because no offsite bucket is configured (apps/worker/src/backup/job.ts). */
+export function backupNotConfigured(tile: HealthTile): boolean {
+  return /backups not configured/i.test(tile.detail);
+}
+
+/**
+ * A last-run tile (backup, restore drill) as a Stat: when it last ran. A backup with no offsite
+ * bucket is "Local only" with an attention status — no copy leaves the machine, and that needs the
+ * operator (D-016) — rather than a time over a "Not checked" dot.
+ */
+export function lastRunView(tile: HealthTile | undefined, what: 'backup' | 'drill', now: Date): StatView {
+  if (tile === undefined) return NOT_REPORTED;
+  if (what === 'backup' && backupNotConfigured(tile)) {
+    const missing = /\(([^)]+) not set\)/.exec(tile.detail)?.[1];
+    const ran = tile.since === null ? null : `local dump ran ${relativeTime(tile.since, now)}`;
+    return {
+      value: 'Local only',
+      status: { label: 'No offsite copy', tone: 'attention' },
+      footnote: [missing === undefined ? 'Offsite backups not configured' : `${missing} not set`, ran].filter((p) => p !== null).join(' · '),
+    };
+  }
+  const stat = lastRunStat(tile, now);
+  return { ...stat, status: TILE_TONE[tile.state], footnote: lastRunFootnote(tile, what) };
+}
+
+/** The daemons report by id ("smtp-in"); the Services list says what each one is (2.1 #6). */
+const SERVICE_NAMES: Readonly<Record<string, string>> = {
+  'smtp-in': 'SMTP inbound',
+  submission: 'Submission',
+  imap: 'IMAP',
+  managesieve: 'ManageSieve',
+  delivery: 'Delivery',
+  dav: 'CalDAV / CardDAV',
+  worker: 'Worker',
+  api: 'API',
+  edge: 'Edge',
+};
+
+export function serviceName(tile: Pick<HealthTile, 'id' | 'label'>): string {
+  const known = SERVICE_NAMES[tile.id];
+  if (known !== undefined) return known;
+  if (tile.label !== tile.id) return tile.label;
+  return tile.label.charAt(0).toUpperCase() + tile.label.slice(1);
+}
+
+/** Details that only say the state again in other words: the dot already says it (2.1 #4, #7). */
+const RESTATES: Readonly<Record<HealthTileState, readonly string[]>> = {
+  ok: ['ok', 'reachable'],
+  warn: ['reported degraded'],
+  down: ['reported down'],
+  unknown: ['not yet checked', 'never run'],
+};
+
+/** A tile's detail as a sentence, or null when it would only restate the status beside it. */
+export function tileDetail(tile: Pick<HealthTile, 'state' | 'detail'>): string | null {
+  const text = tile.detail.trim();
+  if (text === '' || RESTATES[tile.state].includes(text.toLowerCase())) return null;
+  return humanizeDetail(text);
 }
