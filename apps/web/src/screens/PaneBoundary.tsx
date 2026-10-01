@@ -44,6 +44,7 @@ export class PaneBoundary extends Component<Props, State> {
     return (
       <div className={['pr-pane-error', this.props.compact === true ? 'pr-pane-error--compact' : '', this.props.fallbackClassName ?? ''].filter(Boolean).join(' ')}>
         <Alert
+          dynamic
           tone="danger"
           title={`${this.props.name} stopped working`}
           actions={

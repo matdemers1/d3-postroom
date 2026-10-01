@@ -84,11 +84,8 @@ test.describe('with a session', () => {
     await expect(next).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(new RegExp(`/${other.id}$`));
-    // The boundary resets on the new message, but for one render the pane still holds the broken
-    // message's body (MailView sets `open` in an effect), so it can throw once more and sit on the
-    // fallback. Try again — now on the fresh state — is the way out, and it must work.
-    const again = stopped(page, 'The reading pane').getByRole('button', { name: 'Try again' });
-    if (await again.isVisible()) await again.click();
+    // Opening another message is enough: the boundary is keyed on the message it renders, so it
+    // resets onto the good one without Try again.
     await expect(page.getByRole('heading', { name: other.subject, level: 2 })).toBeVisible();
     await expect(stopped(page, '')).toHaveCount(0);
     await expect(list).toBeVisible();

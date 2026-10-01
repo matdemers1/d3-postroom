@@ -1324,7 +1324,10 @@ function MailPanes({ route }: { route: MailRoute }) {
   // thread (or the composer) leaves the message list on screen and the other way round. The list
   // recovers when the mailbox or the search changes, the reader when another message opens.
   const listPaneKey = `${route.mailboxId ?? ''}|${searchQuery ?? ''}`;
-  const readerKey = `${route.messageId ?? ''}|${route.compose ?? ''}`;
+  // Keyed on the message the pane actually renders as well as the route's: `open` swaps in an effect,
+  // so a render can still hold the broken message after the route moves on. The second key change,
+  // when `open` catches up, resets the boundary onto the good message (PST-T-16.2).
+  const readerKey = `${route.messageId ?? ''}|${open?.id ?? ''}|${route.compose ?? ''}`;
   const guardedList = (
     <PaneBoundary name="The message list" resetKey={listPaneKey} compact fallbackClassName="pr-pane-error--list">
       {listPane}
