@@ -1,0 +1,33 @@
+/* TOTP enrolment on the setup screen (PST-T-16.6, PST-REQ-196). Existing tokens only. */
+
+/* The QR: a light island in either theme, with the quiet zone drawn inside the SVG. */
+.pr-totp-qr {
+  align-self: center;
+  width: 200px;
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.pr-totp-qr > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pr-totp-qr__light {
+  fill: var(--color-surface-raised);
+}
+
+.pr-totp-qr__dark {
+  fill: var(--color-fg);
+}
+
+/* The key in four-character groups. The gap is spacing, not a space character, so selecting and
+ * copying the key still gives the ungrouped secret. */
+.pr-totp-key {
+  display: inline-flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-8);
+  font-family: var(--font-mono);
+}
