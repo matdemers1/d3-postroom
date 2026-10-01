@@ -1,0 +1,393 @@
+/* PST-T-17.14 (PST-REQ-194; admin critique 2.9, X10): the setup wizard on the canvas. A 672 px
+ * column, a stepper above one Section card per step, fields 24rem wide with their actions directly
+ * under them on the start edge. D3 semantic tokens only; no fill or border fakes a card — the card's
+ * edge comes from @d3cloud/ui. */
+
+/* ---- Stepper ---------------------------------------------------------------------------------- */
+
+.pr-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+.pr-steps__count {
+  margin: 0;
+  white-space: nowrap;
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-steps__list {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-steps__item {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* The connector: a hairline from the previous circle's edge to this one's (circle centre = 16px from
+ * the top: the button's 4px padding plus half the 24px circle). */
+.pr-steps__item + .pr-steps__item::before {
+  content: '';
+  position: absolute;
+  top: 16px;
+  inset-inline-start: calc(-50% + 16px);
+  inset-inline-end: calc(50% + 16px);
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+/* After a finished step the line is drawn in the finished tone. */
+.pr-steps__item--complete + .pr-steps__item::before {
+  border-block-start-color: var(--color-fg-muted);
+}
+
+.pr-steps__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pr-steps__btn[aria-current='step'],
+.pr-steps__btn[aria-disabled='true'] {
+  cursor: default;
+}
+
+.pr-steps__btn:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+.pr-steps__btn:not([aria-current='step'], [aria-disabled='true']):hover .pr-steps__label {
+  color: var(--color-fg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.pr-steps__mark {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: var(--border-width) solid var(--color-border-field);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+  line-height: 1;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Upcoming: a hairline circle and a muted label — never faint, never dimmed (2.9 #1, #8). */
+.pr-steps__label {
+  max-width: 100%;
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* Done: a neutral filled circle with a ✓, and the label in the body colour. */
+.pr-steps__item--complete .pr-steps__mark {
+  border-color: transparent;
+  background: var(--color-fg-muted);
+  color: var(--color-surface);
+}
+
+.pr-steps__item--complete .pr-steps__label {
+  color: var(--color-fg);
+}
+
+/* The step on screen: the accent circle, the label in semibold. */
+.pr-steps__item--current .pr-steps__mark {
+  border-color: transparent;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.pr-steps__item--current .pr-steps__label {
+  color: var(--color-fg);
+  font-weight: var(--weight-semibold);
+}
+
+/* Phone: one line that opens a menu of the steps, over a five-segment bar (2.9 #5). */
+.pr-steps--phone {
+  gap: var(--space-8);
+}
+
+.pr-steps__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+.pr-steps__trigger.d3-btn {
+  min-height: 44px;
+  margin-inline-start: calc(var(--space-16) * -1);
+  color: var(--color-fg);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-steps__bar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.pr-steps__seg {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+.pr-steps__seg--on {
+  background: var(--color-accent);
+}
+
+/* ---- Copyable values -------------------------------------------------------------------------- */
+
+.pr-copyfield {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.pr-copyfield > .d3-inp {
+  flex: 1;
+  min-width: 0;
+}
+
+.pr-copyfield__mono .d3-inp__control {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  font-variant-ligatures: none;
+}
+
+.pr-copyfield .d3-inp--area .d3-inp__control {
+  min-height: 0;
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  resize: none;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.pr-copyfield__copy.d3-ibtn {
+  flex: none;
+  width: 36px;
+  height: 36px;
+}
+
+/* ---- DKIM keys -------------------------------------------------------------------------------- */
+
+.pr-dkim-keys {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-dkim-key {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding-block: var(--space-16);
+}
+
+.pr-dkim-key:first-child {
+  padding-block-start: 0;
+}
+
+.pr-dkim-key:last-child {
+  padding-block-end: 0;
+}
+
+.pr-dkim-key + .pr-dkim-key {
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.pr-dkim-key__title {
+  margin: 0;
+  color: var(--color-fg);
+  font-size: var(--text-14);
+  line-height: var(--leading-14);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-dkim-key__selector {
+  margin-inline-start: var(--space-6);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  font-weight: var(--weight-regular);
+}
+
+/* ---- DNS records ------------------------------------------------------------------------------ */
+
+.pr-dnslist {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-dnslist__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-block: var(--space-16);
+  min-width: 0;
+}
+
+.pr-dnslist__item:first-child {
+  padding-block-start: 0;
+}
+
+.pr-dnslist__item:last-child {
+  padding-block-end: 0;
+}
+
+.pr-dnslist__item + .pr-dnslist__item {
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.pr-dnslist__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  min-height: 24px;
+}
+
+.pr-dnslist__title {
+  color: var(--color-fg);
+  font-size: var(--text-14);
+  line-height: var(--leading-14);
+  font-weight: var(--weight-medium);
+}
+
+.pr-dnslist__type {
+  margin-inline-start: var(--space-4);
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+  font-weight: var(--weight-regular);
+}
+
+.pr-dnslist__note,
+.pr-dnslist__why {
+  margin: 0;
+  max-width: 36rem;
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+  overflow-wrap: anywhere;
+}
+
+.pr-dnslist__live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 24rem;
+}
+
+.pr-dnslist__live-label {
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+}
+
+.pr-dnslist__value {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Delivery timeline ------------------------------------------------------------------------ */
+
+.pr-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-timeline__event {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-12);
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+}
+
+.pr-timeline__time {
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-timeline__detail {
+  grid-column: 2;
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  overflow-wrap: anywhere;
+}
+
+.pr-timeline__recipient {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Small print ------------------------------------------------------------------------------ */
+
+.pr-wizard-note {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+}
+
+/* Phone targets are 44px. */
+@media (max-width: 767px), (max-height: 499px) {
+  .pr-copyfield__copy.d3-ibtn {
+    width: 44px;
+    height: 44px;
+  }
+}

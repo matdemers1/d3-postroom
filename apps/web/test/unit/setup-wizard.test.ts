@@ -1,5 +1,7 @@
 // PST-T-4.8's pure web helpers: the wizard's progress, the DNS summary line, and a delivery turned
 // into the timeline the wizard's last step shows.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { dnsSummary, settled, timelineOf, wizardReachable, wizardStepsLeft, type DeliveryView, type WizardView } from '../../src/api';
 
@@ -108,5 +110,53 @@ describe('delivery timeline', () => {
     expect(settled('bounced')).toBe(true);
     expect(settled('deferred')).toBe(false);
     expect(settled('queued')).toBe(false);
+  });
+});
+
+// PST-T-17.14 (PST-REQ-194; admin critique X10, 2.9): the wizard on the canvas — a 672 px column, its
+// h1 the nav label, fields 24rem wide with their actions on the start edge directly under them, and a
+// status as a dot and a word.
+describe('the setup wizard page', () => {
+  const src = readFileSync(join(__dirname, '../../src/screens/SetupWizard.tsx'), 'utf8');
+  const css = readFileSync(join(__dirname, '../../src/screens/setup/wizard.css'), 'utf8');
+
+  it('is a narrow, centred page whose h1 is the nav label', () => {
+    expect(src).toContain("const TITLE = 'Setup';");
+    expect(src).not.toContain('Set up mail');
+    const pages = src.match(/<Page\b[^>]*>/g) ?? [];
+    expect(pages.length).toBeGreaterThanOrEqual(3);
+    for (const page of pages) expect(page).toBe('<Page width="narrow" align="center">');
+    expect(src.match(/<PageHeader title=\{TITLE\}/g)).toHaveLength(3);
+  });
+
+  it('sizes every field to 24rem and starts every action row under its field', () => {
+    const fields = src.match(/<FormField\b[^>]*>/g) ?? [];
+    // The step-up prompt lives in a Modal and keeps its width; every step field is lg.
+    const stepFields = fields.filter((f) => !f.includes('Authentication code'));
+    expect(stepFields.length).toBe(3);
+    for (const f of stepFields) expect(f).toContain('width="lg"');
+    const actions = src.match(/<FormActions\b[^>]*>/g) ?? [];
+    expect(actions.length).toBe(6);
+    for (const a of actions) expect(a).toBe('<FormActions align="start">');
+  });
+
+  it('draws the stepper from its own module, and no status as a Badge or a hand-made card', () => {
+    expect(src).toContain('<WizardSteps');
+    expect(src).not.toContain('<Badge');
+    expect(src).not.toContain('pr-admin-card');
+    expect(src).not.toContain('<DnsTable');
+    expect(src).toContain('<StatusDot');
+  });
+
+  it('keeps every step on its API call', () => {
+    const flat = src.replace(/\s+/g, '');
+    for (const call of ['api.wizard()', 'api.wizardDomain(', 'api.wizardDkim()', 'api.wizardDns()', 'api.wizardMailbox(', 'api.wizardTest(', 'api.wizardComplete()', 'api.stepUp(', 'api.send(', 'api.delivery(']) {
+      expect(flat, call).toContain(call);
+    }
+  });
+
+  it('uses only D3 tokens in its stylesheet, and no shadow', () => {
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(css).not.toContain('box-shadow');
   });
 });
