@@ -695,6 +695,8 @@ export interface RenderTicket {
    * hairline. False: it renders transparent in the app's theme, flush with the text around it.
    */
   designed: boolean;
+  /** PST-T-17.3: estimated document height (px) in a 360px- and a 720px-wide frame — the frame runs no script to say. */
+  heightEstimate?: { narrow: number; wide: number };
 }
 
 /** Matches apps/api/src/mail/inspect.ts's MessageInspect (PST-T-6.1, PST-REQ-114). */

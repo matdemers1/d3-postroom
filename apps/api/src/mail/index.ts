@@ -15,6 +15,7 @@ import { Router, type Request, type Response } from 'express';
 import type { z } from 'zod';
 import { currentSession, handle } from '../auth/middleware.js';
 import { mintRenderUrl, usercontentConfig } from '../usercontent/index.js';
+import { estimateHtmlHeight, estimateTextHeight } from '../usercontent/height.js';
 import { sanitizeHtml } from '../usercontent/sanitize.js';
 import { runtimeFor } from '../auth/runtime.js';
 import type { ApiDeps } from '../deps.js';
@@ -307,7 +308,8 @@ export function mailRoutes(deps: ApiDeps): Router {
       const store = blobStore(res);
       if (store === null) return;
       const summary = await collectMessage(await store.get(message.blobSha256));
-      const stats = summary.html === null ? { remoteImages: 0, trackersBlocked: 0, linksCleaned: 0, designed: false } : sanitizeHtml(summary.html.text);
+      const sanitized = summary.html === null ? null : sanitizeHtml(summary.html.text);
+      const stats = sanitized ?? { remoteImages: 0, trackersBlocked: 0, linksCleaned: 0, designed: false };
       const me = currentSession(req);
       const images = query.images === '1';
       const ticket: RenderTicketJson = {
@@ -317,6 +319,8 @@ export function mailRoutes(deps: ApiDeps): Router {
         trackersBlocked: stats.trackersBlocked,
         linksCleaned: stats.linksCleaned,
         designed: stats.designed,
+        // PST-T-17.3: the frame cannot report its own height (no script), so the server estimates it.
+        heightEstimate: sanitized === null ? estimateTextHeight(summary.text?.text ?? '') : estimateHtmlHeight(sanitized.html, { designed: sanitized.designed, images }),
       };
       res.setHeader('Cache-Control', 'private, no-store');
       res.json(ticket);

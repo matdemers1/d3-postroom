@@ -197,6 +197,12 @@ export const RenderTicket = z.object({
   designed: z
     .boolean()
     .describe('The HTML paints its own page (a bgcolor/background attribute, or a non-white background declaration): it renders on a white page the client should frame. False: it renders on a transparent page in the requested theme (PST-T-15.12).'),
+  heightEstimate: z
+    .object({
+      narrow: z.number().int().describe('Estimated document height in CSS px in a frame 360 px wide (layout tables linearised).'),
+      wide: z.number().int().describe('Estimated document height in CSS px in a frame 720 px wide.'),
+    })
+    .describe('How tall the rendered document is likely to be, estimated server-side from the sanitised markup: the frame runs no script, so it cannot report its own height. Interpolate for the frame width in hand and clamp (PST-T-17.3).'),
 });
 
 export const SearchResult = z.object({
