@@ -2,6 +2,7 @@ import '../styles/fields.css';
 import { type SyntheticEvent, useEffect, useState } from 'react';
 import { Alert, AuthLayout, Button, Card, FormActions, FormField, Input, PasswordInput, Stack, Link } from '@d3cloud/ui';
 import { api, describeError, type AuthState } from '../api';
+import { describeRecoveryError, USE_AUTHENTICATOR_LABEL, USE_RECOVERY_LABEL } from './recovery/codes';
 
 /**
  * Two ways in, side by side (PST-REQ-005). The password form is always here; the D3 Auth button
@@ -13,6 +14,8 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [challenge, setChallenge] = useState<string | null>(null);
+  /** PST-REQ-197: the second step takes a recovery code in place of the TOTP code. */
+  const [useRecovery, setUseRecovery] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkAfter, setLinkAfter] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -36,6 +39,7 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
       .signIn({ login, password })
       .then((result) => {
         setChallenge(result.challenge);
+        setUseRecovery(false);
         setPassword('');
       })
       .catch((caught: unknown) => {
@@ -63,7 +67,7 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
       })
       .catch((caught: unknown) => {
         setCode('');
-        setError(describeError(caught));
+        setError(useRecovery ? describeRecoveryError(caught) : describeError(caught));
         if (caught instanceof Error && caught.message === 'challenge_expired') setChallenge(null);
       })
       .finally(() => {
@@ -74,7 +78,13 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
   return (
     <AuthLayout
       title="Sign in to Postroom"
-      description={challenge === null ? 'Your d3cloud.io mail.' : 'One more step: the code from your authenticator.'}
+      description={
+        challenge === null
+          ? 'Your d3cloud.io mail.'
+          : useRecovery
+            ? 'One more step: one of your recovery codes.'
+            : 'One more step: the code from your authenticator.'
+      }
       focusOnMount={false}
     >
       <Card>
@@ -119,21 +129,57 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
               </FormActions>
             </Stack>
           ) : (
-            <Stack as="form" gap="16" onSubmit={submitCode} aria-label="Enter your authentication code">
-              <FormField label="Authentication code" help="Six digits from your authenticator app.">
-                <Input appearance="filled"
-                  name="code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  pattern="[0-9 ]*"
-                  autoFocus
-                  required
-                  value={code}
-                  onChange={(e) => {
-                    setCode(e.target.value);
-                  }}
-                />
-              </FormField>
+            <Stack
+              as="form"
+              gap="16"
+              onSubmit={submitCode}
+              aria-label={useRecovery ? 'Enter a recovery code' : 'Enter your authentication code'}
+            >
+              {useRecovery ? (
+                <FormField label="Recovery code" help="One of the ten codes you saved, like ABCDE-12345. Each works once.">
+                  <Input appearance="filled"
+                    key="recovery"
+                    name="recoveryCode"
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    autoFocus
+                    required
+                    value={code}
+                    onChange={(e) => {
+                      setCode(e.target.value);
+                    }}
+                  />
+                </FormField>
+              ) : (
+                <FormField label="Authentication code" help="Six digits from your authenticator app.">
+                  <Input appearance="filled"
+                    key="totp"
+                    name="code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9 ]*"
+                    autoFocus
+                    required
+                    value={code}
+                    onChange={(e) => {
+                      setCode(e.target.value);
+                    }}
+                  />
+                </FormField>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setUseRecovery((r) => !r);
+                  setCode('');
+                  setError(null);
+                }}
+              >
+                {useRecovery ? USE_AUTHENTICATOR_LABEL : USE_RECOVERY_LABEL}
+              </Button>
               <FormActions
                 layout="stack"
                 leading={
@@ -142,6 +188,7 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
                     variant="ghost"
                     onClick={() => {
                       setChallenge(null);
+                      setUseRecovery(false);
                       setCode('');
                     }}
                   >

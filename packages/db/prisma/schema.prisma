@@ -174,6 +174,9 @@ model Account {
   // PST-T-15.10: files uploaded in the composer, waiting to be attached (PST-ADR-013).
   composeUploads ComposeUpload[]
 
+  // PST-T-16.7: single-use TOTP recovery codes (PST-REQ-197).
+  recoveryCodes RecoveryCode[]
+
   @@map("account")
 }
 
@@ -1507,4 +1510,23 @@ model CryptoKey {
   @@unique([accountId, kind, fingerprint])
   @@index([accountId, address])
   @@map("crypto_key")
+}
+
+/// A single-use TOTP recovery code (PST-T-16.7, PST-REQ-197): ten are issued when an account
+/// completes TOTP enrolment, and one is accepted once in place of a TOTP code at sign-in. Only the
+/// Argon2id hash (with the server pepper) is stored; the code itself is shown once and never again.
+/// Regenerating deletes the whole set and issues a new one in the same transaction.
+model RecoveryCode {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String    @map("account_id") @db.Uuid
+  /// Argon2id (peppered) of the normalised code: ten symbols, no dash.
+  codeHash  String    @map("code_hash")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Set by the conditional update that accepts it (`WHERE used_at IS NULL`): used once, never twice.
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("recovery_code")
 }

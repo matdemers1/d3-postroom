@@ -17,6 +17,8 @@ import {
   Stack,
 } from '@d3cloud/ui';
 import { api, ApiError, describeError } from '../api';
+import { recoveryApi } from './recovery/api';
+import { RecoveryCodes } from './recovery/RecoveryCodes';
 import { DOMAIN, type Field, localPartOf, loginProblem, serverFieldErrors } from '../setup-login';
 import { CopyButton } from './AdminDns';
 import { AFTER_SETUP, afterCompleteFailure, EMPTY_SETUP_FORM, keyGroups, type SetupForm, startOver } from './setup/enrolment';
@@ -28,7 +30,8 @@ const MIN_PASSWORD = 12;
  * authenticator. Setup is not complete — and nothing is saved — until a code proves it works.
  * The key is shown as a QR drawn in the browser and in four-character groups (PST-REQ-196); an
  * enrolment that expired goes back to the first step with what was typed (PST-DA-038); and the
- * operator then lands on the setup wizard, not an empty Inbox (PST-DA-036).
+ * operator then lands on the setup wizard, not an empty Inbox (PST-DA-036) — after the ten recovery
+ * codes enrolment issued have been shown, once, behind an "I have saved these" checkbox (PST-REQ-197).
  */
 // `onDone` (App's auth refresh) is no longer called: see `complete` for why the page loads afresh.
 export function Setup(_props: { onDone: () => Promise<void> }) {
@@ -39,6 +42,8 @@ export function Setup(_props: { onDone: () => Promise<void> }) {
   };
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<Field, string>>>({});
+  /** The recovery codes setup/complete returned: shown once, then gone with the page. */
+  const [recovery, setRecovery] = useState<{ codes: string[]; address: string; at: Date } | null>(null);
 
   const loginError = loginProblem(login) ?? fieldErrors.login;
   const mismatch = confirm !== '' && confirm !== password;
@@ -68,19 +73,31 @@ export function Setup(_props: { onDone: () => Promise<void> }) {
       });
   };
 
+  const finish = () => {
+    setBusy(true);
+    // A full load, not a router navigation: refreshing the auth state first would let the Gate
+    // send /setup to /signin and on to '/' (its redirect renders at a higher priority than the
+    // router's transition), so the operator would land on the empty Inbox instead of the wizard.
+    // The session cookie is already set; the fresh load reads the new state and renders it.
+    window.location.replace(AFTER_SETUP);
+  };
+
   const complete = (event: SyntheticEvent) => {
     event.preventDefault();
     if (enrol === null) return;
     set({ error: null });
     setBusy(true);
-    api
+    recoveryApi
       .setupComplete({ setupToken, enrolToken: enrol.enrolToken, code })
-      .then(() => {
-        // A full load, not a router navigation: refreshing the auth state first would let the Gate
-        // send /setup to /signin and on to '/' (its redirect renders at a higher priority than the
-        // router's transition), so the operator would land on the empty Inbox instead of the wizard.
-        // The session cookie is already set; the fresh load reads the new state and renders it.
-        window.location.replace(AFTER_SETUP);
+      .then((result) => {
+        const codes = result.recoveryCodes ?? [];
+        if (codes.length === 0) {
+          finish();
+          return;
+        }
+        // Setup is complete and the session is live; the codes are on screen until Continue.
+        setRecovery({ codes, address: result.account.address, at: new Date() });
+        setBusy(false);
       })
       .catch((caught: unknown) => {
         // An expired enrolment can't be retried: back to the first step, keeping what was typed.
@@ -93,7 +110,13 @@ export function Setup(_props: { onDone: () => Promise<void> }) {
   return (
     <AuthLayout
       title="Set up Postroom"
-      description={enrol === null ? 'Create the operator account. This screen is shown once.' : 'Enrol your authenticator.'}
+      description={
+        recovery !== null
+          ? 'Save your recovery codes.'
+          : enrol === null
+            ? 'Create the operator account. This screen is shown once.'
+            : 'Enrol your authenticator.'
+      }
       focusOnMount={false}
     >
       <Card>
@@ -103,7 +126,22 @@ export function Setup(_props: { onDone: () => Promise<void> }) {
               {error}
             </Alert>
           )}
-          {enrol === null ? (
+          {recovery !== null ? (
+            <Stack gap="16">
+              <p>
+                Postroom is set up and your authenticator works. If you ever lose it, sign in with one of
+                these codes instead.
+              </p>
+              <RecoveryCodes
+                codes={recovery.codes}
+                address={recovery.address}
+                createdAt={recovery.at}
+                continueLabel="Continue"
+                onContinue={finish}
+                busy={busy}
+              />
+            </Stack>
+          ) : enrol === null ? (
             <Stack as="form" gap="16" onSubmit={begin} aria-label="Operator account">
               <FormField label="Setup token" help="Printed in the server's env file (SETUP_TOKEN)." {...(fieldErrors.setupToken === undefined ? {} : { error: fieldErrors.setupToken })}>
                 <PasswordInput
