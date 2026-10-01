@@ -25,11 +25,16 @@ export interface ProfileLink {
   expiresAt: string;
 }
 
+/** The protocol an app password was last used over, or null when the server has none recorded. */
+export type UseProtocol = 'imap' | 'smtp' | 'dav' | 'sieve' | null;
+
 export interface ProfileLinkStatus {
   redeemed: boolean;
   appPasswordId: string | null;
   lastUsedAt: string | null;
+  protocol: UseProtocol;
 }
+
 
 export interface DownloadedProfile {
   blob: Blob;
@@ -67,7 +72,10 @@ export const deviceApi = {
   },
 };
 
-/** When the app password `id` was first used, or null — read from the caller's own list. */
+/**
+ * When the app password `id` was last used, or null — read from the caller's own list, which names
+ * no protocol; only a one-time link's status does (the line then says "Connected at …").
+ */
 export async function passwordLastUsed(id: string): Promise<{ lastUsedAt: string | null }> {
   const { appPasswords } = await deviceApi.appPasswords();
   return { lastUsedAt: appPasswords.find((p) => p.id === id)?.lastUsedAt ?? null };

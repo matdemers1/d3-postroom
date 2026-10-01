@@ -96,7 +96,7 @@ export function IphonePanel({ withStepUp }: { withStepUp: WithStepUp }) {
               </p>
             </>
           )}
-          <ConnectionStatus key={link.linkId} watch={{ kind: 'link', linkId: link.linkId }} waiting="Waiting for your iPhone to open the code." />
+          <ConnectionStatus key={link.linkId} watch={{ kind: 'link', linkId: link.linkId, expiresAt: link.expiresAt }} waiting="Waiting for your iPhone to open the code." />
           <Cluster>
             <Button loading={busy} onClick={make}>
               Make a new code

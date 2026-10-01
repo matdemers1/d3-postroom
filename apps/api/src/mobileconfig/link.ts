@@ -12,7 +12,9 @@
 // one expiry. "Spent" is the only state, and it lives in audit_event (see index.ts): the redeem
 // writes a `mobileconfig.link.redeem` row whose entity id is `linkId` — the SHA-256 of the nonce,
 // never the nonce or the token — under an advisory lock on that id, so two racing redeems cannot
-// both find "not spent yet".
+// both find "not spent yet". A link also dies, unspent, once anything newer happens to the
+// account's credentials — a password change, "sign out everywhere", or a newer link (PST-T-16.27);
+// that too is read from audit_event, in index.ts.
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 /** How long a link is good for. Long enough to find the phone, short enough to be worthless later. */
@@ -78,26 +80,45 @@ export function mintLinkToken(key: Buffer, accountId: string, now: Date, ttlMs: 
 }
 
 /**
+ * Why a token was refused, for the server's own use only — the limiter counts `malformed` and
+ * `forged` (guessing), never `expired` (a person who was slow). Callers answer all three the same.
+ */
+export type LinkRefusal = 'malformed' | 'forged' | 'expired';
+
+export type InspectedLink = { ok: true; link: ReadLink } | { ok: false; reason: LinkRefusal };
+
+/** The link a token names, or why it was refused. The caller must not tell the client which. */
+export function inspectLinkToken(key: Buffer, token: string, now: Date): InspectedLink {
+  if (!TOKEN_RE.test(token)) return { ok: false, reason: 'malformed' };
+  const raw = Buffer.from(token, 'base64url');
+  if (raw.length !== TOKEN_BYTES) return { ok: false, reason: 'malformed' };
+  const payload = raw.subarray(0, PAYLOAD_BYTES);
+  const mac = raw.subarray(PAYLOAD_BYTES);
+  const expected = createHmac('sha256', key).update(payload).digest();
+  if (!timingSafeEqual(mac, expected)) return { ok: false, reason: 'forged' };
+  // A MAC that checks out under our key over another version is ours from a different format:
+  // not a guess, so not counted as one — but not readable either.
+  if (payload.readUInt8(0) !== VERSION) return { ok: false, reason: 'expired' };
+  const expiresMs = Number(payload.readBigUInt64BE(1 + UUID_BYTES));
+  if (!(now.getTime() < expiresMs)) return { ok: false, reason: 'expired' };
+  const nonce = payload.subarray(1 + UUID_BYTES + EXPIRY_BYTES);
+  return {
+    ok: true,
+    link: {
+      accountId: bytesToUuid(payload.subarray(1, 1 + UUID_BYTES)),
+      linkId: linkIdOf(Buffer.from(nonce)),
+      expiresAt: new Date(expiresMs),
+    },
+  };
+}
+
+/**
  * The link a token names, or null when it is malformed, forged, for another key, or expired. One
  * answer for all of them on purpose: the caller must not be able to tell which (and must not say).
  */
 export function readLinkToken(key: Buffer, token: string, now: Date): ReadLink | null {
-  if (!TOKEN_RE.test(token)) return null;
-  const raw = Buffer.from(token, 'base64url');
-  if (raw.length !== TOKEN_BYTES) return null;
-  const payload = raw.subarray(0, PAYLOAD_BYTES);
-  const mac = raw.subarray(PAYLOAD_BYTES);
-  const expected = createHmac('sha256', key).update(payload).digest();
-  if (!timingSafeEqual(mac, expected)) return null;
-  if (payload.readUInt8(0) !== VERSION) return null;
-  const expiresMs = Number(payload.readBigUInt64BE(1 + UUID_BYTES));
-  if (!(now.getTime() < expiresMs)) return null;
-  const nonce = payload.subarray(1 + UUID_BYTES + EXPIRY_BYTES);
-  return {
-    accountId: bytesToUuid(payload.subarray(1, 1 + UUID_BYTES)),
-    linkId: linkIdOf(Buffer.from(nonce)),
-    expiresAt: new Date(expiresMs),
-  };
+  const inspected = inspectLinkToken(key, token, now);
+  return inspected.ok ? inspected.link : null;
 }
 
 /**

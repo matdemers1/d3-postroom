@@ -12801,7 +12801,7 @@
         "tags": [
           "Mobileconfig"
         ],
-        "summary": "Whether a one-time link was used, and when its app password first signed in.",
+        "summary": "Whether a one-time link was used, and when and over which protocol its app password signed in.",
         "parameters": [
           {
             "name": "linkId",
@@ -12837,13 +12837,28 @@
                         "null"
                       ],
                       "format": "date-time",
-                      "description": "When a mail app first signed in with the minted password."
+                      "description": "When a mail app last signed in with the minted password."
+                    },
+                    "protocol": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "imap",
+                        "smtp",
+                        "dav",
+                        "sieve",
+                        null
+                      ],
+                      "description": "The protocol the password was used over, from the newest recorded use; null when none is recorded."
                     }
                   },
                   "required": [
                     "redeemed",
                     "appPasswordId",
-                    "lastUsedAt"
+                    "lastUsedAt",
+                    "protocol"
                   ],
                   "additionalProperties": false
                 }
@@ -12880,7 +12895,7 @@
           "Mobileconfig"
         ],
         "summary": "Install the profile from a one-time link. No session: it is the URL an iPhone camera opens.",
-        "description": "Mints one app password scoped for imap+smtp+dav and returns the profile, exactly as POST /api/mobileconfig does — the first time. Every later request, and any expired, forged or malformed token, answers 410 with the same plain-text body. HEAD answers 405 and never spends the link. Audited.",
+        "description": "Mints one app password scoped for imap+smtp+dav and returns the profile, exactly as POST /api/mobileconfig does — the first time. Every later request, any expired, forged or malformed token, and a link made before the account’s latest password change, \"sign out everywhere\" or newer link, answers 410 with the same plain-text body. HEAD answers 405 and never spends the link. Audited.",
         "parameters": [
           {
             "name": "token",
@@ -12933,7 +12948,7 @@
             }
           },
           "429": {
-            "description": "Too many failed attempts from this address.",
+            "description": "Too many malformed or forged tokens from this address. Never sent for a token the server signed.",
             "content": {
               "text/plain": {
                 "schema": {
