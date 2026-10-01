@@ -92,6 +92,11 @@ export interface ParseResult {
   readonly fromName?: string | null;
   /** Every address in the To header, comma-joined; null when the header was missing or empty. */
   readonly toAddress: string | null;
+  /** PST-T-16.12: the first recipient (To, then Cc, then Bcc) by display name, else address; null
+   * when there are none. Absent, with toCount, from a parse marker written before it existed. */
+  readonly toName?: string | null;
+  /** PST-T-16.12: distinct recipients across To, Cc and Bcc. */
+  readonly toCount?: number;
   /** ISO, or null when the Date header was missing or unparseable. */
   readonly sentAt: string | null;
   readonly inReplyTo: string[];

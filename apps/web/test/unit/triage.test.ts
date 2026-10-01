@@ -18,6 +18,8 @@ import {
   mergeMembers,
   nextAfterRemoval,
   pruneSelected,
+  recipientLine,
+  rowAvatarName,
   selectedMessages,
   senderLine,
   snippetLine,
@@ -84,6 +86,41 @@ describe('the sender line', () => {
   });
 });
 
+describe('the sender line in Sent and Drafts names the recipients (PST-T-16.12, PST-REQ-199)', () => {
+  const me = { from: 'matt@d3cloud.io', fromName: 'Matt Demers', newSender: false };
+
+  it('reads "To: <first recipient>" with (+N) for the others, in sent and in drafts', () => {
+    expect(senderLine({ ...me, to: { name: 'Alice', count: 1 } }, false, 'sent')).toEqual({ name: 'To: Alice', address: null, firstTime: false, warned: false });
+    expect(senderLine({ ...me, to: { name: 'Alice', count: 2 } }, false, 'sent').name).toBe('To: Alice (+1)');
+    expect(senderLine({ ...me, to: { name: 'bob@example.org', count: 4 } }, false, 'drafts').name).toBe('To: bob@example.org (+3)');
+  });
+
+  it('never shows the operator\'s own name or address there', () => {
+    const line = senderLine({ ...me, to: { name: 'Alice', count: 2 } }, false, 'sent');
+    expect(line.name).not.toContain('Matt');
+    expect(line.address).toBeNull();
+  });
+
+  it('says so for a draft with no recipients yet', () => {
+    expect(senderLine({ ...me, to: { name: null, count: 0 } }, false, 'drafts').name).toBe('To: (no recipients)');
+  });
+
+  it('keeps the sender line outside Sent and Drafts, and for a row not summarised yet', () => {
+    expect(senderLine({ ...me, to: { name: 'Alice', count: 2 } }, false, 'inbox').name).toBe('Matt Demers');
+    expect(senderLine({ ...me, to: { name: 'Alice', count: 2 } }).name).toBe('Matt Demers');
+    expect(senderLine({ ...me, to: null }, false, 'sent').name).toBe('Matt Demers');
+    expect(senderLine(me, false, 'sent').name).toBe('Matt Demers');
+    expect(recipientLine({ name: 'Alice', count: 1 }, 'archive')).toBeNull();
+  });
+
+  it('draws the avatar from the first recipient there, and from the sender elsewhere', () => {
+    expect(rowAvatarName({ ...me, to: { name: 'Alice Ng', count: 2 } }, 'sent')).toBe('Alice Ng');
+    expect(rowAvatarName({ ...me, to: { name: 'ada.lovelace@example.org', count: 1 } }, 'drafts')).toBe('ada lovelace');
+    expect(rowAvatarName({ ...me, to: { name: 'Alice Ng', count: 2 } }, 'inbox')).toBe('Matt Demers');
+    expect(rowAvatarName({ ...me, to: null }, 'sent')).toBe('Matt Demers');
+  });
+});
+
 describe('initials', () => {
   it('takes the first and last words of the display name', () => {
     expect(initials('Priya Shah', 'priya@example.org')).toBe('PS');
@@ -124,6 +161,18 @@ describe('MessageRow', () => {
     expect(html).toContain('Okay hear me out');
     expect(html).not.toContain('priya@example.org');
     expect(html).toContain('<time dateTime="2026-09-20T10:00:00.000Z">');
+  });
+
+  it('names the recipients in a Sent or Drafts row, never the operator (PST-T-16.12)', () => {
+    const sent = msg('m1', { from: 'matt@d3cloud.io', fromName: 'Matt Demers', to: { name: 'Alice', count: 2 } });
+    const html = render(sent, { specialUse: 'sent' });
+    expect(html).toMatch(/pr-mrow__name">To: Alice \(\+1\)</);
+    expect(html).toContain('data-name="Alice"');
+    expect(html).not.toContain('Matt Demers');
+    expect(render(sent, { specialUse: 'drafts' })).toContain('To: Alice (+1)');
+    // The same row in the Inbox (or with no mail context) is the sender's.
+    expect(render(sent, { specialUse: 'inbox' })).toMatch(/pr-mrow__name">Matt Demers</);
+    expect(render(sent)).toMatch(/pr-mrow__name">Matt Demers</);
   });
 
   it('draws a 40 px (size lg) D3 Avatar, tinted from the sender\'s name', () => {

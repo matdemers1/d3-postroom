@@ -7,7 +7,7 @@
 // one row. What changes is the reach of a move made on an OPEN message: it takes every member of
 // that message's thread in the same mailbox with it, so a three-message conversation is archived
 // with one e, not three.
-import { serverUnreachable, type MessageSummary } from '../../api';
+import { serverUnreachable, type MessageSummary, type SpecialUse } from '../../api';
 import { sortsAboveTop } from '../list';
 
 /** Fields the API sends on a summary that the web type does not name yet. */
@@ -53,7 +53,8 @@ function graphemes(text: string): string[] {
 }
 
 export interface SenderLine {
-  /** What the row leads with: the display name, or the address when there is none. */
+  /** What the row leads with: the display name, or the address when there is none — or, in Sent and
+   * Drafts, "To: <first recipient>" with " (+N)" for the others (PST-T-16.12). */
   name: string;
   /** The address beside the name — only when it tells the reader something (see senderLine). */
   address: string | null;
@@ -65,14 +66,45 @@ export interface SenderLine {
  * The name, with the address beside it ONLY for a first-time sender or a message with a phishing
  * warning — the two cases where "who is this, really?" is the question. Everyone else is known by
  * name. A sender without a display name is shown by address, once.
+ *
+ * PST-T-16.12 (PST-REQ-199): in a mailbox whose specialUse is sent or drafts the sender is always
+ * you, so the row names the recipients instead — "To: Alice", "To: Alice (+2)", "To: (no
+ * recipients)" for an empty draft. A message not yet summarised (`to` null) keeps the sender line.
  */
-export function senderLine(m: Pick<RowSummary, 'from' | 'fromName' | 'newSender'>, warned = false): SenderLine {
+export function senderLine(m: Pick<RowSummary, 'from' | 'fromName' | 'newSender' | 'to'>, warned = false, specialUse: SpecialUse | null = null): SenderLine {
+  const to = recipientLine(m.to, specialUse);
+  if (to !== null) return { name: to, address: null, firstTime: false, warned };
   const address = m.from ?? null;
   const name = m.fromName !== null && m.fromName !== undefined && m.fromName.trim() !== '' ? m.fromName.trim() : null;
   const firstTime = m.newSender === true;
   if (name === null) return { name: address ?? '(unknown sender)', address: null, firstTime, warned };
   const showAddress = (firstTime || warned) && address !== null && address.toLowerCase() !== name.toLowerCase();
   return { name, address: showAddress ? address : null, firstTime, warned };
+}
+
+/** Whether a mailbox's rows name the recipients rather than the sender (PST-REQ-199). */
+export function showsRecipients(specialUse: SpecialUse | null | undefined): boolean {
+  return specialUse === 'sent' || specialUse === 'drafts';
+}
+
+/** "To: Alice (+1)" for a Sent/Drafts row; null elsewhere, or when the to-summary is not stored yet. */
+export function recipientLine(to: RowSummary['to'], specialUse: SpecialUse | null | undefined): string | null {
+  if (!showsRecipients(specialUse) || to === null || to === undefined) return null;
+  const name = to.name === null ? '' : to.name.trim();
+  if (to.count <= 0 || name === '') return 'To: (no recipients)';
+  return to.count > 1 ? `To: ${name} (+${String(to.count - 1)})` : `To: ${name}`;
+}
+
+/**
+ * The name the row's Avatar is drawn from: in Sent and Drafts the first recipient (when the
+ * to-summary is stored), so the avatar follows the name slot; everywhere else the sender (avatarName).
+ */
+export function rowAvatarName(m: Pick<RowSummary, 'from' | 'fromName' | 'to'>, specialUse: SpecialUse | null | undefined): string {
+  if (showsRecipients(specialUse) && m.to !== null && m.to !== undefined && m.to.name !== null && m.to.name.trim() !== '') {
+    const name = m.to.name.trim();
+    return name.includes('@') ? avatarName(null, name) : name;
+  }
+  return avatarName(m.fromName, m.from);
 }
 
 /** The one-line preview: null (not summarised yet) and '' (no text) both render as nothing. */

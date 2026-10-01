@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 import type { BlobStore } from '@postroom/blobstore';
 import { collectMessage, displayNameOf, parseDate, parseMailboxes, parseMessageId, parseMessageIdList, parseMessage, type MessageSummary } from '@postroom/mime';
 import { htmlToText, truncateUtf8 } from '@postroom/search';
+import { toSummaryOfHeaders } from './recipients.js';
 import type { ParseResult, StageInput } from './types.js';
 
 /** The body text kept in the parse result for indexing (PST-T-3.13): the text/plain part, or the
@@ -47,12 +48,16 @@ export function summarise(collected: MessageSummary): ParseResult {
   const inReplyTo = h.get('in-reply-to');
   const references = h.get('references');
   const to = h.get('to');
+  // PST-T-16.12: the to-summary a Sent or Drafts row shows (first recipient, recipient count).
+  const { toName, toCount } = toSummaryOfHeaders(h.fields);
   return {
     messageId: mid === null ? null : parseMessageId(mid),
     subject: subject === null ? null : subject.slice(0, 998),
     fromAddress: from === null ? null : (parseMailboxes(from)[0]?.address ?? null),
     fromName: displayNameOf(from),
     toAddress: to === null ? null : parseMailboxes(to).map((m) => m.address).join(', ') || null,
+    toName,
+    toCount,
     sentAt: sentAt === null || Number.isNaN(sentAt.getTime()) ? null : sentAt.toISOString(),
     inReplyTo: inReplyTo === null ? [] : parseMessageIdList(inReplyTo),
     references: references === null ? [] : parseMessageIdList(references),

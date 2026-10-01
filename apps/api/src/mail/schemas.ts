@@ -110,6 +110,14 @@ export const MessageSummary = z.object({
     .max(140)
     .nullable()
     .describe('A one-line preview of the body: at most 140 characters, whitespace collapsed, quoted history dropped. Empty when there is no text; null until the message is summarised.'),
+  /** PST-T-16.12 (PST-REQ-199): who it is addressed to — what a Sent or Drafts row shows in place of the sender. */
+  to: z
+    .object({
+      name: z.string().nullable().describe("The first recipient (To, then Cc, then Bcc): its decoded display name, else its address. Null only when there are no recipients."),
+      count: z.number().int().min(0).describe('How many distinct recipients across To, Cc and Bcc (Bcc survives only on our own Sent/Drafts copies).'),
+    })
+    .nullable()
+    .describe('The stored to-summary; null until the message is summarised.'),
   /** The Date header when there was one, else the arrival time. */
   date: Iso,
   internalDate: Iso,
