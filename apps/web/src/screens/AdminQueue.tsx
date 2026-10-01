@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
@@ -21,7 +21,7 @@ import {
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
-import { ApiError, api, describeError, type AdminQueueRecipient, type QueueScope, type QueueStateFilter } from '../api';
+import { ApiError, api, describeError, type QueueScope } from '../api';
 import { Loading, LoadFailed } from './states';
 import { RelativeTime } from '../components/RelativeTime';
 import { queueState } from '../admin/health/model';
@@ -31,11 +31,15 @@ import {
   filterByMessage,
   parseQueueFilters,
   QUEUE_ACTION_LABEL,
-  QUEUE_STATE_SEGMENTS,
   type QueueActionKind,
-  queueStateCounts,
+  latestOnly,
+  loadQueueStates,
+  QUEUE_LIST_CAP,
+  type QueueRow,
+  type QueueStateKey,
+  type QueueStateList,
+  queueSegmentItems,
   recipientCount,
-  rowsForState,
   withQueueFilter,
 } from '../admin/queue/model';
 import { PHONE_QUERY, useMediaQuery } from '../mail/useMedia';
@@ -43,13 +47,7 @@ import '../admin/admin.css';
 
 type ActionKind = QueueActionKind;
 const ACTION_LABEL = QUEUE_ACTION_LABEL;
-/** The API's own ceiling (apps/api/src/admin-queue MAX_LIST_LIMIT): the counts and the list share it. */
-const FETCH_LIMIT = 500;
-
-interface Row extends AdminQueueRecipient {
-  subject: string | null;
-  headerFrom: string;
-}
+type Row = QueueRow;
 
 const hidden = (text: string) => <span className="pr-admin-vh">{text}</span>;
 
@@ -67,7 +65,8 @@ const hidden = (text: string) => <span className="pr-admin-vh">{text}</span>;
  * toolbar only once a domain is typed, so there is one Domain field on the page.
  */
 export function AdminQueue() {
-  const [data, setData] = useState<{ all: Row[]; held: Row[] } | null>(null);
+  const [lists, setLists] = useState<Record<QueueStateKey, QueueStateList> | null>(null);
+  const latest = useRef(latestOnly());
   const [sesConfigured, setSesConfigured] = useState(true);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [params, setParams] = useSearchParams();
@@ -86,25 +85,32 @@ export function AdminQueue() {
   const setFilter = (key: 'state' | 'domain' | 'message', value: string): void => {
     setParams((current) => withQueueFilter(current, key, value), { replace: true });
   };
-  const byMessage = useMemo(
-    () => (data === null ? null : { all: filterByMessage(data.all, message), held: filterByMessage(data.held, message) }),
-    [data, message],
-  );
-  const shown = useMemo(() => (byMessage === null ? null : rowsForState(byMessage.all, byMessage.held, state)), [byMessage, state]);
-  const counts = byMessage === null ? null : queueStateCounts(byMessage.all, byMessage.held.length);
+  // ?message= narrows every state's list to one message's recipients (the counts follow).
+  const narrowed = useMemo(() => {
+    if (lists === null) return null;
+    const out = {} as Record<QueueStateKey, QueueStateList>;
+    for (const [key, list] of Object.entries(lists) as [QueueStateKey, QueueStateList][]) {
+      const rows = filterByMessage(list.rows, message);
+      out[key] = message === '' ? list : { rows, count: rows.length, capped: false };
+    }
+    return out;
+  }, [lists, message]);
+  const current = narrowed?.[state] ?? null;
+  const shown = current?.rows ?? null;
 
-  // Every state is fetched at once (and held, which only the API can tell, beside it), so the
-  // segments carry counts and switching between them asks the server nothing.
+  // Each state is filtered by the API (loadQueueStates), so a row past the first 500 of All is still
+  // under its own state. A domain typed letter by letter fires a load per letter: only the newest
+  // answer is kept, so an older, slower one can never replace it.
   const load = useCallback(async (d: string) => {
+    const token = latest.current.next();
     try {
-      const scope = { ...(d === '' ? {} : { domain: d }), limit: FETCH_LIMIT };
-      const [all, held] = await Promise.all([api.adminQueue(scope), api.adminQueue({ ...scope, state: 'held' as QueueStateFilter })]);
-      const flatten = (result: typeof all): Row[] =>
-        result.messages.flatMap((m) => m.recipients.map((r) => ({ ...r, subject: m.subject, headerFrom: m.headerFrom })));
-      setData({ all: flatten(all), held: flatten(held) });
-      setSesConfigured(all.sesConfigured);
+      const result = await loadQueueStates((opts) => api.adminQueue(opts), d);
+      if (!latest.current.isLatest(token)) return;
+      setLists(result.lists);
+      setSesConfigured(result.sesConfigured);
       setLoadError(null);
     } catch (caught) {
+      if (!latest.current.isLatest(token)) return;
       setLoadError(caught);
     }
   }, []);
@@ -259,7 +265,7 @@ export function AdminQueue() {
           aria-label="Filter the queue"
           trailing={
             <>
-              {shown === null ? null : <span data-testid="queue-count">{recipientCount(shown.length)}</span>}
+              {current === null ? null : <span data-testid="queue-count">{recipientCount(current.count, current.capped)}</span>}
               {domain === '' ? null : (
                 <DomainActions
                   domain={domain}
@@ -286,15 +292,15 @@ export function AdminQueue() {
             onValueChange={(v) => {
               setFilter('state', v);
             }}
-            // On a phone the five segments only fit without their counts; the toolbar still says how many.
-            items={QUEUE_STATE_SEGMENTS.map((seg) => ({
-              value: seg.value,
-              label: seg.label,
-              ...(counts === null || phone ? {} : { count: counts[seg.value] }),
-            }))}
+            items={queueSegmentItems(narrowed, phone)}
           />
         </FilterBar>
 
+        {current?.capped === true ? (
+          <p className="pr-card-note" data-testid="queue-capped">
+            Showing the first {QUEUE_LIST_CAP} by next attempt. Filter by a domain or a state to see the rest.
+          </p>
+        ) : null}
         {loadError !== null ? (
           <div className="pr-card-note">
             <LoadFailed error={loadError} what="the queue" onRetry={() => void load(domain)} />

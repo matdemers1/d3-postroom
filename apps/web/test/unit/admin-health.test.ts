@@ -22,7 +22,7 @@ import {
   relativeTime,
   serviceName,
   servicesMeta,
-  sinceText,
+  sincePrefix,
   sortTiles,
   tileAction,
   tileDetail,
@@ -36,10 +36,10 @@ const tile = (over: Partial<HealthTile> & Pick<HealthTile, 'id' | 'state'>): Hea
 const NOW = new Date('2026-09-29T15:00:00Z');
 
 describe('tile tones (D-016)', () => {
-  it('healthy is neutral, never a hue; degraded asks; down is danger; not checked is idle', () => {
+  it('healthy is neutral, never a hue; degraded is warning (D-086, not the link violet); down is danger; not checked is idle', () => {
     expect(TILE_TONE).toEqual({
       ok: { label: 'Healthy', tone: 'neutral' },
-      warn: { label: 'Degraded', tone: 'attention' },
+      warn: { label: 'Degraded', tone: 'warning' },
       down: { label: 'Down', tone: 'danger' },
       unknown: { label: 'Not checked', tone: 'idle' },
     });
@@ -51,8 +51,8 @@ describe('healthSummary', () => {
     expect(healthSummary([tile({ id: 'a', state: 'ok' }), tile({ id: 'b', state: 'unknown' })])).toEqual({ tone: 'neutral', text: 'All systems normal' });
   });
 
-  it('takes attention for a degraded check and danger for a down one, naming how many', () => {
-    expect(healthSummary([tile({ id: 'a', state: 'ok' }), tile({ id: 'b', state: 'warn' })])).toEqual({ tone: 'attention', text: '1 check degraded' });
+  it('takes warning for a degraded check and danger for a down one, naming how many', () => {
+    expect(healthSummary([tile({ id: 'a', state: 'ok' }), tile({ id: 'b', state: 'warn' })])).toEqual({ tone: 'warning', text: '1 check degraded' });
     expect(healthSummary([tile({ id: 'a', state: 'down' }), tile({ id: 'b', state: 'down' }), tile({ id: 'c', state: 'warn' })])).toEqual({
       tone: 'danger',
       text: '2 checks down, 1 degraded',
@@ -87,10 +87,11 @@ describe('times', () => {
     expect(durationShort(-5)).toBe('0m');
   });
 
-  it('sinceText says "ran" for a backup or drill and "since" for a monitor state', () => {
-    expect(sinceText(tile({ id: 'backup', state: 'ok', since: '2026-09-29T12:00:00Z' }), NOW)).toBe('ran 3 h ago');
-    expect(sinceText(tile({ id: 'tunnel', state: 'ok', since: '2026-09-27T15:00:00Z' }), NOW)).toBe('since 2 d');
-    expect(sinceText(tile({ id: 'smtp-in', state: 'ok' }), NOW)).toBeNull();
+  it('sincePrefix says "ran" for a backup or drill and "changed" for a monitor state; the time itself is <RelativeTime>', () => {
+    expect(sincePrefix(tile({ id: 'backup', state: 'ok', since: '2026-09-29T12:00:00Z' }))).toBe('ran');
+    expect(sincePrefix(tile({ id: 'drill', state: 'ok', since: '2026-09-29T12:00:00Z' }))).toBe('ran');
+    expect(sincePrefix(tile({ id: 'tunnel', state: 'ok', since: '2026-09-27T15:00:00Z' }))).toBe('changed');
+    expect(sincePrefix(tile({ id: 'smtp-in', state: 'ok' }))).toBeNull();
   });
 });
 
@@ -136,7 +137,7 @@ describe('Stats read only what the server sent', () => {
     expect(inboundQueueStat(undefined).value).toBe('—');
   });
 
-  it('a backup with no offsite bucket is "Local only" with an attention status, not a time over "Not checked"', () => {
+  it('a backup with no offsite bucket is "Local only" with a warning status, not a time over "Not checked"', () => {
     const skipped = tile({
       id: 'backup',
       state: 'unknown',
@@ -144,10 +145,13 @@ describe('Stats read only what the server sent', () => {
       detail: 'backups not configured (BACKUP_BUCKET not set): local dump only, nothing left this machine',
     });
     expect(backupNotConfigured(skipped)).toBe(true);
+    // The time leads the footnote, so a clamp on a phone cuts the reason, never the time; the time
+    // itself renders through <RelativeTime> from `ran`.
     expect(lastRunView(skipped, 'backup', NOW)).toEqual({
       value: 'Local only',
-      status: { label: 'No offsite copy', tone: 'attention' },
-      footnote: 'BACKUP_BUCKET not set · local dump ran 1 min ago',
+      status: { label: 'No offsite copy', tone: 'warning' },
+      ran: { prefix: 'Local dump ran', iso: skipped.since },
+      footnote: 'BACKUP_BUCKET not set',
     });
     const ran = lastRunView(tile({ id: 'drill', state: 'ok', detail: 'ok', since: new Date(NOW.getTime() - 60_000).toISOString() }), 'drill', NOW);
     expect(ran).toMatchObject({ unit: 'today', status: { label: 'Healthy', tone: 'neutral' }, footnote: 'Last drill succeeded' });
@@ -156,9 +160,9 @@ describe('Stats read only what the server sent', () => {
 });
 
 describe('outbound queue', () => {
-  it('queued is neutral, deferred asks, bounced is danger', () => {
+  it('queued is neutral, deferred is warning (retrying, D-086), bounced is danger', () => {
     expect(queueState('queued')).toEqual({ label: 'Queued', tone: 'neutral' });
-    expect(queueState('deferred')).toEqual({ label: 'Deferred', tone: 'attention' });
+    expect(queueState('deferred')).toEqual({ label: 'Deferred', tone: 'warning' });
     expect(queueState('bounced')).toEqual({ label: 'Bounced', tone: 'danger' });
     expect(queueState('cancelled')).toEqual({ label: 'Cancelled', tone: 'neutral' });
   });
@@ -323,5 +327,33 @@ describe('Health, Queue and Deliverability share one list grammar (source scan)'
       expect(src, screen).toMatch(/useMediaQuery\((QUEUE_)?PHONE_QUERY\)/);
       expect(src, screen).toContain('<DataList');
     }
+  });
+});
+
+describe('Health times and phone footnotes (PST-T-17.1 verifier)', () => {
+  const health = read('screens/AdminHealth.tsx');
+  const css = read('admin/admin.css');
+
+  it('every time on Health is the shared <RelativeTime>, never a bare <time> or a local age helper', () => {
+    expect(health).not.toMatch(/<time\b/);
+    expect(health).not.toContain('durationShort(');
+    expect(health).not.toContain('sinceText(');
+    expect(health).toMatch(/<RelativeTime iso=\{tile\.since\} \/>/);
+    expect(health).toMatch(/<RelativeTime iso=\{r\.createdAt\} \/>/);
+    expect(health).toMatch(/<RelativeTime iso=\{view\.ran\.iso\} \/>/);
+  });
+
+  it('a stat footnote wraps to two lines on a phone instead of ellipsizing its time away', () => {
+    expect(css).toMatch(/@media \(max-width: 767px\), \(max-height: 499px\) \{\s*\.pr-stat-foot \{[^}]*white-space: normal;[^}]*-webkit-line-clamp: 2;/);
+  });
+
+  it('the phone card grid uses PHONE_QUERY’s breakpoint, not the DataList’s 640px', () => {
+    expect(css).toMatch(/@media \(max-width: 767px\), \(max-height: 499px\) \{\s*\.pr-card-list \.d3-dlrow \{/);
+    expect(css).not.toMatch(/max-width: 639\.98px/);
+  });
+
+  it('on a phone Refresh goes to the context bar (X11) and stays in the header elsewhere', () => {
+    expect(health).toContain('useContextBarAction(');
+    expect(health).toMatch(/actions=\{\s*inBar \? undefined :/);
   });
 });

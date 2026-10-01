@@ -9,14 +9,15 @@ import {
   domainMenuItems,
   filterByMessage,
   lastResponse,
-  matchesQueueState,
+  latestOnly,
+  loadQueueStates,
   parseQueueFilters,
+  QUEUE_LIST_CAP,
   QUEUE_PHONE_QUERY,
   QUEUE_STATE_SEGMENTS,
   queueMenuItems,
-  queueStateCounts,
+  queueSegmentItems,
   recipientCount,
-  rowsForState,
   withQueueFilter,
 } from '../../src/admin/queue/model';
 import { PHONE_QUERY } from '../../src/mail/useMedia';
@@ -118,36 +119,86 @@ describe('AdminQueue layout (source)', () => {
 });
 
 describe('the State segments (PST-T-17.1, admin critique X7)', () => {
-  const rows = [{ state: 'queued' }, { state: 'deferred' }, { state: 'deferred' }, { state: 'bounced' }];
-
   it('are five, so a SegmentedControl: All, Pending, Deferred, Held, Failed', () => {
     expect(QUEUE_STATE_SEGMENTS.map((s) => s.label)).toEqual(['All', 'Pending', 'Deferred', 'Held', 'Failed']);
     expect(QUEUE_STATE_SEGMENTS.map((s) => s.value)).toEqual(['', 'pending', 'deferred', 'held', 'failed']);
   });
 
-  it('match rows the way the API reads ?state= (pending is queued, failed is bounced)', () => {
-    expect(matchesQueueState('queued', 'pending')).toBe(true);
-    expect(matchesQueueState('bounced', 'failed')).toBe(true);
-    expect(matchesQueueState('deferred', 'pending')).toBe(false);
-    expect(matchesQueueState('deferred', '')).toBe(true);
-    expect(matchesQueueState('queued', 'held')).toBe(false);
+  it('show each count, and "500+" — never a silently capped number — when a list hit the API ceiling', () => {
+    const lists = {
+      '': { rows: [], capped: true, count: 500 },
+      pending: { rows: [], capped: false, count: 3 },
+      deferred: { rows: [], capped: true, count: 500 },
+      held: { rows: [], capped: false, count: 0 },
+      failed: { rows: [], capped: false, count: 1 },
+    };
+    expect(queueSegmentItems(lists, false)).toEqual([
+      { value: '', label: 'All 500+' },
+      { value: 'pending', label: 'Pending', count: 3 },
+      { value: 'deferred', label: 'Deferred 500+' },
+      { value: 'held', label: 'Held', count: 0 },
+      { value: 'failed', label: 'Failed', count: 1 },
+    ]);
+    // On a phone the five segments only fit 390px without counts; the toolbar still says how many.
+    expect(queueSegmentItems(lists, true).every((i) => !('count' in i) && !i.label.includes('+'))).toBe(true);
+    expect(queueSegmentItems(null, false).every((i) => !('count' in i))).toBe(true);
   });
 
-  it('count every state, with held as the API answered it', () => {
-    expect(queueStateCounts(rows, 2)).toEqual({ '': 4, pending: 1, deferred: 2, held: 2, failed: 1 });
-    expect(queueStateCounts([], 0)).toEqual({ '': 0, pending: 0, deferred: 0, held: 0, failed: 0 });
-  });
-
-  it('show the held list for Held and filter the rest locally', () => {
-    const held = [{ state: 'queued' }];
-    expect(rowsForState(rows, held, 'held')).toEqual(held);
-    expect(rowsForState(rows, held, 'deferred')).toHaveLength(2);
-    expect(rowsForState(rows, held, '')).toHaveLength(4);
-  });
-
-  it('say how many recipients the list holds', () => {
+  it('say how many recipients the list holds, and that there are more past the ceiling', () => {
     expect(recipientCount(1)).toBe('1 recipient');
     expect(recipientCount(12)).toBe('12 recipients');
+    expect(recipientCount(500, true)).toBe('500+ recipients');
+  });
+});
+
+describe('loading the queue (PST-T-17.1 verifier: no client-side filter past the cap)', () => {
+  const message = (n: number, state: string) => ({
+    id: `m${String(n)}`,
+    subject: `s${String(n)}`,
+    headerFrom: 'a@d3cloud.io',
+    envelopeFrom: 'a@d3cloud.io',
+    createdAt: '2026-10-01T00:00:00Z',
+    recipients: [{ id: `r${String(n)}`, outboundMessageId: `m${String(n)}`, address: `x${String(n)}@a.test`, domain: 'a.test', state, transport: 'direct', attempts: 0, nextAttemptAt: '2026-10-01T00:00:00Z', lastCode: null, lastEnhanced: null, lastText: null, updatedAt: '2026-10-01T00:00:00Z', lastAttempt: null }],
+  });
+
+  it('asks the API for every state, each filtered server-side with the domain and the ceiling', async () => {
+    const asked: unknown[] = [];
+    const result = await loadQueueStates(async (opts) => {
+      asked.push(opts);
+      await Promise.resolve();
+      return { messages: opts.state === 'failed' ? [message(1, 'bounced')] : [], sesConfigured: false };
+    }, 'a.test');
+    expect(asked).toEqual([
+      { domain: 'a.test', limit: QUEUE_LIST_CAP },
+      { domain: 'a.test', state: 'pending', limit: QUEUE_LIST_CAP },
+      { domain: 'a.test', state: 'deferred', limit: QUEUE_LIST_CAP },
+      { domain: 'a.test', state: 'held', limit: QUEUE_LIST_CAP },
+      { domain: 'a.test', state: 'failed', limit: QUEUE_LIST_CAP },
+    ]);
+    // The Failed list is what the server answered for ?state=failed, not a slice of the All list.
+    expect(result.lists.failed.rows.map((r) => r.address)).toEqual(['x1@a.test']);
+    expect(result.lists.failed.rows[0]?.subject).toBe('s1');
+    expect(result.lists[''].rows).toEqual([]);
+    expect(result.sesConfigured).toBe(false);
+  });
+
+  it('leaves the domain out when there is none, and marks a list that reached the ceiling as capped', async () => {
+    const full = Array.from({ length: QUEUE_LIST_CAP }, (_, i) => message(i, 'deferred'));
+    const result = await loadQueueStates(async (opts) => {
+      expect(opts).not.toHaveProperty('domain');
+      await Promise.resolve();
+      return { messages: opts.state === 'deferred' ? full : [message(1, 'queued')], sesConfigured: true };
+    }, '');
+    expect(result.lists.deferred).toMatchObject({ capped: true, count: QUEUE_LIST_CAP });
+    expect(result.lists.pending).toMatchObject({ capped: false, count: 1 });
+  });
+
+  it('latestOnly drops a response that a newer request overtook (a domain typed letter by letter)', () => {
+    const latest = latestOnly();
+    const first = latest.next();
+    const second = latest.next();
+    expect(latest.isLatest(first)).toBe(false);
+    expect(latest.isLatest(second)).toBe(true);
   });
 });
 
@@ -170,6 +221,12 @@ describe('AdminQueue on the canvas (source, PST-T-17.1)', () => {
   const screen = read('screens/AdminQueue.tsx');
   const actions = read('admin/queue/QueueActions.tsx');
 
+  it('loads through loadQueueStates and ignores a response a newer request overtook', () => {
+    expect(screen).toContain('loadQueueStates(');
+    expect(screen).toMatch(/if \(!latest\.current\.isLatest\(token\)\) return;/);
+    expect(screen).not.toContain('rowsForState');
+  });
+
   it('has one Domain field: a SearchField in the card toolbar, and no Bulk section', () => {
     expect(screen.match(/aria-label="Domain"/g)).toHaveLength(1);
     expect(screen).toContain('<SearchField');
@@ -178,6 +235,10 @@ describe('AdminQueue on the canvas (source, PST-T-17.1)', () => {
     expect(screen).not.toMatch(/Bulk, by domain/);
     expect(screen).not.toMatch(/<FormField label="Domain"/);
     expect(screen).not.toMatch(/<Select\b/);
+  });
+
+  it('on a phone the toolbar search keeps its own height (a column flex-basis would be a height)', () => {
+    expect(read('admin/admin.css')).toMatch(/@media \(max-width: 767\.98px\) \{[^@]*\.d3-fb\.pr-table-toolbar \.d3-fb__controls > \.d3-search \{\s*flex: none;/);
   });
 
   it('shows the domain’s bulk actions only once a domain is typed', () => {

@@ -11,8 +11,8 @@ const SRC = join(__dirname, '../../src');
 const read = (path: string): string => readFileSync(join(SRC, path), 'utf8');
 
 describe('one status mapping for Health and Inspect (D-016 tones)', () => {
-  it('has no green or amber: good and unknown are neutral, warning is the only attention, bad is danger', () => {
-    expect(STATUS_TONE).toEqual({ good: 'neutral', unknown: 'neutral', warning: 'attention', bad: 'danger' });
+  it('has no green: good and unknown are neutral, warning takes the D3 UI 1.5 warning tone (D-086, never the link violet), bad is danger', () => {
+    expect(STATUS_TONE).toEqual({ good: 'neutral', unknown: 'neutral', warning: 'warning', bad: 'danger' });
   });
 
   it('reads verdicts the same way everywhere: pass and "not listed" are good results', () => {
@@ -30,6 +30,7 @@ describe('one status mapping for Health and Inspect (D-016 tones)', () => {
     expect(toneKind('neutral', true)).toBe('good');
     expect(toneKind('neutral', false)).toBe('unknown');
     expect(toneKind('attention', false)).toBe('warning');
+    expect(toneKind('warning', false)).toBe('warning');
     expect(toneKind('danger', true)).toBe('bad');
   });
 

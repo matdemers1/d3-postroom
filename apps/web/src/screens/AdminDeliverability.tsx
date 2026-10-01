@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Button,
@@ -6,6 +6,7 @@ import {
   DataList,
   DataListRow,
   EmptyState,
+  IconButton,
   Page,
   PageHeader,
   SegmentedControl,
@@ -19,6 +20,8 @@ import {
 import { api, evidenceRowText, proposalSummary, type Deliverability, type DeliverabilitySource, type ProposalEvidenceDay, type ProposalResult } from '../api';
 import { Loading, LoadFailed } from './states';
 import { CardHead } from '../admin/health/CardHead';
+import { RefreshIcon } from '../admin/health/RefreshIcon';
+import { useContextBarAction } from '../mobile/barSlot';
 import { PHONE_QUERY, useMediaQuery } from '../mail/useMedia';
 import '../admin/admin.css';
 
@@ -62,10 +65,14 @@ function daysIn(fromIso: string, toIso: string, firstReported: string | undefine
 }
 
 // D-016: a pass is the normal case, so it is drawn neutral; only a failure takes a hue.
-// PST-REQ-154 (WCAG 1.4.1/1.4.11): pass and fail are only ~1.6:1 apart, so colour never carries the
-// meaning alone — the fail segment is also hatched, separated by a 2px surface stroke, and its count
-// is printed above the bar.
-const PASS_FILL = { fill: 'var(--color-fg-muted)' };
+// PST-REQ-154 (WCAG 1.4.1/1.4.11): pass and fail are close in lightness, so colour never carries the
+// meaning alone — the fail segment is also hatched, separated by a 2px card-surface stroke, and its
+// count is printed above the bar. PST-T-17.1 (admin critique 2.3 #9): a pass is --color-fg-faint, so
+// in dark mode it no longer outshouts the failure; it is still 6.0:1 on the dark card and 7.4:1 on
+// the light one (≥3:1 for a graphical object).
+const PASS_FILL = { fill: 'var(--color-fg-faint)' };
+/** D3 UI 1.5: a card on the sheet is --color-surface-card, so the separator matches it. */
+const CARD_SURFACE = 'var(--color-surface-card)';
 const AXIS_TEXT = { fill: 'var(--color-fg-muted)', fontSize: 'var(--text-12)' };
 const COUNT_TEXT = { fill: 'var(--color-fg)', fontSize: 'var(--text-12)', fontVariantNumeric: 'tabular-nums' } as const;
 const AXIS_LINE = { stroke: 'var(--color-border)' };
@@ -185,7 +192,7 @@ export function DayChart({ data }: { data: Deliverability }) {
   // One pattern per chart instance, so two charts on a page never share (or clash on) an id.
   const hatchId = `${useId()}-fail-hatch`;
   const hatchFill = { fill: `url(#${hatchId})` };
-  const failStyle = { ...hatchFill, stroke: 'var(--color-surface)', strokeWidth: SEPARATOR_WIDTH };
+  const failStyle = { ...hatchFill, stroke: CARD_SURFACE, strokeWidth: SEPARATOR_WIDTH };
   const [frameRef, width] = useWidth(640);
   const byDay = new Map(data.dmarc.byDay.map((d) => [d.day, d]));
   const days = daysIn(data.range.from, data.range.to, data.dmarc.byDay[0]?.day);
@@ -209,7 +216,7 @@ export function DayChart({ data }: { data: Deliverability }) {
           <defs>
             <pattern id={hatchId} data-pattern="fail-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
               <rect width="6" height="6" fill="var(--color-danger)" />
-              <line x1="0" y1="0" x2="0" y2="6" stroke="var(--color-surface)" strokeWidth="2" />
+              <line x1="0" y1="0" x2="0" y2="6" stroke={CARD_SURFACE} strokeWidth="2" />
             </pattern>
           </defs>
           <line x1={left} x2={W - 8} y1={axisY} y2={axisY} style={AXIS_LINE} />
@@ -267,7 +274,7 @@ export function ChartLegend() {
           <defs>
             <pattern id={hatchId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
               <rect width="6" height="6" fill="var(--color-danger)" />
-              <line x1="0" y1="0" x2="0" y2="6" stroke="var(--color-surface)" strokeWidth="2" />
+              <line x1="0" y1="0" x2="0" y2="6" stroke={CARD_SURFACE} strokeWidth="2" />
             </pattern>
           </defs>
           <rect width="12" height="12" style={{ fill: `url(#${hatchId})` }} />
@@ -293,11 +300,12 @@ export function FailedDmarcStat({ fail, quarantine, reject }: { fail: number; qu
 
 /**
  * A pass rate's tone (D-016, admin critique 2.3 #5): a healthy rate is plain text; one that needs
- * you gets a dot — attention below 98%, danger below half. Never a pill.
+ * you gets a dot — warning below 98% (D3 UI 1.5, D-086: needs a look, and never the link violet),
+ * danger below half. Never a pill.
  */
 export function rateTone(rate: number): StatusDotTone | null {
   if (rate >= 0.98) return null;
-  return rate >= 0.5 ? 'attention' : 'danger';
+  return rate >= 0.5 ? 'warning' : 'danger';
 }
 
 function RateText({ rate }: { rate: number }) {
@@ -482,6 +490,8 @@ function ListBody<Row>({
 }
 
 const NUM = '6rem';
+/** A short count column beside its pair (Pass, Fail, Reports): narrow enough for two cards side by side. */
+const NUM_SHORT = '5.5rem';
 
 /**
  * PST-REQ-122: DMARC aggregate and TLS-RPT reports mailed to the report mailbox, charted — pass and
@@ -549,25 +559,28 @@ export function AdminDeliverability() {
       key: 'sourceIp',
       header: 'Source',
       width: 'auto',
+      // Two lines: the address (and its reverse DNS), then who reported it — so the card fits beside
+      // By reporter (2.3 #3). Messages is not a column: it is always Pass + Fail (apps/api aggregate).
       cell: (s) => (
-        <span title={s.reverseDns ?? undefined}>
-          <span className="pr-admin-mono">{s.sourceIp}</span>
-          {s.reverseDns === null ? null : <span className="pr-muted"> {s.reverseDns}</span>}
+        <span className="pr-cell-stack" title={[s.reverseDns, s.orgs.join(', ')].filter((x) => x !== null && x !== '').join(' · ')}>
+          <span className="pr-cell-stack__line">
+            <span className="pr-admin-mono">{s.sourceIp}</span>
+            {s.reverseDns === null ? null : <span className="pr-muted"> {s.reverseDns}</span>}
+          </span>
+          {s.orgs.length === 0 ? null : <span className="pr-cell-stack__line pr-muted pr-small">{s.orgs.join(', ')}</span>}
         </span>
       ),
     },
-    { key: 'orgs', header: 'Reported by', width: 'auto', cell: (s) => s.orgs.join(', ') },
-    { key: 'messages', header: 'Messages', width: NUM, numeric: true, align: 'end', cell: (s) => count(s.messages) },
-    { key: 'pass', header: 'Pass', width: NUM, numeric: true, align: 'end', cell: (s) => count(s.pass) },
-    { key: 'fail', header: 'Fail', width: NUM, numeric: true, align: 'end', cell: (s) => count(s.fail) },
+    { key: 'pass', header: 'Pass', width: NUM_SHORT, numeric: true, align: 'end', cell: (s) => count(s.pass) },
+    { key: 'fail', header: 'Fail', width: NUM_SHORT, numeric: true, align: 'end', cell: (s) => count(s.fail) },
     { key: 'passRate', header: 'Pass rate', width: '6.5rem', numeric: true, align: 'end', cell: (s) => <RateText rate={s.passRate} /> },
   ];
   const orgColumns: TableColumn<OrgRow>[] = [
     { key: 'org', header: 'Reporter', width: 'auto', cell: (o) => o.org },
-    { key: 'reports', header: 'Reports', width: NUM, numeric: true, align: 'end', cell: (o) => count(o.reports) },
+    { key: 'reports', header: 'Reports', width: NUM_SHORT, numeric: true, align: 'end', cell: (o) => count(o.reports) },
     { key: 'messages', header: 'Messages', width: NUM, numeric: true, align: 'end', cell: (o) => count(o.messages) },
-    { key: 'pass', header: 'Pass', width: NUM, numeric: true, align: 'end', cell: (o) => count(o.pass) },
-    { key: 'fail', header: 'Fail', width: NUM, numeric: true, align: 'end', cell: (o) => count(o.fail) },
+    { key: 'pass', header: 'Pass', width: NUM_SHORT, numeric: true, align: 'end', cell: (o) => count(o.pass) },
+    { key: 'fail', header: 'Fail', width: NUM_SHORT, numeric: true, align: 'end', cell: (o) => count(o.fail) },
   ];
   const policyColumns: TableColumn<PolicyRow>[] = [
     { key: 'policyDomain', header: 'Policy domain', width: 'auto', cell: (p) => <span className="pr-admin-mono">{p.policyDomain}</span> },
@@ -582,6 +595,29 @@ export function AdminDeliverability() {
 
   const empty = data !== null && data.dmarc.totals.reports === 0 && data.tlsrpt.totals.reports === 0;
   const hasProgress = proposals !== null && proposals.length > 0;
+  // The TXT value to publish does not depend on this range's reports: it shows whatever the reports
+  // load did — beside the chart, or above the empty or failed state.
+  const progressCard = hasProgress ? (
+    <Card as="section" aria-labelledby={progressHeadId} className="pr-table-card">
+      <CardHead
+        id={progressHeadId}
+        title="Policy progression"
+        description="14 consecutive UTC days of only aligned passes from authorized sources earn a proposal to tighten the policy. Postroom never publishes DNS itself."
+      />
+      <ul className="pr-progress-list" aria-label="DMARC progression proposals">
+        {proposals.map((p) => (
+          <Progression key={p.domain} result={p} />
+        ))}
+      </ul>
+    </Card>
+  ) : null;
+  const refresh = useCallback(() => {
+    void load(days);
+    void loadProposals();
+  }, [load, loadProposals, days]);
+  // X11: on a phone, Refresh is an icon in the context bar; the Range stays in the header.
+  const barAction = useMemo(() => <IconButton icon={<RefreshIcon />} label="Refresh" loading={refreshing} onClick={refresh} />, [refreshing, refresh]);
+  const inBar = useContextBarAction(barAction);
 
   return (
     <Page>
@@ -591,23 +627,31 @@ export function AdminDeliverability() {
         actions={
           <div className="pr-header-actions">
             <SegmentedControl aria-label="Range" activationMode="manual" items={RANGES.map((r) => ({ value: r.value, label: r.label }))} value={days} onValueChange={setDays} />
-            <Button variant="secondary" loading={refreshing} onClick={() => void load(days)}>
-              Refresh
-            </Button>
+            {inBar ? null : (
+              <Button variant="secondary" loading={refreshing} onClick={refresh}>
+                Refresh
+              </Button>
+            )}
           </div>
         }
       />
 
       {loadError !== null ? (
-        <LoadFailed error={loadError} what="reports" onRetry={() => void load(days)} />
+        <>
+          {progressCard}
+          <LoadFailed error={loadError} what="reports" onRetry={() => void load(days)} />
+        </>
       ) : data === null ? (
         <Loading label="Loading reports" />
       ) : empty ? (
-        <EmptyState kind="empty" heading="No reports yet" headingLevel={2}>
-          {data.mailboxes.dmarc === null
-            ? 'Reports appear here once the DMARC record’s rua address points at a Postroom mailbox.'
-            : `Reports appear here once receivers mail them to ${data.mailboxes.dmarc} (the rua address in your DMARC record).`}
-        </EmptyState>
+        <>
+          {progressCard}
+          <EmptyState kind="empty" heading="No reports yet" headingLevel={2}>
+            {data.mailboxes.dmarc === null
+              ? 'Reports appear here once the DMARC record’s rua address points at a Postroom mailbox.'
+              : `Reports appear here once receivers mail them to ${data.mailboxes.dmarc} (the rua address in your DMARC record).`}
+          </EmptyState>
+        </>
       ) : (
         <>
           <Card as="section" aria-label="Summary" className="pr-admin-stats">
@@ -636,20 +680,7 @@ export function AdminDeliverability() {
                 <DayChart data={data} />
               </div>
             </Card>
-            {hasProgress ? (
-              <Card as="section" aria-labelledby={progressHeadId} className="pr-table-card">
-                <CardHead
-                  id={progressHeadId}
-                  title="Policy progression"
-                  description="14 consecutive UTC days of only aligned passes from authorized sources earn a proposal to tighten the policy. Postroom never publishes DNS itself."
-                />
-                <ul className="pr-progress-list" aria-label="DMARC progression proposals">
-                  {proposals.map((p) => (
-                    <Progression key={p.domain} result={p} />
-                  ))}
-                </ul>
-              </Card>
-            ) : null}
+            {progressCard}
           </div>
 
           <div className="pr-deliv-pair">

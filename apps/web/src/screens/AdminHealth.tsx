@@ -1,14 +1,13 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Button, Card, DataList, DataListRow, EmptyState, Link, Page, PageHeader, Stat, StatGroup, StatusDot, Table, type TableColumn } from '@d3cloud/ui';
+import { Button, Card, DataList, DataListRow, EmptyState, IconButton, Link, Page, PageHeader, Stat, StatGroup, StatusDot, Table, type TableColumn } from '@d3cloud/ui';
 import { api, DNS_STATUS, type AdminQueueRecipient, type DnsCheckRow, type DnsReport, type HealthTile } from '../api';
 import { Loading, LoadFailed } from './states';
-import { RelativeTime, fullTime } from '../components/RelativeTime';
+import { RelativeTime, relativeTime } from '../components/RelativeTime';
 import { PHONE_QUERY, useMediaQuery } from '../mail/useMedia';
 import {
   TILE_TONE,
   certificateStat,
-  durationShort,
   healthSummary,
   inboundQueueStat,
   lastRunView,
@@ -16,7 +15,7 @@ import {
   queueState,
   serviceName,
   servicesMeta,
-  sinceText,
+  sincePrefix,
   sortTiles,
   tileAction,
   tileById,
@@ -24,6 +23,8 @@ import {
   type StatView,
 } from '../admin/health/model';
 import { CardHead } from '../admin/health/CardHead';
+import { RefreshIcon } from '../admin/health/RefreshIcon';
+import { useContextBarAction } from '../mobile/barSlot';
 import '../admin/admin.css';
 
 const REFRESH_MS = 30_000;
@@ -53,7 +54,12 @@ function TileStat({ id, label, view }: { id: string; label: string; view: StatVi
       value={view.value}
       {...(view.unit === undefined ? {} : { unit: view.unit })}
       footnote={
-        <span className="pr-stat-foot" title={view.footnote}>
+        <span className="pr-stat-foot" title={view.ran === undefined ? view.footnote : `${view.ran.prefix} ${relativeTime(view.ran.iso)} · ${view.footnote}`}>
+          {view.ran === undefined ? null : (
+            <>
+              {view.ran.prefix} <RelativeTime iso={view.ran.iso} /> ·{' '}
+            </>
+          )}
           {view.footnote}
         </span>
       }
@@ -101,19 +107,19 @@ function TileFix({ tile }: { tile: HealthTile }) {
 
 /** The detail, then when it last ran or changed as a muted suffix (2.1 #2) — or "—" when the detail
  * would only restate the status (2.1 #4, #7). */
-function TileDetailText({ tile, now }: { tile: HealthTile; now: Date }) {
+function TileDetailText({ tile }: { tile: HealthTile }) {
   const detail = tileDetail(tile);
-  const since = sinceText(tile, now);
-  if (detail === null && since === null) return <span className="pr-muted">—</span>;
+  const prefix = sincePrefix(tile);
+  if (detail === null && (prefix === null || tile.since === null)) return <span className="pr-muted">—</span>;
   return (
     <span className="pr-muted">
       {detail}
-      {since === null || tile.since === null ? null : (
+      {prefix === null || tile.since === null ? null : (
         <>
           {detail === null ? null : ' · '}
-          <time className="pr-nowrap" dateTime={tile.since} title={fullTime(tile.since)}>
-            {since}
-          </time>
+          <span className="pr-nowrap">
+            {prefix} <RelativeTime iso={tile.since} />
+          </span>
         </>
       )}
     </span>
@@ -128,7 +134,7 @@ function ServiceName({ tile }: { tile: HealthTile }) {
   );
 }
 
-function Services({ tiles, now, phone }: { tiles: HealthTile[]; now: Date; phone: boolean }) {
+function Services({ tiles, phone }: { tiles: HealthTile[]; phone: boolean }) {
   const headId = useId();
   const sorted = sortTiles(tiles);
   const columns: TableColumn<HealthTile>[] = [
@@ -140,7 +146,7 @@ function Services({ tiles, now, phone }: { tiles: HealthTile[]; now: Date; phone
       cell: (t) => (
         <>
           <span className="pr-wrap">
-            <TileDetailText tile={t} now={now} />
+            <TileDetailText tile={t} />
           </span>
           <TileFix tile={t} />
         </>
@@ -159,7 +165,7 @@ function Services({ tiles, now, phone }: { tiles: HealthTile[]; now: Date; phone
               <DataListRow
                 key={t.id}
                 title={<ServiceName tile={t} />}
-                {...(tileDetail(t) === null && t.since === null ? {} : { description: <TileDetailText tile={t} now={now} /> })}
+                {...(tileDetail(t) === null && t.since === null ? {} : { description: <TileDetailText tile={t} /> })}
                 meta={<TileDot tile={t} />}
                 {...(fix === null ? {} : { actions: <TileFix tile={t} /> })}
               />
@@ -240,7 +246,7 @@ function Deliverability({ dns, dnsFailed }: { dns: DnsReport | null; dnsFailed: 
   );
 }
 
-function OutboundQueue({ rows, limited, failed, now }: { rows: QueueRow[] | null; limited: boolean; failed: boolean; now: Date }) {
+function OutboundQueue({ rows, limited, failed }: { rows: QueueRow[] | null; limited: boolean; failed: boolean }) {
   const headId = useId();
   return (
     <Card as="section" aria-labelledby={headId} className="pr-table-card" data-section="outbound-queue">
@@ -279,8 +285,8 @@ function OutboundQueue({ rows, limited, failed, now }: { rows: QueueRow[] | null
                     <StatusDot tone={s.tone} size="sm">
                       {s.label}
                     </StatusDot>
-                    <span className="pr-admin-mono pr-muted" title={`Queued ${fullTime(r.createdAt)}`}>
-                      {durationShort(now.getTime() - Date.parse(r.createdAt))}
+                    <span className="pr-muted">
+                      queued <RelativeTime iso={r.createdAt} />
                     </span>
                   </>
                 }
@@ -368,6 +374,13 @@ export function AdminHealth() {
 
   const now = checkedAt ?? new Date();
   const summary = tiles === null ? null : healthSummary(tiles);
+  const refresh = useCallback(() => {
+    void load();
+    void loadDns();
+  }, [load, loadDns]);
+  // X11: on a phone, Refresh is an icon in the context bar, not a full-width slab under the h1.
+  const barAction = useMemo(() => <IconButton icon={<RefreshIcon />} label="Refresh" loading={refreshing} onClick={refresh} />, [refreshing, refresh]);
+  const inBar = useContextBarAction(barAction);
 
   return (
     <Page>
@@ -386,16 +399,11 @@ export function AdminHealth() {
           )
         }
         actions={
-          <Button
-            variant="secondary"
-            loading={refreshing}
-            onClick={() => {
-              void load();
-              void loadDns();
-            }}
-          >
-            Refresh
-          </Button>
+          inBar ? undefined : (
+            <Button variant="secondary" loading={refreshing} onClick={refresh}>
+              Refresh
+            </Button>
+          )
         }
       />
       {loadError !== null ? (
@@ -411,11 +419,11 @@ export function AdminHealth() {
           <SummaryStats tiles={tiles} now={now} />
           <div className="pr-health__cols">
             <div className="pr-health__stack">
-              <Services tiles={tiles} now={now} phone={phone} />
+              <Services tiles={tiles} phone={phone} />
             </div>
             <div className="pr-health__stack">
               <Deliverability dns={dns} dnsFailed={dnsFailed} />
-              <OutboundQueue rows={queue?.rows ?? null} limited={queue?.limited ?? false} failed={queueFailed} now={now} />
+              <OutboundQueue rows={queue?.rows ?? null} limited={queue?.limited ?? false} failed={queueFailed} />
             </div>
           </div>
         </>
