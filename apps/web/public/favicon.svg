@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32" fill="none">
+  <title>Postroom</title>
+  <style>
+    /* A favicon cannot read the page's CSS variables: these are the D3 light and dark values of
+       --color-fg, --color-accent and --color-accent-contrast, fixed. */
+    .hole { stroke: #101117; }
+    .cell { fill: #5432be; }
+    .letter { stroke: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      .hole { stroke: #f0f2f7; }
+      .cell { fill: #978cff; }
+      .letter { stroke: #0a0225; }
+    }
+  </style>
+  <g class="hole" stroke-width="1.75">
+    <rect x="2.9" y="2.9" width="8.2" height="8.2" rx="2.2" />
+    <rect x="2.9" y="12.9" width="8.2" height="8.2" rx="2.2" />
+    <rect x="12.9" y="12.9" width="8.2" height="8.2" rx="2.2" />
+  </g>
+  <rect class="cell" x="12" y="2" width="10" height="10" rx="2.8" />
+  <path class="letter" d="m14.6 5.8 2.4 2 2.4-2M14.6 5.8h4.8v3.6h-4.8z" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
