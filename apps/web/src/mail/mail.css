@@ -527,7 +527,8 @@
   }
 }
 
-@media (max-width: 40rem) {
+/* The phone edge of the 768/1024 scale (PST-T-16.18): the drawer is full width below tablet. */
+@media (max-width: 767px) {
   .d3-modal.pr-inspect {
     width: 100vw;
     border-width: 0;
@@ -549,7 +550,7 @@
   border-top: var(--border-width) solid var(--color-border);
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 767px) {
   .d3-modal.pr-inspect .d3-modal__footer {
     bottom: calc(var(--space-16) * -1);
     margin-inline: calc(var(--space-16) * -1);

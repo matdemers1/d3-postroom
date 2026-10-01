@@ -11,8 +11,10 @@
 //     apps/web/src/styles/mobile-targets.css);
 //   - the primary action for the screen is reachable without ever scrolling sideways.
 //
-// This test skips itself outside the 'mobile' Playwright project — the desktop project's exit demo
-// is the other specs' 1280 px assertions.
+// This test skips itself outside the phone Playwright projects — the desktop project's exit demo
+// is the other specs' 1280 px assertions. The 'mobile' project (390×844) runs the sweeps below;
+// the 'landscape' project (844×390, PST-T-16.18) runs only the last suite, because the sweeps
+// above it measure against portrait numbers (390 wide, 844 tall).
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type BrowserContext, type Locator, type Page } from '@playwright/test';
 
@@ -20,6 +22,16 @@ import { ensureOperator, seedMail, signInCookies, tag, type Operator } from './s
 
 test.describe.configure({ mode: 'serial', timeout: 300_000 });
 test.skip(({ isMobile }) => !isMobile, 'this is the mobile project’s own pass');
+
+// PST-T-16.18: the suite that is the landscape project's, and only its. Everything else in this file
+// asserts portrait geometry (390 px wide, a viewport 844 tall) and runs in the 'mobile' project.
+const LANDSCAPE_SUITE = 'Landscape phone (PST-T-16.18)';
+test.beforeEach(({ isMobile }, testInfo) => {
+  if (!isMobile) return; // the file-level skip above already covers it
+  const inLandscapeProject = testInfo.project.name === 'landscape';
+  const isLandscapeTest = testInfo.titlePath.includes(LANDSCAPE_SUITE);
+  test.skip(inLandscapeProject !== isLandscapeTest, inLandscapeProject ? 'portrait-only: asserts 390×844 geometry; the mobile project runs it' : 'landscape-only: the landscape project runs it');
+});
 
 const CSRF = { 'x-postroom-csrf': '1' };
 
@@ -821,5 +833,55 @@ test.describe('Swipe triage (PST-T-16.15)', () => {
       await toasts(page).getByRole('button', { name: 'Undo' }).click();
       await expect(rowFor(page, m.subject)).toHaveCount(1);
     });
+  });
+});
+
+// PST-T-16.18 (PST-DA-047, PST-REQ-155, PST-REQ-077): an 844×390 phone is wider than the tablet edge
+// (768) but too short for two panes, so SPLIT_QUERY's (min-height: 500px) keeps it on the push
+// layout, and its touch pointer is `coarse`, which is what the 44px rules are keyed to.
+test.describe(LANDSCAPE_SUITE, () => {
+  test.beforeAll(async () => {
+    if (cookies.length === 0) {
+      operator = await ensureOperator(api);
+      cookies = await signInCookies(api, operator);
+    }
+  });
+
+  test('the Inbox and an open message are the push layout with 44px targets and no sideways scroll', async ({ page }) => {
+    expect(page.viewportSize()).toEqual({ width: 844, height: 390 });
+    const t = tag();
+    const [msg] = await seedMail(api, [{ subject: `Landscape ${t}`, text: `A body line.\n\n${'x'.repeat(120)}` }]);
+    if (msg === undefined) throw new Error('seed returned nothing');
+
+    await page.goto('/');
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeVisible();
+    // Push, not split: the stack's own bars, no hamburger drawer, no reading pane beside the list.
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden();
+    await expect(page.getByTestId('context-bar').getByRole('link', { name: 'Mailboxes', exact: true })).toBeVisible();
+    await expect(page.getByTestId('list-bar').getByRole('button', { name: 'New message' })).toBeVisible();
+    for (const radio of await page.getByRole('radiogroup', { name: 'Show in Inbox' }).getByRole('radio').all()) {
+      expect((await radio.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    await assertMobileFriendly(page, '/ (landscape inbox)');
+
+    await page.goto('/');
+    await page.getByRole('option', { name: new RegExp(`Landscape ${t}`) }).click();
+    await expect(page.getByRole('heading', { name: msg.subject, level: 2 })).toBeVisible();
+    // Opening a message replaces the list (a push), so the list is not beside it.
+    await expect(page.getByRole('listbox', { name: 'Messages in Inbox' })).toBeHidden();
+    await expect(page.getByRole('group', { name: 'Message actions' })).toBeVisible();
+    await assertMobileFriendly(page, `/mail/${msg.mailboxId}/${msg.id} (landscape open message)`);
+  });
+
+  test('other screens keep 44px targets and never scroll the page sideways', async ({ page }) => {
+    for (const [path, heading] of [
+      ['/settings/account', 'Account'],
+      ['/settings/security/sessions', 'Browser sessions'],
+      ['/calendar', 'Calendar'],
+    ] as const) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
+      await assertMobileFriendly(page, `${path} (landscape)`);
+    }
   });
 });

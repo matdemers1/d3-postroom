@@ -3,7 +3,7 @@ import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState }
 import { useSearchParams } from 'react-router-dom';
 import { Alert, Button, Cluster, EmptyState, IconButton, Page, PageHeader, SegmentedControl } from '@d3cloud/ui';
 import { calendarApi, type Calendar as CalendarJson, type EventInstance } from '../api';
-import { useMediaQuery } from '../mail/useMedia';
+import { SPLIT_QUERY, useMediaQuery } from '../mail/useMedia';
 import { EventEditor, type EditorTarget } from './EventEditor';
 import {
   addDays,
@@ -27,8 +27,11 @@ import {
 } from './layout';
 import { Loading, LoadFailed } from '../screens/states';
 
-/** Below this the grid is an agenda list (PST-REQ-136's 390 px phone layout). */
-const GRID_QUERY = '(min-width: 640px)';
+/**
+ * Below this the grid is an agenda list (PST-REQ-136's 390 px phone layout). The same query as the
+ * mail split (768 wide, 500 tall): one breakpoint scale, and a landscape phone gets the agenda.
+ */
+const GRID_QUERY = SPLIT_QUERY;
 const HOUR_PX = 48;
 const MONTH_CELL_MAX = 3;
 const VIEW_LABEL: Record<View, string> = { month: 'Month', week: 'Week', day: 'Day' };
@@ -95,7 +98,7 @@ function EventChip({
 
 /**
  * The calendar (PST-T-8.5, PST-REQ-136): month, week and day views of every calendar the account
- * syncs over CalDAV, recurrences expanded by the server; below 640 px an agenda list. Keyboard:
+ * syncs over CalDAV, recurrences expanded by the server; below 768 px (or 500 px tall) an agenda list. Keyboard:
  * arrows move between days in the month grid, Enter opens a day; j/k next/previous, t today,
  * m/w/d switch view, n new event.
  */
