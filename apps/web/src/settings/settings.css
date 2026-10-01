@@ -53,7 +53,9 @@
 
 /* From tablet width the labels take a 164px column and the fields a 360px one, as on the canvas;
  * below it the label sits over its field and the field keeps FormField's `lg` cap. */
-@media (min-width: 768px) {
+/* The split layout's own condition (mail/useMedia.ts SPLIT_QUERY), so a landscape phone keeps the
+   stacked form like the rest of its phone layout (PST-T-16.18). */
+@media (min-width: 768px) and (min-height: 500px) {
   .pr-pwform .d3-ff {
     display: grid;
     grid-template-columns: 164px minmax(0, 360px);
