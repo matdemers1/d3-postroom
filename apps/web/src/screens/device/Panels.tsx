@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Alert, Button, Cluster, Link, Stack } from '@d3cloud/ui';
+import { Alert, Button, Link, SettingsRow, Stack } from '@d3cloud/ui';
 import { describeError } from '../../api';
 import { deviceApi, type MailSettings, type ProfileLink } from './api';
 import { DeviceQr } from './DeviceQr';
@@ -66,21 +66,25 @@ export function IphonePanel({ withStepUp }: { withStepUp: WithStepUp }) {
       });
   };
 
+  // PST-T-17.9 (critique 2.2): the panel opens on one row — what it is on the left, its action on
+  // the right — the same shape for every client, so the card does not change form between tabs.
   return (
     <Stack gap="16">
-      <p>One profile sets up Mail, Calendar and Contacts on your iPhone, with its own app password.</p>
+      <SettingsRow
+        title="iPhone profile"
+        description="Mail, Calendar and Contacts on your iPhone, with its own app password."
+        control={
+          <Button size="sm" variant={link === null ? 'primary' : 'secondary'} loading={busy} onClick={make}>
+            {link === null ? 'Show QR code' : 'Make a new code'}
+          </Button>
+        }
+      />
       {error === null ? null : (
         <Alert tone="danger" title="Couldn’t make a code">
           {error}
         </Alert>
       )}
-      {link === null ? (
-        <Cluster>
-          <Button variant="primary" loading={busy} onClick={make}>
-            Show QR code
-          </Button>
-        </Cluster>
-      ) : (
+      {link === null ? null : (
         <Stack gap="12">
           {expired ? (
             <p>This code has expired. Make a new one when your iPhone is to hand.</p>
@@ -97,11 +101,6 @@ export function IphonePanel({ withStepUp }: { withStepUp: WithStepUp }) {
             </>
           )}
           <ConnectionStatus key={link.linkId} watch={{ kind: 'link', linkId: link.linkId, expiresAt: link.expiresAt }} waiting="Waiting for your iPhone to open the code." />
-          <Cluster>
-            <Button loading={busy} onClick={make}>
-              Make a new code
-            </Button>
-          </Cluster>
         </Stack>
       )}
     </Stack>
@@ -132,7 +131,15 @@ export function MacPanel({ withStepUp }: { withStepUp: WithStepUp }) {
 
   return (
     <Stack gap="16">
-      <p>Download a profile that sets up Mail, Calendar and Contacts on this Mac, with its own app password.</p>
+      <SettingsRow
+        title="Mac profile"
+        description="Mail, Calendar and Contacts on this Mac, with its own app password."
+        control={
+          <Button size="sm" variant={done === null ? 'primary' : 'secondary'} loading={busy} onClick={download}>
+            {done === null ? 'Download profile' : 'Download another'}
+          </Button>
+        }
+      />
       {error === null ? null : (
         <Alert tone="danger" title="Couldn’t make the profile">
           {error}
@@ -145,11 +152,6 @@ export function MacPanel({ withStepUp }: { withStepUp: WithStepUp }) {
             : 'Downloaded. Open it, then install it in System Settings › General › Device Management. It shows as Unverified because this server has no signing certificate yet, but it works the same.'}
         </Alert>
       )}
-      <Cluster>
-        <Button variant={done === null ? 'primary' : 'secondary'} loading={busy} onClick={download}>
-          {done === null ? 'Download profile' : 'Download another'}
-        </Button>
-      </Cluster>
       {done === null || done.appPasswordId === null ? null : (
         <ConnectionStatus key={done.appPasswordId} watch={{ kind: 'password', id: done.appPasswordId }} waiting="Waiting for Mail to sign in." />
       )}
@@ -159,33 +161,35 @@ export function MacPanel({ withStepUp }: { withStepUp: WithStepUp }) {
 
 const DEVICES_PATH = '/settings/security/devices';
 
+function CreatePasswordLink() {
+  return (
+    <Link asChild>
+      <RouterLink to={DEVICES_PATH}>Create an app password</RouterLink>
+    </Link>
+  );
+}
+
 /** Thunderbird: its own autoconfig fills in the servers from the address. */
 export function ThunderbirdPanel({ settings }: { settings: MailSettings | null }) {
   return (
-    <Stack gap="12">
-      <p>
-        In Thunderbird, choose <strong>New › Existing Mail Account</strong>, then enter your name, {settings === null || settings.address === null ? 'your address' : <code>{settings.address}</code>} and an app
-        password. Thunderbird finds the servers by itself.
-      </p>
-      <p>
-        <Link asChild>
-          <RouterLink to={DEVICES_PATH}>Create an app password</RouterLink>
-        </Link>
-      </p>
-    </Stack>
+    <SettingsRow
+      title="Thunderbird"
+      description={
+        <>
+          In Thunderbird, choose <strong>New › Existing Mail Account</strong>, then enter your name, {settings === null || settings.address === null ? 'your address' : <code>{settings.address}</code>} and an app
+          password. Thunderbird finds the servers by itself.
+        </>
+      }
+      control={<CreatePasswordLink />}
+    />
   );
 }
 
 /** Any other mail app: the settings by hand, each with Copy. */
 export function OtherPanel({ settings, error }: { settings: MailSettings | null; error: string | null }) {
   return (
-    <Stack gap="12">
-      <p>
-        Add the account by hand with these settings, and sign in with an app password.{' '}
-        <Link asChild>
-          <RouterLink to={DEVICES_PATH}>Create an app password</RouterLink>
-        </Link>
-      </p>
+    <Stack gap="16">
+      <SettingsRow title="Any other mail app" description="Add the account by hand with these settings, and sign in with an app password." control={<CreatePasswordLink />} />
       {error !== null ? (
         <Alert tone="danger" title="Couldn’t load the server settings">
           {error}

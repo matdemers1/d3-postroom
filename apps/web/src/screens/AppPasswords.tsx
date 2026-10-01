@@ -20,11 +20,14 @@ import {
   Textarea,
 } from '@d3cloud/ui';
 import { api, describeError, type AppPassword, type AppPasswordScope } from '../api';
-import { relativeTime } from './app-passwords-format';
+import { RelativeTime } from '../components/RelativeTime';
+import { DEFAULT_SCOPES, passwordFacts, scopeSummary, type PasswordFact } from './app-passwords-format';
 import { ConnectionStatus } from './device/FirstUse';
+import { SECURITY_DESCRIPTION } from './device/security';
 import { ServerSettings } from './device/ServerSettings';
 import { Loading, LoadFailed } from './states';
 import { SubNav } from './SubNav';
+import './device/security.css';
 
 const SCOPES: { scope: AppPasswordScope; label: string }[] = [
   { scope: 'imap', label: 'Read mail (IMAP)' },
@@ -33,8 +36,36 @@ const SCOPES: { scope: AppPasswordScope; label: string }[] = [
   { scope: 'sieve', label: 'Rules (ManageSieve)' },
 ];
 
-const when = (iso: string | null): string =>
-  iso === null ? 'Never' : new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+/** One fact on a row's description line, its time drawn by RelativeTime (the full time on hover). */
+function Fact({ fact }: { fact: PasswordFact }) {
+  if (fact.kind === 'never-used') return <>Never used</>;
+  if (fact.kind === 'created') {
+    return (
+      <>
+        created <RelativeTime iso={fact.at} />
+      </>
+    );
+  }
+  return (
+    <>
+      Used <RelativeTime iso={fact.at} />
+      {fact.ip === null ? null : ` from ${fact.ip}`}
+    </>
+  );
+}
+
+function PasswordDescription({ password }: { password: AppPassword }) {
+  return (
+    <>
+      {passwordFacts(password).map((fact, i) => (
+        <span key={fact.kind}>
+          {i === 0 ? null : ' · '}
+          <Fact fact={fact} />
+        </span>
+      ))}
+    </>
+  );
+}
 
 /**
  * App passwords (PST-REQ-027): mail clients sign in with one of these, never the account password.
@@ -46,7 +77,7 @@ export function AppPasswords() {
   const [loadError, setLoadError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  // PST-T-16.23: the header's New button unmounts while the form is open; folding the form away
+  // PST-T-16.23: the card's New button unmounts while the form is open; folding the form away
   // (Cancel, or done) hands focus back to it, as Account's Change password does.
   const newButton = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef(false);
@@ -57,7 +88,7 @@ export function AppPasswords() {
     }
   }, [creating]);
   const [label, setLabel] = useState('');
-  const [scopes, setScopes] = useState<AppPasswordScope[]>(['imap', 'smtp']);
+  const [scopes, setScopes] = useState<AppPasswordScope[]>([...DEFAULT_SCOPES]);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [revealed, setRevealed] = useState<{ id: string; label: string; password: string } | null>(null);
@@ -87,7 +118,7 @@ export function AppPasswords() {
     returnFocus.current = true;
     setCreating(false);
     setLabel('');
-    setScopes(['imap', 'smtp']);
+    setScopes([...DEFAULT_SCOPES]);
     setFormError(null);
   };
 
@@ -149,20 +180,21 @@ export function AppPasswords() {
       });
   };
 
-  const lastUsed = (p: AppPassword): string =>
-    p.lastUsedAt === null ? 'Never used' : `Last used ${relativeTime(p.lastUsedAt)}${p.lastUsedIp === null ? '' : ` from ${p.lastUsedIp}`}`;
-
   return (
     // PST-T-15.6: the settings grid — a 680px column of Section cards; the passwords are rows.
-    <Page width="narrow">
-      <PageHeader
-        title="Devices"
-        description="Mail, calendar and contacts apps on your devices sign in with an app password, never your account password."
-        {...(rows === null ? {} : { count: rows.length, countNoun: { one: 'password', other: 'passwords' } })}
+    // PST-T-17.9: one constant header for all of Security & devices, then its tabs, then one card
+    // that holds everything on this tab: its New button, the create form, the one-time reveal, the list.
+    <Page width="narrow" align="center">
+      <PageHeader title="Security & devices" description={SECURITY_DESCRIPTION} />
+      <SubNav />
+      <Section
+        title="App passwords"
+        description="Mail apps sign in with one of these, never your account password."
         actions={
           creating ? null : (
             <Button
               ref={newButton}
+              size="sm"
               variant="primary"
               onClick={() => {
                 setNotice(null);
@@ -173,51 +205,56 @@ export function AppPasswords() {
             </Button>
           )
         }
-      />
-      <SubNav />
-      {notice === null ? null : (
-        <Alert tone="info" dynamic>
-          {notice}
-        </Alert>
-      )}
+      >
+        {notice === null ? null : (
+          <Alert tone="info" dynamic>
+            {notice}
+          </Alert>
+        )}
 
-      {revealed === null ? null : (
-        <Section title={`Password for ${revealed.label}`} description="Copy it into the app now. You won't see this again.">
-          <Stack gap="12">
-            <Alert tone="warning" title="Shown once">
-              Postroom keeps only a hash. If you lose it, revoke it and create another.
-            </Alert>
-            <FormField label="App password" width="lg">
-              <Textarea appearance="filled" mono readOnly rows={1} value={revealed.password} onFocus={(e) => { e.currentTarget.select(); }} />
-            </FormField>
-            <Cluster>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  copy(revealed.password);
-                }}
-              >
-                {copied ? 'Copied' : 'Copy'}
-              </Button>
-              <Button
-                onClick={() => {
-                  setRevealed(null);
-                }}
-              >
-                Done
-              </Button>
-            </Cluster>
-            <ConnectionStatus key={revealed.id} watch={{ kind: 'password', id: revealed.id }} waiting="Waiting for the app to sign in." />
-            {/* PST-T-16.16: the same settings block as Connect a device › Other, beside the password. */}
-            <ServerSettings />
-          </Stack>
-        </Section>
-      )}
+        {revealed === null ? null : (
+          <div className="pr-sec-panel" role="group" aria-labelledby="app-password-reveal">
+            <Stack gap="12">
+              <div>
+                <h3 id="app-password-reveal" className="pr-sec-panel__title">{`Password for ${revealed.label}`}</h3>
+                <p className="pr-sec-panel__desc">Copy it into the app now. You won’t see this again.</p>
+              </div>
+              <Alert tone="warning" title="Shown once">
+                Postroom keeps only a hash. If you lose it, revoke it and create another.
+              </Alert>
+              <FormField label="App password" width="lg">
+                <Textarea appearance="filled" mono readOnly rows={1} value={revealed.password} onFocus={(e) => { e.currentTarget.select(); }} />
+              </FormField>
+              <Cluster>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    copy(revealed.password);
+                  }}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setRevealed(null);
+                  }}
+                >
+                  Done
+                </Button>
+              </Cluster>
+              <ConnectionStatus key={revealed.id} watch={{ kind: 'password', id: revealed.id }} waiting="Waiting for the app to sign in." />
+              {/* PST-T-16.16: the same settings block as Connect a device › Other, beside the password. */}
+              <ServerSettings />
+            </Stack>
+          </div>
+        )}
 
-      {!creating ? null : (
-        <Section title="New app password">
-          <form onSubmit={create}>
+        {!creating ? null : (
+          <form className="pr-sec-panel" aria-labelledby="app-password-new" onSubmit={create}>
             <Stack gap="16">
+              <h3 id="app-password-new" className="pr-sec-panel__title">
+                New app password
+              </h3>
               <FormField label="Name" width="lg" help="The device or app it is for, e.g. iPhone Mail." {...(formError === null ? {} : { error: formError })}>
                 <Input appearance="filled"
                   autoFocus
@@ -256,55 +293,48 @@ export function AppPasswords() {
               </FormActions>
             </Stack>
           </form>
-        </Section>
-      )}
+        )}
 
-      {loadError !== null ? (
-        <LoadFailed error={loadError} what="app passwords" onRetry={() => void load()} />
-      ) : rows === null ? (
-        <Loading label="Loading app passwords" />
-      ) : (
-        <Section title="Your app passwords" description="Revoking one signs its app out at its next connection.">
-          {/* No header over nothing (PST-T-14.11): the empty state says what goes here. */}
+        {loadError !== null ? (
+          <LoadFailed error={loadError} what="app passwords" onRetry={() => void load()} headingLevel={3} size="row" />
+        ) : rows === null ? (
+          <Loading label="Loading app passwords" height={96} />
+        ) : (
+          // No header over nothing (PST-T-14.11): the empty state says what goes here.
           <DataList
             aria-label="Your app passwords"
             empty={
-              <EmptyState kind="empty" heading="No app passwords yet" headingLevel={3} size="inline">
-                Press New app password for each mail, calendar or contacts app you sign in to.
+              <EmptyState kind="empty" heading="No app passwords yet" headingLevel={3} size="row">
+                Make one for each mail, calendar or contacts app you sign in to.
               </EmptyState>
             }
           >
-            {rows.map((p) => (
-              <DataListRow
-                key={p.id}
-                title={p.label}
-                description={`Created ${when(p.createdAt)} · ${lastUsed(p)}`}
-                meta={
-                  <Cluster gap="4">
-                    {p.scopes.map((s) => (
-                      <Badge key={s} size="sm">
-                        {s.toUpperCase()}
-                      </Badge>
-                    ))}
-                  </Cluster>
-                }
-                actions={
-                  <Button
-                    variant="danger-ghost"
-                    size="sm"
-                    aria-label={`Revoke ${p.label}`}
-                    onClick={() => {
-                      setConfirming(p);
-                    }}
-                  >
-                    Revoke
-                  </Button>
-                }
-              />
-            ))}
+            {rows.map((p) => {
+              const scope = scopeSummary(p.scopes);
+              return (
+                <DataListRow
+                  key={p.id}
+                  title={p.label}
+                  description={<PasswordDescription password={p} />}
+                  meta={scope === null ? null : <Badge size="sm">{scope}</Badge>}
+                  actions={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      aria-label={`Revoke ${p.label}`}
+                      onClick={() => {
+                        setConfirming(p);
+                      }}
+                    >
+                      Revoke
+                    </Button>
+                  }
+                />
+              );
+            })}
           </DataList>
-        </Section>
-      )}
+        )}
+      </Section>
 
       <Modal
         open={confirming !== null}
