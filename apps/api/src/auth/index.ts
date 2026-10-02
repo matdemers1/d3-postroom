@@ -8,6 +8,8 @@ import { isSetupRequired } from './setup.js';
 
 export { authRoutes } from './routes.js';
 export { adminRoutes } from './admin.js';
+export { d3authAdminRoutes } from './d3auth-admin.js';
+export { accountIdentityRoutes } from './identities.js';
 export { csrfGuard, requireAdmin, requireSession, requireStepUp, currentSession } from './middleware.js';
 export { runtimeFor, STEP_UP_MS } from './runtime.js';
 export { isSetupRequired } from './setup.js';

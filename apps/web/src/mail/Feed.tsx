@@ -3,18 +3,62 @@
 // scroll into view — a newsletter's images and tracking are only fetched once the reader is
 // actually looking at it. "Mark all read" clears the whole loaded page in one pass; a message that
 // offers RFC 8058 one-click unsubscribe gets its own button (PST-REQ-110), right there in the feed.
+//
+// PST-T-17.3 (PST-DA-084): each frame is sized to its message. The frame cannot say how tall its
+// document is — no allow-scripts, an opaque origin, a CSP with no script (PST-REQ-081, PST-ADR-011)
+// — so the render ticket carries the server's estimate (apps/api/src/usercontent/height.ts) at two
+// frame widths; the feed interpolates for the width it has and clamps. A one-line note gets a short
+// frame; a long issue stops at FEED_FRAME_MAX under a fade, with "Read in full" opening it in the
+// reading view.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Alert, Button, EmptyState, Modal, ModalClose, Skeleton, Stack, StatusDot, useTheme } from '@d3cloud/ui';
+import { Alert, Button, EmptyState, Link, Modal, ModalClose, Skeleton, Stack, StatusDot, useTheme } from '@d3cloud/ui';
 import { api, ApiError, senderProfilePath, type Mailbox, type MessageSummary, type RenderTicket } from '../api';
 import { fullDate } from './format';
 import { isUnread, SEEN } from './list';
-import { MAIL_FRAME_HEIGHT, MAIL_FRAME_SANDBOX } from './ReadingPane';
+import { MAIL_FRAME_SANDBOX } from './ReadingPane';
+import { mailboxKey, mailPath } from './route';
 import { LoadFailed } from '../screens/states';
 import { HeaderWhyControl } from './sorting/BucketChip';
 import { mailboxBucket, type ChipContext, type FilingBucket } from './sorting/sorting';
+import './feed.css';
 
 const PAGE = 20;
+
+/** The shortest frame: a one-line note still reads as a body, not a sliver. */
+export const FEED_FRAME_MIN = 48;
+/** The tallest frame: past this an issue is cut off under a fade, with "Read in full". */
+export const FEED_FRAME_MAX = 480;
+/** The frame widths the server's estimate is made at (apps/api/src/usercontent/height.ts ESTIMATE_WIDTHS). */
+const ESTIMATE_NARROW = 360;
+const ESTIMATE_WIDE = 720;
+/** The frame's own hairline, top and bottom, plus a little room so an estimate a few px short never scrolls. */
+const FRAME_ALLOWANCE = 2 + 8;
+
+export interface FeedFrameSize {
+  /** The frame's height in CSS px. */
+  height: number;
+  /** The message is taller than FEED_FRAME_MAX: cut off under a fade, with "Read in full". */
+  capped: boolean;
+}
+
+/**
+ * The frame's height from the ticket's estimate, for a frame `frameWidth` px wide (0 when it has not
+ * been measured: the wide estimate). Between the two widths the estimate is interpolated; narrower
+ * than the narrow one, text wraps more, so it grows in proportion. No estimate (an older server)
+ * is treated as long: the cap, and "Read in full".
+ */
+export function feedFrameSize(estimate: RenderTicket['heightEstimate'], frameWidth: number): FeedFrameSize {
+  if (estimate === undefined) return { height: FEED_FRAME_MAX, capped: true };
+  const { narrow, wide } = estimate;
+  let content: number;
+  if (frameWidth <= 0 || frameWidth >= ESTIMATE_WIDE) content = wide;
+  else if (frameWidth >= ESTIMATE_NARROW) content = narrow + ((wide - narrow) * (frameWidth - ESTIMATE_NARROW)) / (ESTIMATE_WIDE - ESTIMATE_NARROW);
+  else content = (narrow * ESTIMATE_NARROW) / frameWidth;
+  const height = Math.ceil(content) + FRAME_ALLOWANCE;
+  if (height > FEED_FRAME_MAX) return { height: FEED_FRAME_MAX, capped: true };
+  return { height: Math.max(FEED_FRAME_MIN, height), capped: false };
+}
 
 export interface FeedProps {
   mailbox: Mailbox;
@@ -23,10 +67,23 @@ export interface FeedProps {
 type FrameState = { status: 'idle' } | { status: 'loading' } | { status: 'ready'; ticket: RenderTicket } | { status: 'unavailable' } | { status: 'error' };
 
 /** One newsletter's body, fetched only once its wrapper has scrolled into view. */
-function FeedItemFrame({ messageId }: { messageId: string }) {
+function FeedItemFrame({ messageId, subject, readPath }: { messageId: string; subject: string; readPath: string }) {
   const [visible, setVisible] = useState(false);
   const [state, setState] = useState<FrameState>({ status: 'idle' });
+  const [width, setWidth] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // The frame's width decides how its estimate reads (text wraps more, tables stack, when narrow).
+  // Measured on the parent's own wrapper: the frame's document is another origin's, never read.
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (el === null) return;
+    setWidth(el.clientWidth);
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => { setWidth(el.clientWidth); });
+    observer.observe(el);
+    return () => { observer.disconnect(); };
+  }, []);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -75,28 +132,55 @@ function FeedItemFrame({ messageId }: { messageId: string }) {
       ) : state.status === 'error' ? (
         <Alert tone="warning" title="Could not load this message">Reload the page in a moment.</Alert>
       ) : (
-        <iframe
-          key={state.ticket.url}
-          title="Newsletter content"
-          data-testid="message-html"
-          src={state.ticket.url}
-          sandbox={MAIL_FRAME_SANDBOX}
-          referrerPolicy="no-referrer"
-          style={{ display: 'block', width: '100%', height: MAIL_FRAME_HEIGHT, boxSizing: 'border-box', border: 'var(--border-width) solid var(--color-border)', borderRadius: 'var(--radius-md)' }}
-        />
+        <FramedBody ticket={state.ticket} size={feedFrameSize(state.ticket.heightEstimate, width - 2)} subject={subject} readPath={readPath} />
       )}
     </div>
+  );
+}
+
+/** The frame at its estimated height; past the cap, a fade over its foot and "Read in full" under it. */
+function FramedBody({ ticket, size, subject, readPath }: { ticket: RenderTicket; size: FeedFrameSize; subject: string; readPath: string }) {
+  return (
+    <>
+      <div className="pr-feed__frame" data-capped={size.capped}>
+        <iframe
+          key={ticket.url}
+          title="Newsletter content"
+          data-testid="message-html"
+          className="pr-feed__frame-el"
+          src={ticket.url}
+          sandbox={MAIL_FRAME_SANDBOX}
+          referrerPolicy="no-referrer"
+          style={{ height: size.height }}
+        />
+        {size.capped ? <div className="pr-feed__fade" aria-hidden="true" data-testid="feed-item-fade" /> : null}
+      </div>
+      {size.capped ? (
+        <div className="pr-feed__more">
+          <Link asChild variant="standalone">
+            {/* aria-label, not a visually hidden span: a hidden span is its own box, so the name read
+                "Read in full : subject" with a stray space. The label starts with the visible words. */}
+            <RouterLink to={readPath} data-testid="feed-read-in-full" aria-label={`Read in full: ${subject}`}>
+              Read in full
+            </RouterLink>
+          </Link>
+        </div>
+      ) : null}
+    </>
   );
 }
 
 function FeedItem({
   message,
   list,
+  readPath,
   onUnsubscribed,
   onCorrected,
 }: {
   message: MessageSummary;
   list: ChipContext;
+  /** Where "Read in full" opens this message: the reading view. */
+  readPath: string;
   onUnsubscribed: (address: string) => void;
   onCorrected: (message: MessageSummary, bucket: FilingBucket) => void;
 }) {
@@ -157,7 +241,7 @@ function FeedItem({
           {unsub.detail ?? 'Postroom could not reach the sender.'}
         </Alert>
       ) : null}
-      <FeedItemFrame messageId={message.id} />
+      <FeedItemFrame messageId={message.id} subject={message.subject ?? '(no subject)'} readPath={readPath} />
       <Modal
         open={confirming}
         onOpenChange={setConfirming}
@@ -296,7 +380,7 @@ export function Feed({ mailbox }: FeedProps) {
         )}
       </div>
       {messages.map((m) => (
-        <FeedItem key={m.id} message={m} list={list} onUnsubscribed={forgetSender} onCorrected={corrected} />
+        <FeedItem key={m.id} message={m} list={list} readPath={mailPath(mailboxKey(mailbox), m.id)} onUnsubscribed={forgetSender} onCorrected={corrected} />
       ))}
       <div ref={sentinelRef} aria-hidden="true" />
       {loadingMore ? <Skeleton variant="block" height={220} /> : null}

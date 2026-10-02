@@ -1,0 +1,237 @@
+/* PST-T-17.2 (PST-REQ-194, PST-REQ-155): the admin list screens — DNS & DKIM, Jobs, Suppressions and
+ * Sign-in sessions — on the canvas. Each list sits in `<Card className="pr-table-card">` (admin.css)
+ * with its toolbar row inside; a phone gets DataList cards instead of the table. This file holds only
+ * what those four screens add on top of admin.css. D3 semantic tokens only; no shadows, no hex. */
+
+/* Visually hidden, still announced: the actions column's header, the "differs" marker. */
+.pr-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The toolbar holds a FilterBar: it takes the row, with its count at the far edge. */
+.pr-table-toolbar > .d3-fb {
+  flex: 1 1 auto;
+  align-items: center;
+}
+
+.pr-table-toolbar .d3-fb__controls {
+  align-items: center;
+}
+
+/* A search field in a toolbar is a filter, not a form: one line, no wider than it needs. */
+.pr-table-toolbar .d3-fb__controls > .d3-search,
+.pr-table-toolbar .d3-fb__controls > .d3-inp {
+  flex: 0 1 18rem;
+}
+
+/* A toolbar with nothing to filter: just the count, at the end. */
+.pr-list-count {
+  margin-inline-start: auto;
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One line, ellipsized, the full text on hover (`title`): a job's last error, a long reply. */
+.pr-clip {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Two (or, on a phone card, three) lines, then an ellipsis: a long DNS value. */
+.pr-clamp {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.pr-clamp--3 {
+  -webkit-line-clamp: 3;
+}
+
+/* A qualifier after a name, in the muted voice ("· This browser"). Never a pill (X2). */
+.pr-list-aside {
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+  font-weight: normal;
+}
+
+/* Phone cards inside the list card: the DataList runs edge to edge, rows at the card's padding. */
+.pr-table-card > .d3-dlist,
+.pr-table-card .pr-dns-group > .d3-dlist {
+  margin: 0;
+}
+
+/* A card's actions on a phone sit under its text, start-aligned; never stretched. */
+.pr-table-card .d3-dlrow__actions > .d3-btn {
+  flex: none;
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Admin › DNS & DKIM
+ * ------------------------------------------------------------------------------------------- */
+
+/* A group of records under its sub-header (Mail flow, Authentication, …). */
+.pr-dns-group + .pr-dns-group {
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.pr-dns-group__title {
+  margin: 0;
+  padding: var(--space-12) var(--space-16) var(--space-4);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  color: var(--color-fg-muted);
+}
+
+/* The column headers are said once, over the first group; later groups keep theirs for a screen
+ * reader (each table still names its columns) but do not repeat them on screen. */
+.pr-dns-group + .pr-dns-group .d3-tbl__head,
+.pr-dns-group + .pr-dns-group thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A record's cells may hold two lines (friendly name over the DNS name, a 2-line value clamp):
+ * top-aligned, so the lines of neighbouring cells share a baseline. */
+.pr-dns-records .d3-tbl__td {
+  vertical-align: top;
+  padding-block: var(--space-8);
+  white-space: normal;
+}
+
+.pr-dns-record {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pr-dns-record__label {
+  font-weight: var(--weight-medium);
+}
+
+.pr-dns-record__type {
+  margin-inline-start: var(--space-6);
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+  font-weight: normal;
+}
+
+/* A DNS name breaks only after a dot (the <wbr>s the screen inserts), never mid-label. */
+.pr-dns-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  color: var(--color-fg-muted);
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* The expected value and its Copy, on one line: the value clamps, the button never wraps under it. */
+.pr-dns-value-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.pr-dns-value-row > .pr-dns-clamp {
+  flex: 1 1 auto;
+  padding-block-start: var(--space-4);
+}
+
+.pr-dns-value-row > .d3-ibtn {
+  flex: none;
+}
+
+.pr-dns-clamp {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.pr-dns-live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* A live value that is not what Postroom expects: the hue lands on what needs you (2.4 #6). */
+.pr-dns-live__value--differs {
+  color: var(--color-danger);
+}
+
+.pr-dns-live__mark {
+  margin-inline-end: var(--space-4);
+}
+
+/* Every cell's first line starts 4px below the cell's padding, level with the text beside the 28px
+ * Copy button; a clamp keeps its -webkit-box, a column of values or name lines keeps its flex. */
+.pr-dns-cell {
+  display: block;
+  padding-block-start: var(--space-4);
+}
+
+.pr-dns-cell.pr-clamp {
+  display: -webkit-box;
+}
+
+.pr-dns-cell.pr-dns-live,
+.pr-dns-cell.pr-dns-record {
+  display: flex;
+}
+
+/* The resolver, in one muted line under the card rather than a raised Alert above it (2.4 #8). */
+.pr-list-footnote {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+}
+
+/* Phone: one card per record. The name, the value (three lines and Copy), and why — when it fails. */
+.pr-dns-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  color: var(--color-fg-muted);
+}
+
+.pr-dns-card__why {
+  color: var(--color-fg);
+  font-size: var(--text-13);
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Admin › Jobs, Sign-in sessions, Suppressions
+ * ------------------------------------------------------------------------------------------- */
+
+/* The phone card's one-line description: separators muted, nothing wraps. */
+.pr-list-desc {
+  min-width: 0;
+}
+
+.pr-list-desc .pr-mono {
+  font-size: var(--text-12);
+}

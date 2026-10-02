@@ -1,41 +1,30 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import {
-  Button,
-  Card,
-  DescriptionItem,
-  DescriptionList,
-  EmptyState,
-  Link,
-  Page,
-  PageHeader,
-  Section,
-  Stat,
-  StatGroup,
-  StatusDot,
-  Table,
-  type TableColumn,
-} from '@d3cloud/ui';
+import { Button, Card, DataList, DataListRow, EmptyState, IconButton, Link, Page, PageHeader, Stat, StatGroup, StatusDot, Table, type TableColumn } from '@d3cloud/ui';
 import { api, DNS_STATUS, type AdminQueueRecipient, type DnsCheckRow, type DnsReport, type HealthTile } from '../api';
 import { Loading, LoadFailed } from './states';
+import { RelativeTime, relativeTime } from '../components/RelativeTime';
+import { PHONE_QUERY, useMediaQuery } from '../mail/useMedia';
 import {
   TILE_TONE,
-  certificateValue,
-  durationShort,
+  certificateStat,
   healthSummary,
-  humanizeDetail,
-  inboundQueueCounts,
-  lastRunFootnote,
-  lastRunStat,
+  inboundQueueStat,
+  lastRunView,
   queueMeta,
   queueState,
-  relativeTime,
+  serviceName,
   servicesMeta,
-  sinceText,
+  sincePrefix,
   sortTiles,
   tileAction,
   tileById,
+  tileDetail,
+  type StatView,
 } from '../admin/health/model';
+import { CardHead } from '../admin/health/CardHead';
+import { RefreshIcon } from '../admin/health/RefreshIcon';
+import { useContextBarAction } from '../mobile/barSlot';
 import '../admin/admin.css';
 
 const REFRESH_MS = 30_000;
@@ -56,160 +45,137 @@ function TileDot({ tile }: { tile: HealthTile }) {
   );
 }
 
-/** A Stat for one tile, or a quiet placeholder when the server sent no such tile. */
-function TileStat({
-  tile,
-  label,
-  value,
-  unit,
-  footnote,
-}: {
-  tile: HealthTile | undefined;
-  label: string;
-  value: string;
-  unit?: string | undefined;
-  footnote: string;
-}) {
+/** One Stat: a number or "—" in the value slot, a status under it, and a one-line footnote. */
+function TileStat({ id, label, view }: { id: string; label: string; view: StatView }) {
   return (
     <Stat
-      data-stat={tile?.id}
+      data-stat={id}
       label={label}
-      value={value}
-      {...(unit === undefined ? {} : { unit })}
-      footnote={footnote}
+      value={view.value}
+      {...(view.unit === undefined ? {} : { unit: view.unit })}
+      footnote={
+        <span className="pr-stat-foot" title={view.ran === undefined ? view.footnote : `${view.ran.prefix} ${relativeTime(view.ran.iso)} · ${view.footnote}`}>
+          {view.ran === undefined ? null : (
+            <>
+              {view.ran.prefix} <RelativeTime iso={view.ran.iso} /> ·{' '}
+            </>
+          )}
+          {view.footnote}
+        </span>
+      }
       status={
-        tile === undefined ? (
-          <StatusDot tone="idle" size="sm">
-            Not reported
-          </StatusDot>
-        ) : (
-          <TileDot tile={tile} />
-        )
+        <StatusDot tone={view.status.tone} size="sm">
+          {view.status.label}
+        </StatusDot>
       }
     />
   );
 }
 
 function SummaryStats({ tiles, now }: { tiles: HealthTile[]; now: Date }) {
-  const queue = tileById(tiles, 'queue');
-  const cert = tileById(tiles, 'cert-expiry');
-  const backup = tileById(tiles, 'backup');
-  const drill = tileById(tiles, 'drill');
-  const q = queue === undefined ? null : inboundQueueCounts(queue);
-  const backupStat = backup === undefined ? { value: '—' } : lastRunStat(backup, now);
-  const drillStat = drill === undefined ? { value: '—' } : lastRunStat(drill, now);
   return (
-    <Card as="section" aria-label="Summary" className="pr-admin-card pr-admin-stats">
+    <Card as="section" aria-label="Summary" className="pr-admin-stats">
       <StatGroup>
-        <TileStat
-          tile={queue}
-          label="Inbound queue"
-          value={q === null ? (queue === undefined ? '—' : TILE_TONE[queue.state].label) : String(q.dead)}
-          unit={q === null ? undefined : q.dead === 1 ? 'dead job' : 'dead jobs'}
-          footnote={q === null ? (queue === undefined ? 'Not reported' : humanizeDetail(queue.detail)) : `${String(q.failed)} failed ${q.failed === 1 ? 'message' : 'messages'}`}
-        />
-        <TileStat tile={cert} label="Certificates" value={cert === undefined ? '—' : certificateValue(cert)} footnote={cert === undefined ? 'Not reported' : humanizeDetail(cert.detail)} />
-        <TileStat
-          tile={backup}
-          label="Backups"
-          value={backupStat.value}
-          unit={backupStat.unit}
-          footnote={backup === undefined ? 'Not reported' : lastRunFootnote(backup, 'backup')}
-        />
-        <TileStat
-          tile={drill}
-          label="Restore drill"
-          value={drillStat.value}
-          unit={drillStat.unit}
-          footnote={drill === undefined ? 'Not reported' : lastRunFootnote(drill, 'drill')}
-        />
+        <TileStat id="queue" label="Inbound queue" view={inboundQueueStat(tileById(tiles, 'queue'))} />
+        <TileStat id="cert-expiry" label="Certificates" view={certificateStat(tileById(tiles, 'cert-expiry'))} />
+        <TileStat id="backup" label="Backups" view={lastRunView(tileById(tiles, 'backup'), 'backup', now)} />
+        <TileStat id="drill" label="Restore drill" view={lastRunView(tileById(tiles, 'drill'), 'drill', now)} />
       </StatGroup>
     </Card>
   );
 }
 
-function Services({ tiles, now }: { tiles: HealthTile[]; now: Date }) {
-  const columns: TableColumn<HealthTile>[] = [
-    {
-      key: 'label',
-      header: 'Service',
-      width: '11rem',
-      cell: (t) => (
-        <span className="pr-health__svc" data-tile-id={t.id} data-tile-state={t.state}>
-          {t.label}
-        </span>
-      ),
-    },
-    {
-      key: 'detail',
-      header: 'Detail',
-      cell: (t) => {
-        const action = tileAction(t);
-        return (
-          <>
-            <span className="pr-muted pr-wrap">{humanizeDetail(t.detail)}</span>
-            {/* The next step sits on its own line: a link inline in muted text differs from it by
-                colour alone (1.61:1), which axe's link-in-text-block refuses (PST-REQ-154). */}
-            {action === null ? null : (
-              <span className="pr-health-action">
-                {action.external ? (
-                  <Link href={action.href} external target="_blank" rel="noopener noreferrer">
-                    {action.label}
-                  </Link>
-                ) : (
-                  <Link asChild>
-                    <RouterLink to={action.href}>{action.label}</RouterLink>
-                  </Link>
-                )}
-              </span>
-            )}
-          </>
-        );
-      },
-    },
-    {
-      key: 'state',
-      header: 'Status',
-      align: 'end',
-      width: '14rem',
-      cell: (t) => {
-        const since = sinceText(t, now);
-        return (
-          <span className="pr-health__state">
-            <TileDot tile={t} />
-            {since === null ? null : <span className="pr-muted pr-small">· {since}</span>}
-          </span>
-        );
-      },
-    },
-  ];
+/** The fix for a failing check, on its own line: a link inline in muted text differs from it by
+ * colour alone (1.61:1), which axe's link-in-text-block refuses (PST-REQ-154). */
+function TileFix({ tile }: { tile: HealthTile }) {
+  const action = tileAction(tile);
+  if (action === null) return null;
   return (
-    <Section title="Services" description={servicesMeta(tiles)} className="pr-admin-card" data-section="services">
-      <Table className="pr-admin-table" caption="Services" captionHidden columns={columns} rows={sortTiles(tiles)} rowKey={(t) => t.id} />
-    </Section>
+    <span className="pr-health-action">
+      {action.external ? (
+        <Link href={action.href} external target="_blank" rel="noopener noreferrer">
+          {action.label}
+        </Link>
+      ) : (
+        <Link asChild>
+          <RouterLink to={action.href}>{action.label}</RouterLink>
+        </Link>
+      )}
+    </span>
   );
 }
 
-/** Tunnel and blocklist: the two checks that look at Postroom from outside. */
-function Edge({ tiles }: { tiles: HealthTile[] }) {
-  const rows = [tileById(tiles, 'tunnel'), tileById(tiles, 'blocklist')].filter((t): t is HealthTile => t !== undefined);
+/** The detail, then when it last ran or changed as a muted suffix (2.1 #2) — or "—" when the detail
+ * would only restate the status (2.1 #4, #7). */
+function TileDetailText({ tile }: { tile: HealthTile }) {
+  const detail = tileDetail(tile);
+  const prefix = sincePrefix(tile);
+  if (detail === null && (prefix === null || tile.since === null)) return <span className="pr-muted">—</span>;
   return (
-    <Section title="Edge" className="pr-admin-card">
-      {rows.length === 0 ? (
-        <p className="pr-muted pr-small">No edge checks reported.</p>
-      ) : (
-        <DescriptionList>
-          {rows.map((t) => (
-            <DescriptionItem key={t.id} term={t.label}>
-              <span className="pr-health__kv">
-                <TileDot tile={t} />
-                <span className="pr-muted">{humanizeDetail(t.detail)}</span>
-              </span>
-            </DescriptionItem>
-          ))}
-        </DescriptionList>
+    <span className="pr-muted">
+      {detail}
+      {prefix === null || tile.since === null ? null : (
+        <>
+          {detail === null ? null : ' · '}
+          <span className="pr-nowrap">
+            {prefix} <RelativeTime iso={tile.since} />
+          </span>
+        </>
       )}
-    </Section>
+    </span>
+  );
+}
+
+function ServiceName({ tile }: { tile: HealthTile }) {
+  return (
+    <span className="pr-health__svc" data-tile-id={tile.id} data-tile-state={tile.state}>
+      {serviceName(tile)}
+    </span>
+  );
+}
+
+function Services({ tiles, phone }: { tiles: HealthTile[]; phone: boolean }) {
+  const headId = useId();
+  const sorted = sortTiles(tiles);
+  const columns: TableColumn<HealthTile>[] = [
+    { key: 'label', header: 'Service', width: '12rem', cell: (t) => <ServiceName tile={t} /> },
+    {
+      key: 'detail',
+      header: 'Detail',
+      width: 'auto',
+      cell: (t) => (
+        <>
+          <span className="pr-wrap">
+            <TileDetailText tile={t} />
+          </span>
+          <TileFix tile={t} />
+        </>
+      ),
+    },
+    { key: 'state', header: 'Status', align: 'end', width: '9rem', cell: (t) => <TileDot tile={t} /> },
+  ];
+  return (
+    <Card as="section" aria-labelledby={headId} className="pr-table-card" data-section="services">
+      <CardHead id={headId} title="Services" meta={servicesMeta(tiles)} />
+      {phone ? (
+        <DataList aria-label="Services" className="pr-card-list">
+          {sorted.map((t) => {
+            const fix = tileAction(t);
+            return (
+              <DataListRow
+                key={t.id}
+                title={<ServiceName tile={t} />}
+                {...(tileDetail(t) === null && t.since === null ? {} : { description: <TileDetailText tile={t} /> })}
+                meta={<TileDot tile={t} />}
+                {...(fix === null ? {} : { actions: <TileFix tile={t} /> })}
+              />
+            );
+          })}
+        </DataList>
+      ) : (
+        <Table className="pr-admin-table pr-admin-table--fixed" caption="Services" captionHidden columns={columns} rows={sorted} rowKey={(t) => t.id} />
+      )}
+    </Card>
   );
 }
 
@@ -221,115 +187,127 @@ function worstRow(rows: readonly DnsCheckRow[], record: string): DnsCheckRow | u
   return rows.filter((r) => r.record === record).sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status))[0];
 }
 
-/** SPF, DKIM and DMARC as the DNS & DKIM screen checks them, plus the blocklist tile. */
-function Deliverability({ dns, dnsFailed, tiles }: { dns: DnsReport | null; dnsFailed: boolean; tiles: HealthTile[] }) {
-  const blocklist = tileById(tiles, 'blocklist');
+/** SPF, DKIM and DMARC as the DNS & DKIM screen checks them: one row each, a status and one line. */
+function Deliverability({ dns, dnsFailed }: { dns: DnsReport | null; dnsFailed: boolean }) {
+  const headId = useId();
   return (
-    <Section
-      title="Deliverability"
-      {...(dns === null ? {} : { description: dns.domain })}
-      className="pr-admin-card"
-      actions={
-        <Link asChild>
-          <RouterLink to="/admin/dns">DNS &amp; DKIM</RouterLink>
-        </Link>
-      }
-    >
+    <Card as="section" aria-labelledby={headId} className="pr-table-card" data-section="deliverability">
+      <CardHead
+        id={headId}
+        title="Deliverability"
+        meta={dns?.domain}
+        end={
+          <Link asChild>
+            <RouterLink to="/admin/dns">
+              DNS &amp; DKIM <span aria-hidden="true">→</span>
+            </RouterLink>
+          </Link>
+        }
+      />
       {dnsFailed ? (
-        <p className="pr-muted pr-small">Could not check DNS just now.</p>
+        <p className="pr-card-note">Could not check DNS just now.</p>
       ) : dns === null ? (
-        <Loading label="Checking DNS" height={96} />
+        <div className="pr-card-note">
+          <Loading label="Checking DNS" height={96} />
+        </div>
       ) : (
-        <DescriptionList>
+        <dl className="pr-kv-list">
           {AUTH_RECORDS.map((record) => {
             const row = worstRow(dns.rows, record);
             if (row === undefined) return null;
             const s = DNS_STATUS[row.status];
+            // No DKIM key exists yet (the expected value is null): the next step is the wizard.
+            const noKeys = record === 'DKIM' && row.expected === null;
             return (
-              <DescriptionItem key={record} term={record}>
-                <span className="pr-health__kv">
+              <div key={record} className="pr-kv" data-record={record}>
+                <dt className="pr-kv__k">{record}</dt>
+                <dd className="pr-kv__v">
+                  {noKeys ? (
+                    <Link asChild>
+                      <RouterLink to="/admin/setup">
+                        Generate keys <span aria-hidden="true">→</span>
+                      </RouterLink>
+                    </Link>
+                  ) : (
+                    <span className="pr-kv__reason" title={row.reason}>
+                      {row.reason}
+                    </span>
+                  )}
                   <StatusDot tone={row.status === 'pending' ? 'idle' : s.tone} size="sm">
                     {s.label}
                   </StatusDot>
-                  <span className="pr-muted" title={row.reason}>
-                    {row.reason}
-                  </span>
-                </span>
-              </DescriptionItem>
+                </dd>
+              </div>
             );
           })}
-          {blocklist === undefined ? null : (
-            <DescriptionItem term="Blocklists">
-              <TileDot tile={blocklist} />
-            </DescriptionItem>
-          )}
-        </DescriptionList>
+        </dl>
       )}
-    </Section>
+    </Card>
   );
 }
 
-function OutboundQueue({ rows, limited, failed, now }: { rows: QueueRow[] | null; limited: boolean; failed: boolean; now: Date }) {
-  const columns: TableColumn<QueueRow>[] = [
-    { key: 'address', header: 'Recipient', cell: (r) => <span className="pr-mono" title={r.address}>{r.address}</span> },
-    {
-      key: 'state',
-      header: 'State',
-      width: '7rem',
-      cell: (r) => {
-        const s = queueState(r.state);
-        return (
-          <StatusDot tone={s.tone} size="sm">
-            {s.label}
-          </StatusDot>
-        );
-      },
-    },
-    {
-      key: 'age',
-      header: 'Age',
-      align: 'end',
-      numeric: true,
-      width: '5.5rem',
-      cell: (r) => <span className="pr-mono pr-muted">{durationShort(now.getTime() - Date.parse(r.createdAt))}</span>,
-    },
-  ];
+function OutboundQueue({ rows, limited, failed }: { rows: QueueRow[] | null; limited: boolean; failed: boolean }) {
+  const headId = useId();
   return (
-    <Section
-      title="Outbound queue"
-      {...(rows === null ? {} : { description: queueMeta(rows, limited) })}
-      className="pr-admin-card"
-      actions={
-        <Link asChild>
-          <RouterLink to="/admin/queue">
-            View queue <span aria-hidden="true">→</span>
-          </RouterLink>
-        </Link>
-      }
-    >
+    <Card as="section" aria-labelledby={headId} className="pr-table-card" data-section="outbound-queue">
+      <CardHead
+        id={headId}
+        title="Outbound queue"
+        meta={rows === null ? null : queueMeta(rows, limited)}
+        end={
+          <Link asChild>
+            <RouterLink to="/admin/queue">
+              View queue <span aria-hidden="true">→</span>
+            </RouterLink>
+          </Link>
+        }
+      />
       {failed ? (
-        <p className="pr-muted pr-small">Could not load the queue just now.</p>
+        <p className="pr-card-note">Could not load the queue just now.</p>
       ) : rows === null ? (
-        <Loading label="Loading the queue" height={96} />
+        <div className="pr-card-note">
+          <Loading label="Loading the queue" height={96} />
+        </div>
       ) : rows.length === 0 ? null : (
-        <Table
-          className="pr-admin-table pr-admin-table--fixed"
-          caption="First recipients in the outbound queue"
-          captionHidden
-          columns={columns}
-          rows={rows.slice(0, QUEUE_PREVIEW)}
-          rowKey={(r) => r.id}
-        />
+        <DataList aria-label="First recipients in the outbound queue" className="pr-card-list">
+          {rows.slice(0, QUEUE_PREVIEW).map((r) => {
+            const s = queueState(r.state);
+            return (
+              <DataListRow
+                key={r.id}
+                title={
+                  <span className="pr-admin-mono" title={r.address}>
+                    {r.address}
+                  </span>
+                }
+                meta={
+                  <>
+                    <StatusDot tone={s.tone} size="sm">
+                      {s.label}
+                    </StatusDot>
+                    <span className="pr-muted">
+                      queued <RelativeTime iso={r.createdAt} />
+                    </span>
+                  </>
+                }
+              />
+            );
+          })}
+        </DataList>
       )}
-    </Section>
+    </Card>
   );
 }
 
 /**
  * PST-REQ-127: tunnel, daemons, certificates, disk, queue, backup, drill and NTP — the header says in
  * one line whether anything needs you, four Stats answer the questions asked most, the Services list
- * has every check, and the side cards pull in the edge, DNS authentication and the outbound queue
- * from the endpoints their own screens use. Auto-refreshes every 30 s while the tab is open.
+ * has every check (tunnel and blocklist included, once each), and the side cards pull in DNS
+ * authentication and the outbound queue from the endpoints their own screens use. Auto-refreshes
+ * every 30 s while the tab is open.
+ *
+ * PST-T-17.1 (PST-REQ-194, PST-REQ-155): every list is a card with a head row, the status column
+ * never wraps, service names are words, and a phone gets cards instead of a clipped table.
  *
  * There is no "Run drill" button: no API triggers a restore drill (the worker runs it on its own
  * schedule), so the Restore drill Stat reports the last run and nothing more.
@@ -344,6 +322,7 @@ export function AdminHealth() {
   const [dns, setDns] = useState<DnsReport | null>(null);
   const [dnsFailed, setDnsFailed] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const phone = useMediaQuery(PHONE_QUERY);
 
   const loadQueue = useCallback(async () => {
     try {
@@ -395,6 +374,13 @@ export function AdminHealth() {
 
   const now = checkedAt ?? new Date();
   const summary = tiles === null ? null : healthSummary(tiles);
+  const refresh = useCallback(() => {
+    void load();
+    void loadDns();
+  }, [load, loadDns]);
+  // X11: on a phone, Refresh is an icon in the context bar, not a full-width slab under the h1.
+  const barAction = useMemo(() => <IconButton icon={<RefreshIcon />} label="Refresh" loading={refreshing} onClick={refresh} />, [refreshing, refresh]);
+  const inBar = useContextBarAction(barAction);
 
   return (
     <Page>
@@ -406,21 +392,18 @@ export function AdminHealth() {
           ) : (
             <span className="pr-health__summary">
               <StatusDot tone={summary.tone}>{summary.text}</StatusDot>
-              <span>· checked {relativeTime(checkedAt.toISOString(), new Date())}</span>
+              <span>
+                · checked <RelativeTime iso={checkedAt.toISOString()} />
+              </span>
             </span>
           )
         }
         actions={
-          <Button
-            variant="secondary"
-            loading={refreshing}
-            onClick={() => {
-              void load();
-              void loadDns();
-            }}
-          >
-            Refresh
-          </Button>
+          inBar ? undefined : (
+            <Button variant="secondary" loading={refreshing} onClick={refresh}>
+              Refresh
+            </Button>
+          )
         }
       />
       {loadError !== null ? (
@@ -436,12 +419,11 @@ export function AdminHealth() {
           <SummaryStats tiles={tiles} now={now} />
           <div className="pr-health__cols">
             <div className="pr-health__stack">
-              <Services tiles={tiles} now={now} />
+              <Services tiles={tiles} phone={phone} />
             </div>
             <div className="pr-health__stack">
-              <Edge tiles={tiles} />
-              <Deliverability dns={dns} dnsFailed={dnsFailed} tiles={tiles} />
-              <OutboundQueue rows={queue?.rows ?? null} limited={queue?.limited ?? false} failed={queueFailed} now={now} />
+              <Deliverability dns={dns} dnsFailed={dnsFailed} />
+              <OutboundQueue rows={queue?.rows ?? null} limited={queue?.limited ?? false} failed={queueFailed} />
             </div>
           </div>
         </>

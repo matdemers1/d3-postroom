@@ -1,4 +1,4 @@
-// The one line Security & devices shows about recovery codes (PST-T-16.7). Pure, for unit tests.
+// The one line Settings › Account › Sign-in shows about recovery codes (PST-T-16.7; on Account since PST-T-17.12). Pure, for unit tests.
 import type { RecoveryStatus } from '../screens/recovery/api';
 
 const day = (iso: string): string => new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });

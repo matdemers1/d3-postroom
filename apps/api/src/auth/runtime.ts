@@ -5,6 +5,7 @@ import { kekFromBase64, type Kek } from '@postroom/crypto';
 import type { Db } from '@postroom/db';
 import type { ApiDeps } from '../deps.js';
 import { WindowLimiter } from '../mobileconfig/link.js';
+import { normalizeIssuer, readStored, resolveD3Auth, type D3AuthState } from './d3auth-settings.js';
 import { OidcProvider, type OidcSettings } from './oidc.js';
 import { isSecureOrigin } from './sessions.js';
 import { SignInThrottle } from './throttle.js';
@@ -76,7 +77,15 @@ export interface AuthRuntime {
    * than the per-login throttle, so a household behind one address is not slowed by one typo.
    */
   ipThrottle: SignInThrottle;
+  /**
+   * Sign in with D3 Auth. Replaced in place when the console saves new settings (PST-ADR-014), so
+   * read it through the runtime on every request; never hold on to a client or its settings.
+   */
   oidc: OidcProvider;
+  /** Where the live D3 Auth settings came from, without the secret; updated with every replace. */
+  d3auth: D3AuthState;
+  /** D3AUTH_* from the server's env, the fallback when no row is saved. */
+  envOidc: OidcSettings | null;
   setups: BoundedMap<PendingSetup>;
   challenges: BoundedMap<TotpChallenge>;
   reenrols: BoundedMap<PendingReenrol>;
@@ -136,19 +145,46 @@ export function oidcSettings(deps: ApiDeps): OidcSettings | null {
   const clientId = blank(deps.config.d3authClientId);
   const clientSecret = blank(deps.config.d3authClientSecret);
   if (issuer === null || clientId === null || clientSecret === null) return null;
+  // The same normalisation the console applies; a value it refuses is still used as the server file
+  // gives it (trailing slashes stripped), and said so, rather than failing the boot.
+  const normalized = normalizeIssuer(issuer);
+  if (normalized === null) {
+    process.stderr.write(`${JSON.stringify({ event: 'd3auth-env-issuer-unnormalized', issuer })}\n`);
+  }
   return {
-    issuer: issuer.replace(/\/+$/, ''),
+    issuer: normalized ?? issuer.replace(/\/+$/, ''),
     clientId,
     clientSecret,
-    redirectUri: new URL('/api/auth/oidc/callback', deps.config.webOrigin).toString(),
+    redirectUri: redirectUriFor(deps.config.webOrigin),
   };
+}
+
+export function redirectUriFor(webOrigin: string): string {
+  return new URL('/api/auth/oidc/callback', webOrigin).toString();
+}
+
+/**
+ * The D3 Auth settings in force, from the saved row or the env. A database that cannot be read
+ * falls back to the env and says so, rather than leaving the server without its server-file setup.
+ */
+export async function loadD3Auth(rt: AuthRuntime): Promise<ReturnType<typeof resolveD3Auth>> {
+  try {
+    return resolveD3Auth(await readStored(rt.db), rt.kek, rt.envOidc, redirectUriFor(rt.webOrigin));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`${JSON.stringify({ event: 'd3auth-settings-unreadable', error: message })}\n`);
+    const fallback = resolveD3Auth(null, rt.kek, rt.envOidc, redirectUriFor(rt.webOrigin));
+    return { ...fallback, state: { ...fallback.state, error: 'The saved settings could not be read from the database; the server file applies until they can.' } };
+  }
 }
 
 export function runtimeFor(deps: ApiDeps): AuthRuntime {
   let rt = runtimes.get(deps);
   if (rt !== undefined) return rt;
   const now = deps.config.now ?? (() => new Date());
-  const oidc = new OidcProvider(oidcSettings(deps));
+  const envOidc = oidcSettings(deps);
+  // Nothing until the saved row is read: every reader of rt.oidc waits for the load below.
+  const oidc = new OidcProvider(null);
   rt = {
     db: deps.db,
     webOrigin: deps.config.webOrigin,
@@ -162,13 +198,22 @@ export function runtimeFor(deps: ApiDeps): AuthRuntime {
     throttle: new SignInThrottle(),
     ipThrottle: new SignInThrottle(IP_FREE_ATTEMPTS),
     oidc,
+    d3auth: { source: 'none', enabled: false, issuer: null, clientId: null, secretSet: false, error: null },
+    envOidc,
     setups: new BoundedMap(32),
     challenges: new BoundedMap(1_000),
     reenrols: new BoundedMap(256),
     reenrolBegins: new WindowLimiter(REENROL_BEGINS_PER_WINDOW, REENROL_TTL_MS, 1_000),
   };
   runtimes.set(deps, rt);
-  // Discovery at boot, never awaited and never fatal: the password path does not wait on it.
-  if (oidc.configured) void oidc.get();
+  const live = rt;
+  // The saved row (PST-ADR-014) wins over the env; read once at boot, never fatal. Then discovery,
+  // never awaited either: the password path does not wait on it.
+  oidc.load(async () => {
+    const resolved = await loadD3Auth(live);
+    live.d3auth = resolved.state;
+    return resolved.settings;
+  });
+  void oidc.get();
   return rt;
 }

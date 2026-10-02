@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../src/api';
 import type { CryptoKeyJson } from '../../src/keys/api';
-import { cryptoAvailability, cryptoRequest, formatFingerprint, isCryptoRefusal, keyErrorText, keyStatus, recipientAddresses, sniffImport, sortKeys } from '../../src/keys/format';
+import { cryptoAvailability, cryptoRequest, formatFingerprint, isCryptoRefusal, keyActions, keyErrorText, keyStatus, keyStatusDot, recipientAddresses, sniffImport, sortKeys } from '../../src/keys/format';
 import { sendErrorText } from '../../src/mail/compose';
 import { GO_CHORDS, resolveGo, resolveKey, SHORTCUTS } from '../../src/mail/keys';
 import { readFileSync } from 'node:fs';
@@ -109,6 +109,54 @@ describe('Keys screen helpers', () => {
     expect(sniffImport('-----BEGIN PGP PRIVATE KEY BLOCK-----\n…')).toBe('pgp-secret');
     expect(sniffImport('-----BEGIN CERTIFICATE-----\n…')).toBe('certificate');
     expect(sniffImport('hello')).toBe('unknown');
+  });
+});
+
+// PST-T-17.10 (PST-REQ-194): Encryption keys on the canvas.
+describe('Encryption keys rows', () => {
+  it('status is a dot and a word: Active neutral, Expired warning, Revoked idle — never danger', () => {
+    expect(keyStatusDot('active')).toEqual({ label: 'Active', tone: 'neutral' });
+    expect(keyStatusDot('expired')).toEqual({ label: 'Expired', tone: 'warning' });
+    expect(keyStatusDot('revoked')).toEqual({ label: 'Revoked', tone: 'idle' });
+  });
+
+  it('your own key exports either half and revokes; it is never removed', () => {
+    expect(keyActions(mine).map((a) => a.label)).toEqual(['Export public key', 'Export private key…', 'Revoke…']);
+    expect(keyActions({ ...mine, hasPrivate: false }).map((a) => a.action)).toEqual(['export-public', 'revoke']);
+    expect(keyActions({ ...mine, revokedAt: '2026-09-01T00:00:00.000Z' }).map((a) => a.action)).toEqual(['export-public', 'export-private']);
+  });
+
+  it('a contact’s key exports, is marked revoked, or is removed', () => {
+    expect(keyActions(alice).map((a) => a.label)).toEqual(['Export key', 'Mark revoked…', 'Remove']);
+    expect(keyActions({ ...alice, revokedAt: '2026-09-01T00:00:00.000Z' }).map((a) => a.action)).toEqual(['export-public', 'remove']);
+  });
+});
+
+describe('the Encryption keys screen', () => {
+  const source = readFileSync(join(import.meta.dirname, '../../src/keys/Keys.tsx'), 'utf8');
+
+  it('is titled as its nav entry, centred, with no count when there are no keys', () => {
+    expect(source).toContain('title="Encryption keys"');
+    expect(source).toContain('<Page width="narrow" align="center">');
+    expect(source).toContain('rows === null || rows.length === 0 ? {} : { count: rows.length');
+  });
+
+  it('has no standalone Generate or Import sections: the forms open in place inside their cards', () => {
+    // Two cards, plus the 'Your keys' card a load failure is drawn in (PST-T-17.10: never page-level).
+    expect(source.match(/<Section\b/g)).toHaveLength(3);
+    expect(source).toContain('<LoadFailed error={loadError} what="keys" headingLevel={3} size="row"');
+    expect(source).not.toContain('scrollIntoView');
+    expect(source.match(/className="pr-setform pr-inline-form"/g)).toHaveLength(2);
+    expect(source.match(/<FormActions className="pr-setform__actions">/g)).toHaveLength(2);
+    // The textarea fills the field column like every other field.
+    expect(source).toMatch(/<FormField label="Key or certificate" width="lg"/);
+  });
+
+  it('every empty state is a row inside its card; status is a StatusDot; times are RelativeTime; no row is red', () => {
+    for (const m of source.matchAll(/<EmptyState\b[^>]*>/g)) expect(m[0]).toContain('size="row"');
+    expect(source).toContain('<StatusDot size="sm" tone={dot.tone}>');
+    expect(source).toContain('<RelativeTime iso={k.createdAt} />');
+    expect(source).not.toMatch(/<Badge|danger-ghost|toLocaleDateString/);
   });
 });
 

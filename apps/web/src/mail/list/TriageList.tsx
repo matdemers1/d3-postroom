@@ -278,8 +278,11 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
           }
         }}
         onClick={onClick}
-        style={{ paddingTop: padTop, paddingBottom: padBottom }}
       >
+        {/* The rows not rendered are spacers, not the scroller's padding: a box is never shorter than
+            its own padding, so padding-bottom here made a long list as tall as its content and the
+            page scrolled instead of the list (the phone's bottom bar went with it). */}
+        {padTop > 0 ? <div className="pr-tlist__spacer" aria-hidden="true" style={{ height: padTop }} /> : null}
         {groups.map((g, gi) => {
           const from = Math.max(g.start, start);
           const to = Math.min(groups[gi + 1]?.start ?? messages.length, end);
@@ -317,6 +320,7 @@ export const TriageList = forwardRef<TriageListHandle, TriageListProps>(function
             </div>
           );
         })}
+        {padBottom > 0 ? <div className="pr-tlist__spacer" aria-hidden="true" style={{ height: padBottom }} /> : null}
       </div>
       {target === undefined ? null : (
         <RowActions

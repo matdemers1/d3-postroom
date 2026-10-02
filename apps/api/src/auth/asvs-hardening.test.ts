@@ -47,7 +47,7 @@ describe('cookies (ASVS 3.3.1, 3.3.3)', () => {
   });
 
   it('refuses a truncated GCM tag on the transaction cookie', () => {
-    const sealed = Buffer.from(sealTransaction('s', { verifier: 'v', state: 's', nonce: 'n', exp: 1 }), 'base64url');
+    const sealed = Buffer.from(sealTransaction('s', { verifier: 'v', state: 's', nonce: 'n', exp: 1, iss: 'https://i.example', cid: 'c' }), 'base64url');
     const short = sealed.subarray(0, sealed.length - 4).toString('base64url');
     expect(openTransaction('s', short)).toBeNull();
   });

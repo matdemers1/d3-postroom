@@ -98,7 +98,7 @@
     padding-inline: var(--space-8);
   }
 
-  /* Tabs (e.g. Rules' "Rules" / "Edit as Sieve" toggle, 28px tall). The tab list scrolls
+  /* Tabs (e.g. Connect a device's client tabs, 28px tall). The tab list scrolls
    * sideways (overflow-x: auto), which clips anything drawn outside a tab — grown for real. */
   .d3-tabs__tab {
     min-height: 44px;

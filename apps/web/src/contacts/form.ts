@@ -52,6 +52,12 @@ export function toForm(c: ContactDetail): ContactForm {
   };
 }
 
+/** Whether an email or phone row shows its Remove button (PST-T-17.5, PST-DA-083): not while it is the
+ * only row and still empty — there is nothing to remove, and it would only drop the field itself. */
+export function canRemoveRow(rows: readonly unknown[], value: string): boolean {
+  return value.trim() !== '' || rows.length > 1;
+}
+
 /** What the API is sent: blank rows dropped, 'none' as no TYPE. */
 export function inputOf(f: ContactForm): ContactInput {
   const typeOf = (t: string): string | null => (t === 'none' || t.trim() === '' ? null : t);

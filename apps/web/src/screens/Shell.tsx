@@ -31,6 +31,7 @@ import { useOptionalMail } from '../mail/MailContext';
 import { mailboxKey, mailPath, parseMailRoute, routeMailbox } from '../mail/route';
 import { LAST_VISIT_KEY, mailSidebar, newSinceVisit, parseVisits, type LastVisits } from '../mail/sidebar';
 import { SPLIT_QUERY, WIDE_QUERY, useMediaQuery } from '../mail/useMedia';
+import { ContextBarSlotProvider, createBarSlot } from '../mobile/barSlot';
 import { ContextBar, PushFrame, usePushDirection } from '../mobile/ContextBar';
 import { PhoneAccountMenu, PlaceIndex } from '../mobile/PlaceIndex';
 import { contextParent, contextTitle, placeIndexFor, pushDepth } from '../mobile/push';
@@ -210,6 +211,17 @@ function SealIcon() {
   );
 }
 
+/** PST-T-17.7: Sign in with D3 Auth — a key inside a shield. */
+function ShieldKeyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z" />
+      <circle cx="12" cy="10" r="2" />
+      <path d="M12 12v4M12 14.5h1.5" />
+    </svg>
+  );
+}
+
 function BackIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -245,7 +257,7 @@ const NAV_ICONS: Readonly<Record<string, () => ReactNode>> = {
   Addresses: MaskIcon,
   'Rules & sorting': FilterIcon,
   Templates: TemplatesIcon,
-  'Import & export': ImportIcon,
+  Import: ImportIcon,
   'Encryption keys': SealIcon,
   Health: HeartbeatIcon,
   'Outbound queue': OutboxIcon,
@@ -254,6 +266,7 @@ const NAV_ICONS: Readonly<Record<string, () => ReactNode>> = {
   'Live SMTP': TerminalIcon,
   Jobs: QueueIcon,
   'Sign-in sessions': SessionsIcon,
+  'Sign in with D3 Auth': ShieldKeyIcon,
   Suppressions: BlockIcon,
   Setup: SetupIcon,
 };
@@ -490,7 +503,9 @@ function PlaceNav({ place, isAdmin, setupLeft }: { place: 'settings' | 'admin'; 
       <SideNavItem asChild icon={<BackIcon />} label="Back to Mail">
         <RouterLink to={lastMailPath} />
       </SideNavItem>
-      <SideNavGroup title={name}>
+      {/* PST-T-17.8 (critique-admin X14): Setup's steps-left count is the quiet count, as Mail's
+          sorted buckets are — a filled accent pill was the loudest thing in the sidebar. */}
+      <SideNavGroup title={name} {...(place === 'admin' ? { className: 'pr-nav-quiet' } : {})}>
         {navEntries(place, isAdmin).map((entry) => {
           const count = entry.label === 'Setup' ? setupLeft : 0;
           return (
@@ -617,6 +632,8 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
   // (a "Contact added." notice), so a move between them must not remount it.
   const pushScreen = isMailView ? 'mail' : phoneIndex !== null ? `index:${phoneIndex}` : route?.navGroup !== undefined ? `${route.place}:${route.navGroup}` : location.pathname;
   const direction = usePushDirection(pushScreen, pushDepth(location.pathname, location.search));
+  // PST-T-17.8: the phone context bar's trailing slot, filled by the page below it (barSlot.tsx).
+  const [barSlot] = useState(createBarSlot);
 
   if (place === 'mail' && phoneIndex === null) lastMailPath = location.pathname + location.search;
   if (isMailView) lastMailViewPath = location.pathname + location.search;
@@ -688,12 +705,19 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
     const lastBox = lastMail?.mailboxId === null || lastMail === null ? null : routeMailbox(lastMail, mail?.mailboxes ?? null);
     const lastMailName = lastMail?.mailboxIndex === true ? 'Mailboxes' : lastBox === null ? 'Inbox' : mailboxLabel(lastBox);
     frame = (
-      <PushFrame key={pushScreen} direction={direction} className={isMailView ? 'pr-push--mail' : undefined}>
-        {isMailView ? null : <ContextBar back={contextParent(location.pathname, lastMailViewPath, lastMailName)} title={contextTitle(location.pathname)} />}
-        {frame}
-        {/* With no drawer, a Settings or Admin screen keeps the account menu (theme, Sign out) at its
-            foot, so signing out never means leaving the page first. */}
-        {phoneIndex === null && (place === 'settings' || place === 'admin') ? <div className="pr-place-account">{accountMenu}</div> : null}
+      <PushFrame key={pushScreen} direction={direction} className={isMailView ? 'pr-push--mail' : 'pr-push--page'}>
+        {isMailView ? (
+          frame
+        ) : (
+          <>
+            {/* PST-T-17.8 (critique X12, X11): a large-title bar — empty until the page's h1 scrolls
+                under it — whose trailing slot the page may fill with one IconButton. */}
+            <ContextBar back={contextParent(location.pathname, lastMailViewPath, lastMailName)} title={contextTitle(location.pathname)} largeTitle slot={barSlot} />
+            <ContextBarSlotProvider value={barSlot}>{frame}</ContextBarSlotProvider>
+          </>
+        )}
+        {/* PST-T-17.8 (critique X13): the account menu (theme, Sign out) lives on the root screens
+            only — Mailboxes and the Settings and Admin indexes — not at the foot of every leaf. */}
       </PushFrame>
     );
   }

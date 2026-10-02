@@ -37,7 +37,7 @@ test('Health renders a Services row per source, the Stats and the side cards, ax
   await page.goto('/admin/health');
   await expect(page.getByRole('heading', { name: 'Health', level: 1 })).toBeVisible();
   await expect(page.getByText(/· checked /)).toBeVisible();
-  const services = page.getByRole('table', { name: 'Services' });
+  const services = page.getByRole('table', { name: 'Services' }).or(page.getByRole('list', { name: 'Services' }));
   await expect(services).toBeVisible();
   await expect(services.locator('[data-tile-id="queue"]')).toBeVisible();
   await expect(services.locator('[data-tile-id="backup"]')).toBeVisible();
@@ -45,13 +45,12 @@ test('Health renders a Services row per source, the Stats and the side cards, ax
 
   const summary = page.getByRole('region', { name: 'Summary' });
   for (const label of ['Inbound queue', 'Certificates', 'Backups', 'Restore drill']) await expect(summary.getByText(label, { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Edge', level: 2 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Deliverability', level: 2 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Outbound queue', level: 2 })).toBeVisible();
   await page.getByRole('link', { name: 'View queue' }).click();
   await expect(page.getByRole('heading', { name: 'Outbound queue', level: 1 })).toBeVisible();
   await page.goto('/admin/health');
-  await expect(page.getByRole('table', { name: 'Services' })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Services' }).or(page.getByRole('list', { name: 'Services' }))).toBeVisible();
 
   const light = await new AxeBuilder({ page }).include('main').analyze();
   expect(light.violations).toEqual([]);
@@ -75,7 +74,7 @@ test('a simulated fault (a dead inbound job) shows the queue tile down', async (
   await page.goto('/admin/health');
   const queueTile = page.locator('[data-tile-id="queue"]');
   await expect(queueTile).toHaveAttribute('data-tile-state', 'down');
-  const queueRow = page.getByRole('table', { name: 'Services' }).getByRole('row').filter({ has: queueTile });
+  const queueRow = page.getByRole('table', { name: 'Services' }).or(page.getByRole('list', { name: 'Services' })).getByRole('row').or(page.getByRole('list', { name: 'Services' }).getByRole('listitem')).filter({ has: queueTile });
   await expect(queueRow).toContainText('dead job');
   await expect(queueRow).toContainText('Down');
   // A down check turns the header's summary from neutral to danger, in words as well as the dot.
@@ -83,10 +82,10 @@ test('a simulated fault (a dead inbound job) shows the queue tile down', async (
 
   await test.step('Jobs lists the failure and Replay re-files it', async () => {
     await page.goto('/admin/jobs');
-    await page.getByRole('combobox', { name: 'Status' }).click();
-    await page.getByRole('option', { name: 'Dead' }).click();
+    // PST-T-17.2: the status filter is a segmented control; a phone shows cards, not table rows.
+    await page.getByRole('radiogroup', { name: 'Status' }).getByRole('radio', { name: /^Dead/ }).click();
 
-    const row = page.getByRole('row').filter({ hasText: 'simulated worker crash' }).first();
+    const row = page.getByRole('row').or(page.getByRole('listitem')).filter({ hasText: 'simulated worker crash' }).first();
     await expect(row).toBeVisible();
     await row.getByRole('button', { name: 'Replay' }).click();
 

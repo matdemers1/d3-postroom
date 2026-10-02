@@ -58,12 +58,12 @@ describe('STATE_LABEL / STATE_TONE', () => {
     const states: DeliveryRecipient['state'][] = ['queued', 'attempting', 'deferred', 'delivered', 'bounced', 'cancelled'];
     for (const state of states) {
       expect(STATE_LABEL[state].length).toBeGreaterThan(0);
-      expect(['neutral', 'attention', 'danger']).toContain(STATE_TONE[state]);
+      expect(['neutral', 'warning', 'danger']).toContain(STATE_TONE[state]);
     }
   });
 
   it('flags a deferral for attention, and a bounce as danger', () => {
-    expect(STATE_TONE.deferred).toBe('attention');
+    expect(STATE_TONE.deferred).toBe('warning');
     expect(STATE_TONE.bounced).toBe('danger');
   });
 });

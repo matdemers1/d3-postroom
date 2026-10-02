@@ -43,9 +43,10 @@ test('lists a seeded hard bounce with the reply that caused it, axe clean', asyn
   expect(res.ok()).toBe(true);
 
   await page.goto('/admin/suppressions');
-  await expect(page.getByRole('heading', { name: 'Suppression list', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Suppressions', level: 1 })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search' }).fill(address);
-  const row = page.getByRole('row').filter({ hasText: address });
+  // A table row on desktop, a card on a phone (PST-T-17.2).
+  const row = page.getByRole('row').or(page.getByRole('listitem')).filter({ hasText: address });
   await expect(row).toBeVisible();
   await expect(row).toContainText('Hard bounce');
   await expect(row).toContainText('550 5.1.1 No such user');
@@ -57,7 +58,7 @@ test('lists a seeded hard bounce with the reply that caused it, axe clean', asyn
 test('adds an address and removes it again, each through the step-up modal', async ({ page }) => {
   const address = `trap-${Date.now()}@manual.test`;
   await page.goto('/admin/suppressions');
-  await expect(page.getByRole('heading', { name: 'Suppression list', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Suppressions', level: 1 })).toBeVisible();
 
   await page.getByRole('button', { name: 'Add address' }).click();
   const add = page.getByRole('dialog', { name: /Add an address/ });
@@ -72,7 +73,7 @@ test('adds an address and removes it again, each through the step-up modal', asy
   await expect(page.getByText(`${address} is on the suppression list.`)).toBeVisible();
   expect(await listed(address)).toBe(true);
   await page.getByRole('searchbox', { name: 'Search' }).fill(address);
-  const row = page.getByRole('row').filter({ hasText: address });
+  const row = page.getByRole('row').or(page.getByRole('listitem')).filter({ hasText: address });
   await expect(row).toContainText('Added by an admin');
   await expect(row).toContainText('a known spam trap');
 
@@ -84,7 +85,7 @@ test('adds an address and removes it again, each through the step-up modal', asy
   await remove.getByRole('button', { name: 'Verify and remove' }).click();
 
   await expect(page.getByText(`${address} is off the suppression list.`)).toBeVisible();
-  await expect(page.getByRole('row').filter({ hasText: address })).toHaveCount(0);
+  await expect(page.getByRole('row').or(page.getByRole('listitem')).filter({ hasText: address })).toHaveCount(0);
   await expect(page.getByText('No address matches')).toBeVisible();
   expect(await listed(address)).toBe(false);
 });

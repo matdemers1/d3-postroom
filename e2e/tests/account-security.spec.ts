@@ -118,17 +118,23 @@ test('a signed-in user changes their password, ending other sessions', async ({ 
   await openNav(page);
   await page.getByRole('button', { name: new RegExp(`^${operator.displayName}`) }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
-  // PST-DA-040: signing out away from '/' remembers the page as ?next=.
-  await expect(page).toHaveURL(/\/signin\?next=%2Fsettings%2Faccount$/);
+  // PST-DA-040: signing out away from '/' remembers the page as ?next=. On a phone the account menu
+  // lives on the place index (PST-T-17.8), so that is the page it left.
+  await expect(page).toHaveURL(/\/signin\?next=%2Fsettings(%2Faccount)?$/);
 
   await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
   await page.getByLabel('Password', { exact: true }).fill(operator.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
   await page.getByRole('button', { name: 'Verify' }).click();
-  // PST-DA-040: signing back in returns to the page the session expired away from.
-  await expect(page).toHaveURL(/\/settings\/account$/);
-  await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
+  // PST-DA-040: signing back in returns to the page the session expired away from — on a phone the
+  // Settings index, where its account menu lives (PST-T-17.8).
+  if (isPhone(page)) {
+    await expect(page).toHaveURL(/\/settings$/);
+  } else {
+    await expect(page).toHaveURL(/\/settings\/account$/);
+    await expect(page.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible();
+  }
 });
 
 test('Browser sessions lists sessions and revokes one after step-up', async ({ page, playwright, baseURL }) => {
@@ -144,9 +150,9 @@ test('Browser sessions lists sessions and revokes one after step-up', async ({ p
   await openNav(page);
   await page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Security & devices' }).click();
   // PST-T-16.3: the section opens on device setup; Browser sessions is its second page.
-  await expect(page.getByRole('heading', { name: 'Connect a device', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   await page.goto('/settings/security/sessions');
-  await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   await expect(page.getByText('This browser')).toBeVisible();
 
   await page.locator(`button[data-session-id="${otherId}"]`).click();
@@ -243,7 +249,7 @@ test('signs in with a recovery code once, re-enrols a new authenticator, and ste
   expect(state.reenrolRequired).toBe(false);
 
   // Regenerate behind step-up, made with the new authenticator.
-  await page.goto('/settings/security/sessions');
+  await page.goto('/settings/account');
   const section = page.getByRole('region', { name: 'Recovery codes' });
   await expect(section.getByTestId('recovery-status')).toHaveText(/^10 of 10 left/);
   await section.getByRole('button', { name: 'Make new codes' }).click();
@@ -283,12 +289,12 @@ test('signs in with a recovery code once, re-enrols a new authenticator, and ste
   await fresh.close();
 });
 
-test('Security & devices makes a new set of recovery codes behind step-up, retiring the old set', async ({ page, request, playwright, baseURL }) => {
+test('Account makes a new set of recovery codes behind step-up, retiring the old set', async ({ page, request, playwright, baseURL }) => {
   const operator = requireOperator();
   const old = await regenerateOverApi(playwright, baseURL, operator);
 
   await signInWithPassword(page, operator);
-  await page.goto('/settings/security/sessions');
+  await page.goto('/settings/account');
   const section = page.getByRole('region', { name: 'Recovery codes' });
   await expect(section).toBeVisible();
   await expect(section.getByTestId('recovery-status')).toHaveText(/^10 of 10 left/);
@@ -337,7 +343,7 @@ test('Account and Browser sessions have no axe violations', async ({ page }) => 
   expect(passwordResults.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 
   await page.goto('/settings/security/sessions');
-  await expect(page.getByRole('heading', { name: 'Browser sessions', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   const sessionsResults = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(sessionsResults.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 });
@@ -354,8 +360,8 @@ test('App passwords, Addresses and Templates list first and open their create fo
 
   // App passwords (Devices).
   await page.goto('/settings/security/devices');
-  await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
-  await firstSection(/^Your app passwords/);
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
+  await firstSection(/^App passwords/);
   await expect(page.getByRole('textbox', { name: 'Name' })).toHaveCount(0);
   await expect(page.locator('form')).toHaveCount(0);
   await page.getByRole('button', { name: 'New app password' }).click();
@@ -372,8 +378,8 @@ test('App passwords, Addresses and Templates list first and open their create fo
 
   // Addresses (masked aliases).
   await page.goto('/settings/addresses');
-  await expect(page.getByRole('heading', { name: 'Masked aliases', level: 1 })).toBeVisible();
-  await firstSection(/^Your masked aliases/);
+  await expect(page.getByRole('heading', { name: 'Addresses', level: 1 })).toBeVisible();
+  await firstSection(/^Masked aliases/);
   await expect(page.getByRole('textbox', { name: 'Site' })).toHaveCount(0);
   await page.getByRole('button', { name: 'New alias' }).click();
   await expect(page.getByRole('textbox', { name: 'Site' })).toBeVisible();
@@ -388,8 +394,8 @@ test('App passwords, Addresses and Templates list first and open their create fo
 
   // Templates.
   await page.goto('/settings/templates');
-  await expect(page.getByRole('heading', { name: 'Compose templates', level: 1 })).toBeVisible();
-  await firstSection(/^Your templates/);
+  await expect(page.getByRole('heading', { name: 'Templates', level: 1 })).toBeVisible();
+  await firstSection(/^Saved replies/);
   await expect(page.getByRole('textbox', { name: 'Shortcut' })).toHaveCount(0);
   await page.getByRole('button', { name: 'New template' }).click();
   await expect(page.getByRole('textbox', { name: 'Shortcut' })).toBeVisible();

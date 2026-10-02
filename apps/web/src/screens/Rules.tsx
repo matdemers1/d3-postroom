@@ -1,32 +1,40 @@
 import '../settings/settings.css';
-import { type SyntheticEvent, useCallback, useEffect, useId, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Badge,
   Button,
   Cluster,
+  DataList,
+  DataListRow,
   EmptyState,
   FormActions,
   FormField,
+  IconButton,
   Input,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
   Modal,
   ModalClose,
   Page,
   PageHeader,
   Section,
+  SegmentedControl,
   Select,
+  SplitButton,
   Stack,
-  Table,
-  TabPanel,
-  Tabs,
+  StatusDot,
   Textarea,
-  Tooltip,
-  type TableColumn,
 } from '@d3cloud/ui';
 import { ApiError, compileErrorOf, describeError, sieveApi, type Mailbox, type SieveCompileError, type SieveScriptSummary } from '../api';
+import { useStepUp } from '../admin/sign-in/step-up';
+import { MoreIcon } from '../mail/thread/icons';
 import { Loading, LoadFailed } from './states';
-import { SortingCorrections } from '../mail/sorting/SortingCorrections';
+import { Corrections } from './rules/Corrections';
 import { applyDestination, BUCKETS, destinationOptions, destinationValue } from './rules/destinations';
+import { PlusIcon } from './rules/icons';
+import { createRunGuard, runningState, scriptActions, showsScripts } from './rules/scripts';
 import { useMailboxes } from './rules/useMailboxes';
 
 // ─── The builder's model, and its Sieve (PST-REQ-150) ────────────────────────────────────────────
@@ -49,9 +57,6 @@ export interface Rule {
 }
 
 export const BUILDER_SCRIPT = 'Postroom rules';
-
-/** Why a script's Edit button is disabled: it is already the one open in the editor. */
-const OPEN_REASON = 'This script is already open in the editor above.';
 
 export const FIELDS: { value: RuleField; label: string }[] = [
   { value: 'from', label: 'From' },
@@ -192,6 +197,13 @@ export function describeCompileError(e: SieveCompileError): { title: string; det
 
 type Mode = 'builder' | 'sieve';
 
+/** The editor's two views of one script: a SegmentedControl in the card head, not Tabs between the
+ *  title and the content (critique-settings 2.6 #5). */
+export const MODES = (handWritten: boolean) => [
+  { value: 'builder', label: 'Rules', disabled: handWritten },
+  { value: 'sieve', label: 'Edit as Sieve' },
+];
+
 function RuleRow({ rule, index, mailboxes, onChange, onRemove }: { rule: Rule; index: number; mailboxes: Mailbox[] | null; onChange: (next: Rule) => void; onRemove: () => void }) {
   const n = String(index + 1);
   return (
@@ -252,8 +264,9 @@ function RuleRow({ rule, index, mailboxes, onChange, onRemove }: { rule: Rule; i
             </FormField>
           ) : null}
         </Cluster>
+        {/* Removing an unsaved row destroys nothing, so it is not red (P17: never red in a row). */}
         <Cluster justify="end">
-          <Button variant="danger-ghost" size="sm" aria-label={`Remove rule ${n}`} onClick={onRemove}>
+          <Button variant="ghost" size="sm" aria-label={`Remove rule ${n}`} onClick={onRemove}>
             Remove
           </Button>
         </Cluster>
@@ -262,18 +275,41 @@ function RuleRow({ rule, index, mailboxes, onChange, onRemove }: { rule: Rule; i
   );
 }
 
+/** A script row's one action as a button, or its two behind ⋯ — never red in the row. */
+function ScriptRowActions({ script, openName, busy, onEdit, onDelete }: { script: SieveScriptSummary; openName: string; busy: boolean; onEdit: () => void; onDelete: () => void }) {
+  const actions = scriptActions(script, openName);
+  if (actions.length === 0) return null;
+  if (actions.length === 1) {
+    const edit = actions[0] === 'edit';
+    return (
+      <Button size="sm" variant="secondary" disabled={busy} aria-label={`${edit ? 'Edit' : 'Delete'} ${script.name}`} onClick={edit ? onEdit : onDelete}>
+        {edit ? 'Edit' : 'Delete'}
+      </Button>
+    );
+  }
+  return (
+    <Menu>
+      <MenuTrigger>
+        <IconButton size="sm" variant="ghost" label={`Actions for ${script.name}`} icon={<MoreIcon />} disabled={busy} />
+      </MenuTrigger>
+      <MenuContent align="end">
+        <MenuItem onSelect={onEdit}>Edit</MenuItem>
+        <MenuItem onSelect={onDelete}>Delete…</MenuItem>
+      </MenuContent>
+    </Menu>
+  );
+}
+
 /**
- * Rules (PST-REQ-150): simple rows that compile to Sieve, an "edit as Sieve" view, and compile
- * errors with their line numbers. The same scripts Thunderbird edits over ManageSieve; the active
- * one runs on every new message.
+ * Rules & sorting (PST-REQ-150, PST-REQ-194): simple rows that compile to Sieve, an "edit as Sieve"
+ * view, and compile errors with their line numbers — then the other saved scripts, then the sorting
+ * corrections. The same scripts Thunderbird edits over ManageSieve; the active one runs on every new
+ * message.
  */
 export function Rules() {
   const [scripts, setScripts] = useState<SieveScriptSummary[] | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [name, setName] = useState(BUILDER_SCRIPT);
-  // The disabled Edit's reason: one id, since only the open script's row has it. A script name can
-  // hold spaces ("Postroom rules"), which would split an id built from it in aria-describedby.
-  const openReasonId = useId();
   const [mode, setMode] = useState<Mode>('builder');
   const [rules, setRules] = useState<Rule[]>([]);
   const [source, setSource] = useState('');
@@ -284,6 +320,11 @@ export function Rules() {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const mailboxes = useMailboxes();
+  const guard = useState(createRunGuard)[0];
+  // Every write goes through the step-up contract: should the server ask for a fresh code
+  // (403 step_up_required), "Confirm it is you" opens at the moment of the write, and the write runs
+  // again once the code is accepted. Nothing is asked on the page itself.
+  const { withStepUp, prompt } = useStepUp('Changing your rules changes where new mail goes');
 
   const open = useCallback(async (scriptName: string) => {
     setCompileError(null);
@@ -328,6 +369,7 @@ export function Rules() {
   }, [load, open]);
 
   const current = scripts?.find((s) => s.name === name) ?? null;
+  const state = runningState(current);
   const text = (): string => (mode === 'builder' ? rulesToSieve(rules) : source);
 
   const switchMode = (next: string) => {
@@ -350,6 +392,10 @@ export function Rules() {
     }
   };
 
+  const addRule = () => {
+    setRules((all) => [...all, newRule()]);
+  };
+
   const validRows = (): boolean => {
     if (mode !== 'builder') return true;
     const bad = rules.findIndex((r) => ruleProblem(r) !== null);
@@ -358,24 +404,29 @@ export function Rules() {
     return false;
   };
 
+  // One write at a time, whichever control starts it (scripts.ts createRunGuard): `busy` disables the
+  // buttons, and the guard refuses a second run that slips past them — a menu item, Enter, or a click
+  // while "Confirm it is you" is still open over the first.
   const run = (work: () => Promise<void>) => {
-    setBusy(true);
-    setNotice(null);
-    setFormError(null);
-    setCompileError(null);
-    work()
-      .catch((error: unknown) => {
+    void guard.run(async () => {
+      setBusy(true);
+      setNotice(null);
+      setFormError(null);
+      setCompileError(null);
+      try {
+        await work();
+      } catch (error) {
         const problem = compileErrorOf(error);
         if (problem !== null) setCompileError(problem);
         else setFormError(describeError(error));
-      })
-      .finally(() => {
+      } finally {
         setBusy(false);
-      });
+      }
+    });
   };
 
   const check = () => {
-    if (!validRows()) return;
+    if (guard.running || !validRows()) return;
     run(async () => {
       const result = await sieveApi.check(text());
       if (result.error !== null) setCompileError(result.error);
@@ -385,11 +436,15 @@ export function Rules() {
 
   const save = (activate: boolean) => (event?: SyntheticEvent) => {
     event?.preventDefault();
-    if (!validRows()) return;
+    if (guard.running || !validRows()) return;
     run(async () => {
       const content = text();
-      await sieveApi.put(name, content);
-      if (activate) await sieveApi.activate(name);
+      const done = await withStepUp(async () => {
+        await sieveApi.put(name, content);
+        if (activate) await sieveApi.activate(name);
+        return true;
+      });
+      if (done === null) return;
       if (mode === 'builder') setSource(content);
       await load();
       setNotice(activate ? `Saved. “${name}” now runs on new mail.` : `Saved “${name}”.`);
@@ -398,15 +453,22 @@ export function Rules() {
 
   const turnOff = () => {
     run(async () => {
-      await sieveApi.deactivate();
+      if ((await withStepUp(() => sieveApi.deactivate())) === null) return;
       await load();
       setNotice('No rules run now; new mail is sorted by Postroom alone.');
     });
   };
 
   const remove = (target: string) => {
+    // The confirm stays open until the delete is done: a step-up prompt opens over it, and a
+    // cancelled step-up leaves the confirm where it was, so the delete is never silently dropped.
     run(async () => {
-      await sieveApi.remove(target);
+      try {
+        if ((await withStepUp(() => sieveApi.remove(target))) === null) return;
+      } catch (error) {
+        setConfirming(null);
+        throw error;
+      }
       setConfirming(null);
       const list = await load();
       if (target === name) await open(list?.find((s) => s.active)?.name ?? BUILDER_SCRIPT);
@@ -415,62 +477,14 @@ export function Rules() {
   };
 
   const errorLine = compileError === null ? null : (text().split(/\r\n|\r|\n/)[compileError.line - 1] ?? null);
-
-  const columns: TableColumn<SieveScriptSummary>[] = [
-    { key: 'name', header: 'Script', cell: (s) => s.name },
-    { key: 'active', header: 'State', cell: (s) => (s.active ? <Badge size="sm">Running</Badge> : null) },
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'end',
-      cell: (s) => (
-        <Cluster gap="8" justify="end">
-          {s.name === name ? (
-            // PST-T-16.23: the one disabled Edit says why — it is the script already open above.
-            <Tooltip content={OPEN_REASON}>
-              <span tabIndex={0} aria-describedby={openReasonId}>
-                <Button size="sm" variant="ghost" disabled>
-                  Edit {s.name}
-                </Button>
-                <span id={openReasonId} hidden>
-                  {OPEN_REASON}
-                </span>
-              </span>
-            </Tooltip>
-          ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                run(() => open(s.name));
-              }}
-            >
-              Edit {s.name}
-            </Button>
-          )}
-          {s.active ? null : (
-            <Button
-              size="sm"
-              variant="danger-ghost"
-              onClick={() => {
-                setConfirming(s.name);
-              }}
-            >
-              Delete {s.name}
-            </Button>
-          )}
-        </Cluster>
-      ),
-    },
-  ];
+  // Turning rules off lives with the script that runs: in the Save menu when it is the one open, in
+  // the Scripts card when another one runs.
+  const otherRunning = scripts?.some((s) => s.active && s.name !== name) ?? false;
 
   return (
-    // PST-T-15.6: the settings grid — a 680px column of Section cards.
-    <Page width="narrow">
-      <PageHeader
-        title="Rules"
-        description="Sort, flag or file new mail as it arrives. The rules are a Sieve script — the same ones a Sieve client like Thunderbird edits."
-      />
+    // PST-T-15.6 / PST-T-17.11: the settings column — 680px, centred, a column of Section cards.
+    <Page width="narrow" align="center">
+      <PageHeader title="Rules & sorting" description="Sort, flag or file new mail as it arrives." />
       {notice === null ? null : (
         <Alert tone="info" dynamic>
           {notice}
@@ -482,75 +496,79 @@ export function Rules() {
       ) : scripts === null ? (
         <Loading label="Loading your rules" />
       ) : (
-        <Stack gap="24">
-          {/* PST-T-14.9: the corrections made from a bucket chip, each with Undo. */}
-          <SortingCorrections />
+        <>
+          {/* The editor first: it is what the page is for (critique-settings 2.6 #1). */}
           <Section
-            title={`Editing “${name}”`}
-            description={current?.active === true ? 'This script runs on every new message.' : 'This script is not running. Save and turn it on to use it.'}
+            title="Your rules"
+            // The builder's own script needs no name; any other script open here is named.
+            {...(name === BUILDER_SCRIPT ? {} : { description: `The script “${name}”.` })}
+            actions={
+              <div className="pr-rules__head">
+                <StatusDot size="sm" tone={state.tone}>
+                  {state.label}
+                </StatusDot>
+                <SegmentedControl size="sm" aria-label="How to edit" items={MODES(handWritten)} value={mode} onValueChange={switchMode} />
+              </div>
+            }
           >
-            <form onSubmit={save(false)} noValidate>
+            {/* Enter in a field runs the primary action — the SplitButton's main half is the submit. */}
+            <form onSubmit={save(true)} noValidate>
               <Stack gap="16">
-                <Tabs
-                  aria-label="How to edit"
-                  items={[
-                    { value: 'builder', label: 'Rules', disabled: handWritten },
-                    { value: 'sieve', label: 'Edit as Sieve' },
-                  ]}
-                  value={mode}
-                  onValueChange={switchMode}
-                >
-                  <TabPanel value="builder">
-                    <Stack gap="16">
-                      {rules.length === 0 ? (
-                        <EmptyState kind="empty" heading="No rules yet" headingLevel={3}>
-                          Add a rule to move, sort, flag or mark mail as read when it arrives.
-                        </EmptyState>
-                      ) : (
-                        rules.map((rule, i) => (
-                          <RuleRow
-                            key={i}
-                            rule={rule}
-                            index={i}
-                            mailboxes={mailboxes}
-                            onChange={(next) => {
-                              setRules((all) => all.map((r, j) => (j === i ? next : r)));
-                            }}
-                            onRemove={() => {
-                              setRules((all) => all.filter((_, j) => j !== i));
-                            }}
-                          />
-                        ))
-                      )}
-                      <Cluster>
-                        <Button
-                          onClick={() => {
-                            setRules((all) => [...all, newRule()]);
-                          }}
-                        >
+                {mode === 'builder' ? (
+                  rules.length === 0 ? (
+                    <EmptyState
+                      kind="empty"
+                      size="row"
+                      heading="No rules yet"
+                      headingLevel={3}
+                      action={
+                        <Button size="sm" variant="secondary" onClick={addRule}>
                           Add rule
                         </Button>
-                      </Cluster>
-                    </Stack>
-                  </TabPanel>
-                  <TabPanel value="sieve">
-                    <FormField
-                      label="Sieve script"
-                      help={handWritten ? 'Written by hand or in another client, so it is edited here as Sieve.' : 'Switch back to Rules to edit rows again.'}
+                      }
                     >
-                      <Textarea appearance="filled"
-                        mono
-                        rows={16}
-                        spellCheck={false}
-                        value={source}
-                        invalid={compileError !== null}
-                        onChange={(e) => {
-                          setSource(e.target.value);
-                        }}
-                      />
-                    </FormField>
-                  </TabPanel>
-                </Tabs>
+                      Move, sort, flag or mark mail as read when it arrives.
+                    </EmptyState>
+                  ) : (
+                    <div className="pr-rules">
+                      {rules.map((rule, i) => (
+                        <RuleRow
+                          key={i}
+                          rule={rule}
+                          index={i}
+                          mailboxes={mailboxes}
+                          onChange={(next) => {
+                            setRules((all) => all.map((r, j) => (j === i ? next : r)));
+                          }}
+                          onRemove={() => {
+                            setRules((all) => all.filter((_, j) => j !== i));
+                          }}
+                        />
+                      ))}
+                      <div className="pr-rules__add">
+                        <Button size="sm" variant="ghost" icon={<PlusIcon />} onClick={addRule}>
+                          Add rule
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <FormField
+                    label="Sieve script"
+                    help={handWritten ? 'Written by hand or in another client, so it is edited here as Sieve.' : 'Switch back to Rules to edit rows again.'}
+                  >
+                    <Textarea appearance="filled"
+                      mono
+                      rows={16}
+                      spellCheck={false}
+                      value={source}
+                      invalid={compileError !== null}
+                      onChange={(e) => {
+                        setSource(e.target.value);
+                      }}
+                    />
+                  </FormField>
+                )}
 
                 {compileError === null ? null : (
                   <Alert tone="danger" dynamic title={`The script does not compile — ${describeCompileError(compileError).title}`}>
@@ -570,43 +588,85 @@ export function Rules() {
                   </Alert>
                 )}
 
-                <FormActions>
-                  <Button onClick={check} disabled={busy}>
-                    Check syntax
-                  </Button>
-                  <Button type="submit" disabled={busy}>
-                    Save without turning on
-                  </Button>
-                  <Button variant="primary" loading={busy} onClick={() => {
-                      save(true)();
-                    }}>
-                    Save and turn on
-                  </Button>
+                {/* One action row at the card foot: Check syntax leading, one Save trailing, the
+                    other ways to save behind its chevron (critique-settings 2.6 #3). */}
+                <FormActions
+                  className="pr-setform__actions"
+                  leading={
+                    <Button variant="ghost" onClick={check} disabled={busy}>
+                      Check syntax
+                    </Button>
+                  }
+                >
+                  {/* The main half submits the form (Enter does the same); both halves are
+                      disabled while a write — or its step-up — is in flight. */}
+                  <SplitButton
+                    type="submit"
+                    variant="primary"
+                    label="Save and turn on"
+                    menuLabel="More ways to save"
+                    disabled={busy}
+                    loading={busy}
+                  >
+                    <MenuItem
+                      onSelect={() => {
+                        save(false)();
+                      }}
+                    >
+                      Save without turning on
+                    </MenuItem>
+                    {current?.active === true ? <MenuItem onSelect={turnOff}>Turn rules off</MenuItem> : null}
+                  </SplitButton>
                 </FormActions>
               </Stack>
             </form>
           </Section>
 
-          <Section
-            title="Scripts"
-            description="One script runs at a time."
-            actions={
-              scripts.some((s) => s.active) ? (
-                <Button variant="ghost" size="sm" onClick={turnOff} disabled={busy}>
-                  Turn rules off
-                </Button>
-              ) : undefined
-            }
-          >
-            {scripts.length === 0 ? (
-              <EmptyState kind="empty" heading="No scripts saved yet" headingLevel={3}>
-                Save your rules to create one.
-              </EmptyState>
-            ) : (
-              <Table caption="Scripts" captionHidden columns={columns} rows={scripts} rowKey={(s) => s.name} />
-            )}
-          </Section>
-        </Stack>
+          {showsScripts(scripts, name) ? (
+            <Section
+              title="Scripts"
+              description="One script runs at a time."
+              actions={
+                otherRunning ? (
+                  <Button variant="ghost" size="sm" onClick={turnOff} disabled={busy}>
+                    Turn rules off
+                  </Button>
+                ) : undefined
+              }
+            >
+              <DataList aria-label="Scripts">
+                {scripts.map((s) => (
+                  <DataListRow
+                    key={s.name}
+                    title={s.name}
+                    {...(s.name === name ? { description: 'Open in the editor above' } : {})}
+                    meta={
+                      <StatusDot size="sm" tone={runningState(s).tone}>
+                        {runningState(s).label}
+                      </StatusDot>
+                    }
+                    actions={
+                      <ScriptRowActions
+                        script={s}
+                        openName={name}
+                        busy={busy}
+                        onEdit={() => {
+                          run(() => open(s.name));
+                        }}
+                        onDelete={() => {
+                          setConfirming(s.name);
+                        }}
+                      />
+                    }
+                  />
+                ))}
+              </DataList>
+            </Section>
+          ) : null}
+
+          {/* PST-T-14.9: the corrections made from a bucket chip, each with Undo — a log, so last. */}
+          <Corrections />
+        </>
       )}
 
       <Modal
@@ -637,6 +697,7 @@ export function Rules() {
       >
         {null}
       </Modal>
+      {prompt}
     </Page>
   );
 }

@@ -2,11 +2,7 @@ import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'r
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Alert,
-  Badge,
   Button,
-  Cluster,
-  DescriptionItem,
-  DescriptionList,
   EmptyState,
   FormActions,
   FormField,
@@ -19,6 +15,7 @@ import {
   Section,
   Skeleton,
   Stack,
+  StatusDot,
 } from '@d3cloud/ui';
 import {
   ApiError,
@@ -28,17 +25,27 @@ import {
   settled,
   timelineOf,
   WIZARD_CHANGED_EVENT,
-  WIZARD_STEPS,
   wizardReachable,
   serverUnreachable,
   type DeliveryView,
   type WizardStep,
   type WizardView,
 } from '../api';
-import { CopyButton, DnsTable, DnsValue, ResolverNote, useDnsReport } from './AdminDns';
+import { ResolverNote, useDnsReport } from './AdminDns';
+import { PHONE_QUERY, useMediaQuery } from '../mail/useMedia';
+import { CopyField } from './setup/CopyField';
+import { DnsChecklist } from './setup/DnsChecklist';
+import { recipientTone, recipientWord } from './setup/recipient-state';
+import { summaryOf, wizardDnsGroups } from './setup/wizard-dns';
+import { WizardSteps } from './setup/WizardSteps';
 import '../admin/admin.css';
+import './setup/wizard.css';
 
 const POLL_MS = 2_000;
+
+/** The page's h1 is its nav label (PST-T-17.8); the stepper, not the header, says where you are. */
+const TITLE = 'Setup';
+const DESCRIPTION = 'Five steps to your first delivered message.';
 
 /** The server's own sentence for a wizard refusal when it has one; the shared wording otherwise. */
 function explain(error: unknown): string {
@@ -59,6 +66,7 @@ type Action = () => Promise<WizardView | null>;
  */
 export function SetupWizard() {
   const navigate = useNavigate();
+  const phone = useMediaQuery(PHONE_QUERY);
   const [view, setView] = useState<WizardView | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [current, setCurrent] = useState<WizardStep>('domain');
@@ -134,8 +142,8 @@ export function SetupWizard() {
 
   if (loadFailed) {
     return (
-      <Page>
-        <PageHeader title="Set up mail" />
+      <Page width="narrow" align="center">
+        <PageHeader title={TITLE} description={DESCRIPTION} />
         <EmptyState kind="error" heading="Could not load the setup wizard" headingLevel={2} action={<Button onClick={() => void load()}>Try again</Button>}>
           {serverUnreachable()}
         </EmptyState>
@@ -144,39 +152,25 @@ export function SetupWizard() {
   }
   if (view === null) {
     return (
-      <Page>
-        <PageHeader title="Set up mail" />
+      <Page width="narrow" align="center">
+        <PageHeader title={TITLE} description={DESCRIPTION} />
         <Skeleton variant="block" />
       </Page>
     );
   }
 
-  const index = WIZARD_STEPS.findIndex((s) => s.step === current);
-  const description = view.completed ? 'Postroom is set up.' : index === -1 ? 'All steps done.' : `Step ${String(index + 1)} of ${String(WIZARD_STEPS.length)}: ${WIZARD_STEPS[index]?.label ?? ''}`;
-
   return (
-    <Page>
-      <PageHeader title="Set up mail" description={description} />
-      <nav aria-label="Setup steps">
-        <Cluster gap="8" as="ol">
-          {WIZARD_STEPS.map((s, i) => (
-            <li key={s.step}>
-              <Button
-                size="sm"
-                variant={s.step === current ? 'primary' : 'ghost'}
-                disabled={!wizardReachable(view, s.step)}
-                aria-current={s.step === current ? 'step' : undefined}
-                onClick={() => {
-                  setError(null);
-                  setCurrent(s.step);
-                }}
-              >
-                {`${String(i + 1)}. ${s.label}`}
-              </Button>
-            </li>
-          ))}
-        </Cluster>
-      </nav>
+    <Page width="narrow" align="center">
+      <PageHeader title={TITLE} description={view.completed ? 'Postroom is set up. Every step is done.' : DESCRIPTION} />
+      <WizardSteps
+        view={view}
+        current={current}
+        phone={phone}
+        onPick={(step) => {
+          setError(null);
+          setCurrent(step);
+        }}
+      />
 
       {error === null ? null : (
         <Alert tone="danger" dynamic>
@@ -276,7 +270,7 @@ function DomainStep({ view, busy, onSubmit }: { view: WizardView; busy: boolean;
         }}
       >
         <Stack gap="16">
-          <FormField label="Domain" help="Only a domain you control. A no-reply subdomain belongs to Cloudflare Email Service and is refused.">
+          <FormField label="Domain" width="lg" help="Only a domain you control. A no-reply subdomain belongs to Cloudflare Email Service and is refused.">
             <Input appearance="filled"
               name="domain"
               required
@@ -288,7 +282,7 @@ function DomainStep({ view, busy, onSubmit }: { view: WizardView; busy: boolean;
               }}
             />
           </FormField>
-          <FormActions>
+          <FormActions align="start">
             <Button type="submit" variant="primary" loading={busy}>
               Save domain
             </Button>
@@ -299,55 +293,53 @@ function DomainStep({ view, busy, onSubmit }: { view: WizardView; busy: boolean;
   );
 }
 
+const ALGORITHM: Record<WizardView['dkim'][number]['algorithm'], string> = { 'ed25519-sha256': 'Ed25519', 'rsa-sha256': 'RSA-2048' };
+
 function DkimStep({ view, busy, onGenerate, onNext }: { view: WizardView; busy: boolean; onGenerate: () => void; onNext: () => void }) {
   return (
     <Section
       title="DKIM keys"
       description="Every message Postroom sends is signed twice: Ed25519 and RSA-2048. The private keys are sealed under the server’s key and never leave it; publish these two TXT records."
     >
-      <Stack gap="16">
+      {view.dkim.length === 0 ? (
+        <EmptyState kind="empty" size="inline" heading={`No keys yet for ${view.domain ?? 'this domain'}`}>
+          Generating makes both keys at once and shows the two records to publish.
+        </EmptyState>
+      ) : (
+        <ul className="pr-dkim-keys" aria-label={`DKIM records for ${view.domain ?? 'this domain'}`}>
+          {view.dkim.map((k) => (
+            <li key={k.selector} className="pr-dkim-key">
+              <h3 className="pr-dkim-key__title">
+                {ALGORITHM[k.algorithm]} TXT record<span className="pr-dkim-key__selector">{k.selector}</span>
+              </h3>
+              <CopyField label="Name" oneLine value={k.dnsName} name={`${k.selector} record name`} copyLabel={`${k.selector} record name`} />
+              <CopyField label="Value" value={k.dnsRecord} name={`${k.selector} record value`} copyLabel={`${k.selector} record value`} />
+            </li>
+          ))}
+        </ul>
+      )}
+      <FormActions align="start">
         {view.dkim.length === 0 ? (
-          <p className="pr-muted">No keys yet for {view.domain}.</p>
+          <Button variant="primary" loading={busy} onClick={onGenerate}>
+            Generate DKIM keys
+          </Button>
         ) : (
-          <DescriptionList>
-            {view.dkim.map((k) => (
-              <DescriptionItem key={k.selector} term={`${k.algorithm === 'rsa-sha256' ? 'RSA-2048' : 'Ed25519'} — ${k.selector}`}>
-                <Stack gap="8">
-                  <span>
-                    TXT at <DnsValue>{k.dnsName}</DnsValue>
-                  </span>
-                  <Cluster gap="8">
-                    <CopyButton value={k.dnsName} label={`${k.selector} record name`} />
-                    <CopyButton value={k.dnsRecord} label={`${k.selector} record value`} />
-                  </Cluster>
-                  <DnsValue>{k.dnsRecord}</DnsValue>
-                </Stack>
-              </DescriptionItem>
-            ))}
-          </DescriptionList>
+          <Button variant="primary" loading={busy} onClick={onNext}>
+            Continue to DNS
+          </Button>
         )}
-        <FormActions>
-          {view.dkim.length === 0 ? (
-            <Button variant="primary" loading={busy} onClick={onGenerate}>
-              Generate DKIM keys
-            </Button>
-          ) : (
-            <Button variant="primary" loading={busy} onClick={onNext}>
-              Continue to DNS
-            </Button>
-          )}
-        </FormActions>
-      </Stack>
+      </FormActions>
     </Section>
   );
 }
 
 function DnsStep({ domain, busy, onNext }: { domain: string; busy: boolean; onNext: () => void }) {
   const { report, failed, checking, check } = useDnsReport(domain);
+  const groups = report === null ? null : wizardDnsGroups(report.rows);
   return (
     <Section
       title="DNS records"
-      description="Publish the expected values at your DNS host, then re-check. MX and the protocol records are published only after the security gate, so they stay pending until go-live."
+      description="Publish these at your DNS host, then re-check. You can continue while some are still pending."
       actions={
         <Button
           loading={checking}
@@ -359,27 +351,45 @@ function DnsStep({ domain, busy, onNext }: { domain: string; busy: boolean; onNe
         </Button>
       }
     >
-      <Stack gap="16">
-        {failed ? (
-          <Alert tone="danger">The DNS check didn’t answer. Try again.</Alert>
-        ) : report === null ? (
-          <Skeleton variant="block" />
-        ) : (
-          <>
-            <ResolverNote report={report} />
-            <p aria-live="polite">{dnsSummary(report.summary)}</p>
-            <DnsTable report={report} />
-          </>
-        )}
-        <p className="pr-muted">
-          You can continue while records are pending and come back to <Link asChild variant="inline"><RouterLink to="/admin/dns">Admin console → DNS &amp; DKIM</RouterLink></Link> at any time.
-        </p>
-        <FormActions>
-          <Button variant="primary" loading={busy} onClick={onNext}>
-            Continue
-          </Button>
-        </FormActions>
-      </Stack>
+      {failed ? (
+        <Alert tone="danger">The DNS check didn’t answer. Try again.</Alert>
+      ) : report === null || groups === null ? (
+        <Skeleton variant="block" />
+      ) : (
+        <>
+          <ResolverNote report={report} />
+          <Section
+            title="Publish now"
+            headingLevel={3}
+            surface="plain"
+            description={<span aria-live="polite">{dnsSummary(summaryOf(groups.now))}</span>}
+          >
+            <DnsChecklist rows={groups.now} label={`Records to publish for ${report.domain}`} />
+          </Section>
+          {groups.goLive.length === 0 ? null : (
+            <Section
+              title="At go-live"
+              headingLevel={3}
+              surface="plain"
+              description="MX and the protocol records are published only after the security gate, so they stay pending until then."
+            >
+              <DnsChecklist rows={groups.goLive} compact label={`Records published at go-live for ${report.domain}`} />
+            </Section>
+          )}
+        </>
+      )}
+      <p className="pr-wizard-note">
+        Come back to{' '}
+        <Link asChild variant="inline">
+          <RouterLink to="/admin/dns">DNS &amp; DKIM</RouterLink>
+        </Link>{' '}
+        at any time: it has every record, including the address checks.
+      </p>
+      <FormActions align="start">
+        <Button variant="primary" loading={busy} onClick={onNext}>
+          Continue
+        </Button>
+      </FormActions>
     </Section>
   );
 }
@@ -389,6 +399,7 @@ function MailboxStep({ view, busy, onSubmit }: { view: WizardView; busy: boolean
   // suggesting it as the operator's own mailbox would only earn a 409 address_taken.
   const initial = (view.mailbox ?? view.addresses[0] ?? '').split('@')[0] ?? '';
   const [localPart, setLocalPart] = useState(initial);
+  const help = view.addresses.length === 0 ? undefined : `Your addresses at ${view.domain ?? 'this domain'}: ${view.addresses.join(', ')}`;
   return (
     <Section title="Mailbox" description="The address the test is sent from. Use your own, or add another address to your account.">
       <form
@@ -398,8 +409,7 @@ function MailboxStep({ view, busy, onSubmit }: { view: WizardView; busy: boolean
         }}
       >
         <Stack gap="16">
-          {view.addresses.length === 0 ? null : <p className="pr-muted">Your addresses at {view.domain}: {view.addresses.join(', ')}</p>}
-          <FormField label="Address">
+          <FormField label="Address" width="lg" {...(help === undefined ? {} : { help })}>
             <Input appearance="filled"
               name="localPart"
               required
@@ -412,7 +422,7 @@ function MailboxStep({ view, busy, onSubmit }: { view: WizardView; busy: boolean
               }}
             />
           </FormField>
-          <FormActions>
+          <FormActions align="start">
             <Button type="submit" variant="primary" loading={busy}>
               Use this address
             </Button>
@@ -494,86 +504,80 @@ function TestStep({
 
   return (
     <Section title="Test message" description="Send a message to an address somewhere else (not at your own domain), then watch it leave.">
-      <Stack gap="16">
-        {view.mailbox === null ? (
-          <Alert tone="warning">Choose the mailbox first.</Alert>
-        ) : (
-          <form onSubmit={send}>
-            <Stack gap="16">
-              <FormField label="Send a test to" help={`From ${view.mailbox}, through the same submission path as any other message.`}>
-                <Input appearance="filled"
-                  name="to"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={to}
-                  onChange={(ev) => {
-                    setTo(ev.target.value);
-                  }}
-                />
-              </FormField>
-              <FormActions>
-                <Button type="submit" variant={outboundId === null ? 'primary' : 'secondary'} loading={sending}>
-                  {outboundId === null ? 'Send test' : 'Send another test'}
-                </Button>
-              </FormActions>
-            </Stack>
-          </form>
-        )}
+      {view.mailbox === null ? (
+        <Alert tone="warning">Choose the mailbox first.</Alert>
+      ) : (
+        <form onSubmit={send}>
+          <Stack gap="16">
+            <FormField label="Send a test to" width="lg" help={`From ${view.mailbox}, through the same submission path as any other message.`}>
+              <Input appearance="filled"
+                name="to"
+                type="email"
+                required
+                autoComplete="email"
+                value={to}
+                onChange={(ev) => {
+                  setTo(ev.target.value);
+                }}
+              />
+            </FormField>
+            <FormActions align="start">
+              <Button type="submit" variant={outboundId === null ? 'primary' : 'secondary'} loading={sending}>
+                {outboundId === null ? 'Send test' : 'Send another test'}
+              </Button>
+            </FormActions>
+          </Stack>
+        </form>
+      )}
 
-        {outboundId === null ? null : (
-          <Section title="Delivery timeline" headingLevel={3} surface="plain">
-            {delivery === null ? (
-              <Skeleton variant="text" lines={3} />
-            ) : (
-              <Stack gap="16">
-                {delivery.recipients.map((r) => (
-                  <Stack gap="8" key={r.id}>
-                    <Cluster gap="8">
-                      <strong>{r.address}</strong>
-                      <Badge size="sm" tone={r.state === 'delivered' ? 'neutral' : r.state === 'bounced' || r.state === 'cancelled' ? 'danger' : 'attention'}>
-                        {r.state}
-                      </Badge>
-                    </Cluster>
-                    <ol aria-label={`Delivery timeline for ${r.address}`}>
-                      {timelineOf(delivery, r).map((ev, i) => (
-                        <li key={`${String(i)}:${ev.at}`}>
-                          <Stack gap="2">
-                            <span>
-                              <time dateTime={ev.at} className="pr-muted">
-                                {new Date(ev.at).toLocaleTimeString()}
-                              </time>{' '}
-                              {ev.title}
-                            </span>
-                            {ev.detail === null ? null : <DnsValue>{ev.detail}</DnsValue>}
-                          </Stack>
-                        </li>
-                      ))}
-                    </ol>
-                  </Stack>
-                ))}
-              </Stack>
-            )}
-          </Section>
-        )}
-
-        {view.completed ? (
-          <Alert tone="success" title="Postroom is set up">
-            The test left with its timeline above. The DNS checker stays under Admin → DNS records.
-          </Alert>
-        ) : null}
-        <FormActions>
-          {view.completed ? (
-            <Button variant="primary" onClick={onGoToMail}>
-              Go to mail
-            </Button>
+      {outboundId === null ? null : (
+        <Section title="Delivery timeline" headingLevel={3} surface="plain">
+          {delivery === null ? (
+            <Skeleton variant="text" lines={3} />
           ) : (
-            <Button variant="primary" disabled={outboundId === null} loading={busy} onClick={onFinish}>
-              Finish setup
-            </Button>
+            <Stack gap="16">
+              {delivery.recipients.map((r) => (
+                <Stack gap="8" key={r.id}>
+                  <div className="pr-timeline__recipient">
+                    <span>{r.address}</span>
+                    <StatusDot size="sm" tone={recipientTone(r.state)}>
+                      {recipientWord(r.state)}
+                    </StatusDot>
+                  </div>
+                  <ol className="pr-timeline" aria-label={`Delivery timeline for ${r.address}`}>
+                    {timelineOf(delivery, r).map((ev, i) => (
+                      <li key={`${String(i)}:${ev.at}`} className="pr-timeline__event">
+                        <time dateTime={ev.at} className="pr-timeline__time" title={new Date(ev.at).toLocaleString()}>
+                          {new Date(ev.at).toLocaleTimeString()}
+                        </time>{' '}
+                        <span>{ev.title}</span>
+                        {ev.detail === null ? null : <code className="pr-timeline__detail">{ev.detail}</code>}
+                      </li>
+                    ))}
+                  </ol>
+                </Stack>
+              ))}
+            </Stack>
           )}
-        </FormActions>
-      </Stack>
+        </Section>
+      )}
+
+      {view.completed ? (
+        <Alert tone="success" title="Postroom is set up">
+          The test left with its timeline above. The DNS checker stays under Admin console → DNS &amp; DKIM.
+        </Alert>
+      ) : null}
+      <FormActions align="start">
+        {view.completed ? (
+          <Button variant="primary" onClick={onGoToMail}>
+            Go to mail
+          </Button>
+        ) : (
+          <Button variant="primary" disabled={outboundId === null} loading={busy} onClick={onFinish}>
+            Finish setup
+          </Button>
+        )}
+      </FormActions>
     </Section>
   );
 }

@@ -1061,7 +1061,7 @@ function MailPanes({ route }: { route: MailRoute }) {
             }}
           />
           {searchQuery !== null ? (
-            <Button size="sm" variant="ghost" type="button" onClick={clearSearch}>
+            <Button size="sm" variant="ghost" type="button" className="pr-search__clear" onClick={clearSearch}>
               Clear search
             </Button>
           ) : null}
@@ -1308,7 +1308,9 @@ function MailPanes({ route }: { route: MailRoute }) {
   // PST-T-5.6, PST-REQ-109: the Newsletters folder opens as a continuous-scroll feed of full bodies
   // instead of the usual list + reader — there is no "one message open" here, so route.messageId
   // and the reader pane are moot for it.
-  const isNewslettersFeed = mailbox !== null && mailbox.name === 'Newsletters' && route.compose === null && searchQuery === null;
+  // PST-T-17.3: /mail/newsletters/<id> (the feed's 'Read in full', the palette, a person card) opens
+  // the issue in the reading view; only the bare mailbox is the feed.
+  const isNewslettersFeed = mailbox !== null && mailbox.name === 'Newsletters' && route.compose === null && searchQuery === null && route.messageId === null;
   const feedPane = mailbox === null ? null : (
     <section className="pr-mail__feed" aria-labelledby="pr-list-title">
       {/* Up one level is the mailboxes, not this same feed (PST-T-11.4). */}

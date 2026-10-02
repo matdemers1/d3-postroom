@@ -1,40 +1,54 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { type ReactNode, type RefObject, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-  Badge,
   Button,
   Card,
-  CardBody,
-  CardTitle,
-  Cluster,
+  DataList,
+  DataListRow,
   EmptyState,
-  FormField,
-  Grid,
+  IconButton,
   Page,
   PageHeader,
-  Section,
-  Select,
-  Stack,
+  SegmentedControl,
   Stat,
   StatGroup,
+  StatusDot,
+  type StatusDotTone,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
 import { api, evidenceRowText, proposalSummary, type Deliverability, type DeliverabilitySource, type ProposalEvidenceDay, type ProposalResult } from '../api';
 import { Loading, LoadFailed } from './states';
+import { CardHead } from '../admin/health/CardHead';
+import { RefreshIcon } from '../admin/health/RefreshIcon';
+import { useContextBarAction } from '../mobile/barSlot';
+import { PHONE_QUERY, useMediaQuery } from '../mail/useMedia';
 import '../admin/admin.css';
 
-const RANGES = [
-  { value: '7', label: 'Last 7 days' },
-  { value: '30', label: 'Last 30 days' },
-  { value: '90', label: 'Last 90 days' },
-  { value: '365', label: 'Last year' },
+/** The Range segments (admin critique 2.3 #2): five or fewer, so a SegmentedControl in the header. */
+export const RANGES = [
+  { value: '7', label: '7 days' },
+  { value: '30', label: '30 days' },
+  { value: '90', label: '90 days' },
+  { value: '365', label: '1 year' },
   { value: '3650', label: 'All time' },
-];
+] as const;
+const DEFAULT_RANGE = '30';
+
+/** ?days= as one of the ranges offered; anything else is the default. */
+export function parseRange(params: URLSearchParams): string {
+  const days = params.get('days') ?? '';
+  return RANGES.some((r) => r.value === days) ? days : DEFAULT_RANGE;
+}
 
 const count = (n: number): string => n.toLocaleString();
 const percent = (rate: number): string => `${(rate * 100).toFixed(rate === 1 || rate === 0 ? 0 : 1)}%`;
 const rateOf = (pass: number, total: number): number => (total === 0 ? 0 : pass / total);
 const dayLabel = (iso: string): string => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+/** "1 reporter", "3 reporters" (admin critique 2.3 #6). */
+export const plural = (n: number, one: string, other = `${one}s`): string => `${count(n)} ${n === 1 ? one : other}`;
+/** A server sentence that starts lowercase ("no report covers …") starts with a capital here. */
+export const sentence = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 /**
  * Every UTC day from the first reported day (or the range start, if later) to the range end, so a
@@ -51,10 +65,14 @@ function daysIn(fromIso: string, toIso: string, firstReported: string | undefine
 }
 
 // D-016: a pass is the normal case, so it is drawn neutral; only a failure takes a hue.
-// PST-REQ-154 (WCAG 1.4.1/1.4.11): pass and fail are only ~1.6:1 apart, so colour never carries the
-// meaning alone — the fail segment is also hatched, separated by a 2px surface stroke, and its count
-// is printed above the bar.
-const PASS_FILL = { fill: 'var(--color-fg-muted)' };
+// PST-REQ-154 (WCAG 1.4.1/1.4.11): pass and fail are close in lightness, so colour never carries the
+// meaning alone — the fail segment is also hatched, separated by a 2px card-surface stroke, and its
+// count is printed above the bar. PST-T-17.1 (admin critique 2.3 #9): a pass is --color-fg-faint, so
+// in dark mode it no longer outshouts the failure; it is still 6.0:1 on the dark card and 7.4:1 on
+// the light one (≥3:1 for a graphical object).
+const PASS_FILL = { fill: 'var(--color-fg-faint)' };
+/** D3 UI 1.5: a card on the sheet is --color-surface-card, so the separator matches it. */
+const CARD_SURFACE = 'var(--color-surface-card)';
 const AXIS_TEXT = { fill: 'var(--color-fg-muted)', fontSize: 'var(--text-12)' };
 const COUNT_TEXT = { fill: 'var(--color-fg)', fontSize: 'var(--text-12)', fontVariantNumeric: 'tabular-nums' } as const;
 const AXIS_LINE = { stroke: 'var(--color-border)' };
@@ -78,6 +96,8 @@ export interface BarLayout {
   top: number;
   plotW: number;
   plotH: number;
+  /** The widest a bar may be, so one day in a wide chart is a bar, not a slab. */
+  maxBarWidth?: number;
 }
 
 /** Per-day bar geometry and failure labels, pure so the chart's non-colour cues can be tested. */
@@ -85,7 +105,7 @@ export function dayBars(days: string[], byDay: Map<string, { pass: number; fail:
   const { left, top, plotW, plotH } = layout;
   const max = Math.max(1, ...days.map((d) => (byDay.get(d)?.pass ?? 0) + (byDay.get(d)?.fail ?? 0)));
   const slot = plotW / Math.max(1, days.length);
-  const barW = Math.max(1, slot * 0.7);
+  const barW = Math.min(layout.maxBarWidth ?? Number.POSITIVE_INFINITY, Math.max(1, slot * 0.7));
   const y = (v: number): number => top + plotH - (v / max) * plotH;
   const bars = days.map((day, i): DayBar => {
     const row = byDay.get(day);
@@ -105,6 +125,62 @@ export function dayBars(days: string[], byDay: Map<string, { pass: number; fail:
   return { bars, max, barW };
 }
 
+/** Never narrower than this: below it the frame scrolls sideways instead of shrinking the labels. */
+export const CHART_MIN_WIDTH = 280;
+export const CHART_HEIGHT = 210;
+export const MAX_BAR_WIDTH = 24;
+/** Roughly how wide one "Sep 24" label needs to be, with air either side. */
+const LABEL_SLOT = 64;
+
+export interface ChartFrame {
+  W: number;
+  H: number;
+  left: number;
+  top: number;
+  plotW: number;
+  plotH: number;
+  /** Label every n-th day (every day still gets a tick). */
+  labelEvery: number;
+}
+
+/**
+ * The chart drawn at its container's real pixel width (admin critique 2.3 #1), so text stays at the
+ * token size (12px) at 1440 and at 390, and the plot is 166px tall either way. Pure, for the test.
+ */
+export function chartFrame(width: number, dayCount: number): ChartFrame {
+  const W = Math.max(CHART_MIN_WIDTH, Math.floor(width));
+  const H = CHART_HEIGHT;
+  const left = 40;
+  const right = 8;
+  const top = 20;
+  const bottom = 24;
+  const plotW = W - left - right;
+  const plotH = H - top - bottom;
+  const fit = Math.max(1, Math.floor(plotW / LABEL_SLOT));
+  return { W, H, left, top, plotW, plotH, labelEvery: Math.max(1, Math.ceil(dayCount / fit)) };
+}
+
+/** The container's content width, kept up to date; `fallback` until it has been measured. */
+function useWidth(fallback: number): [RefObject<HTMLDivElement | null>, number] {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(fallback);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el === null) return;
+    setWidth(el.clientWidth || fallback);
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w !== undefined && w > 0) setWidth(w);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+    };
+  }, [fallback]);
+  return [ref, width];
+}
+
 /**
  * Stacked bars, pass under fail, one per UTC day — drawn as inline SVG (no chart library, no
  * third-party script: PST-REQ-159). The figure's accessible name says what it shows and its
@@ -116,81 +192,96 @@ export function DayChart({ data }: { data: Deliverability }) {
   // One pattern per chart instance, so two charts on a page never share (or clash on) an id.
   const hatchId = `${useId()}-fail-hatch`;
   const hatchFill = { fill: `url(#${hatchId})` };
-  const failStyle = { ...hatchFill, stroke: 'var(--color-surface)', strokeWidth: SEPARATOR_WIDTH };
+  const failStyle = { ...hatchFill, stroke: CARD_SURFACE, strokeWidth: SEPARATOR_WIDTH };
+  const [frameRef, width] = useWidth(640);
   const byDay = new Map(data.dmarc.byDay.map((d) => [d.day, d]));
   const days = daysIn(data.range.from, data.range.to, data.dmarc.byDay[0]?.day);
-  const W = 640;
-  const H = 220;
-  const left = 44;
-  const bottom = 24;
-  const top = 20;
-  const plotW = W - left - 8;
-  const plotH = H - top - bottom;
-  const { bars, max, barW } = dayBars(days, byDay, { left, top, plotW, plotH });
-  const labelEvery = Math.ceil(days.length / 6);
+  const { W, H, left, top, plotW, plotH, labelEvery } = chartFrame(width, days.length);
+  const { bars, max, barW } = dayBars(days, byDay, { left, top, plotW, plotH, maxBarWidth: MAX_BAR_WIDTH });
   const { pass, fail } = data.dmarc.totals;
+  const scrolls = W > Math.floor(width);
+  const axisY = top + plotH;
 
   return (
-    <figure data-chart="dmarc-by-day">
-      <svg viewBox={`0 0 ${String(W)} ${String(H)}`} width="100%" role="img" aria-labelledby={titleId} aria-describedby={descId} preserveAspectRatio="xMidYMid meet">
-        <title id={titleId}>DMARC pass and fail by day</title>
-        <desc id={descId}>{`${count(pass)} messages passed DMARC and ${count(fail)} failed across ${String(data.dmarc.byDay.length)} reported days.`}</desc>
-        <defs>
-          <pattern id={hatchId} data-pattern="fail-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="6" height="6" fill="var(--color-danger)" />
-            <line x1="0" y1="0" x2="0" y2="6" stroke="var(--color-surface)" strokeWidth="2" />
-          </pattern>
-        </defs>
-        <line x1={left} x2={W - 8} y1={top + plotH} y2={top + plotH} style={AXIS_LINE} />
-        <line x1={left} x2={left} y1={top} y2={top + plotH} style={AXIS_LINE} />
-        <text x={left - 6} y={top + 10} textAnchor="end" style={AXIS_TEXT}>
-          {count(max)}
-        </text>
-        <text x={left - 6} y={top + plotH} textAnchor="end" style={AXIS_TEXT}>
-          0
-        </text>
-        {bars.map((bar, i) => (
-          <g key={bar.day} data-day={bar.day}>
-            {bar.passRect !== null ? (
-              <rect x={bar.x} width={barW} y={bar.passRect.y} height={bar.passRect.height} style={PASS_FILL}>
-                <title>{`${dayLabel(bar.day)}: ${count(bar.pass)} passed`}</title>
-              </rect>
-            ) : null}
-            {bar.failRect !== null ? (
-              <rect data-segment="fail" x={bar.x} width={barW} y={bar.failRect.y} height={bar.failRect.height} style={failStyle}>
-                <title>{`${dayLabel(bar.day)}: ${count(bar.fail)} failed`}</title>
-              </rect>
-            ) : null}
-            {bar.failLabel !== null ? (
-              <text data-fail-count x={bar.failLabel.x} y={bar.failLabel.y} textAnchor="middle" style={COUNT_TEXT}>
-                {bar.failLabel.text}
-              </text>
-            ) : null}
-            {i % labelEvery === 0 ? (
-              <text x={bar.x + barW / 2} y={H - 6} textAnchor="middle" style={AXIS_TEXT}>
-                {dayLabel(bar.day)}
-              </text>
-            ) : null}
-          </g>
-        ))}
-      </svg>
-      <figcaption>
-        <Cluster gap="12">
-          <span>
-            <svg width="12" height="12" aria-hidden="true">
-              <rect width="12" height="12" style={PASS_FILL} />
-            </svg>{' '}
-            Passed DMARC
-          </span>
-          <span>
-            <svg width="12" height="12" aria-hidden="true">
-              <rect width="12" height="12" style={hatchFill} />
-            </svg>{' '}
-            Failed DMARC
-          </span>
-        </Cluster>
-      </figcaption>
+    <figure data-chart="dmarc-by-day" className="pr-chart">
+      <div
+        ref={frameRef}
+        className="pr-chart__frame"
+        // Narrower than the chart's minimum, the frame scrolls: a keyboard user needs to reach it too.
+        {...(scrolls ? { tabIndex: 0, role: 'group', 'aria-label': 'DMARC by day, scrolls sideways' } : {})}
+      >
+        <svg width={W} height={H} viewBox={`0 0 ${String(W)} ${String(H)}`} role="img" aria-labelledby={titleId} aria-describedby={descId}>
+          <title id={titleId}>DMARC pass and fail by day</title>
+          <desc id={descId}>{`${count(pass)} messages passed DMARC and ${count(fail)} failed across ${String(data.dmarc.byDay.length)} reported days.`}</desc>
+          <defs>
+            <pattern id={hatchId} data-pattern="fail-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width="6" height="6" fill="var(--color-danger)" />
+              <line x1="0" y1="0" x2="0" y2="6" stroke={CARD_SURFACE} strokeWidth="2" />
+            </pattern>
+          </defs>
+          <line x1={left} x2={W - 8} y1={axisY} y2={axisY} style={AXIS_LINE} />
+          <line x1={left} x2={left} y1={top} y2={axisY} style={AXIS_LINE} />
+          <text x={left - 6} y={top + 4} textAnchor="end" style={AXIS_TEXT}>
+            {count(max)}
+          </text>
+          <text x={left - 6} y={axisY} textAnchor="end" style={AXIS_TEXT}>
+            0
+          </text>
+          {bars.map((bar, i) => (
+            <g key={bar.day} data-day={bar.day}>
+              <line data-tick x1={bar.x + barW / 2} x2={bar.x + barW / 2} y1={axisY} y2={axisY + 4} style={AXIS_LINE} />
+              {bar.passRect !== null ? (
+                <rect x={bar.x} width={barW} y={bar.passRect.y} height={bar.passRect.height} style={PASS_FILL}>
+                  <title>{`${dayLabel(bar.day)}: ${count(bar.pass)} passed`}</title>
+                </rect>
+              ) : null}
+              {bar.failRect !== null ? (
+                <rect data-segment="fail" x={bar.x} width={barW} y={bar.failRect.y} height={bar.failRect.height} style={failStyle}>
+                  <title>{`${dayLabel(bar.day)}: ${count(bar.fail)} failed`}</title>
+                </rect>
+              ) : null}
+              {bar.failLabel !== null ? (
+                <text data-fail-count x={bar.failLabel.x} y={bar.failLabel.y} textAnchor="middle" style={COUNT_TEXT}>
+                  {bar.failLabel.text}
+                </text>
+              ) : null}
+              {i % labelEvery === 0 ? (
+                <text data-axis-label x={bar.x + barW / 2} y={H - 4} textAnchor="middle" style={AXIS_TEXT}>
+                  {dayLabel(bar.day)}
+                </text>
+              ) : null}
+            </g>
+          ))}
+        </svg>
+      </div>
     </figure>
+  );
+}
+
+/** The chart's key, in the card head (admin critique 2.3 #1): its own small hatch, the same tokens. */
+export function ChartLegend() {
+  const hatchId = `${useId()}-legend-hatch`;
+  return (
+    <span className="pr-chart-legend" data-chart-legend>
+      <span className="pr-chart-legend__item">
+        <svg width="12" height="12" aria-hidden="true">
+          <rect width="12" height="12" style={PASS_FILL} />
+        </svg>
+        Passed
+      </span>
+      <span className="pr-chart-legend__item">
+        <svg width="12" height="12" aria-hidden="true">
+          <defs>
+            <pattern id={hatchId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width="6" height="6" fill="var(--color-danger)" />
+              <line x1="0" y1="0" x2="0" y2="6" stroke={CARD_SURFACE} strokeWidth="2" />
+            </pattern>
+          </defs>
+          <rect width="12" height="12" style={{ fill: `url(#${hatchId})` }} />
+        </svg>
+        Failed
+      </span>
+    </span>
   );
 }
 
@@ -207,20 +298,35 @@ export function FailedDmarcStat({ fail, quarantine, reject }: { fail: number; qu
   );
 }
 
-/** A healthy pass rate is just a number; only one that needs you is badged (D-016). */
-function rateCell(rate: number) {
-  if (rate >= 0.98) return percent(rate);
-  if (rate >= 0.5) return <Badge tone="attention">{percent(rate)}</Badge>;
-  return <Badge tone="danger">{percent(rate)}</Badge>;
+/**
+ * A pass rate's tone (D-016, admin critique 2.3 #5): a healthy rate is plain text; one that needs
+ * you gets a dot — warning below 98% (D3 UI 1.5, D-086: needs a look, and never the link violet),
+ * danger below half. Never a pill.
+ */
+export function rateTone(rate: number): StatusDotTone | null {
+  if (rate >= 0.98) return null;
+  return rate >= 0.5 ? 'warning' : 'danger';
+}
+
+function RateText({ rate }: { rate: number }) {
+  const tone = rateTone(rate);
+  if (tone === null) return <>{percent(rate)}</>;
+  return (
+    <StatusDot tone={tone} size="sm">
+      {percent(rate)}
+    </StatusDot>
+  );
 }
 
 /**
- * One domain's DMARC progression proposal (PST-T-7.2, PST-REQ-123): the 14-day evidence and the
- * exact TXT value to publish, with a copy button — Postroom never publishes DNS itself, so this is
- * as far as it goes.
+ * One domain's DMARC progression (PST-T-7.2, PST-REQ-123): why there is no proposal yet, or the
+ * proposal — the exact TXT value to publish with a copy button, the 14 clean days as a meter, and
+ * the evidence one tap away. Postroom never publishes DNS itself, so this is as far as it goes.
  */
-function ProposalCard({ result }: { result: ProposalResult }) {
+function Progression({ result }: { result: ProposalResult }) {
   const [copied, setCopied] = useState(false);
+  const [showEvidence, setShowEvidence] = useState(false);
+  const evidenceId = useId();
   const { proposal } = result;
 
   const copy = (value: string): void => {
@@ -234,68 +340,189 @@ function ProposalCard({ result }: { result: ProposalResult }) {
       });
   };
 
-  const evidenceColumns: TableColumn<ProposalEvidenceDay>[] = [
-    { key: 'day', header: 'Day (UTC)', cell: (d) => <span className="pr-mono">{d.day}</span> },
-    { key: 'reports', header: 'Reports', numeric: true, cell: (d) => count(d.reports) },
-    { key: 'messages', header: 'Messages', numeric: true, cell: (d) => count(d.messages) },
-    { key: 'sources', header: 'Sources', cell: (d) => <span className="pr-mono pr-wrap">{evidenceRowText(d).sources}</span> },
-    { key: 'orgs', header: 'Reported by', cell: (d) => evidenceRowText(d).orgs },
-  ];
-
   return (
-    <Card as="li" data-proposal={result.domain} className="pr-admin-card">
-      <CardBody>
-        <CardTitle as="h3">{result.domain}</CardTitle>
+    <li data-proposal={result.domain} className="pr-progress">
+      <div className="pr-progress__head">
+        <span className="pr-admin-mono pr-progress__domain">{result.domain}</span>
         {result.eligible && proposal !== null ? (
-          <Stack gap="12">
-            <p>{proposalSummary(proposal)}</p>
-            <Cluster gap="8">
-              <code data-txt-value className="pr-dns-value">
-                {proposal.txtValue}
-              </code>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  copy(proposal.txtValue);
-                }}
-              >
-                {copied ? 'Copied' : 'Copy TXT record'}
-              </Button>
-            </Cluster>
-            <Table
-              caption={`14-day evidence for ${result.domain}`}
-              captionHidden
-              columns={evidenceColumns}
-              rows={proposal.evidence.days}
-              rowKey={(d) => d.day}
-              className="pr-admin-table"
-            />
-          </Stack>
+          <StatusDot tone="attention" size="sm">
+            Ready to tighten
+          </StatusDot>
         ) : (
-          <p data-proposal-reason>{result.reason ?? 'Not eligible yet.'}</p>
+          <StatusDot tone="idle" size="sm">
+            Not yet
+          </StatusDot>
         )}
-      </CardBody>
+      </div>
+      {result.eligible && proposal !== null ? (
+        <>
+          <p className="pr-progress__text">{proposalSummary(proposal)}</p>
+          <span className="pr-progress__meter" role="img" aria-label={`${String(proposal.evidence.days.length)} of 14 clean days`}>
+            {Array.from({ length: 14 }, (_, i) => (
+              <span key={i} className={i < proposal.evidence.days.length ? 'pr-progress__seg pr-progress__seg--on' : 'pr-progress__seg'} />
+            ))}
+          </span>
+          <code data-txt-value className="pr-dns-value pr-progress__txt">
+            {proposal.txtValue}
+          </code>
+          <div className="pr-progress__actions">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                copy(proposal.txtValue);
+              }}
+            >
+              {copied ? 'Copied' : 'Copy TXT record'}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-expanded={showEvidence}
+              aria-controls={evidenceId}
+              onClick={() => {
+                setShowEvidence((v) => !v);
+              }}
+            >
+              {showEvidence ? 'Hide evidence' : 'Show evidence'}
+            </Button>
+          </div>
+          <div id={evidenceId} hidden={!showEvidence}>
+            {showEvidence ? (
+              <DataList aria-label={`14-day evidence for ${result.domain}`} className="pr-card-list">
+                {proposal.evidence.days.map((d: ProposalEvidenceDay) => {
+                  const text = evidenceRowText(d);
+                  return (
+                    <DataListRow
+                      key={d.day}
+                      title={<span className="pr-admin-mono">{d.day}</span>}
+                      description={<span title={`${text.sources} · ${text.orgs}`}>{text.orgs === '' ? text.sources : `${text.orgs} · ${text.sources}`}</span>}
+                      meta={plural(d.messages, 'message')}
+                    />
+                  );
+                })}
+              </DataList>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p data-proposal-reason className="pr-progress__text">
+          {sentence(result.reason ?? 'Not eligible yet.')}
+        </p>
+      )}
+    </li>
+  );
+}
+
+type OrgRow = Deliverability['dmarc']['byOrg'][number];
+type PolicyRow = Deliverability['tlsrpt']['byPolicy'][number];
+type FailureRow = Deliverability['tlsrpt']['byFailureType'][number];
+
+/** A list card: the head, then a table at desk width or DataList cards on a phone (PST-REQ-155). */
+function ListCard<Row>({
+  title,
+  description,
+  caption,
+  rows,
+  rowKey,
+  columns,
+  card,
+  emptyText,
+  phone,
+}: {
+  title: string;
+  description?: string;
+  caption: string;
+  rows: readonly Row[];
+  rowKey: (row: Row) => string;
+  columns: TableColumn<Row>[];
+  card: (row: Row) => { title: ReactNode; description?: ReactNode; meta?: ReactNode };
+  emptyText: string;
+  phone: boolean;
+}) {
+  const headId = useId();
+  return (
+    <Card as="section" aria-labelledby={headId} className="pr-table-card">
+      <CardHead id={headId} title={title} description={description} />
+      <ListBody caption={caption} rows={rows} rowKey={rowKey} columns={columns} card={card} emptyText={emptyText} phone={phone} />
     </Card>
   );
 }
+
+function ListBody<Row>({
+  caption,
+  rows,
+  rowKey,
+  columns,
+  card,
+  emptyText,
+  phone,
+}: {
+  caption: string;
+  rows: readonly Row[];
+  rowKey: (row: Row) => string;
+  columns: TableColumn<Row>[];
+  card: (row: Row) => { title: ReactNode; description?: ReactNode; meta?: ReactNode };
+  emptyText: string;
+  phone: boolean;
+}) {
+  if (phone) {
+    return (
+      <DataList aria-label={caption} className="pr-card-list" empty={<EmptyState kind="empty" heading={emptyText} headingLevel={3} size="inline" />}>
+        {rows.map((row) => {
+          const c = card(row);
+          return <DataListRow key={rowKey(row)} title={c.title} description={c.description} meta={c.meta} />;
+        })}
+      </DataList>
+    );
+  }
+  return (
+    <Table
+      caption={caption}
+      captionHidden
+      columns={columns}
+      rows={rows}
+      rowKey={rowKey}
+      className="pr-admin-table"
+      empty={<EmptyState kind="empty" heading={emptyText} size="row" />}
+    />
+  );
+}
+
+const NUM = '6rem';
+/** A short count column beside its pair (Pass, Fail, Reports): narrow enough for two cards side by side. */
+const NUM_SHORT = '5.5rem';
 
 /**
  * PST-REQ-122: DMARC aggregate and TLS-RPT reports mailed to the report mailbox, charted — pass and
  * fail by day, every sending source with its pass rate, each reporting organization, and TLS
  * session success and failure by policy.
+ *
+ * PST-T-17.1 (PST-REQ-194/155, admin critique 2.3): the header holds the Range and Refresh; then
+ * the stats, the chart beside the policy progression, and every table in a card — cards on a phone.
  */
 export function AdminDeliverability() {
-  const [days, setDays] = useState('30');
+  const [params, setParams] = useSearchParams();
+  const days = parseRange(params);
   const [data, setData] = useState<Deliverability | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [proposals, setProposals] = useState<ProposalResult[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const phone = useMediaQuery(PHONE_QUERY);
+  const chartHeadId = useId();
+  const progressHeadId = useId();
+  const tlsHeadId = useId();
+  const failuresHeadId = useId();
 
   const load = useCallback(async (range: string) => {
+    setRefreshing(true);
     try {
       setData(await api.adminDeliverability(Number(range)));
       setLoadError(null);
     } catch (caught) {
       setLoadError(caught);
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
@@ -315,45 +542,82 @@ export function AdminDeliverability() {
     void loadProposals();
   }, [loadProposals]);
 
+  const setDays = (value: string): void => {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (value === DEFAULT_RANGE) next.delete('days');
+        else next.set('days', value);
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
   const sourceColumns: TableColumn<DeliverabilitySource>[] = [
     {
       key: 'sourceIp',
       header: 'Source',
+      width: 'auto',
+      // Two lines: the address (and its reverse DNS), then who reported it — so the card fits beside
+      // By reporter (2.3 #3). Messages is not a column: it is always Pass + Fail (apps/api aggregate).
       cell: (s) => (
-        <span className="pr-mono">
-          {s.sourceIp}
-          {s.reverseDns === null ? null : <span className="pr-muted"> ({s.reverseDns})</span>}
+        <span className="pr-cell-stack" title={[s.reverseDns, s.orgs.join(', ')].filter((x) => x !== null && x !== '').join(' · ')}>
+          <span className="pr-cell-stack__line">
+            <span className="pr-admin-mono">{s.sourceIp}</span>
+            {s.reverseDns === null ? null : <span className="pr-muted"> {s.reverseDns}</span>}
+          </span>
+          {s.orgs.length === 0 ? null : <span className="pr-cell-stack__line pr-muted pr-small">{s.orgs.join(', ')}</span>}
         </span>
       ),
     },
-    { key: 'orgs', header: 'Reported by', cell: (s) => s.orgs.join(', ') },
-    { key: 'messages', header: 'Messages', numeric: true, cell: (s) => count(s.messages) },
-    { key: 'pass', header: 'Pass', numeric: true, cell: (s) => count(s.pass) },
-    { key: 'fail', header: 'Fail', numeric: true, cell: (s) => count(s.fail) },
-    { key: 'passRate', header: 'Pass rate', numeric: true, cell: (s) => rateCell(s.passRate) },
+    { key: 'pass', header: 'Pass', width: NUM_SHORT, numeric: true, align: 'end', cell: (s) => count(s.pass) },
+    { key: 'fail', header: 'Fail', width: NUM_SHORT, numeric: true, align: 'end', cell: (s) => count(s.fail) },
+    { key: 'passRate', header: 'Pass rate', width: '6.5rem', numeric: true, align: 'end', cell: (s) => <RateText rate={s.passRate} /> },
   ];
-  type OrgRow = Deliverability['dmarc']['byOrg'][number];
   const orgColumns: TableColumn<OrgRow>[] = [
-    { key: 'org', header: 'Reporter', cell: (o) => o.org },
-    { key: 'reports', header: 'Reports', numeric: true, cell: (o) => count(o.reports) },
-    { key: 'messages', header: 'Messages', numeric: true, cell: (o) => count(o.messages) },
-    { key: 'pass', header: 'Pass', numeric: true, cell: (o) => count(o.pass) },
-    { key: 'fail', header: 'Fail', numeric: true, cell: (o) => count(o.fail) },
+    { key: 'org', header: 'Reporter', width: 'auto', cell: (o) => o.org },
+    { key: 'reports', header: 'Reports', width: NUM_SHORT, numeric: true, align: 'end', cell: (o) => count(o.reports) },
+    { key: 'messages', header: 'Messages', width: NUM, numeric: true, align: 'end', cell: (o) => count(o.messages) },
+    { key: 'pass', header: 'Pass', width: NUM_SHORT, numeric: true, align: 'end', cell: (o) => count(o.pass) },
+    { key: 'fail', header: 'Fail', width: NUM_SHORT, numeric: true, align: 'end', cell: (o) => count(o.fail) },
   ];
-  type PolicyRow = Deliverability['tlsrpt']['byPolicy'][number];
   const policyColumns: TableColumn<PolicyRow>[] = [
-    { key: 'policyDomain', header: 'Policy domain', cell: (p) => <span className="pr-mono">{p.policyDomain}</span> },
-    { key: 'policyType', header: 'Policy', cell: (p) => p.policyType },
-    { key: 'successful', header: 'Successful sessions', numeric: true, cell: (p) => count(p.successful) },
-    { key: 'failed', header: 'Failed sessions', numeric: true, cell: (p) => count(p.failed) },
+    { key: 'policyDomain', header: 'Policy domain', width: 'auto', cell: (p) => <span className="pr-admin-mono">{p.policyDomain}</span> },
+    { key: 'policyType', header: 'Policy', width: '10rem', cell: (p) => p.policyType },
+    { key: 'successful', header: 'Succeeded', width: NUM, numeric: true, align: 'end', cell: (p) => count(p.successful) },
+    { key: 'failed', header: 'Failed', width: NUM, numeric: true, align: 'end', cell: (p) => count(p.failed) },
   ];
-  type FailureRow = Deliverability['tlsrpt']['byFailureType'][number];
   const failureColumns: TableColumn<FailureRow>[] = [
-    { key: 'resultType', header: 'Failure', cell: (f) => <span className="pr-mono">{f.resultType}</span> },
-    { key: 'sessions', header: 'Sessions', numeric: true, cell: (f) => count(f.sessions) },
+    { key: 'resultType', header: 'Failure', width: 'auto', cell: (f) => <span className="pr-admin-mono">{f.resultType}</span> },
+    { key: 'sessions', header: 'Sessions', width: NUM, numeric: true, align: 'end', cell: (f) => count(f.sessions) },
   ];
 
   const empty = data !== null && data.dmarc.totals.reports === 0 && data.tlsrpt.totals.reports === 0;
+  const hasProgress = proposals !== null && proposals.length > 0;
+  // The TXT value to publish does not depend on this range's reports: it shows whatever the reports
+  // load did — beside the chart, or above the empty or failed state.
+  const progressCard = hasProgress ? (
+    <Card as="section" aria-labelledby={progressHeadId} className="pr-table-card">
+      <CardHead
+        id={progressHeadId}
+        title="Policy progression"
+        description="14 consecutive UTC days of only aligned passes from authorized sources earn a proposal to tighten the policy. Postroom never publishes DNS itself."
+      />
+      <ul className="pr-progress-list" aria-label="DMARC progression proposals">
+        {proposals.map((p) => (
+          <Progression key={p.domain} result={p} />
+        ))}
+      </ul>
+    </Card>
+  ) : null;
+  const refresh = useCallback(() => {
+    void load(days);
+    void loadProposals();
+  }, [load, loadProposals, days]);
+  // X11: on a phone, Refresh is an icon in the context bar; the Range stays in the header.
+  const barAction = useMemo(() => <IconButton icon={<RefreshIcon />} label="Refresh" loading={refreshing} onClick={refresh} />, [refreshing, refresh]);
+  const inBar = useContextBarAction(barAction);
 
   return (
     <Page>
@@ -361,51 +625,45 @@ export function AdminDeliverability() {
         title="Deliverability"
         description="DMARC aggregate and TLS reports from the providers you send to: who sends as your domain, and whether it authenticates."
         actions={
-          <Button variant="secondary" onClick={() => void load(days)}>
-            Refresh
-          </Button>
+          <div className="pr-header-actions">
+            <SegmentedControl aria-label="Range" activationMode="manual" items={RANGES.map((r) => ({ value: r.value, label: r.label }))} value={days} onValueChange={setDays} />
+            {inBar ? null : (
+              <Button variant="secondary" loading={refreshing} onClick={refresh}>
+                Refresh
+              </Button>
+            )}
+          </div>
         }
       />
-      {proposals !== null && proposals.length > 0 ? (
-        <Section
-          surface="plain"
-          title="DMARC progression"
-          description="14 consecutive UTC days of only aligned passes from authorized sources earn a proposal to tighten the policy, with the evidence attached. Postroom never publishes DNS itself."
-        >
-          <Grid as="ul" minItemWidth="md" aria-label="DMARC progression proposals">
-            {proposals.map((p) => (
-              <ProposalCard key={p.domain} result={p} />
-            ))}
-          </Grid>
-        </Section>
-      ) : null}
-
-      <FormField label="Range" width="sm">
-        <Select appearance="filled" options={RANGES} value={days} onValueChange={setDays} />
-      </FormField>
 
       {loadError !== null ? (
-        <LoadFailed error={loadError} what="reports" onRetry={() => void load(days)} />
+        <>
+          {progressCard}
+          <LoadFailed error={loadError} what="reports" onRetry={() => void load(days)} />
+        </>
       ) : data === null ? (
         <Loading label="Loading reports" />
       ) : empty ? (
-        <EmptyState kind="empty" heading="No reports yet" headingLevel={2}>
-          {data.mailboxes.dmarc === null
-            ? 'Reports appear here once the DMARC record’s rua address points at a Postroom mailbox.'
-            : `Reports appear here once receivers mail them to ${data.mailboxes.dmarc} (the rua address in your DMARC record).`}
-        </EmptyState>
+        <>
+          {progressCard}
+          <EmptyState kind="empty" heading="No reports yet" headingLevel={2}>
+            {data.mailboxes.dmarc === null
+              ? 'Reports appear here once the DMARC record’s rua address points at a Postroom mailbox.'
+              : `Reports appear here once receivers mail them to ${data.mailboxes.dmarc} (the rua address in your DMARC record).`}
+          </EmptyState>
+        </>
       ) : (
-        <Stack gap="24">
-          <Card as="section" aria-label="Summary" className="pr-admin-card pr-admin-stats">
+        <>
+          <Card as="section" aria-label="Summary" className="pr-admin-stats">
             <StatGroup>
               <Stat
                 data-stat="pass-rate"
                 label="DMARC pass rate"
                 value={percent(rateOf(data.dmarc.totals.pass, data.dmarc.totals.messages))}
-                footnote={`${count(data.dmarc.totals.pass)} of ${count(data.dmarc.totals.messages)} messages`}
+                footnote={`${count(data.dmarc.totals.pass)} of ${plural(data.dmarc.totals.messages, 'message')}`}
               />
               <FailedDmarcStat fail={data.dmarc.totals.fail} quarantine={data.dmarc.totals.dispositions.quarantine} reject={data.dmarc.totals.dispositions.reject} />
-              <Stat data-stat="reports" label="Reports" value={count(data.dmarc.totals.reports)} footnote={`from ${count(data.dmarc.byOrg.length)} reporters`} />
+              <Stat data-stat="reports" label="Reports" value={count(data.dmarc.totals.reports)} footnote={`from ${plural(data.dmarc.byOrg.length, 'reporter')}`} />
               <Stat
                 data-stat="tls"
                 label="TLS sessions"
@@ -415,57 +673,96 @@ export function AdminDeliverability() {
             </StatGroup>
           </Card>
 
-          <Section title="DMARC by day" description="Messages the reporters saw from your domain, by the UTC day each report begins." className="pr-admin-card">
-            <DayChart data={data} />
-          </Section>
+          <div className={hasProgress ? 'pr-deliv-cols pr-deliv-cols--side' : 'pr-deliv-cols'}>
+            <Card as="section" aria-labelledby={chartHeadId} className="pr-table-card">
+              <CardHead id={chartHeadId} title="DMARC by day" description="Messages the reporters saw from your domain, by the UTC day each report begins." end={<ChartLegend />} />
+              <div className="pr-card-body">
+                <DayChart data={data} />
+              </div>
+            </Card>
+            {progressCard}
+          </div>
 
-          <Section surface="plain" title="By source" description="Every IP address that sent mail as your domain. A low pass rate is either a spoofer or a service you have not authorized.">
-            <Table
+          <div className="pr-deliv-pair">
+            <ListCard
+              title="By source"
+              description="Every IP address that sent mail as your domain. A low pass rate is a spoofer or a service you have not authorized."
               caption="DMARC results by sending source"
-              captionHidden
-              columns={sourceColumns}
               rows={data.dmarc.bySource}
               rowKey={(s) => s.sourceIp}
-              className="pr-admin-table"
-              empty={<EmptyState kind="empty" heading="No sources in this range" size="row" />}
+              columns={sourceColumns}
+              emptyText="No sources in this range"
+              phone={phone}
+              card={(s) => ({
+                title: <span className="pr-admin-mono">{s.sourceIp}</span>,
+                description: [s.reverseDns, s.orgs.length === 0 ? null : `Reported by ${s.orgs.join(', ')}`].filter((x) => x !== null).join(' · '),
+                meta: (
+                  <>
+                    <span>
+                      {count(s.pass)} pass · {count(s.fail)} fail
+                    </span>
+                    <RateText rate={s.passRate} />
+                  </>
+                ),
+              })}
             />
-          </Section>
-
-          <Section surface="plain" title="By reporter">
-            <Table
+            <ListCard
+              title="By reporter"
               caption="DMARC results by reporting organization"
-              captionHidden
-              columns={orgColumns}
               rows={data.dmarc.byOrg}
               rowKey={(o) => o.org}
-              className="pr-admin-table"
-              empty={<EmptyState kind="empty" heading="No reports in this range" size="row" />}
+              columns={orgColumns}
+              emptyText="No reports in this range"
+              phone={phone}
+              card={(o) => ({
+                title: o.org,
+                description: `${plural(o.reports, 'report')} · ${plural(o.messages, 'message')}`,
+                meta: (
+                  <span>
+                    {count(o.pass)} pass · {count(o.fail)} fail
+                  </span>
+                ),
+              })}
             />
-          </Section>
+          </div>
 
-          <Section surface="plain" title="TLS reports" description="SMTP TLS reporting (RFC 8460): sessions senders opened to your MX, by policy, and why any failed.">
-            <Stack gap="16">
-              <Table
-                caption="TLS sessions by policy"
-                captionHidden
-                columns={policyColumns}
-                rows={data.tlsrpt.byPolicy}
-                rowKey={(p) => `${p.policyDomain}/${p.policyType}`}
-                className="pr-admin-table"
-                empty={<EmptyState kind="empty" heading="No TLS reports in this range" size="row" />}
-              />
-              {data.tlsrpt.byFailureType.length === 0 ? null : (
-                <Table
+          <Card as="section" aria-labelledby={tlsHeadId} className="pr-table-card">
+            <CardHead id={tlsHeadId} title="TLS reports" description="SMTP TLS reporting (RFC 8460): sessions senders opened to your MX, by policy, and why any failed." />
+            <ListBody
+              caption="TLS sessions by policy"
+              rows={data.tlsrpt.byPolicy}
+              rowKey={(p) => `${p.policyDomain}/${p.policyType}`}
+              columns={policyColumns}
+              emptyText="No TLS reports in this range"
+              phone={phone}
+              card={(p) => ({
+                title: <span className="pr-admin-mono">{p.policyDomain}</span>,
+                description: p.policyType,
+                meta: (
+                  <span>
+                    {count(p.successful)} ok · {count(p.failed)} failed
+                  </span>
+                ),
+              })}
+            />
+            {data.tlsrpt.byFailureType.length === 0 ? null : (
+              <section aria-labelledby={failuresHeadId}>
+                <div className="pr-card-head--sub">
+                  <CardHead id={failuresHeadId} title="Failure reasons" level={3} />
+                </div>
+                <ListBody
                   caption="TLS failures by type"
-                  columns={failureColumns}
                   rows={data.tlsrpt.byFailureType}
                   rowKey={(f) => f.resultType}
-                  className="pr-admin-table"
+                  columns={failureColumns}
+                  emptyText="No failures"
+                  phone={phone}
+                  card={(f) => ({ title: <span className="pr-admin-mono">{f.resultType}</span>, meta: plural(f.sessions, 'session') })}
                 />
-              )}
-            </Stack>
-          </Section>
-        </Stack>
+              </section>
+            )}
+          </Card>
+        </>
       )}
     </Page>
   );

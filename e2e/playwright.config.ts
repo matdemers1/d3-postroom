@@ -21,7 +21,7 @@ export default defineConfig({
     { name: 'mobile', use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } } },
     // PST-T-16.18: a phone on its side. 844 wide clears the tablet edge, 390 tall does not clear the
     // split's (min-height: 500px), so it stays on the push layout; touch makes the pointer coarse.
-    // Only mobile.spec runs here: its own landscape suite, since the rest assert portrait geometry.
-    { name: 'landscape', testMatch: /mobile\.spec\.ts$/, use: { ...devices['Pixel 7 landscape'], viewport: { width: 844, height: 390 } } },
+    // mobile.spec (its own landscape suite, since the rest assert portrait geometry) and admin-phone.spec.
+    { name: 'landscape', testMatch: /(mobile|admin-phone)\.spec\.ts$/, use: { ...devices['Pixel 7 landscape'], viewport: { width: 844, height: 390 } } },
   ],
 });

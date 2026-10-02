@@ -51,6 +51,7 @@ import {
 } from './recovery.js';
 import { completeSetup, isSetupRequired, SetupConflict } from './setup.js';
 import { checkSetupGate } from './setup-gate.js';
+import { D3AUTH_SAVE_LOCK, readStored } from './d3auth-settings.js';
 import { burnStep, generateTotpSecret, matchStep, openTotpSecret, provisioningUri, sealTotpSecret } from './totp.js';
 
 const Login = z.string().trim().min(1).max(320);
@@ -1097,11 +1098,13 @@ export function authRoutes(deps: ApiDeps): Router {
   router.get(
     '/oidc/start',
     handle(async (req, res) => {
-      const client = await rt.oidc.get(nowMs());
-      if (client === null || rt.sessionSecret === null) {
+      // The client and the settings it belongs to, together: the transaction records which.
+      const live = await rt.oidc.snapshot(nowMs());
+      if (live === null || rt.sessionSecret === null) {
         res.redirect(302, signinError('Sign in with D3 Auth is not available right now. Use your password.'));
         return;
       }
+      const { client } = live;
       // Linking attaches the identity to whoever is signed in here already — never to an account
       // matched by email afterwards.
       let linkTo: string | undefined;
@@ -1119,7 +1122,8 @@ export function authRoutes(deps: ApiDeps): Router {
       try {
         start = await client.beginSignIn();
       } catch {
-        rt.oidc.reset(nowMs());
+        // Only the settings that failed: a save that replaced them meanwhile keeps its client.
+        rt.oidc.reset(nowMs(), live.generation);
         res.redirect(302, signinError('D3 Auth did not answer. Use your password.'));
         return;
       }
@@ -1128,6 +1132,8 @@ export function authRoutes(deps: ApiDeps): Router {
         state: start.state,
         nonce: start.nonce,
         exp: nowMs() + TX_TTL_MS,
+        iss: live.settings.issuer,
+        cid: live.settings.clientId,
         ...(linkTo === undefined ? {} : { linkAccountId: linkTo }),
       };
       txCookie(rt, res, sealTransaction(rt.sessionSecret, tx), TX_TTL_MS);
@@ -1139,8 +1145,8 @@ export function authRoutes(deps: ApiDeps): Router {
     '/oidc/callback',
     handle(async (req, res) => {
       res.clearCookie(txCookieName(rt.secure), { httpOnly: true, secure: rt.secure, sameSite: 'lax', path: '/' });
-      const client = await rt.oidc.get(nowMs());
-      if (client === null || rt.sessionSecret === null) {
+      const live = await rt.oidc.snapshot(nowMs());
+      if (live === null || rt.sessionSecret === null) {
         res.redirect(302, signinError('Sign in with D3 Auth is not available right now. Use your password.'));
         return;
       }
@@ -1161,10 +1167,24 @@ export function authRoutes(deps: ApiDeps): Router {
         res.redirect(302, signinError('That sign-in could not be completed. Start again.'));
         return;
       }
+      // Started under other settings (the console saved new ones meanwhile): the code belongs to that
+      // client, so nothing — least of all this client's secret — goes to a token endpoint.
+      if (tx.iss !== live.settings.issuer || tx.cid !== live.settings.clientId) {
+        await recordAudit(db, {
+          actor: anonymous,
+          action: 'auth.oidc.rejected',
+          entityType: 'session',
+          entityId: null,
+          after: { reason: 'settings_changed', startedWith: { issuer: tx.iss, clientId: tx.cid }, now: { issuer: live.settings.issuer, clientId: live.settings.clientId } },
+          context: getAuditContext(req),
+        });
+        res.redirect(302, signinError('Sign-in settings changed while you were signing in. Try again.'));
+        return;
+      }
 
       let signedIn;
       try {
-        signedIn = await client.completeSignIn(new URL(req.originalUrl, rt.webOrigin), tx);
+        signedIn = await live.client.completeSignIn(new URL(req.originalUrl, rt.webOrigin), tx);
       } catch (error) {
         await recordAudit(db, {
           actor: anonymous,
@@ -1183,6 +1203,12 @@ export function authRoutes(deps: ApiDeps): Router {
       const name = typeof identity.claims['name'] === 'string' ? identity.claims['name'] : undefined;
       try {
         const session = await db.$transaction(async (dbtx) => {
+          // A turn-off or retarget may have committed while the code was being exchanged: under the
+          // save lock (shared), the stored settings must still be the ones this sign-in started under,
+          // or the session would outlive the revoke that save just made (PST-T-17.6).
+          await dbtx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtextextended(${D3AUTH_SAVE_LOCK}, 0))`;
+          const stored = await readStored(dbtx);
+          if (stored !== null && stored !== 'invalid' && (!stored.enabled || stored.issuer !== tx.iss || stored.clientId !== tx.cid)) return 'settings_changed' as const;
           const resolved = await resolveIdentity(
             dbtx,
             {
@@ -1221,6 +1247,18 @@ export function authRoutes(deps: ApiDeps): Router {
           });
           return issued;
         });
+        if (session === 'settings_changed') {
+          await recordAudit(db, {
+            actor: anonymous,
+            action: 'auth.oidc.rejected',
+            entityType: 'session',
+            entityId: null,
+            after: { reason: 'settings_changed', stage: 'issue', startedWith: { issuer: tx.iss, clientId: tx.cid } },
+            context: getAuditContext(req),
+          });
+          res.redirect(302, signinError('Sign-in settings changed while you were signing in. Try again.'));
+          return;
+        }
         if (session === null) {
           res.redirect(302, signinError('This account is disabled.'));
           return;
@@ -1252,6 +1290,8 @@ export function authRoutes(deps: ApiDeps): Router {
     '/oidc/backchannel-logout',
     express.urlencoded({ extended: false, limit: '64kb' }),
     handle(async (req, res) => {
+      // Read through the runtime each time: the console may have replaced the settings (PST-ADR-014).
+      await rt.oidc.ready();
       const settings = rt.oidc.settings;
       if (settings === null) {
         res.status(404).json({ error: 'not_configured' });

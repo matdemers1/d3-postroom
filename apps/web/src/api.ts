@@ -282,7 +282,7 @@ export interface TimelineEvent {
   at: string;
   title: string;
   detail: string | null;
-  tone: 'neutral' | 'attention' | 'danger';
+  tone: 'neutral' | 'attention' | 'warning' | 'danger';
 }
 
 /** One recipient's delivery as a list of events, oldest first: queued, each attempt, the outcome. Pure. */
@@ -297,7 +297,7 @@ export function timelineOf(view: DeliveryView, recipient: DeliveryRecipient): Ti
       at: a.startedAt,
       title: `Attempt via ${a.transport}${where === '' ? '' : ` to ${where}`}: ${outcome}`,
       detail: [tls, reply].filter((x) => x !== null && x !== '').join(' · ') || null,
-      tone: a.outcome === 'delivered' ? 'neutral' : a.outcome === 'bounced' ? 'danger' : 'attention',
+      tone: a.outcome === 'delivered' ? 'neutral' : a.outcome === 'bounced' ? 'danger' : 'warning',
     });
   }
   if (recipient.state === 'delivered') {
@@ -305,7 +305,7 @@ export function timelineOf(view: DeliveryView, recipient: DeliveryRecipient): Ti
   } else if (recipient.state === 'bounced') {
     events.push({ at: recipient.nextAttemptAt, title: `Bounced: ${recipient.address}`, detail: recipient.lastText, tone: 'danger' });
   } else if (recipient.state === 'deferred') {
-    events.push({ at: recipient.nextAttemptAt, title: 'Deferred: next attempt scheduled', detail: recipient.lastText, tone: 'attention' });
+    events.push({ at: recipient.nextAttemptAt, title: 'Deferred: next attempt scheduled', detail: recipient.lastText, tone: 'warning' });
   } else if (recipient.state === 'queued' || recipient.state === 'attempting') {
     events.push({ at: recipient.nextAttemptAt, title: recipient.state === 'queued' ? 'Waiting for the delivery daemon' : 'Delivering now', detail: null, tone: 'neutral' });
   }
@@ -337,12 +337,12 @@ export interface DnsReport {
   rows: DnsCheckRow[];
 }
 
-export const DNS_STATUS: Record<DnsStatus, { label: string; tone: 'neutral' | 'attention' | 'danger' }> = {
+export const DNS_STATUS: Record<DnsStatus, { label: string; tone: 'neutral' | 'attention' | 'warning' | 'danger' }> = {
   pass: { label: 'Pass', tone: 'neutral' },
   fail: { label: 'Fail', tone: 'danger' },
   missing: { label: 'Missing', tone: 'danger' },
   pending: { label: 'Pending', tone: 'neutral' },
-  unknown: { label: 'Unknown', tone: 'attention' },
+  unknown: { label: 'Unknown', tone: 'warning' },
 };
 
 /** "9 pass · 1 fail · 4 pending", leaving out zero counts. Pure. */
@@ -695,6 +695,8 @@ export interface RenderTicket {
    * hairline. False: it renders transparent in the app's theme, flush with the text around it.
    */
   designed: boolean;
+  /** PST-T-17.3: estimated document height (px) in a 360px- and a 720px-wide frame — the frame runs no script to say. */
+  heightEstimate?: { narrow: number; wide: number };
 }
 
 /** Matches apps/api/src/mail/inspect.ts's MessageInspect (PST-T-6.1, PST-REQ-114). */
@@ -1066,6 +1068,10 @@ export function describeError(error: unknown): string {
       return 'That took too long. Sign in again.';
     case 'too_many_attempts':
       return 'Too many attempts. Wait a moment and try again.';
+    case 'last_sign_in_method':
+      return 'D3 Auth is the only way into this account, so it can’t be unlinked. Set a password first.';
+    case 'conflict':
+      return 'Someone else saved these settings at the same moment. Reload and try again.';
     case 'totp_not_enrolled':
       return 'This account has no authenticator enrolled, so it can’t finish signing in. If Sign in with D3 Auth is set up for it, use that instead.';
     case 'setup_complete':
@@ -1620,3 +1626,80 @@ export function parseSmtpLiveBlock(block: string): SmtpLiveLine | null {
     return null;
   }
 }
+
+// --- Sign in with D3 Auth, from the console (PST-T-17.7; PST-REQ-201, PST-REQ-202, PST-REQ-204) -----
+// PST-ADR-014: D3 Auth is configured in the admin console (the secret sealed at rest, no restart);
+// the server's env file is the fallback. Writes need a fresh step-up (403 step_up_required).
+
+/** Where the live D3 Auth settings come from: the console, the server's env file, or nowhere. */
+export type D3AuthSource = 'console' | 'server_file' | 'none';
+export type D3AuthStatus = 'available' | 'unavailable' | 'not_configured';
+
+export interface D3AuthConfig {
+  source: D3AuthSource;
+  enabled: boolean;
+  issuer: string | null;
+  clientId: string | null;
+  /** The secret is write-only: the server says only whether one is saved. */
+  secretSet: boolean;
+  status: D3AuthStatus;
+  lastError: string | null;
+  redirectUri: string;
+  backchannelLogoutUri: string;
+  postLogoutRedirectUri: string;
+  /** The D3 Auth app manifest, ready to paste. */
+  manifest: Record<string, unknown>;
+  /**
+   * On a save or turn-off only: turning off or pointing at another issuer or client ends every
+   * D3 Auth session, and this browser's was one of them (its cookie is already cleared).
+   */
+  signedOut?: boolean;
+}
+
+export interface D3AuthConfigInput {
+  issuer: string;
+  clientId: string;
+  /** Absent keeps the saved secret. */
+  clientSecret?: string;
+}
+
+export interface D3AuthTestResult {
+  ok: boolean;
+  issuer: string;
+  authorizationEndpoint?: string;
+  error?: string;
+}
+
+/** One D3 Auth identity linked to the signed-in account. */
+export interface LinkedIdentity {
+  id: string;
+  issuer: string;
+  email: string | null;
+  linkedAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface UnlinkResult {
+  ok: true;
+  endedSessions: number;
+  signedOut: boolean;
+}
+
+/** A real navigation, not a fetch: the server checks the sign-in is fresh, then hands over to D3 Auth. */
+export const OIDC_LINK_PATH = '/api/auth/oidc/start?link=1';
+
+export const d3authApi = {
+  config: () => call<D3AuthConfig>('GET', '/api/admin/auth/d3auth'),
+  /** Step-up. 400 invalid_request with `fields` when the issuer or client ID is refused. */
+  save: (input: D3AuthConfigInput) => call<D3AuthConfig>('PUT', '/api/admin/auth/d3auth', input),
+  /** Discovery against `issuer`, or the saved issuer when it is absent. Never saves. */
+  test: (issuer?: string) => call<D3AuthTestResult>('POST', '/api/admin/auth/d3auth/test', issuer === undefined ? {} : { issuer }),
+  /** Step-up. Answers the turned-off config. */
+  turnOff: () => call<D3AuthConfig>('DELETE', '/api/admin/auth/d3auth'),
+  identities: () => call<LinkedIdentity[]>('GET', '/api/account/identities'),
+  /**
+   * Step-up. Ends that identity's D3 Auth sessions; `signedOut` says this browser's own session was
+   * one of them (its cookie is already cleared).
+   */
+  unlink: (id: string) => call<UnlinkResult>('DELETE', `/api/account/identities/${encodeURIComponent(id)}`),
+};

@@ -86,15 +86,18 @@ test('the account menu opens Settings and the Admin console; each has its own na
   const settings = page.getByRole('navigation', { name: 'Settings' });
   await expect(mainNav(page)).toHaveCount(0);
   const settingsLinks = settings.getByRole('group', { name: 'Settings' }).getByRole('link');
-  await expect(settingsLinks).toHaveText(['Account', 'Security & devices', 'Addresses', 'Rules & sorting', 'Templates', 'Import & export', 'Encryption keys']);
+  await expect(settingsLinks).toHaveText(['Account', 'Security & devices', 'Addresses', 'Rules & sorting', 'Templates', 'Import', 'Encryption keys']);
   await settings.getByRole('link', { name: 'Security & devices' }).click();
   // PST-T-16.3: Security & devices leads with connecting a device, then Browser sessions.
-  await expect(page.getByRole('heading', { name: 'Connect a device', level: 1 })).toBeVisible();
-  // One vocabulary: the section's own links name Browser sessions and Devices.
+  // PST-T-17.9: one constant title for the section; the tab row below it says where you are.
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   const sub = page.getByRole('navigation', { name: 'Security & devices' });
-  await expect(sub.getByRole('link')).toHaveText(['Connect a device', 'Browser sessions', 'Devices']);
-  await sub.getByRole('link', { name: 'Devices' }).click();
-  await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
+  await expect(sub.getByRole('link')).toHaveText(['Connect a device', 'Browser sessions', 'App passwords']);
+  await expect(sub.getByRole('link', { name: 'Connect a device' })).toHaveAttribute('aria-current', 'page');
+  await sub.getByRole('link', { name: 'App passwords' }).click();
+  await expect(page).toHaveURL(/\/settings\/security\/devices$/);
+  await expect(sub.getByRole('link', { name: 'App passwords' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('heading', { name: 'Security & devices', level: 1 })).toBeVisible();
   await expect(settings.getByRole('link', { name: 'Security & devices' })).toHaveAttribute('aria-current', 'page');
   expect((await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 
@@ -110,6 +113,7 @@ test('the account menu opens Settings and the Admin console; each has its own na
     'Live SMTP',
     'Jobs',
     'Sign-in sessions',
+    'Sign in with D3 Auth',
     'Suppressions',
     /^Setup/,
   ]);
@@ -122,16 +126,16 @@ test('the account menu opens Settings and the Admin console; each has its own na
 
 test('the old URLs redirect to their new homes', async ({ page }) => {
   const moved: [string, RegExp, string][] = [
-    ['/app-passwords', /\/settings\/security\/devices$/, 'Devices'],
+    ['/app-passwords', /\/settings\/security\/devices$/, 'Security & devices'],
     ['/account/password', /\/settings\/account$/, 'Account'],
-    ['/account/sessions', /\/settings\/security\/sessions$/, 'Browser sessions'],
-    ['/account/device-setup', /\/settings\/security$/, 'Connect a device'],
-    ['/settings/security/device-setup', /\/settings\/security$/, 'Connect a device'],
-    ['/account/aliases', /\/settings\/addresses$/, 'Masked aliases'],
-    ['/account/rules', /\/settings\/rules$/, 'Rules'],
-    ['/account/templates', /\/settings\/templates$/, 'Compose templates'],
-    ['/account/import', /\/settings\/import$/, 'Import mail'],
-    ['/account/keys', /\/settings\/keys$/, 'Keys'],
+    ['/account/sessions', /\/settings\/security\/sessions$/, 'Security & devices'],
+    ['/account/device-setup', /\/settings\/security$/, 'Security & devices'],
+    ['/settings/security/device-setup', /\/settings\/security$/, 'Security & devices'],
+    ['/account/aliases', /\/settings\/addresses$/, 'Addresses'],
+    ['/account/rules', /\/settings\/rules$/, 'Rules & sorting'],
+    ['/account/templates', /\/settings\/templates$/, 'Templates'],
+    ['/account/import', /\/settings\/import$/, 'Import'],
+    ['/account/keys', /\/settings\/keys$/, 'Encryption keys'],
     ['/admin', /\/admin\/health$/, 'Health'],
   ];
   for (const [from, to, h1] of moved) {
@@ -153,10 +157,10 @@ test('the palette lists every place from the route table, grouped, with keycaps'
     await expect(palette.getByRole('group', { name: group })).toBeVisible();
   }
   const settings = palette.getByRole('group', { name: 'Settings' });
-  for (const name of ['Account', 'Browser sessions', 'Devices', 'Connect a device', 'Addresses', 'Rules', 'Templates', 'Import & export', 'Encryption keys']) {
+  for (const name of ['Account', 'Browser sessions', 'App passwords', 'Connect a device', 'Addresses', 'Rules & sorting', 'Templates', 'Import', 'Encryption keys']) {
     await expect(settings.getByRole('option', { name: new RegExp(`^${name.replace(/[/]/g, '\\/')}`) })).toHaveCount(1);
   }
-  await expect(palette.getByRole('group', { name: 'Admin' }).getByRole('option')).toHaveCount(9);
+  await expect(palette.getByRole('group', { name: 'Admin' }).getByRole('option')).toHaveCount(10);
   // Keycaps from keys.ts: "Go to Inbox" carries g then i; Reply carries r.
   const inbox = palette.getByRole('option', { name: /^Go to Inbox/ });
   await expect(inbox.locator('kbd')).toHaveText(['g', 'i']);
@@ -280,16 +284,17 @@ test('moving between places cross-fades within --dur-2 and never slides; a page 
 test('the jobs status filter is ?status=: a reload and Back keep it', async ({ page }) => {
   await page.goto('/admin/jobs');
   await expect(page.getByRole('heading', { name: 'Jobs', level: 1 })).toBeVisible();
-  const status = page.getByRole('combobox', { name: 'Status' });
-  await status.click();
-  await page.getByRole('option', { name: 'Dead' }).click();
+  // PST-T-17.2: the status filter is a segmented control (a radiogroup), its segments counted.
+  const status = page.getByRole('radiogroup', { name: 'Status' });
+  const dead = status.getByRole('radio', { name: /^Dead/ });
+  await dead.click();
   // In place: choosing a filter adds no history entry of its own.
   await expect(page).toHaveURL(/\/admin\/jobs\?status=dead$/);
 
   const askedOnReload = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/admin/jobs' && new URL(r.url()).searchParams.get('status') === 'dead');
   await page.reload();
   await askedOnReload;
-  await expect(status).toContainText('Dead');
+  await expect(dead).toHaveAttribute('aria-checked', 'true');
 
   // Away to another admin screen, then Back.
   await page.getByRole('navigation', { name: 'Admin console' }).getByRole('link', { name: 'Health' }).click();
@@ -298,11 +303,10 @@ test('the jobs status filter is ?status=: a reload and Back keep it', async ({ p
   await page.goBack();
   await askedOnBack;
   await expect(page).toHaveURL(/\/admin\/jobs\?status=dead$/);
-  await expect(status).toContainText('Dead');
+  await expect(dead).toHaveAttribute('aria-checked', 'true');
 
-  // All statuses is the bare URL.
-  await status.click();
-  await page.getByRole('option', { name: 'All statuses' }).click();
+  // All is the bare URL.
+  await status.getByRole('radio', { name: /^All/ }).click();
   await expect(page).toHaveURL(/\/admin\/jobs$/);
 });
 

@@ -1,0 +1,60 @@
+/* Addresses, Templates and Encryption keys (PST-T-17.10, PST-REQ-194; Settings.dc.html): a new-item
+ * form opens inside its list's own card, above the list, closed off from it by a hairline — the
+ * canvas's inline forms, never a second card. Its fields sit on settings.css's .pr-setform 164/360
+ * grid and its Cancel / primary on .pr-setform__actions at the form's foot. D3 tokens only. */
+
+.pr-inline-form {
+  margin: 0;
+  padding-bottom: var(--space-16);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+/* Nothing under it (the list is hidden while it is empty and the form is open): no stray hairline
+ * above the card's own edge. */
+.pr-inline-form:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.pr-inline-form__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pr-inline-form__title {
+  margin: 0;
+  color: var(--color-fg);
+  font-size: var(--text-14);
+  line-height: var(--leading-14);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-inline-form__desc {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+  line-height: var(--leading-13);
+}
+
+/* Templates: the shortcut is something you type, so it reads as a key chip after the name. */
+.pr-tpl-key {
+  display: inline-block;
+  margin-inline-start: var(--space-4);
+  padding: 0 var(--space-6);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  font-weight: var(--weight-regular);
+  vertical-align: 1px;
+}
+
+/* Addresses: a turned-off alias's address steps back; its status says Off beside it. */
+.pr-set-mono.pr-alias-off {
+  color: var(--color-fg-muted);
+}

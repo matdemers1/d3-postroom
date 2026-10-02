@@ -1,68 +1,77 @@
-import { type SyntheticEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Button,
-  Cluster,
+  Card,
   DataList,
   DataListRow,
   EmptyState,
+  FilterBar,
   FormField,
   Input,
   Modal,
   ModalClose,
   Page,
   PageHeader,
-  Section,
-  Select,
+  SearchField,
+  SegmentedControl,
   Stack,
   StatusDot,
   Table,
   type TableColumn,
 } from '@d3cloud/ui';
-import { ApiError, api, describeError, type AdminQueueRecipient, type QueueScope, type QueueStateFilter } from '../api';
+import { ApiError, api, describeError, type QueueScope } from '../api';
 import { Loading, LoadFailed } from './states';
+import { RelativeTime } from '../components/RelativeTime';
 import { queueState } from '../admin/health/model';
-import { QueueActions } from '../admin/queue/QueueActions';
+import { DomainActions, QueueActions } from '../admin/queue/QueueActions';
 import { QueueDrawer } from '../admin/queue/QueueDrawer';
-import { filterByMessage, parseQueueFilters, QUEUE_ACTION_LABEL, QUEUE_PHONE_QUERY, type QueueActionKind, withQueueFilter } from '../admin/queue/model';
-import { useMediaQuery } from '../mail/useMedia';
+import {
+  filterByMessage,
+  parseQueueFilters,
+  QUEUE_ACTION_LABEL,
+  type QueueActionKind,
+  latestOnly,
+  loadQueueStates,
+  QUEUE_LIST_CAP,
+  type QueueRow,
+  type QueueStateKey,
+  type QueueStateList,
+  queueSegmentItems,
+  recipientCount,
+  withQueueFilter,
+} from '../admin/queue/model';
+import { PHONE_QUERY, useMediaQuery } from '../mail/useMedia';
 import '../admin/admin.css';
-
-const STATE_OPTIONS: { value: '' | QueueStateFilter; label: string }[] = [
-  { value: '', label: 'All queued mail' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'deferred', label: 'Deferred' },
-  { value: 'held', label: 'Held (frozen credential)' },
-  { value: 'failed', label: 'Failed' },
-];
 
 type ActionKind = QueueActionKind;
 const ACTION_LABEL = QUEUE_ACTION_LABEL;
+type Row = QueueRow;
 
-interface Row extends AdminQueueRecipient {
-  subject: string | null;
-  headerFrom: string;
-}
-
-const when = (iso: string): string => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const hidden = (text: string) => <span className="pr-admin-vh">{text}</span>;
 
 /**
  * PST-T-6.6 / PST-REQ-121: the outbound queue admin — retry, bounce, delete and force-SES, per
- * recipient, per message, or per domain (the bulk form below the table). Every mutation needs a
- * fresh step-up (PST-REQ-008): the confirm modal always asks for a current code, since almost
- * every visit to this screen is the first destructive action in the session.
+ * recipient, or across a whole domain. Every mutation needs a fresh step-up (PST-REQ-008): the
+ * confirm modal always asks for a current code, since almost every visit to this screen is the
+ * first destructive action in the session.
  *
- * PST-T-16.13 (PST-DA-031): the four row actions are one Actions menu, the row's evidence (last reply,
+ * PST-T-16.13 (PST-DA-031): the four row actions are one menu, the row's evidence (last reply,
  * every attempt) is a drawer, a phone gets cards, and ?state= ?domain= ?message= hold the filters.
+ *
+ * PST-T-17.1 (PST-REQ-194/155, admin critique 2.2): the list is a card whose toolbar holds the one
+ * Domain search and the State segments with their counts; the domain's bulk actions appear in that
+ * toolbar only once a domain is typed, so there is one Domain field on the page.
  */
 export function AdminQueue() {
-  const [rows, setRows] = useState<Row[] | null>(null);
+  const [lists, setLists] = useState<Record<QueueStateKey, QueueStateList> | null>(null);
+  const latest = useRef(latestOnly());
   const [sesConfigured, setSesConfigured] = useState(true);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [params, setParams] = useSearchParams();
   const { domain, state, message } = parseQueueFilters(params);
-  const phone = useMediaQuery(QUEUE_PHONE_QUERY);
+  const phone = useMediaQuery(PHONE_QUERY);
   const [details, setDetails] = useState<Row | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -72,28 +81,43 @@ export function AdminQueue() {
   const [codeError, setCodeError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [bulkDomain, setBulkDomain] = useState('');
-
   // Replace, not push: typing a domain letter by letter must not fill the Back stack.
   const setFilter = (key: 'state' | 'domain' | 'message', value: string): void => {
     setParams((current) => withQueueFilter(current, key, value), { replace: true });
   };
-  const shown = useMemo(() => (rows === null ? null : filterByMessage(rows, message)), [rows, message]);
+  // ?message= narrows every state's list to one message's recipients (the counts follow).
+  const narrowed = useMemo(() => {
+    if (lists === null) return null;
+    const out = {} as Record<QueueStateKey, QueueStateList>;
+    for (const [key, list] of Object.entries(lists) as [QueueStateKey, QueueStateList][]) {
+      const rows = filterByMessage(list.rows, message);
+      out[key] = message === '' ? list : { rows, count: rows.length, capped: false };
+    }
+    return out;
+  }, [lists, message]);
+  const current = narrowed?.[state] ?? null;
+  const shown = current?.rows ?? null;
 
-  const load = useCallback(async (d: string, s: '' | QueueStateFilter) => {
+  // Each state is filtered by the API (loadQueueStates), so a row past the first 500 of All is still
+  // under its own state. A domain typed letter by letter fires a load per letter: only the newest
+  // answer is kept, so an older, slower one can never replace it.
+  const load = useCallback(async (d: string) => {
+    const token = latest.current.next();
     try {
-      const result = await api.adminQueue({ ...(d === '' ? {} : { domain: d }), ...(s === '' ? {} : { state: s }) });
-      setRows(result.messages.flatMap((m) => m.recipients.map((r) => ({ ...r, subject: m.subject, headerFrom: m.headerFrom }))));
+      const result = await loadQueueStates((opts) => api.adminQueue(opts), d);
+      if (!latest.current.isLatest(token)) return;
+      setLists(result.lists);
       setSesConfigured(result.sesConfigured);
       setLoadError(null);
     } catch (caught) {
+      if (!latest.current.isLatest(token)) return;
       setLoadError(caught);
     }
   }, []);
 
   useEffect(() => {
-    void load(domain, state);
-  }, [load, domain, state]);
+    void load(domain);
+  }, [load, domain]);
 
   const runAction = async (scope: QueueScope, action: ActionKind, opts: { code?: string; reason?: string } = {}): Promise<void> => {
     if (opts.code !== undefined && opts.code !== '') await api.stepUp(opts.code);
@@ -130,7 +154,7 @@ export function AdminQueue() {
       await runAction(pending.scope, pending.action, { code, reason });
       setPending(null);
       setNotice(`${pending.label}: done.`);
-      await load(domain, state);
+      await load(domain);
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === 'invalid_code') {
         setCode('');
@@ -159,73 +183,56 @@ export function AdminQueue() {
     );
   };
 
+  // The recipient opens the row's evidence drawer; the address underlines on hover so it reads as one.
+  const addressButton = (r: Row) => (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="pr-queue-addr-btn"
+      aria-label={`Delivery details for ${r.address}`}
+      onClick={() => {
+        setDetails(r);
+      }}
+    >
+      <span className="pr-admin-mono pr-queue-addr">{r.address}</span>
+    </Button>
+  );
+
+  const rowActions = (r: Row) => (
+    <QueueActions
+      address={r.address}
+      sesConfigured={sesConfigured}
+      onPick={(kind) => {
+        pick(r, kind);
+      }}
+    />
+  );
+
+  // Admin critique X8: rem, % or auto only — a minmax()/fr width is dropped by the table, which is
+  // what truncated "Next attempt".
   const columns: TableColumn<Row>[] = [
-    {
-      key: 'address',
-      header: 'Recipient',
-      width: 'minmax(0, 1.4fr)',
-      cell: (r) => (
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label={`Delivery details for ${r.address}`}
-          onClick={() => {
-            setDetails(r);
-          }}
-        >
-          <span className="pr-mono pr-queue-addr">{r.address}</span>
-        </Button>
-      ),
-    },
-    { key: 'subject', header: 'Subject', width: 'minmax(0, 1.4fr)', cell: (r) => r.subject ?? '(no subject)' },
-    { key: 'state', header: 'State', width: '7.5rem', cell: stateDot },
-    { key: 'transport', header: 'Transport', width: '6rem', cell: (r) => <span className="pr-mono">{r.transport}</span> },
-    { key: 'attempts', header: 'Attempts', width: '6rem', numeric: true, cell: (r) => String(r.attempts) },
-    { key: 'nextAttemptAt', header: 'Next attempt', width: '11rem', cell: (r) => when(r.nextAttemptAt) },
-    {
-      key: 'actions',
-      header: 'Actions',
-      width: '6.5rem',
-      align: 'end',
-      cell: (r) => (
-        <QueueActions
-          address={r.address}
-          sesConfigured={sesConfigured}
-          onPick={(kind) => {
-            pick(r, kind);
-          }}
-        />
-      ),
-    },
+    { key: 'address', header: 'Recipient', width: 'auto', cell: addressButton },
+    { key: 'subject', header: 'Subject', width: '30%', cell: (r) => <span title={r.subject ?? undefined}>{r.subject ?? '(no subject)'}</span> },
+    { key: 'state', header: 'State', width: '8rem', cell: stateDot },
+    { key: 'transport', header: 'Transport', width: '6.5rem', cell: (r) => <span className="pr-admin-mono">{r.transport}</span> },
+    { key: 'attempts', header: 'Attempts', width: '6rem', numeric: true, align: 'end', cell: (r) => String(r.attempts) },
+    { key: 'nextAttemptAt', header: 'Next attempt', width: '8.5rem', cell: (r) => <RelativeTime iso={r.nextAttemptAt} /> },
+    { key: 'actions', header: hidden('Actions'), width: '5rem', align: 'end', cell: rowActions },
   ];
+
+  const filtered = domain !== '' || state !== '' || message !== '';
+  const empty = filtered ? (
+    <EmptyState kind="no-results" heading="No recipients match" headingLevel={3} size={phone ? 'inline' : 'row'} />
+  ) : (
+    <EmptyState kind="empty" heading="Nothing queued" headingLevel={3} size={phone ? 'inline' : 'row'} />
+  );
 
   return (
     <Page>
       <PageHeader
         title="Outbound queue"
-        description="Queued, deferred, held and failed outbound mail: retry now, bounce, delete or force SES — per message, or across a whole domain below."
-        {...(shown === null ? {} : { count: shown.length, countNoun: { one: 'recipient', other: 'recipients' } })}
+        description="Queued, deferred, held and failed outbound mail. Filter by a domain to act on all of its recipients at once."
       />
-      <Cluster gap="12">
-        <FormField label="Domain" width="sm">
-          <Input appearance="filled"
-            value={domain}
-            placeholder="example.com"
-            onChange={(e) => {
-              setFilter('domain', e.target.value.trim().toLowerCase());
-            }}
-          />
-        </FormField>
-        <FormField label="State" width="sm">
-          <Select appearance="filled"
-            options={STATE_OPTIONS}
-            value={state}
-            onValueChange={(v) => {
-              setFilter('state', v);
-            }}
-          />
-        </FormField>
-      </Cluster>
 
       {message === '' ? null : (
         <Alert
@@ -252,95 +259,78 @@ export function AdminQueue() {
         </Alert>
       )}
 
-      {loadError !== null ? (
-        <LoadFailed error={loadError} what="the queue" onRetry={() => void load(domain, state)} />
-      ) : shown === null ? (
-        <Loading label="Loading the queue" />
-      ) : phone ? (
-        <DataList aria-label="Outbound queue" empty={<EmptyState kind="empty" heading="Nothing queued" headingLevel={3} size="inline" />}>
-          {shown.map((r) => (
-            <DataListRow
-              key={r.id}
-              title={
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Delivery details for ${r.address}`}
-                  onClick={() => {
-                    setDetails(r);
-                  }}
-                >
-                  <span className="pr-mono pr-queue-addr">{r.address}</span>
-                </Button>
-              }
-              description={`${r.subject ?? '(no subject)'} · ${r.transport} · ${String(r.attempts)} ${r.attempts === 1 ? 'attempt' : 'attempts'} · next ${when(r.nextAttemptAt)}`}
-              meta={stateDot(r)}
-              truncate={false}
-              actions={
-                <QueueActions
-                  address={r.address}
+      <Card as="section" aria-label="Queued recipients" className="pr-table-card">
+        <FilterBar
+          className="pr-table-toolbar"
+          aria-label="Filter the queue"
+          trailing={
+            <>
+              {current === null ? null : <span data-testid="queue-count">{recipientCount(current.count, current.capped)}</span>}
+              {domain === '' ? null : (
+                <DomainActions
+                  domain={domain}
                   sesConfigured={sesConfigured}
-                  onPick={(kind) => {
-                    pick(r, kind);
+                  onPick={(kind, label) => {
+                    openConfirm({ kind: 'domain', domain }, kind, label);
                   }}
                 />
-              }
-            />
-          ))}
-        </DataList>
-      ) : (
-        <Table
-          className="pr-admin-table pr-admin-table--fixed"
-          caption="Outbound queue"
-          captionHidden
-          columns={columns}
-          rows={shown}
-          rowKey={(r) => r.id}
-          empty={<EmptyState kind="empty" heading="Nothing queued" size="row" />}
-        />
-      )}
+              )}
+            </>
+          }
+        >
+          <SearchField
+            aria-label="Domain"
+            placeholder="Filter by domain"
+            value={domain}
+            onChange={(e) => {
+              setFilter('domain', e.target.value.trim().toLowerCase());
+            }}
+          />
+          <SegmentedControl
+            aria-label="State"
+            value={state}
+            onValueChange={(v) => {
+              setFilter('state', v);
+            }}
+            items={queueSegmentItems(narrowed, phone)}
+          />
+        </FilterBar>
 
-      <Section title="Bulk, by domain" description="Bounded to 500 recipients per request." surface="plain">
-        <Cluster gap="12">
-          <FormField label="Domain" width="sm">
-            <Input appearance="filled"
-              value={bulkDomain}
-              placeholder="example.com"
-              onChange={(e) => {
-                setBulkDomain(e.target.value.trim().toLowerCase());
-              }}
-            />
-          </FormField>
-          <Button
-            variant="secondary"
-            disabled={bulkDomain === ''}
-            onClick={() => { openConfirm({ kind: 'domain', domain: bulkDomain }, 'retry', `Retry every recipient at ${bulkDomain}`); }}
-          >
-            Retry domain
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={bulkDomain === '' || !sesConfigured}
-            onClick={() => { openConfirm({ kind: 'domain', domain: bulkDomain }, 'force-ses', `Force SES for ${bulkDomain}`); }}
-          >
-            Force SES for domain
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={bulkDomain === ''}
-            onClick={() => { openConfirm({ kind: 'domain', domain: bulkDomain }, 'bounce', `Bounce every recipient at ${bulkDomain}`); }}
-          >
-            Bounce domain
-          </Button>
-          <Button
-            variant="danger-ghost"
-            disabled={bulkDomain === ''}
-            onClick={() => { openConfirm({ kind: 'domain', domain: bulkDomain }, 'delete', `Delete every recipient at ${bulkDomain}`); }}
-          >
-            Delete domain
-          </Button>
-        </Cluster>
-      </Section>
+        {current?.capped === true ? (
+          <p className="pr-card-note" data-testid="queue-capped">
+            Showing the first {QUEUE_LIST_CAP} by next attempt. Filter by a domain or a state to see the rest.
+          </p>
+        ) : null}
+        {loadError !== null ? (
+          <div className="pr-card-note">
+            <LoadFailed error={loadError} what="the queue" onRetry={() => void load(domain)} />
+          </div>
+        ) : shown === null ? (
+          <div className="pr-card-note">
+            <Loading label="Loading the queue" />
+          </div>
+        ) : phone ? (
+          <DataList aria-label="Outbound queue" className="pr-card-list" empty={empty}>
+            {shown.map((r) => (
+              <DataListRow
+                key={r.id}
+                title={addressButton(r)}
+                description={
+                  <>
+                    {r.subject ?? '(no subject)'} · <span className="pr-admin-mono">{r.transport}</span> · {String(r.attempts)} {r.attempts === 1 ? 'attempt' : 'attempts'} · next{' '}
+                    <RelativeTime iso={r.nextAttemptAt} />
+                  </>
+                }
+                meta={stateDot(r)}
+                truncate={false}
+                actions={rowActions(r)}
+              />
+            ))}
+          </DataList>
+        ) : (
+          <Table className="pr-admin-table pr-admin-table--fixed" caption="Outbound queue" captionHidden columns={columns} rows={shown} rowKey={(r) => r.id} empty={empty} />
+        )}
+      </Card>
 
       <QueueDrawer
         row={details}

@@ -16,6 +16,35 @@ export function keyStatus(key: Pick<CryptoKeyJson, 'revokedAt' | 'expiresAt'>, n
   return 'active';
 }
 
+/**
+ * A key's status as a dot and a word (PST-T-17.10): Active is the healthy state, so neutral (D-016);
+ * Expired asks you to make or fetch a new one, so warning; Revoked was a deliberate end, so idle.
+ */
+export function keyStatusDot(status: KeyStatus): { label: string; tone: 'neutral' | 'warning' | 'idle' } {
+  if (status === 'revoked') return { label: 'Revoked', tone: 'idle' };
+  if (status === 'expired') return { label: 'Expired', tone: 'warning' };
+  return { label: 'Active', tone: 'neutral' };
+}
+
+export type KeyAction = 'export-public' | 'export-private' | 'revoke' | 'remove';
+
+/**
+ * The row's ⋯ menu (PST-T-17.10): your own key exports either half and revokes (never deleted —
+ * mail already encrypted to it must still open); a contact's key exports, is marked revoked, or is
+ * removed. "…" marks the items that open a dialog first.
+ */
+export function keyActions(key: Pick<CryptoKeyJson, 'owner' | 'hasPrivate' | 'revokedAt'>): { action: KeyAction; label: string }[] {
+  const live = key.revokedAt === null;
+  if (key.owner === 'own') {
+    return [
+      { action: 'export-public', label: 'Export public key' },
+      ...(key.hasPrivate ? [{ action: 'export-private' as const, label: 'Export private key…' }] : []),
+      ...(live ? [{ action: 'revoke' as const, label: 'Revoke…' }] : []),
+    ];
+  }
+  return [{ action: 'export-public', label: 'Export key' }, ...(live ? [{ action: 'revoke' as const, label: 'Mark revoked…' }] : []), { action: 'remove', label: 'Remove' }];
+}
+
 /** A fingerprint as people compare them: groups of four, upper case. */
 export function formatFingerprint(fp: string): string {
   const clean = fp.replace(/[\s:]/g, '').toUpperCase();

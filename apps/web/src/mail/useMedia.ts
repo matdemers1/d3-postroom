@@ -6,6 +6,8 @@ import { useSyncExternalStore } from 'react';
  * panes in 390px of height leave neither a usable list nor a readable message.
  */
 export const SPLIT_QUERY = '(min-width: 768px) and (min-height: 500px)';
+/** A phone, either way up: lists become cards (the complement of SPLIT_QUERY). */
+export const PHONE_QUERY = '(max-width: 767px), (max-height: 499px)';
 /** The shell's `lg`: the sidebar is a column rather than a drawer. */
 export const WIDE_QUERY = '(min-width: 1024px)';
 

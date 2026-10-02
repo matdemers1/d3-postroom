@@ -41,8 +41,38 @@
   font-size: var(--text-12);
 }
 
-.pr-admin-card {
-  border: var(--border-width) solid var(--color-border);
+/*
+ * PST-T-17.8 pre-flight: every admin list sits in a card (`<Card className="pr-table-card">`),
+ * edge to edge, with an optional toolbar row inside it above the header — filters left, count and
+ * actions right. The card's edge comes from @d3cloud/ui 1.5 (DS-T-2.1).
+ */
+.pr-table-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.pr-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.pr-table-toolbar__end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  margin-inline-start: auto;
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+}
+
+.pr-table-card .d3-dlist {
+  margin: 0;
 }
 
 /* A value and its qualifier on one line (a name and "This session"). */
@@ -86,6 +116,26 @@
   }
 }
 
+/* A stat's footnote is one line; the whole of it is in its title (admin critique 2.1 #5). */
+.pr-stat-foot {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* On a phone the tile is half as wide and a title is hover-only, so the footnote wraps to two lines
+ * instead (a time leads it, so the clamp never cuts the time). PHONE_QUERY's breakpoint. */
+@media (max-width: 767px), (max-height: 499px) {
+  .pr-stat-foot {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+}
+
 .pr-health__stack {
   display: flex;
   flex-direction: column;
@@ -95,19 +145,6 @@
 
 .pr-health__svc {
   font-weight: var(--weight-medium);
-}
-
-.pr-health__state,
-.pr-health__kv {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-6);
-  min-width: 0;
-}
-
-.pr-health__kv .pr-mono {
-  overflow-wrap: anywhere;
 }
 
 /* Admin › DNS & DKIM: a record value wraps anywhere, so one DKIM key never widens the page. Its rows
@@ -170,4 +207,361 @@
 .pr-health-action {
   display: block;
   margin-top: var(--space-4);
+}
+
+/* ─── PST-T-17.1 (PST-REQ-194, PST-REQ-155): Health, Outbound queue and Deliverability on the canvas ─ */
+
+/* Visually hidden, still announced: the row-actions column header (admin critique X9). */
+.pr-admin-vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A technical value (address, IP, transport) on the row's baseline: 13px beside 14px text, not 12. */
+.pr-admin-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  vertical-align: baseline;
+}
+
+/* A short phrase that must not break ("since 1 min"). */
+.pr-nowrap {
+  white-space: nowrap;
+}
+
+/* A card's head row (CardHead): the card's pr-table-toolbar, holding its h2, a muted summary and a
+ * link or legend at the end. With nothing under it, it drops its hairline into the card's edge. */
+.pr-card-head:last-child {
+  border-block-end: 0;
+}
+
+.pr-card-head__lead {
+  display: flex;
+  flex: 1 1 12rem;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pr-card-head__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-8);
+}
+
+.pr-card-head__title {
+  margin: 0;
+  color: var(--color-fg);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.pr-card-head__meta,
+.pr-card-head__desc {
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+}
+
+.pr-card-head__desc {
+  margin: 0;
+  max-width: 72ch;
+}
+
+/* A second head inside the same card (TLS "Failure reasons"): a hairline above it too. */
+.pr-card-head--sub {
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.pr-card-note {
+  margin: 0;
+  padding: var(--space-12) var(--space-16);
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+}
+
+.pr-card-body {
+  padding: var(--space-16);
+}
+
+/* Health's Deliverability card: one 44px row per record — the name, one truncated reason, the status. */
+.pr-kv-list {
+  margin: 0;
+}
+
+.pr-kv {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: 44px;
+  padding: var(--space-8) var(--space-16);
+  font-size: var(--text-13);
+}
+
+.pr-kv + .pr-kv {
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.pr-kv__k {
+  flex: none;
+  width: 3.5rem;
+  margin: 0;
+  color: var(--color-fg-muted);
+}
+
+.pr-kv__v {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-12);
+  min-width: 0;
+  margin: 0;
+}
+
+.pr-kv__reason {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-kv__v > .d3-sdot {
+  flex: none;
+}
+
+/* D3 UI 1.5 zeroes a DataList row's inline padding inside a card (the card pads); a pr-table-card
+ * runs edge to edge with no padding, so its rows take the toolbar's 16px inset back. */
+/* Every admin list card, not only Health/Queue/Deliverability's: DNS, Jobs, Suppressions, Sign-in
+ * sessions and Live SMTP put their phone DataLists in a pr-table-card too. */
+.pr-table-card .d3-dlist .d3-dlrow {
+  padding-inline: var(--space-16);
+}
+
+/* Admin lists as cards on a phone (admin critique X6): the row's one action stays in a trailing
+ * slot beside the text instead of dropping to its own line. The same breakpoint as PHONE_QUERY
+ * (mail/useMedia.ts), which is what switches these screens from Table to DataList. */
+@media (max-width: 767px), (max-height: 499px) {
+  .pr-card-list .d3-dlrow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .pr-card-list .d3-dlrow__text {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .pr-card-list .d3-dlrow__meta {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .pr-card-list .d3-dlrow__actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    margin: 0 0 0 var(--space-8);
+  }
+}
+
+/* The FilterBar is the card's toolbar; below md it stacks its controls full width again. */
+@media (max-width: 767.98px) {
+  .d3-fb.pr-table-toolbar {
+    align-items: stretch;
+  }
+
+  /* The column runs vertically here, so a flex-basis would be a height (lists.css gives a toolbar
+   * search an 18rem basis): the field is its own height, full width. */
+  .d3-fb.pr-table-toolbar .d3-fb__controls > .d3-search {
+    flex: none;
+  }
+}
+
+/* Outbound queue: the address reads as the drawer's link on hover; the bulk menu's domain ellipsizes. */
+.pr-queue-addr-btn:hover .pr-queue-addr {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pr-queue-bulk {
+  max-width: 18rem;
+}
+
+.pr-queue-bulk__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Deliverability: the header's Range and Refresh, wrapping as one group on a phone. */
+.pr-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.pr-deliv-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-20);
+  align-items: start;
+}
+
+@media (min-width: 1280px) {
+  .pr-deliv-cols--side {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+}
+
+.pr-deliv-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-20);
+  align-items: start;
+}
+
+/* By source (six columns) beside By reporter (five) once there is room for both (admin critique
+ * 2.3 #3); the label columns are `auto`, so they give way first. */
+@media (min-width: 1200px) {
+  .pr-deliv-pair {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* A cell of two lines (an address over who reported it): each line ellipsizes on its own. */
+.pr-cell-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pr-cell-stack__line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The DMARC chart is drawn at the frame's pixel width; under 280px the frame scrolls instead. */
+.pr-chart {
+  margin: 0;
+}
+
+.pr-chart__frame {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.pr-chart__frame > svg {
+  display: block;
+}
+
+.pr-chart-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  color: var(--color-fg-muted);
+  font-size: var(--text-12);
+}
+
+.pr-chart-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+/* Policy progression: one block per domain, a 14-segment meter for the clean days. */
+.pr-progress-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-16);
+}
+
+.pr-progress + .pr-progress {
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.pr-progress__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.pr-progress__domain {
+  font-weight: var(--weight-semibold);
+}
+
+.pr-progress__text {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+}
+
+.pr-progress__meter {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.pr-progress__seg {
+  height: 6px;
+  border-radius: var(--radius-xs);
+  background: var(--color-border);
+}
+
+.pr-progress__seg--on {
+  background: var(--color-fg-muted);
+}
+
+.pr-progress__txt {
+  display: block;
+  padding: var(--space-8);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.pr-progress__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/*
+ * A segmented filter in an admin toolbar (Jobs has six states) can be wider than a phone: it keeps
+ * to the toolbar's width and scrolls sideways inside itself (D3 UI's .d3-seg scrolls on overflow),
+ * rather than pushing past the card edge where the card clips it. PST-T-17.2, admin-phone.spec.
+ */
+.pr-table-toolbar,
+.pr-table-toolbar .d3-fb__controls {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pr-table-toolbar .d3-seg {
+  max-width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 767px), (max-height: 499px) {
+  .pr-table-toolbar .d3-fb__controls {
+    width: 100%;
+  }
 }

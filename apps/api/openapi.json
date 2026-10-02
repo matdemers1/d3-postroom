@@ -653,6 +653,163 @@
         ],
         "additionalProperties": false
       },
+      "D3AuthSettings": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "console",
+              "server_file",
+              "none"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "issuer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clientId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secretSet": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable",
+              "not_configured"
+            ]
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redirectUri": {
+            "type": "string"
+          },
+          "backchannelLogoutUri": {
+            "type": "string"
+          },
+          "postLogoutRedirectUri": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "object",
+            "properties": {
+              "client_id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "const": "Postroom"
+              },
+              "client_type": {
+                "type": "string",
+                "const": "confidential_web"
+              },
+              "redirect_uris": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "post_logout_redirect_uris": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "backchannel_logout_uri": {
+                "type": "string"
+              },
+              "roles": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "display": {
+                      "type": "string"
+                    },
+                    "default": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "display"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "client_id",
+              "name",
+              "client_type",
+              "redirect_uris",
+              "post_logout_redirect_uris",
+              "backchannel_logout_uri",
+              "roles"
+            ],
+            "additionalProperties": false
+          },
+          "signedOut": {
+            "description": "PUT and DELETE only: the change ended D3 Auth sessions and the caller’s own was one of them; its cookie is cleared.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "enabled",
+          "issuer",
+          "clientId",
+          "secretSet",
+          "status",
+          "lastError",
+          "redirectUri",
+          "backchannelLogoutUri",
+          "postLogoutRedirectUri",
+          "manifest"
+        ],
+        "additionalProperties": false
+      },
+      "D3AuthTestResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "authorizationEndpoint": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "issuer"
+        ],
+        "additionalProperties": false
+      },
       "DnsCheckRow": {
         "type": "object",
         "properties": {
@@ -1526,6 +1683,29 @@
         ],
         "additionalProperties": false
       },
+      "IdentityUnlinkResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "endedSessions": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "signedOut": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "endedSessions",
+          "signedOut"
+        ],
+        "additionalProperties": false
+      },
       "InviteRemoveResult": {
         "type": "object",
         "properties": {
@@ -1798,6 +1978,47 @@
           "secret"
         ],
         "additionalProperties": false
+      },
+      "LinkedIdentityList": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "issuer": {
+              "type": "string"
+            },
+            "email": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "linkedAt": {
+              "type": "string",
+              "description": "When the link was made (the row’s created_at), ISO 8601."
+            },
+            "lastUsedAt": {
+              "description": "The last sign-in through it, ISO 8601, or null.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "issuer",
+            "email",
+            "linkedAt",
+            "lastUsedAt"
+          ],
+          "additionalProperties": false
+        }
       },
       "Mailbox": {
         "type": "object",
@@ -4105,6 +4326,29 @@
           "designed": {
             "type": "boolean",
             "description": "The HTML paints its own page (a bgcolor/background attribute, or a non-white background declaration): it renders on a white page the client should frame. False: it renders on a transparent page in the requested theme (PST-T-15.12)."
+          },
+          "heightEstimate": {
+            "type": "object",
+            "properties": {
+              "narrow": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "description": "Estimated document height in CSS px in a frame 360 px wide (layout tables linearised)."
+              },
+              "wide": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "description": "Estimated document height in CSS px in a frame 720 px wide."
+              }
+            },
+            "required": [
+              "narrow",
+              "wide"
+            ],
+            "additionalProperties": false,
+            "description": "How tall the rendered document is likely to be, estimated server-side from the sanitised markup: the frame runs no script, so it cannot report its own height. Interpolate for the frame width in hand and clamp (PST-T-17.3)."
           }
         },
         "required": [
@@ -4114,7 +4358,8 @@
           "remoteImages",
           "trackersBlocked",
           "linksCleaned",
-          "designed"
+          "designed",
+          "heightEstimate"
         ],
         "additionalProperties": false
       },
@@ -5479,6 +5724,422 @@
     }
   ],
   "paths": {
+    "/api/account/identities": {
+      "get": {
+        "operationId": "listLinkedIdentities",
+        "tags": [
+          "Account"
+        ],
+        "summary": "The D3 Auth identities linked to the signed-in account (PST-REQ-202).",
+        "description": "Link one with GET /api/auth/oidc/start?link=1 after a fresh sign-in.",
+        "responses": {
+          "200": {
+            "description": "Oldest link first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkedIdentityList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/identities/{id}": {
+      "delete": {
+        "operationId": "unlinkIdentity",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Unlink one of your D3 Auth identities, ending the sessions that signed in through it (PST-REQ-202).",
+        "description": "Needs a fresh step-up. Audited as auth.identity.unlink. Another account’s link answers 404.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unlinked; signedOut is true when the caller’s own session came through it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityUnlinkResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing CSRF header, or no fresh step-up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a link of the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "last_sign_in_method: the account has no password and this is its only identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/auth/d3auth": {
+      "delete": {
+        "operationId": "disableD3Auth",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Turn Sign in with D3 Auth off, over the server file as well (PST-REQ-201).",
+        "description": "Needs a fresh step-up. The saved row wins over the D3AUTH_* server file, and the live provider is replaced in-process, so /api/auth/state reflects it on the next request with no restart. Saves { enabled: false }, which wins over the server file with or without the server key, and removes the provider, so the button is disabled. Ends every D3 Auth session (auth.session.revoke-d3auth); signedOut says whether the caller's own was one. Audited as auth.d3auth.disable.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Turned off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/D3AuthSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or (writes) no fresh step-up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getD3AuthSettings",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Sign in with D3 Auth: where its settings come from, whether D3 Auth answers, and what to register there (PST-REQ-201, PST-REQ-204).",
+        "description": "Never returns the client secret, only secretSet. Carries the exact redirect, back-channel logout and post-logout URIs and a ready-to-paste D3 Auth app manifest built from the server origin. Admin only.",
+        "responses": {
+          "200": {
+            "description": "The settings in force.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/D3AuthSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or (writes) no fresh step-up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveD3AuthSettings",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Save the issuer, client ID and (sealed under the server key) client secret, and use them now (PST-REQ-201).",
+        "description": "Needs a fresh step-up. The saved row wins over the D3AUTH_* server file, and the live provider is replaced in-process, so /api/auth/state reflects it on the next request with no restart. Audited as auth.d3auth.configure, before and after without the secret. The saved secret is kept only for the same issuer and client ID. A changed issuer or client ID ends every D3 Auth session (audited as auth.session.revoke-d3auth); signedOut says whether the caller's own was one, and its cookie is cleared.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "issuer": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "description": "The D3 Auth issuer: an https URL (plain http only for localhost), with no query, fragment or credentials. A trailing slash is dropped."
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^[\\x21-\\x7e]+$",
+                    "description": "The client ID D3 Auth issued for Postroom."
+                  },
+                  "clientSecret": {
+                    "description": "Required when no secret is saved yet; left out, the saved one is kept. Sealed under the server key; never returned.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "pattern": "^\\P{Cc}+$"
+                  }
+                },
+                "required": [
+                  "issuer",
+                  "clientId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved and in force.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/D3AuthSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid issuer or client ID, or no secret given while none is saved or while the issuer or client ID changes (fields[].path clientSecret).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or (writes) no fresh step-up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another save changed the settings between the check and the commit; reload and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server key (POSTROOM_KEK) is not loaded, so a secret cannot be sealed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/auth/d3auth/test": {
+      "post": {
+        "operationId": "testD3AuthIssuer",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Fetch an issuer’s discovery document, the one given or the one in force, and say whether it answers.",
+        "description": "No secret involved and nothing saved; the attempt is audited as auth.d3auth.test. The discovery document is read up to 256 KiB. Ten a minute per account. Admin only.",
+        "parameters": [
+          {
+            "name": "x-postroom-csrf",
+            "in": "header",
+            "required": true,
+            "description": "Must be 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "issuer": {
+                    "description": "The issuer to try; left out, the one in force.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The outcome; ok is false with error when discovery failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/D3AuthTestResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid issuer, or none given and none configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin, missing CSRF header, or (writes) no fresh step-up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "More than ten tests in a minute.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/dns": {
       "get": {
         "operationId": "checkDns",

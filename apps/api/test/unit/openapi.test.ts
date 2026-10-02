@@ -145,6 +145,13 @@ describe('OpenAPI generation (PST-REQ-085)', () => {
         'GET /api/admin/suppressions',
         'POST /api/admin/suppressions',
         'DELETE /api/admin/suppressions/{id}',
+        // PST-T-17.6 (PST-ADR-014): Sign in with D3 Auth from the console, and linked identities.
+        'GET /api/admin/auth/d3auth',
+        'PUT /api/admin/auth/d3auth',
+        'DELETE /api/admin/auth/d3auth',
+        'POST /api/admin/auth/d3auth/test',
+        'GET /api/account/identities',
+        'DELETE /api/account/identities/{id}',
       ].sort(),
     );
     expect(doc.paths['/api/mailboxes/{id}/messages']?.['get']?.parameters?.map((p) => `${p.in}:${p.name}`)).toEqual(['path:id', 'query:cursor', 'query:limit', 'query:keyword']);

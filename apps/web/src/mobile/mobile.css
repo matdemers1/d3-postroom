@@ -45,6 +45,14 @@
   animation: pr-pop-in var(--motion-drawer) backwards;
 }
 
+/* PST-T-17.8 (critique X13): a pushed Settings, Admin, Calendar or Contacts screen paints the sheet
+ * down to the bottom of the viewport, so a short page ends in sheet, not in a band of --color-bg. */
+.pr-push--page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--color-surface);
+}
+
 /* A level inside the mail view fills it: the screen, then (in a thread) the bottom action bar. */
 .pr-push--level {
   display: flex;
@@ -137,6 +145,29 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+/* PST-T-17.8 (critique X12): the large-title bar. While the page's h1 shows below it the bar is
+ * flush and empty; when the h1 has scrolled under it the bar's title and hairline come in together. */
+@keyframes pr-cbar-title-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.pr-cbar {
+  transition: border-bottom-color var(--dur-2) var(--ease-out);
+}
+
+/* A Settings or Admin bar has one short Back ("‹ Settings", "‹ Admin") and at most one trailing icon,
+ * so its sides give the title more room: "Security & devices" and "Sign in with D3 Auth" fit whole
+ * at 390 px rather than truncating. */
+.pr-cbar[data-large-title] {
+  grid-template-columns: minmax(100px, 1fr) minmax(0, auto) minmax(100px, 1fr);
+}
+
+.pr-cbar[data-large-title='collapsed'] .pr-cbar__title {
+  animation: pr-cbar-title-in var(--dur-2) var(--ease-out) backwards;
 }
 
 /* --- Push rows: the Mailboxes root and the Settings / Admin indexes -------------------------------- */
@@ -255,12 +286,6 @@
 .pr-mailboxes__account,
 .pr-pindex__account {
   padding: var(--space-8) var(--space-16);
-}
-
-.pr-place-account {
-  margin-top: var(--space-24);
-  padding: var(--space-8) var(--space-16) var(--space-24);
-  border-top: var(--border-width) solid var(--color-border);
 }
 
 /* --- The thread's bottom action bar ------------------------------------------------------------------ */
@@ -426,6 +451,14 @@
 @media (prefers-reduced-motion: reduce) {
   /* Asked for less motion: a push is an instant swap. */
   .pr-push[data-push] {
+    animation: none;
+  }
+
+  .pr-cbar {
+    transition: none;
+  }
+
+  .pr-cbar[data-large-title='collapsed'] .pr-cbar__title {
     animation: none;
   }
 }

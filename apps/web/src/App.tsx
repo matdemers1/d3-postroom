@@ -18,6 +18,7 @@ import { AdminSuppressions } from './screens/AdminSuppressions';
 import { AdminDns } from './screens/AdminDns';
 import { AdminSessions } from './screens/AdminSessions';
 import { AdminSmtpViewer } from './admin/smtp-viewer/AdminSmtpViewer';
+import { AdminD3Auth } from './admin/sign-in/AdminD3Auth';
 import { AppPasswords } from './screens/AppPasswords';
 import { Aliases } from './screens/Aliases';
 import { DeviceSetup } from './screens/DeviceSetup';
@@ -63,6 +64,8 @@ const SCREENS: Readonly<Record<ShellRouteId, ReactElement>> = {
   adminSmtp: <AdminSmtpViewer />,
   adminJobs: <AdminJobs />,
   adminSessions: <AdminSessions />,
+  // PST-T-17.7: Sign in with D3 Auth, configured from the console.
+  adminSignIn: <AdminD3Auth />,
   adminSuppressions: <AdminSuppressions />,
   adminSetup: <SetupWizard />,
 };

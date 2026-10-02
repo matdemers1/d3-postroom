@@ -16,10 +16,10 @@ export const STATE_LABEL: Readonly<Record<DeliveryState, string>> = {
 /** `neutral` for anything in progress, parked or terminal; `attention` where seeing it should
  *  change what the reader does next; `danger` for a permanent failure — matches @d3cloud/ui's
  *  Badge tones. */
-export const STATE_TONE: Readonly<Record<DeliveryState, 'neutral' | 'attention' | 'danger'>> = {
+export const STATE_TONE: Readonly<Record<DeliveryState, 'neutral' | 'warning' | 'danger'>> = {
   queued: 'neutral',
   attempting: 'neutral',
-  deferred: 'attention',
+  deferred: 'warning',
   delivered: 'neutral',
   bounced: 'danger',
   cancelled: 'neutral',

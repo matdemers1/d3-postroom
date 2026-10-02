@@ -3,19 +3,28 @@
 // verifies against. Generate an OpenPGP key (Ed25519 + X25519), import an armored key or a PEM
 // certificate (with its private key, it is yours), export either half (the private half after a
 // fresh step-up), revoke your own, remove a contact's. Every change is audited on the server.
+//
+// PST-T-17.10: two cards, "Your keys" and "Contacts' keys". Each card's head holds its actions, and
+// Generate / Import open their form in place inside that card, above its list, on the 164/360 grid —
+// no always-open forms further down the page. Status is a dot and a word; a row's actions sit behind
+// one ⋯ menu.
 import '../settings/settings.css';
-import { type ReactNode, type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
+import '../screens/inline-forms.css';
+import { type RefObject, type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  Badge,
   Button,
-  Cluster,
   DataList,
   DataListRow,
   EmptyState,
   FormActions,
   FormField,
+  IconButton,
   Input,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
   Modal,
   ModalClose,
   Page,
@@ -24,13 +33,16 @@ import {
   Section,
   Select,
   Stack,
+  StatusDot,
   Textarea,
 } from '@d3cloud/ui';
 import { ApiError, api, describeError } from '../api';
+import { RelativeTime } from '../components/RelativeTime';
 import { useOptionalMail } from '../mail/MailContext';
+import { MoreIcon } from '../mail/thread/icons';
 import { Loading, LoadFailed } from '../screens/states';
 import { keysApi, type CryptoKeyJson, type RevocationReason } from './api';
-import { formatFingerprint, KIND_LABEL, keyErrorText, keyStatus, sniffImport, sortKeys } from './format';
+import { formatFingerprint, KIND_LABEL, keyActions, keyErrorText, keyStatus, keyStatusDot, sniffImport, sortKeys, type KeyAction } from './format';
 
 const REASONS: { value: RevocationReason; label: string }[] = [
   { value: 'none', label: 'No reason given' },
@@ -39,7 +51,11 @@ const REASONS: { value: RevocationReason; label: string }[] = [
   { value: 'compromised', label: 'Compromised (lost or stolen)' },
 ];
 
-const when = (iso: string): string => new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
+/** Which form is open, and in which card: one at a time, so the page never holds two Address fields. */
+type OpenForm = { kind: 'generate' } | { kind: 'import'; card: 'own' | 'contacts' } | null;
+
+/** The head button each open form came from, so closing it hands focus back there. */
+type Opener = 'generate' | 'import-own' | 'import-contacts';
 
 function download(text: string, filename: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/octet-stream' }));
@@ -55,11 +71,13 @@ function download(text: string, filename: string): void {
   }
 }
 
-function StatusBadge({ keyRow }: { keyRow: CryptoKeyJson }) {
-  const status = keyStatus(keyRow);
-  if (status === 'revoked') return <Badge size="sm" tone="danger">Revoked</Badge>;
-  if (status === 'expired') return <Badge size="sm" tone="attention">Expired</Badge>;
-  return <Badge size="sm">Active</Badge>;
+function KeyStatusDot({ keyRow }: { keyRow: CryptoKeyJson }) {
+  const dot = keyStatusDot(keyStatus(keyRow));
+  return (
+    <StatusDot size="sm" tone={dot.tone}>
+      {dot.label}
+    </StatusDot>
+  );
 }
 
 export function Keys() {
@@ -68,15 +86,24 @@ export function Keys() {
   const [loadError, setLoadError] = useState<unknown>(null);
   const [notice, setNotice] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
 
+  const [open, setOpen] = useState<OpenForm>(null);
+  // The head buttons unmount while their form is open; closing it (Cancel, or done) hands focus back
+  // to the one that opened it, as Account's Change password does (PST-T-16.23).
+  const generateButton = useRef<HTMLButtonElement>(null);
+  const importOwnButton = useRef<HTMLButtonElement>(null);
+  const importContactsButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef<Opener | null>(null);
+  useEffect(() => {
+    if (open !== null || returnFocus.current === null) return;
+    const refs: Record<Opener, RefObject<HTMLButtonElement | null>> = { generate: generateButton, 'import-own': importOwnButton, 'import-contacts': importContactsButton };
+    refs[returnFocus.current].current?.focus();
+    returnFocus.current = null;
+  }, [open]);
+
   const [genAddress, setGenAddress] = useState(mail?.me ?? '');
   const [genName, setGenName] = useState('');
   const [genBusy, setGenBusy] = useState(false);
-  const genAddressRef = useRef<HTMLInputElement>(null);
-
-  const goToGenerate = () => {
-    genAddressRef.current?.scrollIntoView({ block: 'center' });
-    genAddressRef.current?.focus();
-  };
+  const [genError, setGenError] = useState<string | null>(null);
 
   const [importText, setImportText] = useState('');
   const [importKey, setImportKey] = useState('');
@@ -112,18 +139,48 @@ export function Keys() {
     if (genAddress === '' && mail?.me !== null && mail?.me !== undefined) setGenAddress(mail.me);
   }, [mail?.me, genAddress]);
 
+  const openForm = (form: Exclude<OpenForm, null>) => {
+    setNotice(null);
+    setGenError(null);
+    setImportError(null);
+    // One form at a time, and the two import forms share their fields: switching from one card's
+    // import to the other's (or from Generate) must not carry what was pasted into the first.
+    if (open !== null && (open.kind !== form.kind || (open.kind === 'import' && form.kind === 'import' && open.card !== form.card))) {
+      setGenName('');
+      setImportText('');
+      setImportKey('');
+      setImportPass('');
+      setImportAddress('');
+    }
+    setOpen(form);
+  };
+
+  const closeForm = () => {
+    if (open !== null) returnFocus.current = open.kind === 'generate' ? 'generate' : open.card === 'own' ? 'import-own' : 'import-contacts';
+    setOpen(null);
+    setGenName('');
+    setGenError(null);
+    setImportText('');
+    setImportKey('');
+    setImportPass('');
+    setImportAddress('');
+    setImportError(null);
+  };
+
   const generate = (event: SyntheticEvent) => {
     event.preventDefault();
     setNotice(null);
+    setGenError(null);
     setGenBusy(true);
     keysApi
       .generate(genAddress.trim(), genName.trim())
       .then(async ({ key }) => {
         setNotice({ tone: 'info', text: `Generated an OpenPGP key for ${key.address}: ${formatFingerprint(key.fingerprint)}. Export the public key and share it so people can encrypt to you.` });
+        closeForm();
         await load();
       })
       .catch((caught: unknown) => {
-        setNotice({ tone: 'danger', text: keyErrorText(caught) });
+        setGenError(keyErrorText(caught));
       })
       .finally(() => {
         setGenBusy(false);
@@ -150,10 +207,7 @@ export function Keys() {
       .import(input)
       .then(async ({ key }) => {
         setNotice({ tone: 'info', text: `Imported ${key.owner === 'own' ? 'your' : 'a contact’s'} ${KIND_LABEL[key.kind]} key for ${key.address}.` });
-        setImportText('');
-        setImportKey('');
-        setImportPass('');
-        setImportAddress('');
+        closeForm();
         await load();
       })
       .catch((caught: unknown) => {
@@ -237,68 +291,131 @@ export function Keys() {
       });
   };
 
+  const runAction = (action: KeyAction, k: CryptoKeyJson) => {
+    setNotice(null);
+    if (action === 'export-public') exportPublic(k);
+    else if (action === 'export-private') {
+      setExportPass('');
+      setExportError(null);
+      setStepUp(false);
+      setExporting(k);
+    } else if (action === 'revoke') {
+      setReason('none');
+      setRevoking(k);
+    } else remove(k);
+  };
+
   // PST-T-15.6: a key is a row — address, what it is and its fingerprint, its status, its actions —
   // rather than a seven-column table squeezed into the 680px settings column.
-  const keyRow = (k: CryptoKeyJson, actions: ReactNode) => (
+  const keyRow = (k: CryptoKeyJson) => (
     <DataListRow
       key={k.id}
       truncate={false}
       title={k.address}
       description={
         <>
-          {`${KIND_LABEL[k.kind]} · ${k.algorithm} · added ${when(k.createdAt)}`}
+          {`${KIND_LABEL[k.kind]} · ${k.algorithm} · added `}
+          <RelativeTime iso={k.createdAt} />
           <code className="pr-key-fpr">{formatFingerprint(k.fingerprint)}</code>
         </>
       }
-      meta={<StatusBadge keyRow={k} />}
-      actions={actions}
+      meta={<KeyStatusDot keyRow={k} />}
+      actions={
+        <Menu>
+          <MenuTrigger>
+            <IconButton size="sm" variant="ghost" label={`Actions for the ${KIND_LABEL[k.kind]} key for ${k.address}`} icon={<MoreIcon />} />
+          </MenuTrigger>
+          <MenuContent align="end">
+            {keyActions(k).map((item) => (
+              <MenuItem
+                key={item.action}
+                onSelect={() => {
+                  runAction(item.action, k);
+                }}
+              >
+                {item.label}
+              </MenuItem>
+            ))}
+          </MenuContent>
+        </Menu>
+      }
     />
   );
 
-  const ownActions = (k: CryptoKeyJson) => (
-    <Cluster gap="4">
-      <Button size="sm" variant="ghost" aria-label={`Export the public key for ${k.address}`} onClick={() => { exportPublic(k); }}>
-        Export public
-      </Button>
-      {k.hasPrivate ? (
-        <Button size="sm" variant="ghost" aria-label={`Export the private key for ${k.address}`} onClick={() => { setExportPass(''); setExportError(null); setStepUp(false); setExporting(k); }}>
-          Export private
+  const generateForm = (
+    <form className="pr-setform pr-inline-form" aria-labelledby="keys-generate" onSubmit={generate}>
+      <div className="pr-inline-form__head">
+        <h3 id="keys-generate" className="pr-inline-form__title">
+          Generate an OpenPGP key
+        </h3>
+        <p className="pr-inline-form__desc">Ed25519 for signing, X25519 for encryption. The private half stays sealed on the server.</p>
+      </div>
+      <FormField label="Address" width="lg" help="One of your own addresses." {...(genError === null ? {} : { error: genError })}>
+        <Input appearance="filled" autoFocus name="address" type="email" required value={genAddress} onChange={(e) => { setGenAddress(e.target.value); }} />
+      </FormField>
+      <FormField label="Name" width="lg" optional help="Shown in the key’s user ID. Defaults to your display name.">
+        <Input appearance="filled" name="name" maxLength={200} value={genName} onChange={(e) => { setGenName(e.target.value); }} />
+      </FormField>
+      <FormActions className="pr-setform__actions">
+        <Button type="button" onClick={closeForm}>
+          Cancel
         </Button>
-      ) : null}
-      {k.revokedAt === null ? (
-        <Button size="sm" variant="danger-ghost" aria-label={`Revoke the key for ${k.address}`} onClick={() => { setReason('none'); setRevoking(k); }}>
-          Revoke
+        <Button type="submit" variant="primary" loading={genBusy}>
+          Generate key
         </Button>
-      ) : null}
-    </Cluster>
+      </FormActions>
+    </form>
   );
 
-  const contactActions = (k: CryptoKeyJson) => (
-    <Cluster gap="4">
-      <Button size="sm" variant="ghost" aria-label={`Export the key for ${k.address}`} onClick={() => { exportPublic(k); }}>
-        Export
-      </Button>
-      {k.revokedAt === null ? (
-        <Button size="sm" variant="ghost" aria-label={`Mark the key for ${k.address} revoked`} onClick={() => { setReason('none'); setRevoking(k); }}>
-          Mark revoked
-        </Button>
+  const importForm = (card: 'own' | 'contacts') => (
+    <form className="pr-setform pr-inline-form" aria-labelledby="keys-import" onSubmit={doImport}>
+      <div className="pr-inline-form__head">
+        <h3 id="keys-import" className="pr-inline-form__title">
+          {card === 'own' ? 'Import your key' : 'Import a contact’s key'}
+        </h3>
+        <p className="pr-inline-form__desc">
+          {card === 'own' ? 'An OpenPGP secret key, or an S/MIME certificate with its private key.' : 'Their OpenPGP public key or S/MIME certificate.'}
+        </p>
+      </div>
+      <FormField label="Key or certificate" width="lg" help="An armored OpenPGP key block, or a PEM certificate with any intermediates after it." {...(importError === null ? {} : { error: importError })}>
+        <Textarea appearance="filled" mono autoFocus rows={6} value={importText} onChange={(e) => { setImportText(e.target.value); }} />
+      </FormField>
+      {kindOfImport === 'certificate' ? (
+        <FormField label="Private key" width="lg" optional help="PEM PKCS#8. With it, the certificate is yours: you can sign with it and open mail encrypted to it.">
+          <Textarea appearance="filled" mono rows={4} value={importKey} onChange={(e) => { setImportKey(e.target.value); }} />
+        </FormField>
       ) : null}
-      <Button size="sm" variant="danger-ghost" aria-label={`Remove the key for ${k.address}`} onClick={() => { remove(k); }}>
-        Remove
-      </Button>
-    </Cluster>
+      {kindOfImport === 'pgp-secret' || (kindOfImport === 'certificate' && importKey.trim() !== '') ? (
+        <FormField label="Passphrase" width="lg" optional help="If the private key is protected. Postroom stores it sealed instead, without the passphrase.">
+          <PasswordInput value={importPass} autoComplete="off" onChange={(e) => { setImportPass(e.target.value); }} />
+        </FormField>
+      ) : null}
+      <FormField label="Address" width="lg" optional help="Which of the key’s addresses this is for, when it has several.">
+        <Input appearance="filled" value={importAddress} type="email" onChange={(e) => { setImportAddress(e.target.value); }} />
+      </FormField>
+      <FormActions className="pr-setform__actions">
+        <Button type="button" onClick={closeForm}>
+          Cancel
+        </Button>
+        <Button type="submit" variant="primary" loading={importBusy}>
+          Import
+        </Button>
+      </FormActions>
+    </form>
   );
 
   const own = rows?.filter((k) => k.owner === 'own') ?? [];
   const contacts = rows?.filter((k) => k.owner === 'contact') ?? [];
+  const ownFormOpen = open !== null && (open.kind === 'generate' || open.card === 'own');
+  const contactsFormOpen = open?.kind === 'import' && open.card === 'contacts';
 
   return (
-    // PST-T-15.6: the settings grid — a 680px column of Section cards.
-    <Page width="narrow">
+    // PST-T-15.6: the settings grid — a 680px column of Section cards, centred (PST-T-17.10).
+    <Page width="narrow" align="center">
       <PageHeader
-        title="Keys"
-        description="OpenPGP keys and S/MIME certificates: yours sign and decrypt, your contacts’ are what mail to them is encrypted with."
-        {...(rows === null ? {} : { count: rows.length, countNoun: { one: 'key', other: 'keys' } })}
+        title="Encryption keys"
+        description="OpenPGP keys and S/MIME certificates for signing and encrypting mail."
+        {...(rows === null || rows.length === 0 ? {} : { count: rows.length, countNoun: { one: 'key', other: 'keys' } })}
       />
       {notice === null ? null : (
         <Alert tone={notice.tone} dynamic>
@@ -307,82 +424,65 @@ export function Keys() {
       )}
 
       {loadError !== null ? (
-        <LoadFailed error={loadError} what="keys" onRetry={() => void load()} />
+        <Section title="Your keys">
+          <LoadFailed error={loadError} what="keys" headingLevel={3} size="row" onRetry={() => void load()} />
+        </Section>
       ) : rows === null ? (
         <Loading label="Loading keys" />
       ) : (
         <Stack gap="24">
-          <Section title="Your keys" description="Used to sign what you send, and to open mail encrypted to you. Encrypted mail you send is always encrypted to your own key too.">
+          <Section
+            title="Your keys"
+            description="Sign what you send; open mail encrypted to you."
+            actions={
+              ownFormOpen ? null : (
+                <>
+                  <Button ref={importOwnButton} size="sm" onClick={() => { openForm({ kind: 'import', card: 'own' }); }}>
+                    Import
+                  </Button>
+                  <Button ref={generateButton} size="sm" variant="primary" onClick={() => { openForm({ kind: 'generate' }); }}>
+                    Generate a key
+                  </Button>
+                </>
+              )
+            }
+          >
+            {open?.kind === 'generate' ? generateForm : null}
+            {open?.kind === 'import' && open.card === 'own' ? importForm('own') : null}
             {own.length === 0 ? (
-              <EmptyState
-                kind="empty"
-                heading="No keys of your own yet"
-                size="inline"
-                action={<Button size="sm" onClick={goToGenerate}>Generate a key</Button>}
-              >
-                Generate an OpenPGP key below to sign what you send and decrypt mail encrypted to you.
-              </EmptyState>
+              ownFormOpen ? null : (
+                <EmptyState kind="empty" heading="No keys of your own yet" headingLevel={3} size="row">
+                  Generate one, or import a key you already have.
+                </EmptyState>
+              )
             ) : (
-              <DataList aria-label="Your keys">{own.map((k) => keyRow(k, ownActions(k)))}</DataList>
+              <DataList aria-label="Your keys">{own.map((k) => keyRow(k))}</DataList>
             )}
           </Section>
-          <Section title="Contacts’ keys" description="Mail to these addresses can be encrypted; their signatures verify as a known key.">
+          <Section
+            title="Contacts’ keys"
+            description="Encrypt to these addresses; verify their signatures."
+            actions={
+              contactsFormOpen ? null : (
+                <Button ref={importContactsButton} size="sm" onClick={() => { openForm({ kind: 'import', card: 'contacts' }); }}>
+                  Import a key
+                </Button>
+              )
+            }
+          >
+            {contactsFormOpen ? importForm('contacts') : null}
             {contacts.length === 0 ? (
-              <EmptyState kind="empty" heading="No contacts’ keys yet" size="inline">
-                A contact's key appears here once you import it or receive signed mail from them.
-              </EmptyState>
+              contactsFormOpen ? null : (
+                <EmptyState kind="empty" heading="No contacts’ keys yet" headingLevel={3} size="row">
+                  One appears when you import it or receive signed mail.
+                </EmptyState>
+              )
             ) : (
-              <DataList aria-label="Contacts’ keys">{contacts.map((k) => keyRow(k, contactActions(k)))}</DataList>
+              <DataList aria-label="Contacts’ keys">{contacts.map((k) => keyRow(k))}</DataList>
             )}
           </Section>
         </Stack>
       )}
-
-      <Section title="Generate an OpenPGP key" description="An Ed25519 signing key with an X25519 encryption subkey. The private half is kept sealed on the server.">
-        <form onSubmit={generate}>
-          <Stack gap="16">
-            <FormField label="Address" width="lg" help="One of your own addresses.">
-              <Input appearance="filled" ref={genAddressRef} name="address" type="email" required value={genAddress} onChange={(e) => { setGenAddress(e.target.value); }} />
-            </FormField>
-            <FormField label="Name" width="lg" optional help="Shown in the key’s user ID; default your display name.">
-              <Input appearance="filled" name="name" maxLength={200} value={genName} onChange={(e) => { setGenName(e.target.value); }} />
-            </FormField>
-            <FormActions>
-              <Button type="submit" variant="primary" loading={genBusy}>
-                Generate key
-              </Button>
-            </FormActions>
-          </Stack>
-        </form>
-      </Section>
-
-      <Section title="Import a key" description="A contact’s public key or certificate, or your own secret key or certificate with its private key.">
-        <form onSubmit={doImport}>
-          <Stack gap="16">
-            <FormField label="Key or certificate" help="Paste an armored OpenPGP key block, or a PEM certificate (intermediates after it)." {...(importError === null ? {} : { error: importError })}>
-              <Textarea appearance="filled" mono rows={8} value={importText} onChange={(e) => { setImportText(e.target.value); }} />
-            </FormField>
-            {kindOfImport === 'certificate' ? (
-              <FormField label="Private key" optional help="PEM PKCS#8. With it, the certificate is yours: you can sign with it and open mail encrypted to it.">
-                <Textarea appearance="filled" mono rows={6} value={importKey} onChange={(e) => { setImportKey(e.target.value); }} />
-              </FormField>
-            ) : null}
-            {kindOfImport === 'pgp-secret' || (kindOfImport === 'certificate' && importKey.trim() !== '') ? (
-              <FormField label="Passphrase" width="lg" optional help="If the private key is protected. Postroom stores it sealed instead, without the passphrase.">
-                <PasswordInput value={importPass} autoComplete="off" onChange={(e) => { setImportPass(e.target.value); }} />
-              </FormField>
-            ) : null}
-            <FormField label="Address" width="lg" optional help="Which of the key’s addresses this is for, when it has several.">
-              <Input appearance="filled" value={importAddress} type="email" onChange={(e) => { setImportAddress(e.target.value); }} />
-            </FormField>
-            <FormActions>
-              <Button type="submit" variant="primary" loading={importBusy}>
-                Import
-              </Button>
-            </FormActions>
-          </Stack>
-        </form>
-      </Section>
 
       <Modal
         open={revoking !== null}

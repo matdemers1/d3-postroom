@@ -382,33 +382,14 @@
   font-weight: var(--weight-medium);
 }
 
-/* --- Settings → Rules → Sorting corrections ------------------------------------------------------------ */
-
-.pr-corrections__what {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.pr-corrections__subject {
-  font-weight: var(--weight-medium);
-}
-
-.pr-corrections__move {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-6);
-  color: var(--color-fg-muted);
-  font-size: var(--text-12);
-}
-
 /* --- Phone: every control a real 44×44 hit area (PST-T-11.2's rule; e2e/tests/mobile.spec.ts) ------- */
 
 /* 767px, not 599: the phone edge of the one 768/1024 scale (PST-T-16.18). */
 @media (max-width: 767px), (max-height: 499px) {
   /* The header's bucket chip keeps its 20 px pill: its 44 px hit area is an invisible extension
    * above and below (a 44 px-tall filled pill crowded the recipient summary to "to …"). */
-  .pr-mhead .pr-why-control {
+  .pr-mhead .pr-why-control,
+  .pr-feed__item .pr-why-control {
     min-height: 44px;
     min-width: 44px;
   }

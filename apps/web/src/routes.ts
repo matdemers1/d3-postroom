@@ -34,6 +34,7 @@ export type RouteId =
   | 'adminSmtp'
   | 'adminJobs'
   | 'adminSessions'
+  | 'adminSignIn'
   | 'adminSuppressions'
   | 'adminSetup';
 
@@ -103,16 +104,16 @@ export const ROUTES: readonly AppRoute[] = [
   r({
     id: 'settingsDevices',
     path: '/settings/security/devices',
-    title: 'Devices',
+    title: 'App passwords',
     place: 'settings',
     navGroup: 'Security & devices',
     keywords: 'security app passwords mail apps iphone thunderbird',
     hint: 'Mail apps and their app passwords',
   }),
   r({ id: 'settingsAddresses', path: '/settings/addresses', title: 'Addresses', place: 'settings', navGroup: 'Addresses', keywords: 'aliases masked aliases', hint: 'Aliases, masked aliases' }),
-  r({ id: 'settingsRules', path: '/settings/rules', title: 'Rules', place: 'settings', navGroup: 'Rules & sorting', keywords: 'filters sieve sorting corrections' }),
+  r({ id: 'settingsRules', path: '/settings/rules', title: 'Rules & sorting', place: 'settings', navGroup: 'Rules & sorting', keywords: 'filters sieve sorting corrections' }),
   r({ id: 'settingsTemplates', path: '/settings/templates', title: 'Templates', place: 'settings', navGroup: 'Templates', keywords: 'compose templates canned replies' }),
-  r({ id: 'settingsImport', path: '/settings/import', title: 'Import & export', place: 'settings', navGroup: 'Import & export', keywords: 'import mail imap migrate' }),
+  r({ id: 'settingsImport', path: '/settings/import', title: 'Import', place: 'settings', navGroup: 'Import', keywords: 'import mail imap migrate export' }),
   r({ id: 'settingsKeys', path: '/settings/keys', title: 'Encryption keys', place: 'settings', navGroup: 'Encryption keys', keywords: 'keys openpgp pgp s/mime smime certificates' }),
 
   // The Admin console: admins only, reached from the account menu.
@@ -123,6 +124,8 @@ export const ROUTES: readonly AppRoute[] = [
   r({ id: 'adminSmtp', path: '/admin/smtp', title: 'Live SMTP', place: 'admin', navGroup: 'Live SMTP', adminOnly: true, keywords: 'smtp sessions transcripts', hint: 'SMTP transcripts (was “SMTP sessions”)' }),
   r({ id: 'adminJobs', path: '/admin/jobs', title: 'Jobs', place: 'admin', navGroup: 'Jobs', adminOnly: true, keywords: 'queue replay failed pipeline' }),
   r({ id: 'adminSessions', path: '/admin/sessions', title: 'Sign-in sessions', place: 'admin', navGroup: 'Sign-in sessions', adminOnly: true, keywords: 'sessions devices accounts', hint: 'Every account’s web sign-ins (was “Sessions”)' }),
+  // PST-T-17.7 (PST-REQ-201, PST-REQ-204): Sign in with D3 Auth, configured from the console.
+  r({ id: 'adminSignIn', path: '/admin/sign-in', title: 'Sign in with D3 Auth', place: 'admin', navGroup: 'Sign in with D3 Auth', adminOnly: true, keywords: 'oidc d3 auth sso single sign-on' }),
   r({ id: 'adminSuppressions', path: '/admin/suppressions', title: 'Suppressions', place: 'admin', navGroup: 'Suppressions', adminOnly: true, keywords: 'suppression list bounces blocked' }),
   r({ id: 'adminSetup', path: '/admin/setup', title: 'Setup', place: 'admin', navGroup: 'Setup', adminOnly: true, keywords: 'setup wizard domain first run' }),
 ];
