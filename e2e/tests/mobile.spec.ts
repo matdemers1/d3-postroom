@@ -259,7 +259,7 @@ test('Setup and Sign in are usable at 390 px, before any session exists', async 
   operator = await ensureOperator(api);
 
   await page.goto('/signin');
-  await expect(page.getByRole('heading', { name: 'Sign in to Postroom' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true, level: 1 })).toBeVisible();
   await assertMobileFriendly(page, '/signin');
 
   cookies = await signInCookies(api, operator);
