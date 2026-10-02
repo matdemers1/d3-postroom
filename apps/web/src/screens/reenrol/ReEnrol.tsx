@@ -3,9 +3,7 @@ import '../setup/totp.css';
 import { type SyntheticEvent, useEffect, useState } from 'react';
 import {
   Alert,
-  AuthLayout,
   Button,
-  Card,
   Cluster,
   DescriptionItem,
   DescriptionList,
@@ -16,7 +14,7 @@ import {
   Spinner,
   Stack,
 } from '@d3cloud/ui';
-import { PostroomMark } from '../../brand/PostroomMark';
+import { EntryHeading, EntryShell } from '../../entry/EntryShell';
 import { CopyButton } from '../AdminDns';
 import { RecoveryCodes } from '../recovery/RecoveryCodes';
 import { keyGroups } from '../setup/enrolment';
@@ -114,103 +112,97 @@ export function ReEnrol({ onDone }: { onDone: () => void | Promise<void> }) {
   };
 
   return (
-    <AuthLayout
-      title={REENROL_TITLE}
-      description={recovery === null ? REENROL_DESCRIPTION : 'Save your new recovery codes.'}
-      brand={<PostroomMark size={40} decorative />}
-      focusOnMount={false}
-    >
-      <Card>
-        <Stack gap="16">
-          {error === null ? null : (
-            <Alert tone={error === REENROL_EXPIRED_MESSAGE ? 'warning' : 'danger'} title="Your new authenticator isn’t set up yet" dynamic>
-              {error}
-            </Alert>
-          )}
-          {recovery !== null ? (
-            <Stack gap="16">
-              <p>
-                Your new authenticator works. The old one and your old recovery codes have stopped working, so save
-                this new set.
-              </p>
-              <RecoveryCodes
-                codes={recovery.codes}
-                address={key?.address ?? null}
-                createdAt={recovery.at}
-                continueLabel={REENROL_CONTINUE_LABEL}
-                onContinue={() => {
-                  setBusy(true);
-                  void Promise.resolve(onDone()).finally(() => {
-                    setBusy(false);
-                  });
-                }}
-                busy={busy}
-              />
-            </Stack>
-          ) : key === null ? (
-            busy ? (
-              <Spinner label="Making a new key" />
-            ) : (
-              <FormActions layout="stack">
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => {
-                    newKey(null);
-                  }}
-                >
-                  Try again
-                </Button>
-              </FormActions>
-            )
+    <EntryShell wide>
+      <EntryHeading title={REENROL_TITLE}>{recovery === null ? REENROL_DESCRIPTION : 'Save your new recovery codes.'}</EntryHeading>
+      <div className="pr-entry__body">
+        {error === null ? null : (
+          <Alert tone={error === REENROL_EXPIRED_MESSAGE ? 'warning' : 'danger'} title="Your new authenticator isn’t set up yet" dynamic>
+            {error}
+          </Alert>
+        )}
+        {recovery !== null ? (
+          <Stack gap="16">
+            <p>
+              Your new authenticator works. The old one and your old recovery codes have stopped working, so save
+              this new set.
+            </p>
+            <RecoveryCodes
+              codes={recovery.codes}
+              address={key?.address ?? null}
+              createdAt={recovery.at}
+              continueLabel={REENROL_CONTINUE_LABEL}
+              onContinue={() => {
+                setBusy(true);
+                void Promise.resolve(onDone()).finally(() => {
+                  setBusy(false);
+                });
+              }}
+              busy={busy}
+            />
+          </Stack>
+        ) : key === null ? (
+          busy ? (
+            <Spinner label="Making a new key" />
           ) : (
-            <Stack as="form" gap="16" onSubmit={submit} aria-label="Set up a new authenticator">
-              <p>
-                Scan this code with your authenticator app, then enter the six-digit code it shows. Can’t scan it?
-                Type the key by hand, or open the link on this phone.
-              </p>
-              <TotpQr uri={key.otpauthUri} />
-              <DescriptionList>
-                <DescriptionItem term="Setup key">
-                  <Cluster gap="8" align="center">
-                    <code className="pr-totp-key" data-testid="totp-secret">
-                      {keyGroups(key.secret).map((group, i) => (
-                        <span key={String(i)}>{group}</span>
-                      ))}
-                    </code>
-                    <CopyButton value={key.secret} label="setup key" />
-                  </Cluster>
-                </DescriptionItem>
-                <DescriptionItem term="Authenticator link">
-                  <Link href={key.otpauthUri} variant="inline" data-testid="totp-uri">
-                    Open in authenticator
-                  </Link>
-                </DescriptionItem>
-              </DescriptionList>
-              <FormField label="Authentication code" help="Six digits from your new authenticator.">
-                <Input
-                  appearance="filled"
-                  name="code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  pattern="[0-9 ]*"
-                  autoFocus
-                  required
-                  value={code}
-                  onChange={(e) => {
-                    setCode(e.target.value);
-                  }}
-                />
-              </FormField>
-              <FormActions layout="stack">
-                <Button type="submit" variant="primary" loading={busy}>
-                  {REENROL_SUBMIT_LABEL}
-                </Button>
-              </FormActions>
-            </Stack>
-          )}
-        </Stack>
-      </Card>
-    </AuthLayout>
+            <FormActions layout="stack">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => {
+                  newKey(null);
+                }}
+              >
+                Try again
+              </Button>
+            </FormActions>
+          )
+        ) : (
+          <Stack as="form" gap="16" onSubmit={submit} aria-label="Set up a new authenticator">
+            <p>
+              Scan this code with your authenticator app, then enter the six-digit code it shows. Can’t scan it?
+              Type the key by hand, or open the link on this phone.
+            </p>
+            <TotpQr uri={key.otpauthUri} />
+            <DescriptionList>
+              <DescriptionItem term="Setup key">
+                <Cluster gap="8" align="center">
+                  <code className="pr-totp-key" data-testid="totp-secret">
+                    {keyGroups(key.secret).map((group, i) => (
+                      <span key={String(i)}>{group}</span>
+                    ))}
+                  </code>
+                  <CopyButton value={key.secret} label="setup key" />
+                </Cluster>
+              </DescriptionItem>
+              <DescriptionItem term="Authenticator link">
+                <Link href={key.otpauthUri} variant="inline" data-testid="totp-uri">
+                  Open in authenticator
+                </Link>
+              </DescriptionItem>
+            </DescriptionList>
+            <FormField label="Authentication code" help="Six digits from your new authenticator.">
+              <Input
+                appearance="filled"
+                name="code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9 ]*"
+                autoFocus
+                required
+                value={code}
+                onChange={(e) => {
+                  setCode(e.target.value);
+                }}
+              />
+            </FormField>
+            <FormActions layout="stack">
+              <Button type="submit" variant="primary" loading={busy}>
+                {REENROL_SUBMIT_LABEL}
+              </Button>
+            </FormActions>
+          </Stack>
+        )}
+      </div>
+    </EntryShell>
   );
 }

@@ -3,9 +3,7 @@ import './setup/totp.css';
 import { type SyntheticEvent, useState } from 'react';
 import {
   Alert,
-  AuthLayout,
   Button,
-  Card,
   Cluster,
   DescriptionItem,
   DescriptionList,
@@ -17,6 +15,7 @@ import {
   Stack,
 } from '@d3cloud/ui';
 import { api, ApiError, describeError } from '../api';
+import { EntryHeading, EntryShell } from '../entry/EntryShell';
 import { recoveryApi } from './recovery/api';
 import { RecoveryCodes } from './recovery/RecoveryCodes';
 import { DOMAIN, type Field, localPartOf, loginProblem, serverFieldErrors } from '../setup-login';
@@ -108,169 +107,164 @@ export function Setup(_props: { onDone: () => Promise<void> }) {
   };
 
   return (
-    <AuthLayout
-      title="Set up Postroom"
-      description={
-        recovery !== null
+    <EntryShell wide>
+      <EntryHeading title="Set up Postroom">
+        {recovery !== null
           ? 'Save your recovery codes.'
           : enrol === null
             ? 'Create the operator account. This screen is shown once.'
-            : 'Enrol your authenticator.'
-      }
-      focusOnMount={false}
-    >
-      <Card>
-        <Stack gap="16">
-          {error === null ? null : (
-            <Alert tone="danger" title="Setup did not finish" dynamic>
-              {error}
-            </Alert>
-          )}
-          {recovery !== null ? (
-            <Stack gap="16">
-              <p>
-                Postroom is set up and your authenticator works. If you ever lose it, sign in with one of
-                these codes instead.
-              </p>
-              <RecoveryCodes
-                codes={recovery.codes}
-                address={recovery.address}
-                createdAt={recovery.at}
-                continueLabel="Continue"
-                onContinue={finish}
-                busy={busy}
+            : 'Enrol your authenticator.'}
+      </EntryHeading>
+      <div className="pr-entry__body">
+        {error === null ? null : (
+          <Alert tone="danger" title="Setup did not finish" dynamic>
+            {error}
+          </Alert>
+        )}
+        {recovery !== null ? (
+          <Stack gap="16">
+            <p>
+              Postroom is set up and your authenticator works. If you ever lose it, sign in with one of
+              these codes instead.
+            </p>
+            <RecoveryCodes
+              codes={recovery.codes}
+              address={recovery.address}
+              createdAt={recovery.at}
+              continueLabel="Continue"
+              onContinue={finish}
+              busy={busy}
+            />
+          </Stack>
+        ) : enrol === null ? (
+          <Stack as="form" gap="16" onSubmit={begin} aria-label="Operator account">
+            <FormField label="Setup token" help="Printed in the server's env file (SETUP_TOKEN)." {...(fieldErrors.setupToken === undefined ? {} : { error: fieldErrors.setupToken })}>
+              <PasswordInput
+                name="setupToken"
+                autoComplete="off"
+                autoFocus
+                value={setupToken}
+                onChange={(e) => {
+                  set({ setupToken: e.target.value.trim() });
+                }}
               />
-            </Stack>
-          ) : enrol === null ? (
-            <Stack as="form" gap="16" onSubmit={begin} aria-label="Operator account">
-              <FormField label="Setup token" help="Printed in the server's env file (SETUP_TOKEN)." {...(fieldErrors.setupToken === undefined ? {} : { error: fieldErrors.setupToken })}>
-                <PasswordInput
-                  name="setupToken"
-                  autoComplete="off"
-                  autoFocus
-                  value={setupToken}
-                  onChange={(e) => {
-                    set({ setupToken: e.target.value.trim() });
-                  }}
-                />
-              </FormField>
-              <FormField label="Display name" {...(fieldErrors.displayName === undefined ? {} : { error: fieldErrors.displayName })}>
-                <Input appearance="filled"
-                  name="displayName"
-                  autoComplete="name"
-                  required
-                  value={displayName}
-                  onChange={(e) => {
-                    set({ displayName: e.target.value });
-                  }}
-                />
-              </FormField>
-              <FormField label="Username" help={`Just the name. It becomes your address: name@${DOMAIN}.`} {...(loginError === undefined ? {} : { error: loginError })}>
-                <Input appearance="filled"
-                  name="login"
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  required
-                  value={login}
-                  onChange={(e) => {
-                    set({ login: e.target.value.toLowerCase() });
-                    setFieldErrors(({ login: _dropped, ...rest }) => rest);
-                  }}
-                  onBlur={() => {
-                    setForm((f) => ({ ...f, login: localPartOf(f.login) }));
-                  }}
-                />
-              </FormField>
-              <FormField
-                label="Password"
-                help={`At least ${String(MIN_PASSWORD)} characters. Web sign-in only — mail apps use app passwords.`}
-                {...(tooShort ? { error: `Use at least ${String(MIN_PASSWORD)} characters.` } : fieldErrors.password === undefined ? {} : { error: fieldErrors.password })}
+            </FormField>
+            <FormField label="Display name" {...(fieldErrors.displayName === undefined ? {} : { error: fieldErrors.displayName })}>
+              <Input appearance="filled"
+                name="displayName"
+                autoComplete="name"
+                required
+                value={displayName}
+                onChange={(e) => {
+                  set({ displayName: e.target.value });
+                }}
+              />
+            </FormField>
+            <FormField label="Username" help={`Just the name. It becomes your address: name@${DOMAIN}.`} {...(loginError === undefined ? {} : { error: loginError })}>
+              <Input appearance="filled"
+                name="login"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                required
+                value={login}
+                onChange={(e) => {
+                  set({ login: e.target.value.toLowerCase() });
+                  setFieldErrors(({ login: _dropped, ...rest }) => rest);
+                }}
+                onBlur={() => {
+                  setForm((f) => ({ ...f, login: localPartOf(f.login) }));
+                }}
+              />
+            </FormField>
+            <FormField
+              label="Password"
+              help={`At least ${String(MIN_PASSWORD)} characters. Web sign-in only — mail apps use app passwords.`}
+              {...(tooShort ? { error: `Use at least ${String(MIN_PASSWORD)} characters.` } : fieldErrors.password === undefined ? {} : { error: fieldErrors.password })}
+            >
+              <PasswordInput
+                name="password"
+                autoComplete="new-password"
+                required
+                value={password}
+                onChange={(e) => {
+                  set({ password: e.target.value });
+                }}
+              />
+            </FormField>
+            <FormField label="Confirm password" {...(mismatch ? { error: 'The passwords do not match.' } : {})}>
+              <PasswordInput
+                name="confirm"
+                autoComplete="new-password"
+                required
+                value={confirm}
+                onChange={(e) => {
+                  set({ confirm: e.target.value });
+                }}
+              />
+            </FormField>
+            <FormActions layout="stack">
+              <Button type="submit" variant="primary" loading={busy}>
+                Continue
+              </Button>
+            </FormActions>
+          </Stack>
+        ) : (
+          <Stack as="form" gap="16" onSubmit={complete} aria-label="Enrol an authenticator">
+            <p>
+              Scan this code with your authenticator app, then enter the six-digit code it shows. Can’t scan
+              it? Type the key by hand, or open the link on this phone.
+            </p>
+            <TotpQr uri={enrol.otpauthUri} />
+            <DescriptionList>
+              <DescriptionItem term="Setup key">
+                <Cluster gap="8" align="center">
+                  <code className="pr-totp-key" data-testid="totp-secret">
+                    {keyGroups(enrol.secret).map((group, i) => (
+                      <span key={String(i)}>{group}</span>
+                    ))}
+                  </code>
+                  <CopyButton value={enrol.secret} label="setup key" />
+                </Cluster>
+              </DescriptionItem>
+              <DescriptionItem term="Authenticator link">
+                <Link href={enrol.otpauthUri} variant="inline" data-testid="totp-uri">
+                  Open in authenticator
+                </Link>
+              </DescriptionItem>
+            </DescriptionList>
+            <FormField label="Authentication code">
+              <Input appearance="filled"
+                name="code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9 ]*"
+                autoFocus
+                required
+                value={code}
+                onChange={(e) => {
+                  set({ code: e.target.value });
+                }}
+              />
+            </FormField>
+            <FormActions layout="stack">
+              <Button type="submit" variant="primary" loading={busy}>
+                Finish setup
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setForm(startOver);
+                }}
               >
-                <PasswordInput
-                  name="password"
-                  autoComplete="new-password"
-                  required
-                  value={password}
-                  onChange={(e) => {
-                    set({ password: e.target.value });
-                  }}
-                />
-              </FormField>
-              <FormField label="Confirm password" {...(mismatch ? { error: 'The passwords do not match.' } : {})}>
-                <PasswordInput
-                  name="confirm"
-                  autoComplete="new-password"
-                  required
-                  value={confirm}
-                  onChange={(e) => {
-                    set({ confirm: e.target.value });
-                  }}
-                />
-              </FormField>
-              <FormActions layout="stack">
-                <Button type="submit" variant="primary" loading={busy}>
-                  Continue
-                </Button>
-              </FormActions>
-            </Stack>
-          ) : (
-            <Stack as="form" gap="16" onSubmit={complete} aria-label="Enrol an authenticator">
-              <p>
-                Scan this code with your authenticator app, then enter the six-digit code it shows. Can’t scan
-                it? Type the key by hand, or open the link on this phone.
-              </p>
-              <TotpQr uri={enrol.otpauthUri} />
-              <DescriptionList>
-                <DescriptionItem term="Setup key">
-                  <Cluster gap="8" align="center">
-                    <code className="pr-totp-key" data-testid="totp-secret">
-                      {keyGroups(enrol.secret).map((group, i) => (
-                        <span key={String(i)}>{group}</span>
-                      ))}
-                    </code>
-                    <CopyButton value={enrol.secret} label="setup key" />
-                  </Cluster>
-                </DescriptionItem>
-                <DescriptionItem term="Authenticator link">
-                  <Link href={enrol.otpauthUri} variant="inline" data-testid="totp-uri">
-                    Open in authenticator
-                  </Link>
-                </DescriptionItem>
-              </DescriptionList>
-              <FormField label="Authentication code">
-                <Input appearance="filled"
-                  name="code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  pattern="[0-9 ]*"
-                  autoFocus
-                  required
-                  value={code}
-                  onChange={(e) => {
-                    set({ code: e.target.value });
-                  }}
-                />
-              </FormField>
-              <FormActions layout="stack">
-                <Button type="submit" variant="primary" loading={busy}>
-                  Finish setup
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => {
-                    setForm(startOver);
-                  }}
-                >
-                  Start over
-                </Button>
-              </FormActions>
-            </Stack>
-          )}
-        </Stack>
-      </Card>
-    </AuthLayout>
+                Start over
+              </Button>
+            </FormActions>
+          </Stack>
+        )}
+      </div>
+    </EntryShell>
   );
 }

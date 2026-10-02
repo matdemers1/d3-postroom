@@ -580,7 +580,7 @@ for (const theme of THEMES) {
     const page = await context.newPage();
 
     await page.goto('/signin');
-    await expect(page.getByRole('heading', { name: 'Sign in to Postroom' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sign in', exact: true, level: 1 })).toBeVisible();
     await axe(page, theme, 'Sign in');
     await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
     await page.getByLabel('Password', { exact: true }).fill('not the password at all');

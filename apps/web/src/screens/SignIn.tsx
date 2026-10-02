@@ -1,7 +1,8 @@
 import '../styles/fields.css';
 import { type SyntheticEvent, useEffect, useState } from 'react';
-import { Alert, AuthLayout, Button, Card, FormActions, FormField, Input, PasswordInput, Stack, Link } from '@d3cloud/ui';
-import { PostroomMark } from '../brand/PostroomMark';
+import { Alert, Button, FormActions, FormField, Input, PasswordInput, Stack } from '@d3cloud/ui';
+import { EntryHeading, EntryNotes, EntryShell } from '../entry/EntryShell';
+import { SignInWithD3Auth } from '../entry/SignInWithD3Auth';
 import { signinNoticeFrom } from '../admin/sign-in/model';
 import { api, describeError, type AuthState } from '../api';
 import { describeRecoveryError, USE_AUTHENTICATOR_LABEL, USE_RECOVERY_LABEL } from './recovery/codes';
@@ -10,9 +11,10 @@ import { ReEnrol } from './reenrol/ReEnrol';
 import { needsReenrol } from './reenrol/reenrolment';
 
 /**
- * Two ways in, side by side (PST-REQ-005). The password form is always here; the D3 Auth button
- * appears when it is configured, and is disabled with a reason while the issuer is unreachable —
- * this is the screen someone reaches exactly when that is the thing that is broken.
+ * Two ways in (PST-REQ-005). The password form is always here; Sign in with D3 Auth sits below it
+ * when it is configured, and is replaced by the reason while the issuer is unreachable — this is the
+ * screen someone reaches exactly when that is the thing that is broken. PST-T-17.17: in the split
+ * entry shell, after Bindery's front door.
  */
 export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: () => Promise<void> }) {
   const [login, setLogin] = useState('');
@@ -102,156 +104,143 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
   if (reenrol) return <ReEnrol onDone={carryOn} />;
 
   return (
-    <AuthLayout
-      title="Sign in to Postroom"
-      description={
-        challenge === null
-          ? 'Your own mail server for d3cloud.io — every message sorted, explained and yours.'
+    <EntryShell>
+      <EntryHeading title="Sign in">
+        {challenge === null
+          ? 'Welcome back to your mail.'
           : useRecovery
             ? 'One more step: one of your recovery codes.'
-            : 'One more step: the code from your authenticator.'
-      }
-      brand={<PostroomMark size={40} decorative />}
-      focusOnMount={false}
-    >
-      <Card>
-        <Stack gap="16">
-          {linkNotice === null ? null : (
-            <Alert tone="info" title="Sign in to link D3 Auth" dynamic>
-              {linkNotice}
-            </Alert>
-          )}
-          {error === null ? null : (
-            <Alert tone="danger" title="Sign-in failed" dynamic>
-              {error}
-            </Alert>
-          )}
+            : 'One more step: the code from your authenticator.'}
+      </EntryHeading>
 
-          {challenge === null ? (
-            <Stack as="form" gap="16" onSubmit={submitPassword} aria-label="Sign in with your password">
-              <FormField label="Address or username" help="Your address, or just the part before @d3cloud.io.">
+      <div className="pr-entry__body">
+        {linkNotice === null ? null : (
+          <Alert tone="info" title="Sign in to link D3 Auth" dynamic>
+            {linkNotice}
+          </Alert>
+        )}
+        {error === null ? null : (
+          <Alert tone="danger" title="Sign-in failed" dynamic>
+            {error}
+          </Alert>
+        )}
+
+        {challenge === null ? (
+          <Stack as="form" gap="16" onSubmit={submitPassword} aria-label="Sign in with your password">
+            <FormField label="Address or username" help="Your address, or just the part before @d3cloud.io.">
+              <Input appearance="filled"
+                name="login"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                autoFocus
+                required
+                value={login}
+                onChange={(e) => {
+                  setLogin(e.target.value);
+                }}
+              />
+            </FormField>
+            <FormField label="Password">
+              <PasswordInput
+                name="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                }}
+              />
+            </FormField>
+            <FormActions layout="stack">
+              <Button type="submit" variant="primary" size="lg" loading={busy}>
+                Sign in
+              </Button>
+            </FormActions>
+          </Stack>
+        ) : (
+          <Stack
+            as="form"
+            gap="16"
+            onSubmit={submitCode}
+            aria-label={useRecovery ? 'Enter a recovery code' : 'Enter your authentication code'}
+          >
+            {useRecovery ? (
+              <FormField label="Recovery code" help="One of the ten codes you saved, like ABCDE-12345. Each works once.">
                 <Input appearance="filled"
-                  name="login"
-                  autoComplete="username"
-                  autoCapitalize="none"
+                  key="recovery"
+                  name="recoveryCode"
+                  autoComplete="off"
+                  autoCapitalize="characters"
                   spellCheck={false}
                   autoFocus
                   required
-                  value={login}
+                  value={code}
                   onChange={(e) => {
-                    setLogin(e.target.value);
+                    setCode(e.target.value);
                   }}
                 />
               </FormField>
-              <FormField label="Password">
-                <PasswordInput
-                  name="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                  }}
-                />
-              </FormField>
-              <FormActions layout="stack">
-                <Button type="submit" variant="primary" loading={busy}>
-                  Sign in
-                </Button>
-              </FormActions>
-            </Stack>
-          ) : (
-            <Stack
-              as="form"
-              gap="16"
-              onSubmit={submitCode}
-              aria-label={useRecovery ? 'Enter a recovery code' : 'Enter your authentication code'}
-            >
-              {useRecovery ? (
-                <FormField label="Recovery code" help="One of the ten codes you saved, like ABCDE-12345. Each works once.">
-                  <Input appearance="filled"
-                    key="recovery"
-                    name="recoveryCode"
-                    autoComplete="off"
-                    autoCapitalize="characters"
-                    spellCheck={false}
-                    autoFocus
-                    required
-                    value={code}
-                    onChange={(e) => {
-                      setCode(e.target.value);
-                    }}
-                  />
-                </FormField>
-              ) : (
-                <FormField label="Authentication code" help="Six digits from your authenticator app.">
-                  <Input appearance="filled"
-                    key="totp"
-                    name="code"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    pattern="[0-9 ]*"
-                    autoFocus
-                    required
-                    value={code}
-                    onChange={(e) => {
-                      setCode(e.target.value);
-                    }}
-                  />
-                </FormField>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setUseRecovery((r) => !r);
-                  setCode('');
-                  setError(null);
-                }}
-              >
-                {useRecovery ? USE_AUTHENTICATOR_LABEL : USE_RECOVERY_LABEL}
-              </Button>
-              <FormActions
-                layout="stack"
-                leading={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setChallenge(null);
-                      setUseRecovery(false);
-                      setCode('');
-                    }}
-                  >
-                    Start over
-                  </Button>
-                }
-              >
-                <Button type="submit" variant="primary" loading={busy}>
-                  Verify
-                </Button>
-              </FormActions>
-            </Stack>
-          )}
-
-          {state.oidcConfigured ? (
-            state.oidcAvailable ? (
-              // A link, not a fetch: the provider's redirect is a top-level navigation.
-              <Link href="/api/auth/oidc/start" variant="standalone">
-                Sign in with D3 Auth
-              </Link>
             ) : (
-              <Stack gap="8">
-                <Button type="button" variant="secondary" disabled>
-                  Sign in with D3 Auth
-                </Button>
-                <Alert tone="info">D3 Auth is unreachable right now. Your password still works.</Alert>
-              </Stack>
-            )
-          ) : null}
-        </Stack>
-      </Card>
-    </AuthLayout>
+              <FormField label="Authentication code" help="Six digits from your authenticator app.">
+                <Input appearance="filled"
+                  key="totp"
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9 ]*"
+                  autoFocus
+                  required
+                  value={code}
+                  onChange={(e) => {
+                    setCode(e.target.value);
+                  }}
+                />
+              </FormField>
+            )}
+            <FormActions layout="stack">
+              <Button type="submit" variant="primary" size="lg" loading={busy}>
+                Verify
+              </Button>
+            </FormActions>
+          </Stack>
+        )}
+
+        {/* Below the password form, and only when an operator has configured it (PST-REQ-005). */}
+        <SignInWithD3Auth configured={state.oidcConfigured} available={state.oidcAvailable} />
+      </div>
+
+      {challenge === null ? (
+        <EntryNotes>
+          <p>New here? Accounts are made by whoever runs this server.</p>
+        </EntryNotes>
+      ) : (
+        // The way round a lost phone, and the way back: text buttons under the form, as on Bindery.
+        <EntryNotes row>
+          <button
+            type="button"
+            className="pr-entry-link"
+            onClick={() => {
+              setUseRecovery((r) => !r);
+              setCode('');
+              setError(null);
+            }}
+          >
+            {useRecovery ? USE_AUTHENTICATOR_LABEL : USE_RECOVERY_LABEL}
+          </button>
+          <button
+            type="button"
+            className="pr-entry-link pr-entry-link--quiet"
+            onClick={() => {
+              setChallenge(null);
+              setUseRecovery(false);
+              setCode('');
+            }}
+          >
+            Start over
+          </button>
+        </EntryNotes>
+      )}
+    </EntryShell>
   );
 }

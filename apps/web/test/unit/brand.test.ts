@@ -41,10 +41,13 @@ describe('where the mark is used', () => {
     expect(brand).not.toContain('MailIcon');
   });
 
-  it('the sign-in card carries the mark and one positioning line', () => {
-    const signIn = read('src/screens/SignIn.tsx');
-    expect(signIn).toMatch(/brand=\{<PostroomMark /);
-    expect(signIn).toContain('Your own mail server for d3cloud.io');
+  // PST-T-17.17: the sign-in card became the split entry shell; the mark sits beside the name in
+  // the story panel and above the form on narrow screens, and the positioning line is the promise.
+  it('the entry shell carries the mark beside the name, and one positioning line', () => {
+    const shell = read('src/entry/EntryShell.tsx');
+    expect(shell.match(/<PostroomMark size=\{28\} decorative \/> Postroom/g)).toHaveLength(2);
+    expect(shell).toContain('Mail for d3cloud.io on a server you own.');
+    expect(read('src/screens/SignIn.tsx')).toContain('<EntryShell>');
   });
 });
 

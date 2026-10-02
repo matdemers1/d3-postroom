@@ -139,7 +139,7 @@ test('/setup redirects to /signin once an operator exists', async ({ page, reque
 
   await page.goto('/setup');
   await expect(page).toHaveURL(/\/signin$/);
-  await expect(page.getByRole('heading', { name: 'Sign in to Postroom' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true, level: 1 })).toBeVisible();
 
   const again = await request.post('/api/auth/setup/begin', {
     headers: CSRF,
@@ -215,7 +215,7 @@ test('revoking another session asks for a fresh TOTP (step-up)', async ({ page, 
 
 test('/signin has no axe violations', async ({ page }) => {
   await page.goto('/signin');
-  await expect(page.getByRole('heading', { name: 'Sign in to Postroom' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true, level: 1 })).toBeVisible();
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 });
@@ -261,14 +261,16 @@ test('Sign in with D3 Auth: linked by a password sign-in, then it reaches the sh
   expect(state.method).toBe('oidc');
 });
 
-test('with D3 Auth unreachable the button is disabled and the password path still works', async ({ page, request }) => {
+// PST-T-17.17: unreachable, it is a dashed box with the reason and nothing to press, not a disabled button.
+test('with D3 Auth unreachable there is nothing to press, the reason is shown, and the password path still works', async ({ page, request }) => {
   const res = await request.get('/api/auth/state');
   const { oidcConfigured, oidcAvailable } = (await res.json()) as { oidcConfigured: boolean; oidcAvailable: boolean };
   test.skip(!oidcConfigured || oidcAvailable, 'this stack is not pointed at an unreachable issuer');
 
   await page.goto('/signin');
-  await expect(page.getByRole('button', { name: 'Sign in with D3 Auth' })).toBeDisabled();
-  await expect(page.getByText('D3 Auth is unreachable right now. Your password still works.')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Sign in with D3 Auth' })).toContainText('D3 Auth is unreachable right now. Your password still works.');
+  await expect(page.getByRole('link', { name: 'Sign in with D3 Auth' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Sign in with D3 Auth' })).toHaveCount(0);
   await signInWithPassword(page, requireOperator());
   await expect(page.getByRole('heading', { name: 'Mail', level: 1 })).toBeVisible();
 });

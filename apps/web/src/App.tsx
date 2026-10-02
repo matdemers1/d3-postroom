@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Alert, AuthLayout, Button, Spinner, ThemeProvider, ToastRegion } from '@d3cloud/ui';
+import { Alert, Button, Spinner, ThemeProvider, ToastRegion } from '@d3cloud/ui';
 import { api, redirectFor, serverUnreachable, type AuthState } from './api';
+import { EntryHeading, EntryShell } from './entry/EntryShell';
 import { MAIL_HOME, REDIRECTS, ROUTES, type RouteId } from './routes';
 import { titleForPath } from './title';
 import { Calendar } from './calendar/Calendar';
@@ -106,7 +107,8 @@ function Gate() {
 
   if (failed) {
     return (
-      <AuthLayout title="Postroom is not answering">
+      <EntryShell>
+        <EntryHeading title="Postroom is not answering" focusOnMount />
         <Alert
           tone="danger"
           title="Could not reach the server"
@@ -114,14 +116,15 @@ function Gate() {
         >
           {serverUnreachable()}
         </Alert>
-      </AuthLayout>
+      </EntryShell>
     );
   }
   if (state === null) {
     return (
-      <AuthLayout title="Postroom" focusOnMount={false}>
+      <EntryShell>
+        <EntryHeading title="Postroom" />
         <Spinner label="Loading" />
-      </AuthLayout>
+      </EntryShell>
     );
   }
 
