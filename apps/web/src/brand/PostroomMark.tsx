@@ -1,42 +1,53 @@
-// PST-T-16.10 (PST-DA-055): the Postroom mark. A postroom is where mail is sorted, so the mark is a
-// sorting rack: four pigeonholes, one of them filled with the accent and holding a folded letter.
-// Drawn on D3 tokens (--color-fg for the empty holes, --color-accent for the filled one) so it
-// follows both themes. public/favicon.svg is the same drawing with fixed colours.
+// PST-T-18.1: the Postroom mark is the D3 Cloud family mark (DI-REQ-040), concept "Envelope", ported
+// from d3cloud.io's ProductMark. It replaces the sorting rack of PST-T-16.10 (PST-DA-055) — four
+// pigeonholes with one filled in the accent — so Postroom reads as one of the family beside Bindery,
+// D3 Auth, Foreman and Shipyard: every product keeps the planisphere's ring, and inside it ink lines
+// with round joints and exactly one lit star in the product's own colour. Here an envelope sits in
+// the ring, joints where the flap meets the body, and the lit star where the flap points.
+//
+// The ink is currentColor, so the mark takes the text colour in either theme — a call site inside a
+// slot that paints the accent (AppShellBrand's mark slot does) sets the text colour back with a class.
+// The star is the only colour. public/favicon.svg is the same drawing at icon weight, with the ink
+// fixed per scheme.
 
 export const POSTROOM_MARK_NAME = 'Postroom';
 
+// d3-allow: the product's lit star from d3cloud.io (DI-REQ-040) — a brand constant, the same in both themes, not a theme colour
+export const POSTROOM_STAR = '#E06AB8';
+
 export interface PostroomMarkProps {
-  /** Rendered width and height in px. */
+  /** Rendered width and height in px. At 72 and above the lines are drawn finer, as on the site. */
   size?: number;
   /**
    * Set when the word "Postroom" is written beside the mark, so a screen reader does not read it
    * twice. Left off, the mark stands alone and is announced as an image named "Postroom".
    */
   decorative?: boolean;
+  className?: string;
 }
 
-export function PostroomMark({ size = 20, decorative = false }: PostroomMarkProps) {
+export function PostroomMark({ size = 20, decorative = false, className }: PostroomMarkProps) {
+  // The site's two weights: heavier at icon sizes, finer at display sizes.
+  const display = size >= 72;
+  const w = display ? 2.2 : 3.5;
+  const joint = display ? 2.6 : 3.4;
+  const lit = display ? 4.4 : 5.5;
+  const ink = { stroke: 'currentColor', strokeWidth: w, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
   return (
     <svg
-      viewBox="0 0 24 24"
       width={size}
       height={size}
+      viewBox="0 0 64 64"
       fill="none"
+      className={className}
       {...(decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': POSTROOM_MARK_NAME })}
     >
-      <g style={{ stroke: 'var(--color-fg)' }} strokeWidth="1.75">
-        <rect x="2.9" y="2.9" width="8.2" height="8.2" rx="2.2" />
-        <rect x="2.9" y="12.9" width="8.2" height="8.2" rx="2.2" />
-        <rect x="12.9" y="12.9" width="8.2" height="8.2" rx="2.2" />
-      </g>
-      <rect x="12" y="2" width="10" height="10" rx="2.8" style={{ fill: 'var(--color-accent)' }} />
-      <path
-        d="m14.6 5.8 2.4 2 2.4-2M14.6 5.8h4.8v3.6h-4.8z"
-        style={{ stroke: 'var(--color-accent-contrast)' }}
-        strokeWidth="1.1"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <circle cx="32" cy="32" r="26" {...ink} />
+      <path d="M17 22 H47 V44 H17 Z" {...ink} />
+      <path d="M17 22 L32 34.5 L47 22" {...ink} />
+      <circle cx="17" cy="22" r={joint} fill="currentColor" />
+      <circle cx="47" cy="22" r={joint} fill="currentColor" />
+      <circle cx="32" cy="34.5" r={lit} style={{ fill: POSTROOM_STAR }} />
     </svg>
   );
 }

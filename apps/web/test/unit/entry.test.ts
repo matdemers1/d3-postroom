@@ -60,7 +60,7 @@ describe('EntryShell', () => {
     expect(count(html, /class="pr-entry__brand"/g)).toBe(1);
     expect(count(html, /class="pr-entry__brand pr-entry__brand--compact"/g)).toBe(1);
     // Decorative beside the word, so a screen reader hears "Postroom" once per brand.
-    expect(count(html, /<svg viewBox="0 0 24 24" width="28" height="28" fill="none" aria-hidden="true">/g)).toBe(2);
+    expect(count(html, /<svg width="28" height="28" viewBox="0 0 64 64" fill="none" aria-hidden="true">/g)).toBe(2);
   });
 
   it('draws a decorative, tokens-only illustration', () => {
