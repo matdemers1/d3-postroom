@@ -423,14 +423,35 @@ export async function resolveIdentity(tx: Prisma.TransactionClient, identity: Co
 }
 
 /**
- * What first-sign-in provisioning created and nothing since has made real: no password, no address,
- * not an admin, and this identity its only link. Such an account has no way in but the link.
+ * What first-sign-in provisioning created and nothing since has made real: a person with no password,
+ * no authenticator, not an admin, no address of its own or as an alias target, no mailbox, no app
+ * password, and this identity its only link. Such an account has no way in but the link and nothing
+ * to lose, so moving the link off it and disabling it loses nothing. The row is locked first, so it
+ * cannot gain a password or an address between this check and the move (PST-ADR-015).
  */
 async function isEmptyAccount(tx: Prisma.TransactionClient, accountId: string): Promise<boolean> {
+  await tx.$queryRaw`SELECT id FROM account WHERE id = ${accountId}::uuid FOR UPDATE`;
   const account = await tx.account.findUnique({
     where: { id: accountId },
-    select: { passwordHash: true, isAdmin: true, _count: { select: { addresses: true, identityLinks: true } } },
+    select: {
+      passwordHash: true,
+      isAdmin: true,
+      kind: true,
+      totpEnabled: true,
+      _count: { select: { addresses: true, addressTargets: true, mailboxes: true, appPasswords: true, identityLinks: true } },
+    },
   });
   if (account === null) return false;
-  return account.passwordHash === null && !account.isAdmin && account._count.addresses === 0 && account._count.identityLinks === 1;
+  const c = account._count;
+  return (
+    account.passwordHash === null &&
+    !account.isAdmin &&
+    account.kind === 'person' &&
+    !account.totpEnabled &&
+    c.addresses === 0 &&
+    c.addressTargets === 0 &&
+    c.mailboxes === 0 &&
+    c.appPasswords === 0 &&
+    c.identityLinks === 1
+  );
 }

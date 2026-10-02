@@ -258,19 +258,29 @@ describe.skipIf(!baseUrl)('Sign in with D3 Auth (PST-REQ-005, PST-REQ-007)', () 
     expect(await state(again.jar)).toMatchObject({ signedIn: true, account: { id: owner.id } });
   });
 
-  for (const shape of ['a password', 'an address'] as const) {
+  // Anything that makes an account real keeps it: a way in of its own, mail it owns or receives, an
+  // admin flag, or a non-person kind (PST-ADR-015; the predicate is isEmptyAccount in oidc.ts).
+  const SHAPES = {
+    'a password': { key: 'pw', data: () => ({ passwordHash: 'argon2id-stand-in' }) },
+    'an address': { key: 'addr', data: (localPart: string, domainId: string) => ({ addresses: { create: { localPart, domainId, kind: 'primary' as const } } }) },
+    'an authenticator': { key: 'totp', data: () => ({ totpEnabled: true }) },
+    'the admin flag': { key: 'admin', data: () => ({ isAdmin: true }) },
+    'a service kind': { key: 'svc', data: () => ({ kind: 'service' as const }) },
+    'a mailbox': { key: 'mbox', data: () => ({ mailboxes: { create: { name: 'INBOX', uidvalidity: 1 } } }) },
+  } as const;
+  for (const [shape, { key, data }] of Object.entries(SHAPES)) {
     it(`refuses to take a link from an account with ${shape}, and changes nothing`, async () => {
-      const subject = `real-7-${shape === 'a password' ? 'pw' : 'addr'}`;
+      const subject = `real-7-${key}`;
       const domain = await db.domain.findFirstOrThrow({ where: { isPrimary: true } });
       const holder = await db.account.create({
         data: {
           displayName: 'Holder',
-          ...(shape === 'a password' ? { passwordHash: 'argon2id-stand-in' } : { addresses: { create: { localPart: subject, domainId: domain.id, kind: 'primary' } } }),
+          ...data(subject, domain.id),
           identityLinks: { create: { issuer: issuer.url, subject } },
         },
       });
       const holderSession = (await oidcSignIn({ sub: subject, roles: [] })).jar;
-      const login = `asker${shape === 'a password' ? 'pw' : 'addr'}`;
+      const login = `asker${key}`;
       const asker = await createAccount(db, { login, password: OPERATOR_PASSWORD });
       const jar = await passwordSignIn(login, OPERATOR_PASSWORD, asker.totpSecret);
       const linksBefore = await db.identityLink.count();
