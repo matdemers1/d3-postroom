@@ -206,8 +206,9 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
           </Stack>
         )}
 
-        {/* Below the password form, and only when an operator has configured it (PST-REQ-005). */}
-        <SignInWithD3Auth configured={state.oidcConfigured} available={state.oidcAvailable} />
+        {/* Below the password form, and only when an operator has configured it (PST-REQ-005). Not on
+            the code step: the password half is already done, so the other way in is a detour. */}
+        {challenge === null ? <SignInWithD3Auth configured={state.oidcConfigured} available={state.oidcAvailable} /> : null}
       </div>
 
       {challenge === null ? (
