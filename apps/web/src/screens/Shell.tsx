@@ -566,23 +566,22 @@ function PlacePalette({ enabled }: { enabled: boolean }) {
 }
 
 /**
- * Go-to chords (g then i, s, d, c, p) on every route (PST-T-16.19). MailView resolves g then i
- * itself and never sees the rest, so inside it this only navigates for s, d, c and p and lets the
- * event through (MailView clears its own half-typed g from it). On every other route — Calendar,
- * Contacts, Settings, Admin — all five go through here, and a completed chord stops the event so a
- * screen's own bare keys (Calendar's d for Day) do not also fire.
+ * Go-to chords (g then i, s, d, c, p) on every route (PST-T-16.19), MailView included. The Shell is
+ * the chord's only owner (PST-T-17.18): both keys stop here, so no screen's bare shortcut also acts
+ * on them — Calendar's d for Day, MailView's c for Compose. MailView used to resolve g then i itself
+ * and let the other chords' keys through, which left a pending g in two listeners; the route commits
+ * in a transition, so a MailView that mounted between the two keys saw a bare second key, and g then
+ * c from a mailbox opened Compose on top of the move to Calendar.
  */
-function useGoChords(inMailView: boolean): void {
+function useGoChords(): void {
   const navigate = useNavigate();
-  // The listener is attached once. Its inputs live in refs, because useNavigate's identity changes
+  // The listener is attached once. navigate lives in a ref, because useNavigate's identity changes
   // with the URL — and Calendar and MailView rewrite their URL as they load (?view, mailbox slugs).
   // Re-subscribing on that change dropped a pending 'g' between the two keys of a chord (PST-T-16.19).
   const navigateRef = useRef(navigate);
-  const inMailViewRef = useRef(inMailView);
   useEffect(() => {
     navigateRef.current = navigate;
-    inMailViewRef.current = inMailView;
-  }, [navigate, inMailView]);
+  }, [navigate]);
   useEffect(() => {
     let pending: 'g' | null = null;
     const onKey = (e: KeyboardEvent): void => {
@@ -592,15 +591,12 @@ function useGoChords(inMailView: boolean): void {
         pending = null;
         return;
       }
-      const { go, pending: next } = resolveGo({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, editable: describeTarget(e.target).editable }, pending);
+      const { go, pending: next, consumed } = resolveGo({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, editable: describeTarget(e.target).editable }, pending);
       pending = next;
-      const inMail = inMailViewRef.current;
-      if (go === null || (inMail && go.target === 'inbox')) return;
-      if (!inMail) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      void navigateRef.current(go.path);
+      if (!consumed) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (go !== null) void navigateRef.current(go.path);
     };
     window.addEventListener('keydown', onKey, true);
     return () => {
@@ -626,7 +622,7 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
   // A non-admin in /admin/* sees the no-access state beside Mail's nav, never the admin nav.
   const navPlace = place === 'admin' && !isAdmin ? 'mail' : place;
   const setupLeft = useSetupStepsLeft(isAdmin, place === 'admin' ? location.pathname : '/');
-  useGoChords(isMailView);
+  useGoChords();
   // One push screen per nav entry, not per URL: the screens under one entry (Contacts' list, new
   // and card; Security & devices' three) are one component that carries state across its own URLs
   // (a "Contact added." notice), so a move between them must not remount it.

@@ -26,6 +26,7 @@ import {
   Textarea,
 } from '@d3cloud/ui';
 import { ApiError, contactPath, contactsApi, describeError, type AddressBook, type ContactDetail, type ContactInput, type ContactSummary } from '../api';
+import { useUrlText } from '../components/useUrlText';
 import { useMediaQuery } from '../mail/useMedia';
 import { blankContact, canRemoveRow, contactProblem, EMAIL_TYPES, inputOf, rowKey, TEL_TYPES, toForm, typeOptions, type ContactForm } from './form';
 import { Loading, LoadFailed } from '../screens/states';
@@ -98,6 +99,10 @@ export function Contacts() {
       { replace: true },
     );
   };
+  // The search box's own text, ahead of the URL while a keystroke's navigation is in flight (PST-T-17.18).
+  const [search, setSearch] = useUrlText(query, (value) => {
+    setFilter('q', value);
+  });
   const filterSearch = filterParams.toString() === '' ? '' : `?${filterParams.toString()}`;
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -118,7 +123,7 @@ export function Contacts() {
 
   const bookName = useMemo(() => new Map((books ?? []).map((b) => [b.id, b.displayName])), [books]);
   const bookFilter = bookSlug === null ? 'all' : (books?.find((b) => b.slug === bookSlug)?.id ?? 'all');
-  const needle = query.trim().toLowerCase();
+  const needle = search.trim().toLowerCase();
   const shown = (contacts ?? []).filter(
     (c) => (bookFilter === 'all' || c.addressBookId === bookFilter) && (needle === '' || [c.displayName, c.org, ...c.emails].some((x) => x.toLowerCase().includes(needle))),
   );
@@ -133,9 +138,9 @@ export function Contacts() {
           type="search"
           aria-label="Search contacts"
           placeholder="Search contacts"
-          value={query}
+          value={search}
           onChange={(e) => {
-            setFilter('q', e.target.value);
+            setSearch(e.target.value);
           }}
         />
         {books !== null && books.length > 1 ? (
