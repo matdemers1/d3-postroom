@@ -168,24 +168,31 @@ describe('go-to chords', () => {
     const paths: [string, string][] = [['i', '/mail/inbox'], ['s', '/mail/sent'], ['d', '/mail/drafts'], ['c', '/calendar'], ['p', '/contacts']];
     for (const [second, path] of paths) {
       const first = resolveGo(press('g'), null);
-      expect(first).toEqual({ go: null, pending: 'g' });
+      expect(first).toEqual({ go: null, pending: 'g', consumed: true });
       const done = resolveGo(press(second), first.pending);
       expect(done.go?.path, second).toBe(path);
       expect(done.pending).toBeNull();
+      expect(done.consumed).toBe(true);
     }
     expect(GO_CHORDS.map((c) => c.key)).toEqual(['i', 's', 'd', 'c', 'p']);
   });
 
-  it('a second key that is not a chord clears the g and goes nowhere', () => {
-    expect(resolveGo(press('j'), 'g')).toEqual({ go: null, pending: null });
+  it('a second key that is not a chord clears the g, goes nowhere, and is still the chord’s — not a bare j', () => {
+    expect(resolveGo(press('j'), 'g')).toEqual({ go: null, pending: null, consumed: true });
+  });
+
+  it('a named key after the g abandons the chord and is left to the screen', () => {
+    for (const key of ['Escape', 'ArrowDown', 'Enter']) expect(resolveGo(press(key), 'g'), key).toEqual({ go: null, pending: null, consumed: false });
   });
 
   it('is typing, not a chord, in a field or with a modifier — and the letters alone do nothing', () => {
-    expect(resolveGo(press('g', { editable: true }), null)).toEqual({ go: null, pending: null });
-    expect(resolveGo(press('s', { editable: true }), 'g')).toEqual({ go: null, pending: null });
-    expect(resolveGo(press('s', { ctrlKey: true }), 'g')).toEqual({ go: null, pending: null });
-    expect(resolveGo(press('g', { metaKey: true }), null)).toEqual({ go: null, pending: null });
-    expect(resolveGo(press('s'), null)).toEqual({ go: null, pending: null });
+    const nothing = { go: null, pending: null, consumed: false };
+    expect(resolveGo(press('g', { editable: true }), null)).toEqual(nothing);
+    expect(resolveGo(press('s', { editable: true }), 'g')).toEqual(nothing);
+    expect(resolveGo(press('s', { ctrlKey: true }), 'g')).toEqual(nothing);
+    expect(resolveGo(press('k', { ctrlKey: true }), 'g')).toEqual(nothing);
+    expect(resolveGo(press('g', { metaKey: true }), null)).toEqual(nothing);
+    expect(resolveGo(press('s'), null)).toEqual(nothing);
   });
 
   it('MailView’s own resolver still takes only g then i, so the other chords cannot double-fire there', () => {
@@ -198,6 +205,16 @@ describe('go-to chords', () => {
   it('the Shell mounts the place palette and the chords on every route without a MailView', () => {
     const shell = readFileSync(join(import.meta.dirname, '../../src/screens/Shell.tsx'), 'utf8');
     expect(shell).toContain('<PlacePalette enabled={!isMailView} />');
-    expect(shell).toContain('useGoChords(isMailView);');
+    expect(shell).toContain('useGoChords();');
+  });
+
+  // PST-T-17.18: MailView mounting between the two keys (the route commits in a transition) used to
+  // see a bare second key — g then c from a mailbox opened Compose over the move to Calendar.
+  it('the Shell stops both keys of a chord on every route, MailView included, and navigates for all five', () => {
+    const shell = readFileSync(join(import.meta.dirname, '../../src/screens/Shell.tsx'), 'utf8');
+    const hook = shell.slice(shell.indexOf('function useGoChords'), shell.indexOf('/** The signed-in frame'));
+    expect(hook).toMatch(/if \(!consumed\) return;\s+e\.preventDefault\(\);\s+e\.stopPropagation\(\);\s+if \(go !== null\) void navigateRef\.current\(go\.path\);/);
+    expect(hook).not.toMatch(/inMail/);
+    expect(hook).toContain("window.addEventListener('keydown', onKey, true)");
   });
 });

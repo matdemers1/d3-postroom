@@ -58,9 +58,11 @@ export const SHORTCUTS: readonly Shortcut[] = [
 
 // --- Go-to chords (PST-T-16.19, PST-DA-026) ------------------------------------------------------
 //
-// `g` then a letter goes to a place. Inbox keeps its MailAction ('goInbox', MailView performs it);
-// the rest are plain data here, resolved by the Shell so they work on every route — Calendar,
-// Contacts, Settings and Admin included. The overlay lists these rows beside the others.
+// `g` then a letter goes to a place. The chords are plain data here, resolved by the Shell so they
+// work on every route — Mail, Calendar, Contacts, Settings and Admin. The Shell owns both keys of a
+// chord everywhere, MailView included (PST-T-17.18): MailView never sees them, so its own `g` state
+// (resolveKey, below) stays empty. Inbox keeps its MailAction ('goInbox') for the palette. The
+// overlay lists these rows beside the others.
 
 export type GoTarget = 'inbox' | 'sent' | 'drafts' | 'calendar' | 'contacts';
 
@@ -80,11 +82,19 @@ export const GO_CHORDS: readonly GoChord[] = [
   { key: 'p', target: 'contacts', path: '/contacts', description: 'Go to Contacts' },
 ];
 
-/** What a keydown means as a go-to chord, given a pending 'g'. Typing and modified keys mean nothing. */
-export function resolveGo(input: Pick<KeyInput, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'editable'>, pending: 'g' | null): { go: GoChord | null; pending: 'g' | null } {
-  if (input.editable || input.ctrlKey || input.metaKey || input.altKey) return { go: null, pending: null };
-  if (pending === 'g') return { go: GO_CHORDS.find((c) => c.key === input.key) ?? null, pending: null };
-  return { go: null, pending: input.key === 'g' ? 'g' : null };
+/**
+ * What a keydown means as a go-to chord, given a pending 'g'. Typing and modified keys mean nothing.
+ * `consumed` is a key that belongs to the chord — the g, and the character after it, whether or not
+ * it names a place — and that no screen's own shortcut may also act on. A named key after the g
+ * (Escape, an arrow) abandons the chord and is left to the screen.
+ */
+export function resolveGo(
+  input: Pick<KeyInput, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'editable'>,
+  pending: 'g' | null,
+): { go: GoChord | null; pending: 'g' | null; consumed: boolean } {
+  if (input.editable || input.ctrlKey || input.metaKey || input.altKey) return { go: null, pending: null, consumed: false };
+  if (pending === 'g') return { go: GO_CHORDS.find((c) => c.key === input.key) ?? null, pending: null, consumed: input.key.length === 1 };
+  return { go: null, pending: input.key === 'g' ? 'g' : null, consumed: input.key === 'g' };
 }
 
 /** The rows the ? overlay lists: SHORTCUTS, with the other go-to chords after "g then i". */
