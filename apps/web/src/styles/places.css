@@ -13,6 +13,12 @@
   animation: pr-place-in var(--dur-2) var(--ease-out) backwards;
 }
 
+/* PST-T-18.1: the shell's brand mark. AppShellBrand paints its mark slot with the accent, but the
+ * family mark's ink is the text colour — its one colour is its own lit star (DI-REQ-040). */
+.pr-brand-mark {
+  color: var(--color-fg);
+}
+
 /* Quiet counts: the sorted buckets and Junk / Rejects say how many without shouting — the same
  * recipe as @d3cloud/ui's CountBadge `quiet`, which SideNavItem does not expose. */
 .pr-nav-quiet .d3-bdg--count {

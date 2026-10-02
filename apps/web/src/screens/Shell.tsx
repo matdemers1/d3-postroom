@@ -729,7 +729,7 @@ export function Shell({ state, onSignedOut }: { state: AuthState; onSignedOut: (
         navTone="recessed"
         storageKey="postroom-shell"
         brand={
-          <AppShellBrand asChild name="Postroom" mark={<PostroomMark decorative />}>
+          <AppShellBrand asChild name="Postroom" mark={<PostroomMark decorative className="pr-brand-mark" />}>
             <RouterLink to="/" />
           </AppShellBrand>
         }
