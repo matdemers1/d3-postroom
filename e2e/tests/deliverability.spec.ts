@@ -74,7 +74,7 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies(cookies);
 });
 
-test('Google and Microsoft fixtures render on Deliverability, axe clean in both themes', async ({ page, isMobile }) => {
+test('Google and Microsoft fixtures render on Deliverability, axe clean in both themes', async ({ page }) => {
   await page.goto('/admin/deliverability');
   await expect(page.getByRole('heading', { name: 'Deliverability', level: 1 })).toBeVisible();
   // PST-T-17.1: Range is a segmented control in the page header.
@@ -98,10 +98,7 @@ test('Google and Microsoft fixtures render on Deliverability, axe clean in both 
   await expect(reporters.getByRole('row').or(reporters.getByRole('listitem')).filter({ hasText: 'Enterprise Outlook' })).toContainText('19');
 
   const tls = page.getByRole('table', { name: 'TLS sessions by policy' }).or(page.getByRole('list', { name: 'TLS sessions by policy' }));
-  await expect(tls.getByRole('row').filter({ has: page.getByRole('cell', { name: 'sts', exact: true }) }).or(tls.getByRole('listitem').filter({ hasText: /\bsts\b/ }))).toContainText(
-    // The table has a Sessions column; a phone card says '57 ok · 1 failed' (PST-T-17.1).
-    isMobile ? /\d+ ok · \d+ failed/ : '58',
-  );
+  await expect(tls.getByRole('row').filter({ has: page.getByRole('cell', { name: 'sts', exact: true }) }).or(tls.getByRole('listitem').filter({ hasText: /^d3cloud\.io\s*sts/ }))).toContainText('58');
   await expect(page.getByRole('table', { name: 'TLS failures by type' }).or(page.getByRole('list', { name: 'TLS failures by type' }))).toContainText('certificate-expired');
 
   const light = await new AxeBuilder({ page }).include('main').analyze();
