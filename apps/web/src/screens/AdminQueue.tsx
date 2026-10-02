@@ -24,6 +24,7 @@ import {
 import { ApiError, api, describeError, type QueueScope } from '../api';
 import { Loading, LoadFailed } from './states';
 import { RelativeTime } from '../components/RelativeTime';
+import { useUrlText } from '../components/useUrlText';
 import { queueState } from '../admin/health/model';
 import { DomainActions, QueueActions } from '../admin/queue/QueueActions';
 import { QueueDrawer } from '../admin/queue/QueueDrawer';
@@ -85,6 +86,10 @@ export function AdminQueue() {
   const setFilter = (key: 'state' | 'domain' | 'message', value: string): void => {
     setParams((current) => withQueueFilter(current, key, value), { replace: true });
   };
+  // The domain box's own text, ahead of the URL while a keystroke's navigation is in flight (PST-T-17.18).
+  const [domainText, setDomainText] = useUrlText(domain, (value) => {
+    setFilter('domain', value);
+  });
   // ?message= narrows every state's list to one message's recipients (the counts follow).
   const narrowed = useMemo(() => {
     if (lists === null) return null;
@@ -281,9 +286,9 @@ export function AdminQueue() {
           <SearchField
             aria-label="Domain"
             placeholder="Filter by domain"
-            value={domain}
+            value={domainText}
             onChange={(e) => {
-              setFilter('domain', e.target.value.trim().toLowerCase());
+              setDomainText(e.target.value.trim().toLowerCase());
             }}
           />
           <SegmentedControl
