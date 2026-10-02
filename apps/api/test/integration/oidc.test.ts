@@ -1,6 +1,7 @@
 // PST-T-0.8 doneWhen, D3 Auth half: the full authorization-code flow against a hand-rolled issuer
-// (PKCE, client_secret_basic, RS256), identity linking by (iss, sub) and never by email — including
-// the email-collision case — the roles claim as an admin source, and back-channel logout.
+// (PKCE, client_secret_basic, RS256), identity linking by (iss, sub) and never by email, the roles
+// claim as an admin source, and back-channel logout. PST-T-17.16 (PST-ADR-015): D3 Auth links to an
+// existing account and never creates one, and linking repairs a stray auto-provisioned account.
 import { waitForAuditGuard, missingAuditCount } from '@postroom/audit';
 import { seed, type Db } from '@postroom/db';
 import { createTestDatabase, type TestDatabase } from '@postroom/db/testing';
@@ -14,6 +15,7 @@ import {
   cookieHeader,
   cookiesOf,
   createAccount,
+  createD3AuthAccount,
   TestClock,
   totpCode,
   WEB_ORIGIN,
@@ -21,6 +23,7 @@ import {
 
 const baseUrl = process.env['DATABASE_URL'];
 const CSRF = { 'x-postroom-csrf': '1' };
+const NOT_LINKED = 'No Postroom account is linked to this D3 Auth account yet. Sign in with your password once, and D3 Auth will be linked to it.';
 
 interface StateBody {
   oidcConfigured: boolean;
@@ -106,7 +109,40 @@ describe.skipIf(!baseUrl)('Sign in with D3 Auth (PST-REQ-005, PST-REQ-007)', () 
     expect(await state({})).toMatchObject({ oidcConfigured: true, oidcAvailable: true, signedIn: false });
   });
 
-  it('completes the code flow, provisions an account linked by (iss, sub), and signs in', async () => {
+  /** Every audit row of this action whose `after.reason` is `reason`. */
+  const rejections = async (reason: string) =>
+    (await db.auditEvent.findMany({ where: { action: 'auth.oidc.rejected' }, orderBy: { at: 'asc' } })).filter(
+      (row) => (row.after as { reason?: unknown } | null)?.reason === reason,
+    );
+
+  /** Password + TOTP, a fresh session. The clock moves on a step so a TOTP code is never reused. */
+  const passwordSignIn = async (login: string, password: string, secret: string): Promise<Record<string, string>> => {
+    clock.advance(31_000);
+    const first = await request(app).post('/api/auth/signin').set(CSRF).send({ login, password });
+    expect(first.status).toBe(200);
+    const second = await request(app)
+      .post('/api/auth/signin/totp')
+      .set(CSRF)
+      .send({ challenge: (first.body as { challenge: string }).challenge, code: totpCode(secret, clock.now()) });
+    expect(second.status).toBe(200);
+    return cookiesOf(second);
+  };
+
+  const linkOf = (subject: string) => db.identityLink.findUnique({ where: { issuer_subject: { issuer: issuer.url, subject } } });
+
+  it('refuses an unlinked identity: back to sign-in with the reason and link_after_signin, and no account is made', async () => {
+    const accountsBefore = await db.account.count();
+    const { location, jar } = await oidcSignIn({ sub: 'alice-1', email: 'alice@example.com', name: 'Alice', roles: [] });
+    expect(location).toBe(`/signin?${new URLSearchParams({ signin_error: NOT_LINKED, link_after_signin: '1' }).toString()}`);
+    expect(jar['postroom_session']).toBeUndefined();
+    expect(await db.account.count()).toBe(accountsBefore);
+    expect(await linkOf('alice-1')).toBeNull();
+    const [row] = await rejections('not_linked');
+    expect(row?.after).toEqual({ reason: 'not_linked', issuer: issuer.url, subject: 'alice-1', email: 'alice@example.com' });
+  });
+
+  it('completes the code flow for a linked identity, by (iss, sub), and signs in', async () => {
+    await createD3AuthAccount(db, issuer.url, 'alice-1', { displayName: 'Alice', email: 'alice@example.com' });
     const { location, jar } = await oidcSignIn({ sub: 'alice-1', email: 'alice@example.com', name: 'Alice', roles: [] });
     expect(location).toBe('/');
     expect(jar['postroom_oidc']).toBeUndefined();
@@ -138,50 +174,124 @@ describe.skipIf(!baseUrl)('Sign in with D3 Auth (PST-REQ-005, PST-REQ-007)', () 
     expect(after.email).toBe('alice.new@example.com');
   });
 
-  it('a different subject asserting the same email is a different account — never matched by email', async () => {
-    const alice = await db.identityLink.findUniqueOrThrow({
-      where: { issuer_subject: { issuer: issuer.url, subject: 'alice-1' } },
-    });
-    const { jar } = await oidcSignIn({ sub: 'impostor-2', email: 'alice.new@example.com', roles: [] });
-    const body = await state(jar);
-    expect(body.signedIn).toBe(true);
-    expect(body.account?.id).not.toBe(alice.accountId);
+  it('a different subject asserting the same email is refused as unlinked — never matched by email', async () => {
+    const accountsBefore = await db.account.count();
+    const { location, jar } = await oidcSignIn({ sub: 'impostor-2', email: 'alice.new@example.com', roles: [] });
+    expect(location).toMatch(/^\/signin\?signin_error=.+&link_after_signin=1$/);
+    expect(jar['postroom_session']).toBeUndefined();
+    expect(await db.account.count()).toBe(accountsBefore);
+    expect(await linkOf('impostor-2')).toBeNull();
   });
 
-  it('refuses, without a 5xx, an identity whose email a local account already holds', async () => {
+  it('an identity asserting an address a local account holds is refused the same way, without a 5xx', async () => {
     const accountsBefore = await db.account.count();
     const { location, jar } = await oidcSignIn({ sub: 'mallory-3', email: 'operator@d3cloud.io', roles: [] });
     expect(location).toMatch(/^\/signin\?signin_error=.+&link_after_signin=1$/);
     expect(jar['postroom_session']).toBeUndefined();
     expect(await db.account.count()).toBe(accountsBefore);
-    expect(
-      await db.identityLink.findUnique({ where: { issuer_subject: { issuer: issuer.url, subject: 'mallory-3' } } }),
-    ).toBeNull();
-    expect(await db.auditEvent.count({ where: { action: 'auth.oidc.rejected' } })).toBe(1);
+    expect(await linkOf('mallory-3')).toBeNull();
+    expect((await rejections('not_linked')).map((r) => (r.after as { subject: string }).subject)).toEqual(['alice-1', 'impostor-2', 'mallory-3']);
   });
 
-  it('links deliberately: signed in with the password, then Sign in with D3 Auth with link=1', async () => {
-    clock.advance(31_000);
-    const first = await request(app).post('/api/auth/signin').set(CSRF).send({ login: 'operator', password: OPERATOR_PASSWORD });
-    const second = await request(app)
-      .post('/api/auth/signin/totp')
-      .set(CSRF)
-      .send({ challenge: (first.body as { challenge: string }).challenge, code: totpCode(operator.totpSecret, clock.now()) });
-    expect(second.status).toBe(200);
-    const jar = cookiesOf(second);
+  it('unlinked, then the password, then the link: D3 Auth reaches the password account from then on', async () => {
+    // What the sign-in page does with link_after_signin=1: password + TOTP, then /oidc/start?link=1.
+    const refused = await oidcSignIn({ sub: 'op-d3', email: 'matthew@example.net', roles: [] });
+    expect(refused.location).toMatch(/link_after_signin=1$/);
+    const accountsBefore = await db.account.count();
 
-    const { location } = await oidcSignIn({ sub: 'op-d3', email: 'operator@d3cloud.io', roles: [] }, { ...jar }, '/api/auth/oidc/start?link=1');
+    const jar = await passwordSignIn('operator', OPERATOR_PASSWORD, operator.totpSecret);
+    const { location } = await oidcSignIn({ sub: 'op-d3', email: 'matthew@example.net', roles: [] }, { ...jar }, '/api/auth/oidc/start?link=1');
     expect(location).toBe('/');
     const link = await db.identityLink.findUniqueOrThrow({ where: { issuer_subject: { issuer: issuer.url, subject: 'op-d3' } } });
     expect(link.accountId).toBe(operator.id);
+    expect(await db.account.count()).toBe(accountsBefore);
     expect(await db.auditEvent.count({ where: { action: 'auth.identity.link', actorAccountId: operator.id } })).toBe(1);
 
     // From now on D3 Auth alone reaches the operator, who is an admin by the native flag.
-    const fresh = await oidcSignIn({ sub: 'op-d3', email: 'operator@d3cloud.io', roles: [] });
-    expect(await state(fresh.jar)).toMatchObject({ signedIn: true, account: { id: operator.id, isAdmin: true } });
+    const fresh = await oidcSignIn({ sub: 'op-d3', email: 'matthew@example.net', roles: [] });
+    expect(fresh.location).toBe('/');
+    expect(await state(fresh.jar)).toMatchObject({ signedIn: true, method: 'oidc', account: { id: operator.id, isAdmin: true } });
   });
 
+  it('linking an identity already linked to this account changes nothing', async () => {
+    const before = await db.identityLink.findUniqueOrThrow({ where: { issuer_subject: { issuer: issuer.url, subject: 'op-d3' } } });
+    const linksBefore = await db.identityLink.count();
+    const linkAudits = await db.auditEvent.count({ where: { action: 'auth.identity.link' } });
+
+    const jar = await passwordSignIn('operator', OPERATOR_PASSWORD, operator.totpSecret);
+    const { location, jar: after } = await oidcSignIn({ sub: 'op-d3', email: 'matthew@example.net', roles: [] }, { ...jar }, '/api/auth/oidc/start?link=1');
+    expect(location).toBe('/');
+    expect(await state(after)).toMatchObject({ signedIn: true, account: { id: operator.id } });
+    const link = await db.identityLink.findUniqueOrThrow({ where: { id: before.id } });
+    expect({ id: link.id, accountId: link.accountId, createdAt: link.createdAt }).toEqual({ id: before.id, accountId: operator.id, createdAt: before.createdAt });
+    expect(await db.identityLink.count()).toBe(linksBefore);
+    expect(await db.auditEvent.count({ where: { action: 'auth.identity.link' } })).toBe(linkAudits);
+    expect(await db.auditEvent.count({ where: { action: 'auth.identity.move' } })).toBe(0);
+    const last = await db.auditEvent.findFirstOrThrow({ where: { action: 'auth.signin', actorAccountId: operator.id }, orderBy: { at: 'desc' } });
+    expect(last.after).toMatchObject({ method: 'oidc', outcome: 'existing', subject: 'op-d3' });
+  });
+
+  it('linking repairs a stray auto-provisioned account: the link moves, the stray is disabled and signed out', async () => {
+    // The production case: a first D3 Auth sign-in, before PST-ADR-015, made an empty account.
+    const stray = await createD3AuthAccount(db, issuer.url, 'stray-6', { displayName: 'Matthew Demers', email: 'matthew@demers.example' });
+    const strayJar = (await oidcSignIn({ sub: 'stray-6', email: 'matthew@demers.example', roles: [] })).jar;
+    expect(await state(strayJar)).toMatchObject({ signedIn: true, account: { id: stray } });
+
+    const owner = await createAccount(db, { login: 'owner', password: OPERATOR_PASSWORD });
+    const jar = await passwordSignIn('owner', OPERATOR_PASSWORD, owner.totpSecret);
+    const { location, jar: linked } = await oidcSignIn({ sub: 'stray-6', email: 'matthew@demers.example', roles: [] }, { ...jar }, '/api/auth/oidc/start?link=1');
+    expect(location).toBe('/');
+    expect(await state(linked)).toMatchObject({ signedIn: true, method: 'oidc', account: { id: owner.id } });
+
+    expect((await linkOf('stray-6'))?.accountId).toBe(owner.id);
+    expect((await db.account.findUniqueOrThrow({ where: { id: stray } })).disabledAt).not.toBeNull();
+    expect(await db.session.count({ where: { accountId: stray } })).toBe(0);
+    expect((await state(strayJar)).signedIn).toBe(false);
+    const move = await db.auditEvent.findFirstOrThrow({ where: { action: 'auth.identity.move' } });
+    expect(move.actorAccountId).toBe(owner.id);
+    expect(move.after).toMatchObject({ from: stray, to: owner.id, issuer: issuer.url, subject: 'stray-6' });
+    expect((move.after as { ended: string[] }).ended).toHaveLength(1);
+    expect(await db.auditEvent.count({ where: { action: 'auth.identity.link', actorAccountId: owner.id } })).toBe(1);
+
+    // D3 Auth now lands on the owner.
+    const again = await oidcSignIn({ sub: 'stray-6', email: 'matthew@demers.example', roles: [] });
+    expect(await state(again.jar)).toMatchObject({ signedIn: true, account: { id: owner.id } });
+  });
+
+  for (const shape of ['a password', 'an address'] as const) {
+    it(`refuses to take a link from an account with ${shape}, and changes nothing`, async () => {
+      const subject = `real-7-${shape === 'a password' ? 'pw' : 'addr'}`;
+      const domain = await db.domain.findFirstOrThrow({ where: { isPrimary: true } });
+      const holder = await db.account.create({
+        data: {
+          displayName: 'Holder',
+          ...(shape === 'a password' ? { passwordHash: 'argon2id-stand-in' } : { addresses: { create: { localPart: subject, domainId: domain.id, kind: 'primary' } } }),
+          identityLinks: { create: { issuer: issuer.url, subject } },
+        },
+      });
+      const holderSession = (await oidcSignIn({ sub: subject, roles: [] })).jar;
+      const login = `asker${shape === 'a password' ? 'pw' : 'addr'}`;
+      const asker = await createAccount(db, { login, password: OPERATOR_PASSWORD });
+      const jar = await passwordSignIn(login, OPERATOR_PASSWORD, asker.totpSecret);
+      const linksBefore = await db.identityLink.count();
+
+      const { location, jar: after } = await oidcSignIn({ sub: subject, roles: [] }, { ...jar }, '/api/auth/oidc/start?link=1');
+      // A code, not words: the Account screen holds the copy.
+      expect(location).toBe('/settings/account?link_error=linked_elsewhere');
+      // Still signed in as the account that asked, and nothing moved.
+      expect(await state(after)).toMatchObject({ signedIn: true, method: 'password', account: { id: asker.id } });
+      expect((await linkOf(subject))?.accountId).toBe(holder.id);
+      expect(await db.identityLink.count()).toBe(linksBefore);
+      expect((await db.account.findUniqueOrThrow({ where: { id: holder.id } })).disabledAt).toBeNull();
+      expect((await state(holderSession)).signedIn).toBe(true);
+      const [row] = (await rejections('linked_elsewhere')).filter((r) => (r.after as { subject: string }).subject === subject);
+      expect(row?.actorAccountId).toBe(asker.id);
+      expect(row?.after).toMatchObject({ issuer: issuer.url, subject, linkedAccountId: holder.id });
+    });
+  }
+
   it("grants admin from the roles claim ('admin' on this client) without the native flag", async () => {
+    await createD3AuthAccount(db, issuer.url, 'role-admin-4');
     const { jar } = await oidcSignIn({ sub: 'role-admin-4', email: 'ra@example.com', roles: ['admin'] });
     const body = await state(jar);
     expect(body.account?.isAdmin).toBe(true);
@@ -206,6 +316,7 @@ describe.skipIf(!baseUrl)('Sign in with D3 Auth (PST-REQ-005, PST-REQ-007)', () 
   });
 
   it('back-channel logout ends the D3 Auth sessions of that subject, once', async () => {
+    await createD3AuthAccount(db, issuer.url, 'bcl-5');
     const { jar } = await oidcSignIn({ sub: 'bcl-5', email: 'bcl@example.com', roles: [] });
     expect((await state(jar)).signedIn).toBe(true);
     // A second D3 Auth session for the same subject: back-channel logout ends both, looked up by

@@ -2,6 +2,7 @@ import '../styles/fields.css';
 import { type SyntheticEvent, useEffect, useState } from 'react';
 import { Alert, AuthLayout, Button, Card, FormActions, FormField, Input, PasswordInput, Stack, Link } from '@d3cloud/ui';
 import { PostroomMark } from '../brand/PostroomMark';
+import { signinNoticeFrom } from '../admin/sign-in/model';
 import { api, describeError, type AuthState } from '../api';
 import { describeRecoveryError, USE_AUTHENTICATOR_LABEL, USE_RECOVERY_LABEL } from './recovery/codes';
 import { reenrolApi } from './reenrol/api';
@@ -22,6 +23,11 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
   const [useRecovery, setUseRecovery] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkAfter, setLinkAfter] = useState(false);
+  /**
+   * PST-T-17.16 (PST-ADR-015): D3 Auth reached no linked account. Why, and that signing in here goes
+   * on to link it — kept through both steps, unlike an error, which the next attempt clears.
+   */
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /**
    * PST-REQ-200: a recovery code signed this session in, so it sets up a new authenticator here
@@ -32,11 +38,11 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
   // A refused D3 Auth sign-in comes back as a redirect carrying its reason. Read once, then
   // cleared from the URL so a reload does not re-announce it.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const reason = params.get('signin_error');
-    if (reason === null) return;
-    setError(reason);
-    setLinkAfter(params.get('link_after_signin') === '1');
+    const notice = signinNoticeFrom(window.location.search);
+    if (notice === null) return;
+    if (notice.linkAfter) setLinkNotice(notice.message);
+    else setError(notice.message);
+    setLinkAfter(notice.linkAfter);
     window.history.replaceState(null, '', window.location.pathname);
   }, []);
 
@@ -110,6 +116,11 @@ export function SignIn({ state, onSignedIn }: { state: AuthState; onSignedIn: ()
     >
       <Card>
         <Stack gap="16">
+          {linkNotice === null ? null : (
+            <Alert tone="info" title="Sign in to link D3 Auth" dynamic>
+              {linkNotice}
+            </Alert>
+          )}
           {error === null ? null : (
             <Alert tone="danger" title="Sign-in failed" dynamic>
               {error}

@@ -220,14 +220,39 @@ test('/signin has no axe violations', async ({ page }) => {
   expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 });
 
-test('Sign in with D3 Auth reaches the shell (needs FAKE_ISSUER_URL)', async ({ page, request }) => {
+// PST-T-17.16 (PST-ADR-015): D3 Auth links to an existing account and never creates one. The first
+// time, the identity is not linked: the sign-in page says so, and a password sign-in goes on to link
+// it. After that, D3 Auth alone reaches the account. (On a re-run against the same stack the link is
+// already there, and the first click lands in the app.)
+test('Sign in with D3 Auth: linked by a password sign-in, then it reaches the shell (needs FAKE_ISSUER_URL)', async ({ page, request }) => {
   test.skip(process.env['FAKE_ISSUER_URL'] === undefined, 'no fake issuer configured for this stack');
   expect((await authState(request)).oidcConfigured).toBe(true);
+  const operator = requireOperator();
+  const mail = page.getByRole('heading', { name: 'Mail', level: 1 });
 
   await page.goto('/signin');
   await page.getByRole('link', { name: 'Sign in with D3 Auth' }).click();
-  await expect(page.getByRole('heading', { name: 'Mail', level: 1 })).toBeVisible();
-  // The fake issuer's user carries roles ['admin'], so the Admin console is offered (PST-REQ-007).
+  const notice = page.getByText('No Postroom account is linked to this D3 Auth account yet. Sign in with your password once, and D3 Auth will be linked to it.');
+  await expect(notice.or(mail).first()).toBeVisible();
+  if (await notice.isVisible()) {
+    // Refused, not signed in to anything — no account was made for the identity.
+    expect(((await page.request.get('/api/auth/state').then((r) => r.json())) as { signedIn: boolean }).signedIn).toBe(false);
+    await page.getByRole('textbox', { name: 'Address or username' }).fill(operator.login);
+    await page.getByLabel('Password', { exact: true }).fill(operator.password);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    // The reason stays up through the second step: this sign-in is the one that links.
+    await expect(notice).toBeVisible();
+    await page.getByRole('textbox', { name: 'Authentication code' }).fill(await freshCode(operator));
+    await page.getByRole('button', { name: 'Verify' }).click();
+    // On to D3 Auth with link=1, and back into the app.
+    await expect(mail).toBeVisible();
+    // Signed out, D3 Auth alone now reaches the same account.
+    expect((await page.request.post('/api/auth/signout', { headers: CSRF })).ok()).toBe(true);
+    await page.goto('/signin');
+    await page.getByRole('link', { name: 'Sign in with D3 Auth' }).click();
+  }
+  await expect(mail).toBeVisible();
+  // The operator is an admin, so the Admin console is offered (PST-REQ-007).
   await openNav(page);
   await page.locator('button.d3-acct').click();
   await expect(page.getByRole('menuitem', { name: /^Admin console/ })).toBeVisible();

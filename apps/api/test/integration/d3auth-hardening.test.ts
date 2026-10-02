@@ -13,7 +13,7 @@ import { startFakeIssuer, type FakeIssuer, type FakeIssuerUser } from '../../../
 import { createApp } from '../../src/app.js';
 import type { ApiConfig } from '../../src/deps.js';
 import { request } from '../loopback.js';
-import { baseConfig, cookieHeader, cookiesOf, createAccount, TestClock, totpCode } from './helpers.js';
+import { baseConfig, cookieHeader, cookiesOf, createAccount, createD3AuthAccount, TestClock, totpCode } from './helpers.js';
 
 const baseUrl = process.env['DATABASE_URL'];
 const CSRF = { 'x-postroom-csrf': '1' };
@@ -167,6 +167,8 @@ describe.skipIf(!baseUrl)('D3 Auth settings hardening (PST-T-17.6)', () => {
   });
 
   it('retargeting ends every D3 Auth session, audited; an unchanged save and password sessions are left alone', async () => {
+    // D3 Auth only reaches a linked account (PST-ADR-015).
+    await createD3AuthAccount(db, issuerB.url, 'carol-b', { email: 'carol@example.com' });
     const carol = (await oidcSignIn(app, issuerB, { sub: 'carol-b', email: 'carol@example.com', roles: [] })).jar;
     expect(await state(app, carol)).toMatchObject({ signedIn: true, method: 'oidc' });
 

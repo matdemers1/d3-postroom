@@ -54,15 +54,19 @@ vi.mock('@d3cloud/ui', () => {
 
 import { ApiError, d3authApi, OIDC_LINK_PATH, type D3AuthConfig, type LinkedIdentity } from '../../src/api';
 import {
+  accountLinkNoticeFrom,
   accountRowDescription,
   fieldErrors,
   formFrom,
+  LINK_ERROR_COPY,
+  LINK_STEP_UP_WHY,
   manifestText,
   REGISTER_STEPS,
   saveInput,
   SECRET_NEW_HELP,
   SECRET_SAVED_HELP,
   secretNeeded,
+  signinNoticeFrom,
   statusLine,
   TURN_OFF_COPY,
   UNLINK_COPY,
@@ -364,7 +368,38 @@ describe('Settings › Account › Sign in with D3 Auth', () => {
   it('is hidden until /api/auth/state says D3 Auth is available', () => {
     const source = read('admin/sign-in/AccountD3AuthRow.tsx');
     expect(source).toContain('state.oidcAvailable');
-    expect(source).toMatch(/if \(!available \|\| identities === null\) return prompt;/);
+    expect(source).toMatch(/if \(!available \|\| identities === null\) \{\n\s+return \(\n\s+<>\n\s+\{refusal\}\n\s+\{prompt\}/);
+  });
+
+  // PST-T-17.16 (PST-ADR-015): a link the server would not make comes back here.
+  it('a refused link comes back as a code, shown as its copy; an unknown code or none is nothing', () => {
+    expect(accountLinkNoticeFrom('?link_error=linked_elsewhere')).toEqual({
+      kind: 'error',
+      message: 'This D3 Auth account is already linked to another Postroom account. Unlink it there first.',
+    });
+    expect(LINK_ERROR_COPY['linked_elsewhere']).toBe('This D3 Auth account is already linked to another Postroom account. Unlink it there first.');
+    // Words in the URL are never shown: a crafted link cannot put its own text on the screen.
+    expect(accountLinkNoticeFrom('?link_error=Call+us+now')).toBeNull();
+    expect(accountLinkNoticeFrom('?link_error=toString')).toBeNull();
+    expect(accountLinkNoticeFrom('')).toBeNull();
+  });
+
+  it('a link from a session older than five minutes asks for a code, then starts the link again', () => {
+    expect(accountLinkNoticeFrom('?link_step_up=1')).toEqual({ kind: 'step_up' });
+    expect(LINK_STEP_UP_WHY).toBe('Linking D3 Auth adds a way to sign in to this account');
+    const source = read('admin/sign-in/AccountD3AuthRow.tsx');
+    expect(source).toContain('useStepUp(LINK_STEP_UP_WHY)');
+    expect(source).toMatch(/void confirmToLink\(\(\) => \{\n\s+window\.location\.assign\(OIDC_LINK_PATH\);/);
+    // Read once, then cleared from the URL.
+    expect(source).toContain("window.history.replaceState(null, '', window.location.pathname);");
+    // The prompt opens without waiting for a 403: the server has already said it is needed.
+    expect(read('admin/sign-in/step-up.tsx')).toMatch(/return askFirst\(action\);/);
+  });
+
+  it('a refusal shows in a danger alert above the row, available or not', () => {
+    const source = read('admin/sign-in/AccountD3AuthRow.tsx');
+    expect(source).toContain('<Alert tone="danger" title="D3 Auth was not linked" dynamic>');
+    expect(source.match(/\{refusal\}/g)).toHaveLength(2);
   });
 
   it('sits in the Sign-in card after Two-factor', () => {
@@ -390,5 +425,29 @@ describe('secretNeeded (PST-T-17.6: a saved secret never follows a new issuer or
   it('asks again when the issuer or the client ID changes', () => {
     expect(secretNeeded(saved, form('https://evil.example', 'postroom'))).toBe('again');
     expect(secretNeeded(saved, form('https://auth.d3cloud.io', 'other'))).toBe('again');
+  });
+});
+
+describe('Sign-in, back from D3 Auth (PST-T-17.16, PST-ADR-015)', () => {
+  const NOT_LINKED = 'No Postroom account is linked to this D3 Auth account yet. Sign in with your password once, and D3 Auth will be linked to it.';
+
+  it('an unlinked identity: the reason, and the sign-in goes on to link', () => {
+    const search = `?${new URLSearchParams({ signin_error: NOT_LINKED, link_after_signin: '1' }).toString()}`;
+    expect(signinNoticeFrom(search)).toEqual({ message: NOT_LINKED, linkAfter: true });
+  });
+
+  it('any other refusal: the reason only', () => {
+    expect(signinNoticeFrom('?signin_error=D3+Auth+did+not+answer.')).toEqual({ message: 'D3 Auth did not answer.', linkAfter: false });
+    expect(signinNoticeFrom('')).toBeNull();
+  });
+
+  it('the screen keeps the link notice through both steps, and links after the second', () => {
+    const source = read('screens/SignIn.tsx');
+    expect(source).toContain('const notice = signinNoticeFrom(window.location.search);');
+    expect(source).toContain('if (notice.linkAfter) setLinkNotice(notice.message);');
+    expect(source).toContain('<Alert tone="info" title="Sign in to link D3 Auth" dynamic>');
+    // Only setError is cleared by a submit; the link notice stays.
+    expect(source).not.toContain('setLinkNotice(null)');
+    expect(source).toContain("window.location.assign('/api/auth/oidc/start?link=1');");
   });
 });
