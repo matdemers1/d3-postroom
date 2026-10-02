@@ -14,7 +14,8 @@
 //     code, a stack or a blank area;
 //   - denied: a non-admin session opening /admin/* (the Gate's /api/auth/state answers with
 //     isAdmin false and every /api/admin call 403s, which is exactly what the server does for a
-//     non-admin — Postroom has no way to create a second human account without D3 Auth); an
+//     non-admin — a second human account comes only from an invite, and a stack under test has
+//     none to sign in as, PST-ADR-015 having ended D3 Auth's auto-provisioning); an
 //     admin role withdrawn while the page is open (the admin calls answer 403); and an expired
 //     session (the cookie cleared mid-page, then a screen's fetch answers 401 from the real server).
 //

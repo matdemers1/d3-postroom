@@ -2,10 +2,13 @@
 // the D3 Auth email and Unlink (a confirm, then step-up). Not linked: Link…, a real navigation to
 // the server, which asks for a fresh sign-in first when the last one is older than five minutes.
 // Hidden while D3 Auth is not available, so it never offers a door that will not open.
+// PST-T-17.16 (PST-ADR-015): a link the server would not make comes back here — refused, because the
+// identity belongs to another account (shown in an alert), or because the session is older than
+// five minutes (the code prompt opens, then the link starts again).
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Modal, ModalClose, SettingsRow, useToast } from '@d3cloud/ui';
+import { Alert, Button, Modal, ModalClose, SettingsRow, useToast } from '@d3cloud/ui';
 import { api, describeError, d3authApi, OIDC_LINK_PATH, type LinkedIdentity } from '../../api';
-import { accountRowDescription, UNLINK_COPY } from './model';
+import { accountLinkNoticeFrom, accountRowDescription, LINK_STEP_UP_WHY, UNLINK_COPY } from './model';
 import { useStepUp } from './step-up';
 
 export const ROW_TITLE = 'Sign in with D3 Auth';
@@ -38,6 +41,24 @@ export function AccountD3AuthRow() {
   const [confirming, setConfirming] = useState(false);
   const toast = useToast();
   const { withStepUp, prompt } = useStepUp('Unlinking removes a way to sign in to this account');
+  const { askFirst: confirmToLink, prompt: linkPrompt } = useStepUp(LINK_STEP_UP_WHY);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  // Read once, then cleared from the URL so a reload does not repeat it.
+  useEffect(() => {
+    const notice = accountLinkNoticeFrom(window.location.search);
+    if (notice === null) return;
+    window.history.replaceState(null, '', window.location.pathname);
+    if (notice.kind === 'error') {
+      setLinkError(notice.message);
+      return;
+    }
+    // A real navigation once the code is accepted: the server answers with a redirect to D3 Auth.
+    void confirmToLink(() => {
+      window.location.assign(OIDC_LINK_PATH);
+      return Promise.resolve(true);
+    });
+  }, [confirmToLink]);
 
   const load = useCallback(async () => {
     try {
@@ -54,7 +75,22 @@ export function AccountD3AuthRow() {
     void load();
   }, [load]);
 
-  if (!available || identities === null) return prompt;
+  const refusal =
+    linkError === null ? null : (
+      <Alert tone="danger" title="D3 Auth was not linked" dynamic>
+        {linkError}
+      </Alert>
+    );
+
+  if (!available || identities === null) {
+    return (
+      <>
+        {refusal}
+        {prompt}
+        {linkPrompt}
+      </>
+    );
+  }
   const identity = identities[0] ?? null;
 
   const unlink = () => {
@@ -79,6 +115,7 @@ export function AccountD3AuthRow() {
 
   return (
     <>
+      {refusal}
       <D3AuthRowView
         identity={identity}
         onLink={() => {
@@ -108,6 +145,7 @@ export function AccountD3AuthRow() {
         }
       />
       {prompt}
+      {linkPrompt}
     </>
   );
 }

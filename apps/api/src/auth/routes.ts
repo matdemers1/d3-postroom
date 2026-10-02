@@ -10,7 +10,8 @@ import { z } from 'zod';
 import type { ApiDeps } from '../deps.js';
 import { currentSession, handle, refuseUntilReenrolled, requireSession, requireStepUp, sessionOf } from './middleware.js';
 import {
-  IdentityCollision,
+  LinkedElsewhere,
+  NotLinked,
   openTransaction,
   resolveIdentity,
   sealTransaction,
@@ -213,6 +214,17 @@ function signinError(message: string, linkAfter = false): string {
   const query = new URLSearchParams({ signin_error: message });
   if (linkAfter) query.set('link_after_signin', '1');
   return `/signin?${query.toString()}`;
+}
+
+/**
+ * Back to Settings › Account, for a link started by a signed-in browser: /signin would send a
+ * signed-in session straight on into the app, and what it had to say would be lost. The Account
+ * screen's D3 Auth row shows `link_error` (a code, so the URL never carries words of its own), and on
+ * `link_step_up=1` asks for a code and starts the link again (PST-T-17.16).
+ */
+function accountLinkRedirect(outcome: 'linked_elsewhere' | 'step_up'): string {
+  const query = new URLSearchParams(outcome === 'step_up' ? { link_step_up: '1' } : { link_error: outcome });
+  return `/settings/account?${query.toString()}`;
 }
 
 function txCookie(rt: AuthRuntime, res: Response, value: string, maxAgeMs: number): void {
@@ -1111,9 +1123,11 @@ export function authRoutes(deps: ApiDeps): Router {
       if (req.query['link'] === '1') {
         const session = await sessionOf(rt, req);
         // Linking adds a way to sign in to this account, so it needs proof from the last five
-        // minutes — a signed-in browser left open is not enough (ASVS 5.0 7.5.1).
+        // minutes — a signed-in browser left open is not enough (ASVS 5.0 7.5.1). The proof is a
+        // step-up on the Account screen, which then starts the link again; /signin is no place for
+        // a browser that is still signed in (the app sends it straight on).
         if (session !== null && !freshlyAuthenticated(rt, session)) {
-          res.redirect(302, signinError('Sign in again to link D3 Auth to this account.', true));
+          res.redirect(302, accountLinkRedirect('step_up'));
           return;
         }
         linkTo = session?.accountId;
@@ -1221,6 +1235,26 @@ export function authRoutes(deps: ApiDeps): Router {
             },
             rt.now(),
           );
+          // A stray account auto-provisioned before PST-ADR-015 gave its link up: it is disabled and
+          // its sessions are over, in this commit.
+          if (resolved.moved !== undefined) {
+            await recordAudit(dbtx, {
+              actor: asAccount(resolved.accountId),
+              action: 'auth.identity.move',
+              entityType: 'identity_link',
+              entityId: null,
+              before: { accountId: resolved.moved.from },
+              after: {
+                from: resolved.moved.from,
+                to: resolved.accountId,
+                issuer: identity.iss,
+                subject: identity.sub,
+                disabledAccount: resolved.moved.from,
+                ended: resolved.moved.endedSessions,
+              },
+              context: getAuditContext(req),
+            });
+          }
           const account = await dbtx.account.findUniqueOrThrow({ where: { id: resolved.accountId } });
           if (account.disabledAt !== null) return null;
           await endPresentedSession(rt, dbtx, req);
@@ -1266,16 +1300,32 @@ export function authRoutes(deps: ApiDeps): Router {
         setSessionCookie(res, session.token, rt.secure);
         res.redirect(302, '/');
       } catch (error) {
-        if (error instanceof IdentityCollision) {
+        // D3 Auth never creates an account (PST-ADR-015): sign in with the password, and the
+        // sign-in page carries on to link this identity to that account.
+        if (error instanceof NotLinked) {
           await recordAudit(db, {
             actor: anonymous,
             action: 'auth.oidc.rejected',
             entityType: 'identity_link',
             entityId: null,
-            after: { reason: 'email_collision', issuer: identity.iss, subject: identity.sub, email: email ?? null },
+            after: { reason: 'not_linked', issuer: identity.iss, subject: identity.sub, email: email ?? null },
             context: getAuditContext(req),
           });
           res.redirect(302, signinError(error.message, true));
+          return;
+        }
+        // The identity already belongs to an account with a life of its own: nothing changes, and
+        // the browser (still signed in to the account that asked) goes back to where it asked.
+        if (error instanceof LinkedElsewhere && tx.linkAccountId !== undefined) {
+          await recordAudit(db, {
+            actor: asAccount(tx.linkAccountId),
+            action: 'auth.oidc.rejected',
+            entityType: 'identity_link',
+            entityId: null,
+            after: { reason: 'linked_elsewhere', issuer: identity.iss, subject: identity.sub, email: email ?? null, linkedAccountId: error.linkedAccountId },
+            context: getAuditContext(req),
+          });
+          res.redirect(302, accountLinkRedirect('linked_elsewhere'));
           return;
         }
         throw error;

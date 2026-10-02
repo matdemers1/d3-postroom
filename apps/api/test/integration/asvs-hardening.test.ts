@@ -277,7 +277,7 @@ describe.skipIf(!baseUrl)('ASVS hardening: API integration (PST-T-4.10, PST-REQ-
       await issuer.close();
     });
 
-    it('a session older than five minutes redirects to sign-in instead of starting the link', async () => {
+    it('a session older than five minutes is sent back to Account to confirm it is you, instead of starting the link', async () => {
       const login = randomLogin();
       const { totpSecret } = await createAccount(db, { login, password: PASSWORD, isAdmin: false });
       const jar = await signIn(login, PASSWORD, totpSecret, linkedApp);
@@ -285,8 +285,16 @@ describe.skipIf(!baseUrl)('ASVS hardening: API integration (PST-T-4.10, PST-REQ-
       clock.advance(5 * 60 * 1000 + 1_000);
       const res = await request(linkedApp).get('/api/auth/oidc/start?link=1').set('cookie', cookieHeader(jar));
       expect(res.status).toBe(302);
-      expect(String(res.headers['location'])).toMatch(/^\/signin\?signin_error=.+&link_after_signin=1$/);
+      // Not /signin: the app sends a signed-in browser straight on from there, and the reason is
+      // lost (PST-T-17.16). The Account screen asks for a code, then starts the link again.
+      expect(String(res.headers['location'])).toBe('/settings/account?link_step_up=1');
       expect(res.headers['set-cookie']).toBeUndefined();
+
+      // The step-up is the fresh proof: the same session may now start the link.
+      await stepUp(cookieHeader(jar), totpSecret);
+      const again = await request(linkedApp).get('/api/auth/oidc/start?link=1').set('cookie', cookieHeader(jar));
+      expect(again.status).toBe(302);
+      expect(String(again.headers['location']).startsWith(`${issuer.url}/authorize?`)).toBe(true);
     });
 
     it('a freshly signed-in session is allowed to start the link', async () => {

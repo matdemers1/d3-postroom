@@ -13,7 +13,7 @@ export { accountIdentityRoutes } from './identities.js';
 export { csrfGuard, requireAdmin, requireSession, requireStepUp, currentSession } from './middleware.js';
 export { runtimeFor, STEP_UP_MS } from './runtime.js';
 export { isSetupRequired } from './setup.js';
-export { OidcProvider, resolveIdentity, IdentityCollision } from './oidc.js';
+export { OidcProvider, resolveIdentity, NotLinked, LinkedElsewhere } from './oidc.js';
 export { hashPassword, verifyPassword } from './passwords.js';
 export { sealTotpSecret, generateTotpSecret } from './totp.js';
 export { SESSION_COOKIE, SECURE_SESSION_COOKIE, sessionCookieName, IDLE_MS, ABSOLUTE_MS } from './sessions.js';

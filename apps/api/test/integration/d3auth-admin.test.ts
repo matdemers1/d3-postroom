@@ -12,7 +12,7 @@ import { startFakeIssuer, type FakeIssuer, type FakeIssuerUser } from '../../../
 import { createApp } from '../../src/app.js';
 import type { ApiConfig } from '../../src/deps.js';
 import { request } from '../loopback.js';
-import { baseConfig, cookieHeader, cookiesOf, createAccount, KEK_BASE64, TestClock, totpCode, WEB_ORIGIN } from './helpers.js';
+import { baseConfig, cookieHeader, cookiesOf, createAccount, createD3AuthAccount, KEK_BASE64, TestClock, totpCode, WEB_ORIGIN } from './helpers.js';
 
 const baseUrl = process.env['DATABASE_URL'];
 const CSRF = { 'x-postroom-csrf': '1' };
@@ -219,7 +219,9 @@ describe.skipIf(!baseUrl)('Sign in with D3 Auth from the console (PST-T-17.6, PS
     expect(await state(app)).toMatchObject({ oidcConfigured: true, oidcAvailable: true });
     expect((await startLocation(app)).startsWith(`${issuerB.url}/authorize?`)).toBe(true);
     // The whole flow against B: its /token accepts only B's client ID and secret (client_secret_basic),
-    // so this proves the sealed secret is the one in use.
+    // so this proves the sealed secret is the one in use. D3 Auth only reaches a linked account
+    // (PST-ADR-015), so Carol's is linked first.
+    await createD3AuthAccount(db, issuerB.url, 'carol-b', { email: 'carol@example.com' });
     const { location, jar } = await oidcSignIn(app, issuerB, { sub: 'carol-b', email: 'carol@example.com', roles: [] });
     expect(location).toBe('/');
     expect(await state(app, jar)).toMatchObject({ signedIn: true, method: 'oidc' });

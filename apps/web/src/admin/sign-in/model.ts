@@ -131,3 +131,46 @@ export function accountRowDescription(identity: LinkedIdentity | null): string {
   if (identity === null) return 'Use your D3 Auth account to sign in here';
   return `Linked to ${identity.email ?? 'your D3 Auth account'}`;
 }
+
+// ─── Coming back from a link (PST-T-17.16, PST-ADR-015) ─────────────────────
+
+/** The step-up prompt's reason when a link needs a fresh code first. */
+export const LINK_STEP_UP_WHY = 'Linking D3 Auth adds a way to sign in to this account';
+
+export type AccountLinkNotice = { kind: 'error'; message: string } | { kind: 'step_up' };
+
+/**
+ * The refusals a link can come back with, by code. The URL carries a code, never the words, so a
+ * crafted link cannot put its own text on the Account screen.
+ */
+export const LINK_ERROR_COPY: Readonly<Record<string, string>> = {
+  linked_elsewhere: 'This D3 Auth account is already linked to another Postroom account. Unlink it there first.',
+};
+
+/**
+ * What the server's redirect back to Settings › Account carries after a link it would not make:
+ * `link_error=<code>` (shown as its copy; an unknown code is ignored), or `link_step_up=1` (the
+ * session is older than five minutes — confirm with a code, then the link starts again).
+ */
+export function accountLinkNoticeFrom(search: string): AccountLinkNotice | null {
+  const params = new URLSearchParams(search);
+  const code = params.get('link_error');
+  const message = code === null || !Object.hasOwn(LINK_ERROR_COPY, code) ? undefined : LINK_ERROR_COPY[code];
+  if (message !== undefined) return { kind: 'error', message };
+  if (params.get('link_step_up') === '1') return { kind: 'step_up' };
+  return null;
+}
+
+export interface SigninNotice {
+  message: string;
+  /** D3 Auth reached no linked account: signing in with the password goes on to link it. */
+  linkAfter: boolean;
+}
+
+/** What a refused D3 Auth sign-in carries back to /signin: its reason, and whether to link after. */
+export function signinNoticeFrom(search: string): SigninNotice | null {
+  const params = new URLSearchParams(search);
+  const message = params.get('signin_error');
+  if (message === null) return null;
+  return { message: message.slice(0, 500), linkAfter: params.get('link_after_signin') === '1' };
+}

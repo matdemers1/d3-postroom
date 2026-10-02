@@ -3,7 +3,7 @@
 // to fail, at boot or later, and an unreachable issuer only means the button is disabled.
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { createAuthClient, identityKey, type AuthClient, type AuthClientOptions } from '@d3cloudio/auth-client';
-import { normalizeDomain, normalizeLocalPart, type Prisma } from '@postroom/db';
+import type { Prisma } from '@postroom/db';
 
 export const SCOPE = 'openid profile email d3:roles';
 /** How long after a failed discovery before trying again. */
@@ -331,8 +331,22 @@ export function openTransaction(sessionSecret: string, sealed: string): OidcTran
 
 // ─── Identity resolution ────────────────────────────────────────────────────
 
-/** The one refusal a person can act on: sign in with the password, then link deliberately. */
-export class IdentityCollision extends Error {}
+/**
+ * An identity no account here is linked to. Nothing is created for it (PST-ADR-015): the person signs
+ * in with their password, and Postroom links D3 Auth to that account deliberately.
+ */
+export class NotLinked extends Error {
+  constructor() {
+    super('No Postroom account is linked to this D3 Auth account yet. Sign in with your password once, and D3 Auth will be linked to it.');
+  }
+}
+
+/** A link was asked for, but the identity already signs in to a different account that has a life of its own. */
+export class LinkedElsewhere extends Error {
+  constructor(readonly linkedAccountId: string) {
+    super('This D3 Auth account is already linked to another Postroom account. Unlink it there first.');
+  }
+}
 
 export interface CompletedIdentity {
   iss: string;
@@ -343,16 +357,32 @@ export interface CompletedIdentity {
   linkAccountId?: string;
 }
 
+export interface MovedLink {
+  /** The empty account the link was taken from, now disabled. */
+  from: string;
+  /** Its sessions, ended. */
+  endedSessions: string[];
+}
+
 export interface ResolvedIdentity {
   accountId: string;
-  /** 'existing' by (iss, sub); 'linked' to the signed-in account; 'provisioned' a new account. */
-  outcome: 'existing' | 'linked' | 'provisioned';
+  /** 'existing' by (iss, sub); 'linked' to the signed-in account (new, or moved off an empty one). */
+  outcome: 'existing' | 'linked';
+  /** Set when the link was moved off an empty, auto-provisioned account (PST-ADR-015). */
+  moved?: MovedLink;
 }
 
 /**
  * Resolve a D3 Auth identity to a local account. **By (iss, sub), never by email** (PST-REQ-005):
  * an email is a display attribute a provider may change or reuse, and adopting "the account with
  * this address" would hand it to whoever can make D3 Auth assert that address.
+ *
+ * **D3 Auth never creates an account** (PST-ADR-015): an unlinked identity is refused with
+ * {@link NotLinked}. With `linkAccountId` (the signed-in account asked to link), an identity linked
+ * to that account already is a no-op; one linked to an *empty* account — what first-sign-in
+ * provisioning used to leave behind: no password, no address, not admin, no other link — is moved
+ * here and that account disabled with its sessions ended; one linked to any other account is
+ * refused with {@link LinkedElsewhere}, and nothing changes.
  */
 export async function resolveIdentity(tx: Prisma.TransactionClient, identity: CompletedIdentity, now: Date): Promise<ResolvedIdentity> {
   const key = identityKey({ iss: identity.iss, sub: identity.sub });
@@ -362,46 +392,66 @@ export async function resolveIdentity(tx: Prisma.TransactionClient, identity: Co
   const existing = await tx.identityLink.findUnique({
     where: { issuer_subject: { issuer: identity.iss, subject: identity.sub } },
   });
-  if (existing !== null) {
+  const linkTo = identity.linkAccountId;
+
+  if (existing === null) {
+    if (linkTo === undefined) throw new NotLinked();
+    await tx.identityLink.create({
+      data: { accountId: linkTo, issuer: identity.iss, subject: identity.sub, email, lastUsedAt: now },
+    });
+    return { accountId: linkTo, outcome: 'linked' };
+  }
+
+  if (linkTo === undefined || existing.accountId === linkTo) {
     await tx.identityLink.update({ where: { id: existing.id }, data: { lastUsedAt: now, email } });
     return { accountId: existing.accountId, outcome: 'existing' };
   }
 
-  if (identity.linkAccountId !== undefined) {
-    await tx.identityLink.create({
-      data: { accountId: identity.linkAccountId, issuer: identity.iss, subject: identity.sub, email, lastUsedAt: now },
-    });
-    return { accountId: identity.linkAccountId, outcome: 'linked' };
-  }
+  if (!(await isEmptyAccount(tx, existing.accountId))) throw new LinkedElsewhere(existing.accountId);
 
-  // An address here already holds the email the provider asserts, and no identity links to it.
-  // Refuse rather than adopt — and refuse as a handled outcome, never as a unique-violation 5xx.
-  if (email !== null && (await addressExists(tx, email))) {
-    throw new IdentityCollision(
-      'An account here already uses that address. Sign in with your password, then link D3 Auth from your account — Postroom never joins the two by email.',
-    );
-  }
-
-  const account = await tx.account.create({
-    data: {
-      displayName: (identity.name ?? email ?? 'D3 Auth user').slice(0, 200),
-      identityLinks: { create: { issuer: identity.iss, subject: identity.sub, email, lastUsedAt: now } },
-    },
+  // Guarded on the holder it was read with: a concurrent move commits first or this one fails.
+  const moved = await tx.identityLink.updateMany({
+    where: { id: existing.id, accountId: existing.accountId },
+    data: { accountId: linkTo, lastUsedAt: now, email },
   });
-  return { accountId: account.id, outcome: 'provisioned' };
+  if (moved.count !== 1) throw new LinkedElsewhere(existing.accountId);
+  await tx.account.update({ where: { id: existing.accountId }, data: { disabledAt: now } });
+  const sessions = await tx.session.findMany({ where: { accountId: existing.accountId }, select: { id: true } });
+  const endedSessions = sessions.map((s) => s.id);
+  await tx.session.deleteMany({ where: { id: { in: endedSessions } } });
+  return { accountId: linkTo, outcome: 'linked', moved: { from: existing.accountId, endedSessions } };
 }
 
-async function addressExists(tx: Prisma.TransactionClient, email: string): Promise<boolean> {
-  const at = email.lastIndexOf('@');
-  if (at <= 0 || at === email.length - 1) return false;
-  let localPart: string;
-  let domain: string;
-  try {
-    localPart = normalizeLocalPart(email.slice(0, at));
-    domain = normalizeDomain(email.slice(at + 1));
-  } catch {
-    return false;
-  }
-  const found = await tx.address.findFirst({ where: { localPart, domain: { name: domain } }, select: { id: true } });
-  return found !== null;
+/**
+ * What first-sign-in provisioning created and nothing since has made real: a person with no password,
+ * no authenticator, not an admin, no address of its own or as an alias target, no mailbox, no app
+ * password, and this identity its only link. Such an account has no way in but the link and nothing
+ * to lose, so moving the link off it and disabling it loses nothing. The row is locked first, so it
+ * cannot gain a password or an address between this check and the move (PST-ADR-015).
+ */
+async function isEmptyAccount(tx: Prisma.TransactionClient, accountId: string): Promise<boolean> {
+  await tx.$queryRaw`SELECT id FROM account WHERE id = ${accountId}::uuid FOR UPDATE`;
+  const account = await tx.account.findUnique({
+    where: { id: accountId },
+    select: {
+      passwordHash: true,
+      isAdmin: true,
+      kind: true,
+      totpEnabled: true,
+      _count: { select: { addresses: true, addressTargets: true, mailboxes: true, appPasswords: true, identityLinks: true } },
+    },
+  });
+  if (account === null) return false;
+  const c = account._count;
+  return (
+    account.passwordHash === null &&
+    !account.isAdmin &&
+    account.kind === 'person' &&
+    !account.totpEnabled &&
+    c.addresses === 0 &&
+    c.addressTargets === 0 &&
+    c.mailboxes === 0 &&
+    c.appPasswords === 0 &&
+    c.identityLinks === 1
+  );
 }

@@ -1,6 +1,8 @@
 // PST-T-17.7: the step-up the D3 Auth writes share — the same contract as Device setup and the
 // Sign-in sessions screen. The action runs; a 403 step_up_required opens "Confirm it is you", and
-// once the code is accepted the action runs again. Cancelling settles it with null.
+// once the code is accepted the action runs again. Cancelling settles it with null. `askFirst` opens
+// the prompt straight away, for an action the server has already said needs it (PST-T-17.16: a link
+// started from a session older than five minutes comes back to the Account screen to confirm).
 import { type ReactElement, type SyntheticEvent, useCallback, useId, useRef, useState } from 'react';
 import { Button, FormField, Input, Modal, ModalClose } from '@d3cloud/ui';
 import { ApiError, api, describeError } from '../../api';
@@ -14,7 +16,7 @@ interface Pending {
 export type WithStepUp = <T>(action: () => Promise<T>) => Promise<T | null>;
 
 /** `why` finishes "… so it needs a code from your authenticator." in the prompt. */
-export function useStepUp(why: string): { withStepUp: WithStepUp; prompt: ReactElement } {
+export function useStepUp(why: string): { withStepUp: WithStepUp; askFirst: WithStepUp; prompt: ReactElement } {
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -22,19 +24,26 @@ export function useStepUp(why: string): { withStepUp: WithStepUp; prompt: ReactE
   const pending = useRef<Pending | null>(null);
   const formId = useId();
 
+  /** Opens the prompt; once a code is accepted, `action` runs and settles the promise. */
+  const askFirst: WithStepUp = useCallback(
+    <T,>(action: () => Promise<T>): Promise<T | null> =>
+      new Promise<T | null>((resolve, reject) => {
+        pending.current?.resolve(null);
+        pending.current = { action, resolve: resolve as (value: unknown) => void, reject };
+        setCode('');
+        setCodeError(null);
+        setOpen(true);
+      }),
+    [],
+  );
+
   const withStepUp: WithStepUp = useCallback(
     <T,>(action: () => Promise<T>): Promise<T | null> =>
       action().catch((caught: unknown) => {
         if (!(caught instanceof ApiError && caught.code === 'step_up_required')) throw caught;
-        return new Promise<T | null>((resolve, reject) => {
-          pending.current?.resolve(null);
-          pending.current = { action, resolve: resolve as (value: unknown) => void, reject };
-          setCode('');
-          setCodeError(null);
-          setOpen(true);
-        });
+        return askFirst(action);
       }),
-    [],
+    [askFirst],
   );
 
   const cancel = () => {
@@ -103,5 +112,5 @@ export function useStepUp(why: string): { withStepUp: WithStepUp; prompt: ReactE
     </Modal>
   );
 
-  return { withStepUp, prompt };
+  return { withStepUp, askFirst, prompt };
 }

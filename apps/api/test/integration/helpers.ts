@@ -85,4 +85,19 @@ export async function createAccount(
   return { id: account.id, totpSecret };
 }
 
+/**
+ * An account that only D3 Auth reaches: no password, no address, not an admin, one identity link —
+ * what first-sign-in provisioning used to make before PST-ADR-015. D3 Auth never creates an account
+ * now, so a test that signs in with D3 Auth makes (and links) one first.
+ */
+export async function createD3AuthAccount(db: Db, issuer: string, subject: string, opts: { displayName?: string; email?: string } = {}): Promise<string> {
+  const account = await db.account.create({
+    data: {
+      displayName: opts.displayName ?? subject,
+      identityLinks: { create: { issuer, subject, email: opts.email ?? null } },
+    },
+  });
+  return account.id;
+}
+
 export const randomLogin = (): string => `u${randomBytes(4).toString('hex')}`;
