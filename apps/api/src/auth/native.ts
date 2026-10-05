@@ -16,6 +16,8 @@ import { bearerOf, issueNativeSession, rotateNativeSession, type Device } from '
 import { LinkedElsewhere, resolveIdentity } from './oidc.js';
 import { decoyHash, verifyPassword } from './passwords.js';
 import { formatRecoveryCode, generateRecoveryCodes, hashRecoveryCodes, matchRecoveryCode, normalizeRecoveryCode, spendRecoveryCode } from './recovery.js';
+import { requestDeletion } from './account-lifecycle.js';
+import { InviteStep, inviteStep } from './invite-accept.js';
 import { ANY_LOGIN, anonymous, asAccount, endOtherSessions, findByLogin, logThrottled, primaryAddress, replaceAuthenticator } from './routes.js';
 import { CHALLENGE_TTL_MS, MAX_CODE_ATTEMPTS, REENROL_TTL_MS, runtimeFor, type AuthRuntime } from './runtime.js';
 import { deleteSession, resolveSession } from './sessions.js';
@@ -44,6 +46,7 @@ const SignIn = z.union([
   z.object({ challenge: z.string().min(1).max(200), recoveryCode: z.string().min(1).max(64) }),
   z.object({ challenge: z.string().min(1).max(200), enrolTotp: z.string().min(1).max(64) }),
 ]);
+const DeleteAccount = z.object({ confirmation: z.string().max(300), totp: z.string().min(1).max(64) });
 const Refresh = z.object({ refreshToken: z.string().min(1).max(200) });
 const Link = z.union([
   z.object({ email: z.string().min(1).max(320), password: z.string().min(1).max(1024), totp: z.string().min(1).max(64), recoveryCode: z.undefined().optional() }),
@@ -84,8 +87,8 @@ export function manifestRoute(deps: ApiDeps): Router {
           nativeRevoke: `${base}/api/auth/native/revoke`,
           me: `${base}/api/auth/native/me`,
           link: issuer === null ? null : `${base}/api/auth/native/link`,
-          inviteAccept: null,
-          deleteAccount: null,
+          inviteAccept: `${base}/api/auth/native/invite`,
+          deleteAccount: `${base}/api/auth/native/delete-account`,
           relayRegister: `${base}/api/push/native/register`,
         },
       });
@@ -222,6 +225,111 @@ export function nativeRoutes(deps: ApiDeps): Router {
         return;
       }
       await link(rt, req, res, parsed.data);
+    }),
+  );
+
+  // Accepting an invite natively (PST-T-20.2): the same two steps as the web page, in problem+json,
+  // ending in a native session named by the device.
+  router.post(
+    '/invite',
+    handle(async (req, res) => {
+      const parsed = InviteStep.safeParse(req.body);
+      if (!parsed.success) {
+        problem(res, 400, null, 'That request is not an invitation');
+        return;
+      }
+      await inviteStep(rt, req, res, parsed.data, 'native');
+    }),
+  );
+
+  /**
+   * Deleting your own account from the app (PST-T-20.3, PST-ADR-016): the host name typed out and a
+   * current code, then a seven-day grace period. Only a person can ask — a native session or a linked
+   * D3 Auth token in the Authorization header; never a cookie, never an app password. The checks run
+   * in the contract's order, and the code is checked before the last-owner rule, so a wrong code is
+   * always invalid_code.
+   */
+  router.post(
+    '/delete-account',
+    handle(async (req, res) => {
+      const token = bearerOf(req);
+      let session = token === null ? null : await resolveSession(db, token, rt.now(), 'bearer');
+      if (session === null && token !== null && looksLikeProviderToken(token)) {
+        const outcome = await materializeD3AuthSession(rt, token, resourceOf(deps.config.webOrigin), req, getAuditContext(req));
+        if (outcome === 'session') session = await resolveSession(db, token, rt.now(), 'bearer');
+      }
+      if (session === null) {
+        problem(res, 401, 'session_revoked', 'Sign in again to delete this account');
+        return;
+      }
+      const parsed = DeleteAccount.safeParse(req.body);
+      if (!parsed.success) {
+        problem(res, 400, null, 'That request is not a deletion');
+        return;
+      }
+      const kek = rt.kek;
+      if (kek === null) {
+        problem(res, 503, null, 'Sign-in is not configured on this server');
+        return;
+      }
+      const host = new URL(deps.config.webOrigin).hostname.toLowerCase();
+      if (parsed.data.confirmation.trim().toLowerCase() !== host) {
+        problem(res, 422, null, 'The confirmation doesn’t match', { detail: `Type ${host} exactly to confirm.` });
+        return;
+      }
+      const accountId = session.accountId;
+      const ip = req.ip ?? 'unknown';
+      const key = `delete:${accountId}`;
+      const wait = rt.throttle.retryAfter(key, ip, nowMs());
+      if (wait > 0) {
+        logThrottled(req);
+        throttled(res, wait);
+        return;
+      }
+      const account = await db.account.findUnique({ where: { id: accountId }, select: { totpEnabled: true, totpSecret: true } });
+      if (account === null || !account.totpEnabled || account.totpSecret === null) {
+        problem(res, 422, null, 'This account has no authenticator', { detail: 'Set one up in Postroom’s web app first: deleting an account needs a current code.' });
+        return;
+      }
+      const context = getAuditContext(req);
+      const refuseCode = async (): Promise<void> => {
+        rt.throttle.recordFailure(key, ip, nowMs());
+        await recordAudit(db, {
+          actor: asAccount(accountId),
+          action: 'account.delete.rejected',
+          entityType: 'account',
+          entityId: accountId,
+          after: { factor: 'totp', via: 'native' },
+          context,
+        });
+        problem(res, 401, 'invalid_code', "That code didn't work");
+      };
+      const step = matchStep(openTotpSecret(kek, account.totpSecret, accountId), parsed.data.totp, rt.now());
+      if (step === null) {
+        await refuseCode();
+        return;
+      }
+      const sealed = account.totpSecret;
+      // The code is burned like a sign-in code, in the transaction that acts on it.
+      const outcome = await db.$transaction(async (tx) => {
+        if (!(await burnStep(tx, accountId, step, sealed))) return { kind: 'code' } as const;
+        return requestDeletion(tx, accountId, rt.now(), context);
+      });
+      if (outcome.kind === 'code') {
+        await refuseCode();
+        return;
+      }
+      rt.throttle.clear(key, ip);
+      if (outcome.kind === 'last_owner') {
+        problem(res, 409, 'last_owner', 'You’re the last admin', { detail: 'Make someone else an admin of this Postroom first, then delete this account.' });
+        return;
+      }
+      if (outcome.kind === 'gone') {
+        problem(res, 401, 'session_revoked', 'This account is already being deleted');
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(202).json({ graceUntil: outcome.graceUntil.toISOString() });
     }),
   );
 

@@ -11,6 +11,7 @@ export type Place = 'mail' | 'settings' | 'admin' | 'auth';
 export type RouteId =
   | 'setup'
   | 'signin'
+  | 'invite'
   | 'mail'
   | 'mailFolder'
   | 'calendar'
@@ -34,6 +35,7 @@ export type RouteId =
   | 'adminSmtp'
   | 'adminJobs'
   | 'adminSessions'
+  | 'adminPeople'
   | 'adminSignIn'
   | 'adminSuppressions'
   | 'adminSetup';
@@ -71,6 +73,8 @@ const r = (route: Omit<AppRoute, 'adminOnly' | 'palette' | 'keywords'> & Partial
 export const ROUTES: readonly AppRoute[] = [
   r({ id: 'setup', path: '/setup', title: 'Setup', place: 'auth', palette: false }),
   r({ id: 'signin', path: '/signin', title: 'Sign in', place: 'auth', palette: false }),
+  // PST-T-20.2: an invite link (/invite/<token>, or /invite?token=) — before any sign-in.
+  r({ id: 'invite', path: '/invite/*', title: 'Accept invite', place: 'auth', palette: false }),
 
   // Mail. The mailboxes themselves are data, not routes — the sidebar and the palette list them.
   r({ id: 'mail', path: '/', title: 'Mail', place: 'mail', palette: false, shortcut: 'goInbox' }),
@@ -124,6 +128,8 @@ export const ROUTES: readonly AppRoute[] = [
   r({ id: 'adminSmtp', path: '/admin/smtp', title: 'Live SMTP', place: 'admin', navGroup: 'Live SMTP', adminOnly: true, keywords: 'smtp sessions transcripts', hint: 'SMTP transcripts (was “SMTP sessions”)' }),
   r({ id: 'adminJobs', path: '/admin/jobs', title: 'Jobs', place: 'admin', navGroup: 'Jobs', adminOnly: true, keywords: 'queue replay failed pipeline' }),
   r({ id: 'adminSessions', path: '/admin/sessions', title: 'Sign-in sessions', place: 'admin', navGroup: 'Sign-in sessions', adminOnly: true, keywords: 'sessions devices accounts', hint: 'Every account’s web sign-ins (was “Sessions”)' }),
+  // PST-T-20.2/20.3: who has an account, the invites that make new ones, deletions in their grace period.
+  r({ id: 'adminPeople', path: '/admin/people', title: 'People', place: 'admin', navGroup: 'People', adminOnly: true, keywords: 'accounts users invite invitations members delete restore' }),
   // PST-T-17.7 (PST-REQ-201, PST-REQ-204): Sign in with D3 Auth, configured from the console.
   r({ id: 'adminSignIn', path: '/admin/sign-in', title: 'Sign in with D3 Auth', place: 'admin', navGroup: 'Sign in with D3 Auth', adminOnly: true, keywords: 'oidc d3 auth sso single sign-on' }),
   r({ id: 'adminSuppressions', path: '/admin/suppressions', title: 'Suppressions', place: 'admin', navGroup: 'Suppressions', adminOnly: true, keywords: 'suppression list bounces blocked' }),

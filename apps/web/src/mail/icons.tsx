@@ -89,6 +89,13 @@ export const FolderIcon = () => (
     <path d="M3 6h6l2 2h10v11H3z" />
   </Svg>
 );
+/** A phone, for "Open in D3 Constellation" (PST-T-20.1) — drawn after lucide's `smartphone`. */
+export const SmartphoneIcon = () => (
+  <Svg size={16}>
+    <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+    <path d="M12 18h.01" />
+  </Svg>
+);
 export const ComposeIcon = () => (
   <Svg size={16}>
     <path d="M12 5v14M5 12h14" />

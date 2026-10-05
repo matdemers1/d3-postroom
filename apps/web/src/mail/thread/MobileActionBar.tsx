@@ -16,6 +16,7 @@
 // (thread scope, next message, Undo toast), Move and Snooze open its picker, and Inspect is
 // keys.ts's requestInspect(). Which buttons a mailbox gets is ThreadToolbar's own toolbarModel().
 import { useRef } from 'react';
+import { CONSTELLATION_LABEL, onApple, openInConstellation } from '../../components/OpenInConstellation';
 import { ActionBar, ActionBarItem, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@d3cloud/ui';
 import type { Mailbox, MessageDetail } from '../../api';
 import { ArchiveIcon, FolderIcon, TrashIcon } from '../icons';
@@ -75,6 +76,8 @@ export function MobileActionBar({ detail, canArchive, canTrash, onAction, onMove
           <MenuItem onSelect={() => { onAction('star'); }}>{starred ? 'Unstar' : 'Star'}</MenuItem>
           <MenuSeparator />
           <MenuItem onSelect={() => { afterMenu(() => { requestInspect(moreRef.current); }); }}>Inspect message</MenuItem>
+          {/* PST-T-20.1: the phone hides the toolbar, so the app link lives in the bar's menu. */}
+          {onApple() ? <MenuItem onSelect={() => { openInConstellation(detail.id); }}>{CONSTELLATION_LABEL}</MenuItem> : null}
         </MenuContent>
       </Menu>
     </ActionBar>

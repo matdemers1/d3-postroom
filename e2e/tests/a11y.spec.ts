@@ -185,6 +185,8 @@ const SCREENS: Screen[] = [
   { name: 'Settings — Rules', path: () => '/settings/rules', ready: h1('Rules & sorting'), data: /\/api\/sieve\/scripts(\?|$)/ },
   { name: 'Settings — Templates', path: () => '/settings/templates', ready: h1('Templates'), data: /\/api\/templates(\?|$)/ },
   { name: 'Admin — Sign-in sessions', path: () => '/admin/sessions', ready: h1('Sign-in sessions'), data: /\/api\/admin\/sessions(\?|$)/, admin: true },
+  // PST-T-20.2/20.3: always has data (the operator's own account is listed).
+  { name: 'Admin — People', path: () => '/admin/people', ready: h1('People'), data: /\/api\/admin\/people$/, empty: false, admin: true },
   // PST-T-17.7: always has data (the connection values and manifest come from the server's own config).
   { name: 'Admin — Sign in with D3 Auth', path: () => '/admin/sign-in', ready: h1('Sign in with D3 Auth'), data: /\/api\/admin\/auth\/d3auth$/, empty: false, admin: true },
   { name: 'Admin — Health', path: () => '/admin/health', ready: h1('Health'), data: /\/api\/admin\/health(\?|$)/, admin: true },

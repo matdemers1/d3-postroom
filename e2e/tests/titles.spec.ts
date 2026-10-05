@@ -29,6 +29,7 @@ const SCREENS: readonly (readonly [string, string])[] = [
   ['/admin/smtp', 'Live SMTP'],
   ['/admin/jobs', 'Jobs'],
   ['/admin/sessions', 'Sign-in sessions'],
+  ['/admin/people', 'People'],
   ['/admin/sign-in', 'Sign in with D3 Auth'],
   ['/admin/suppressions', 'Suppressions'],
   ['/admin/setup', 'Setup'],

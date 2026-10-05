@@ -82,6 +82,14 @@ export const api = {
   sessions: () => call<{ sessions: AccountSession[] }>('GET', '/api/auth/sessions'),
   endSession: (id: string) => call<{ ok: true }>('DELETE', `/api/auth/sessions/${encodeURIComponent(id)}`),
   adminSessions: () => call<{ sessions: AdminSession[] }>('GET', '/api/admin/sessions'),
+  // PST-T-20.2: the invite page's two steps — the account, then its authenticator and the cookie.
+  inviteAccept: (input: { token: string; displayName: string; password: string }) => call<InviteEnrolment>('POST', '/api/auth/invite', input),
+  inviteEnrol: (input: { challenge: string; enrolTotp: string }) => call<{ ok: true; address: string; recoveryCodes: string[] }>('POST', '/api/auth/invite', input),
+  // PST-T-20.2/20.3: Admin › People. Every write needs a fresh step-up.
+  people: () => call<People>('GET', '/api/admin/people'),
+  createInvite: (input: { address: string; displayName?: string; isAdmin?: boolean }) => call<CreatedInvite>('POST', '/api/admin/people/invites', input),
+  revokeInvite: (id: string) => call<{ ok: true }>('DELETE', `/api/admin/people/invites/${encodeURIComponent(id)}`),
+  restoreAccount: (id: string) => call<{ ok: true }>('POST', `/api/admin/people/accounts/${encodeURIComponent(id)}/restore`),
   revokeSession: (id: string) => call<{ ok: true }>('DELETE', `/api/admin/sessions/${encodeURIComponent(id)}`),
   adminHealth: () => call<{ tiles: HealthTile[] }>('GET', '/api/admin/health'),
   // PST-T-6.3 (PST-REQ-117, PST-REQ-118): the SMTP transcript browser.
@@ -903,6 +911,53 @@ export interface AccountSession {
   current: boolean;
 }
 
+/** The invite page's first answer (PST-T-20.2): the account exists; this enrols its authenticator. */
+export interface InviteEnrolment {
+  challenge: string;
+  address: string;
+  enrolment: { secret: string; otpauthUri: string; digits: number; period: number };
+}
+
+export type InviteStateName = 'pending' | 'accepted' | 'revoked' | 'expired';
+
+export interface PersonRow {
+  id: string;
+  displayName: string;
+  address: string | null;
+  isAdmin: boolean;
+  secondFactor: 'enrolled' | 'none';
+  disabledAt: string | null;
+  /** Set while the account waits out its deletion grace period (PST-ADR-016). */
+  deleteAfter: string | null;
+  createdAt: string;
+}
+
+export interface InviteRow {
+  id: string;
+  address: string;
+  displayName: string | null;
+  isAdmin: boolean;
+  state: InviteStateName;
+  createdBy: string | null;
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+}
+
+export interface People {
+  domain: string;
+  accounts: PersonRow[];
+  invites: InviteRow[];
+}
+
+/** The link is shown once: only its hash is kept. */
+export interface CreatedInvite {
+  id: string;
+  address: string;
+  url: string;
+  expiresAt: string;
+}
+
 export interface AdminSession {
   id: string;
   accountId: string;
@@ -1097,6 +1152,17 @@ export function describeError(error: unknown): string {
       return 'This account signs in with D3 Auth and has no password here to change.';
     case 'step_up_required':
       return 'That needs a fresh authentication code.';
+    case 'invite_invalid':
+      return 'This invite can’t be used: it has been used, withdrawn or has expired. Ask for a new one.';
+    case 'address_taken':
+      return 'That address is already in use. Choose another.';
+    case 'invite_pending':
+      return 'That address already has an invite waiting. Withdraw it first.';
+    case 'foreign_domain':
+    case 'invalid_address':
+      return typeof (error.body as { message?: unknown } | null)?.message === 'string' ? (error.body as { message: string }).message : 'That address can’t be invited.';
+    case 'not_pending':
+      return 'That has already changed. Reload to see where it stands.';
     case 'totp_reenrol_required':
       return 'You signed in with a recovery code. Set up a new authenticator first.';
     default:

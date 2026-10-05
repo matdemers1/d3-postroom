@@ -38,6 +38,8 @@ import { importRoutes } from './import/index.js';
 import { mobileconfigOnceRoutes, mobileconfigRoutes } from './mobileconfig/index.js';
 import { accountIdentityRoutes, adminRoutes, authRoutes, csrfGuard, d3authAdminRoutes, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import { manifestRoute, nativeRoutes } from './auth/native.js';
+import { inviteWebRoutes } from './auth/invite-web.js';
+import { peopleRoutes } from './admin-people/index.js';
 import { pushRoutes } from './push/routes.js';
 import { isSecureOrigin } from './auth/sessions.js';
 import type { ApiDeps } from './deps.js';
@@ -135,6 +137,8 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/auth/native', nativeRoutes(deps));
   // Push registration for D3 Constellation (PST-T-20.4).
   app.use('/api/push', pushRoutes(deps));
+  // Accepting an invite on the web (PST-T-20.2): no session yet; the CSRF header as ever.
+  app.use('/api/auth/invite', inviteWebRoutes(deps));
   app.use('/api/auth', authRoutes(deps));
   if (adminDevEnabled(deps.env)) app.use('/api/admin/dev', requireAdmin(deps), adminDevRoutes(deps));
   app.use('/api/admin/health', requireAdmin(deps), adminHealthRoutes(deps));
@@ -148,6 +152,8 @@ export function createApp(deps: ApiDeps): Express {
   app.use('/api/admin/setup-wizard', requireAdmin(deps), setupWizardRoutes(deps));
   // PST-T-17.6 (PST-ADR-014): Sign in with D3 Auth configured from the console.
   app.use('/api/admin/auth/d3auth', requireAdmin(deps), d3authAdminRoutes(deps));
+  // PST-T-20.2/20.3: Admin › People — invites, and accounts waiting out a deletion.
+  app.use('/api/admin/people', requireAdmin(deps), peopleRoutes(deps));
   app.use('/api/admin', requireAdmin(deps), adminRoutes(deps));
   // PST-T-17.6 (PST-REQ-202): the caller's linked D3 Auth identities.
   app.use('/api/account', requireSession(deps), accountIdentityRoutes(deps));
