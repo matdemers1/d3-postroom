@@ -2,6 +2,8 @@ import { getAuditContext, recordAudit } from '@postroom/audit';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { ApiDeps } from '../deps.js';
 import { runtimeFor, STEP_UP_MS, type AuthRuntime } from './runtime.js';
+import { looksLikeProviderToken, materializeD3AuthSession, resourceOf } from './d3auth-bearer.js';
+import { bearerOf } from './native-sessions.js';
 import { readCookie, resolveSession, sessionCookieName, type ResolvedSession } from './sessions.js';
 
 // The session a request carries, resolved at most once per request.
@@ -9,8 +11,21 @@ const loaded = new WeakMap<Request, ResolvedSession | null>();
 
 export async function sessionOf(rt: AuthRuntime, req: Request): Promise<ResolvedSession | null> {
   if (loaded.has(req)) return loaded.get(req) ?? null;
-  const token = readCookie(req, sessionCookieName(rt.secure));
-  const session = token === null ? null : await resolveSession(rt.db, token, rt.now());
+  // The browser's cookie, or a native client's Bearer access token (PST-T-19.3) — each resolving only
+  // its own kind of session.
+  const cookie = readCookie(req, sessionCookieName(rt.secure));
+  const bearer = cookie === null ? bearerOf(req) : null;
+  let session =
+    cookie !== null
+      ? await resolveSession(rt.db, cookie, rt.now(), 'cookie')
+      : bearer !== null
+        ? await resolveSession(rt.db, bearer, rt.now(), 'bearer')
+        : null;
+  // A D3 Auth access token seen for the first time becomes a session row of its own (PST-T-19.3).
+  if (session === null && bearer !== null && looksLikeProviderToken(bearer)) {
+    const outcome = await materializeD3AuthSession(rt, bearer, resourceOf(rt.webOrigin), req, getAuditContext(req));
+    if (outcome === 'session') session = await resolveSession(rt.db, bearer, rt.now(), 'bearer');
+  }
   loaded.set(req, session);
   return session;
 }
@@ -131,6 +146,20 @@ export function csrfGuard(deps: ApiDeps): RequestHandler {
   const origin = new URL(deps.config.webOrigin).origin;
   return (req, res, next) => {
     if (SAFE_METHODS.has(req.method) || CSRF_EXEMPT.has(req.path)) {
+      next();
+      return;
+    }
+    // The native routes (PST-P-19) never read a cookie and never set one: tokens go out in the
+    // body and come back as a Bearer header. A forged request there has no ambient credential to
+    // spend, and a forged sign-in hands its tokens to the forger's own page, never to a victim.
+    if (req.path.startsWith('/auth/native/')) {
+      next();
+      return;
+    }
+    // A native client (PST-T-19.3): a Bearer token and no cookie. CSRF is a browser riding its own
+    // ambient cookie; a request that carries no cookie has nothing ambient to ride, and a page on
+    // another site cannot attach somebody's Bearer token.
+    if (bearerOf(req) !== null && req.headers.cookie === undefined) {
       next();
       return;
     }

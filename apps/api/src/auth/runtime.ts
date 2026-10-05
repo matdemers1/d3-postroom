@@ -30,6 +30,23 @@ export interface TotpChallenge {
    * ten Argon2id verifies, and concurrent guesses must not each get to run them.
    */
   checking: boolean;
+  /** A native sign-in (PST-T-19.2): the device it names, carried to the session the code issues. */
+  device?: { name: string; platform: string };
+}
+
+/**
+ * A native sign-in that spent a recovery code (PST-T-19.2, CON-ADR-014): the new authenticator the
+ * app shows, keyed by the fresh challenge it was answered with. No session exists until a code from
+ * the new secret proves it; then the authenticator, recovery codes and session are written together.
+ */
+export interface NativeReenrol {
+  accountId: string;
+  login: string;
+  secret: string;
+  exp: number;
+  attempts: number;
+  checking: boolean;
+  device?: { name: string; platform: string };
 }
 
 /**
@@ -89,6 +106,7 @@ export interface AuthRuntime {
   setups: BoundedMap<PendingSetup>;
   challenges: BoundedMap<TotpChallenge>;
   reenrols: BoundedMap<PendingReenrol>;
+  nativeReenrols: BoundedMap<NativeReenrol>;
   /** Re-enrolment Begins per session id (PST-T-16.28). */
   reenrolBegins: WindowLimiter;
 }
@@ -203,6 +221,7 @@ export function runtimeFor(deps: ApiDeps): AuthRuntime {
     setups: new BoundedMap(32),
     challenges: new BoundedMap(1_000),
     reenrols: new BoundedMap(256),
+    nativeReenrols: new BoundedMap(256),
     reenrolBegins: new WindowLimiter(REENROL_BEGINS_PER_WINDOW, REENROL_TTL_MS, 1_000),
   };
   runtimes.set(deps, rt);

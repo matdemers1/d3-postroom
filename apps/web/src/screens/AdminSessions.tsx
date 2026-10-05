@@ -113,9 +113,12 @@ export function AdminSessions() {
       </Button>
     );
 
+  // A native app's own name for itself (PST-T-19.4) before any guess from its user agent.
+  const deviceLabel = (s: AdminSession): string => (s.deviceName !== null && s.deviceName !== '' ? s.deviceName : describeAgent(s.userAgent));
+
   const device = (s: AdminSession) => (
     <span className="pr-clip" {...(s.userAgent === null ? {} : { title: s.userAgent })}>
-      {describeAgent(s.userAgent)}
+      {deviceLabel(s)}
     </span>
   );
 
@@ -174,7 +177,7 @@ export function AdminSessions() {
                 meta={s.current ? <span>{CURRENT_SESSION_LABEL}</span> : null}
                 description={
                   <span className="pr-list-desc">
-                    {describeAgent(s.userAgent)} · {methodLabel(s.method)} · <RelativeTime iso={s.createdAt} />
+                    {deviceLabel(s)} · {methodLabel(s.method)} · <RelativeTime iso={s.createdAt} />
                     {s.ip === null ? null : (
                       <>
                         {' · '}

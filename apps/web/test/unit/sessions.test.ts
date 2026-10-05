@@ -67,6 +67,15 @@ describe('a Browser sessions row (PST-T-17.9, critique 2.3)', () => {
     expect(sessionRowText({ userAgent: 'curl/8.4.0', ip: null, current: false })).toEqual({ title: 'Unknown browser', lead: 'Unknown address', marked: false });
   });
 
+  it('names a native app by the device it signed in from (PST-T-19.4)', () => {
+    expect(sessionRowText({ userAgent: 'Constellation/1.0', ip: '10.0.0.4', current: false, deviceName: "Matt's iPhone", devicePlatform: 'ios' })).toEqual({
+      title: "Matt's iPhone",
+      lead: 'Constellation · 10.0.0.4',
+      marked: false,
+    });
+    expect(sessionRowText({ userAgent: null, ip: null, current: false, deviceName: 'Studio', devicePlatform: 'macos' }).lead).toBe('Constellation on Mac · Unknown address');
+  });
+
   it('draws no <details> disclosure, no badge in the meta column and no red row action', () => {
     expect(screen).not.toContain('<SessionDetails');
     expect(screen).not.toContain('<Badge');

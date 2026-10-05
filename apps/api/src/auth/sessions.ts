@@ -130,20 +130,37 @@ export function metaOf(row: {
   };
 }
 
-/** A live session for this cookie value, or null. Expired, absolute-aged and disabled all mean null. */
-export async function resolveSession(db: Db, token: string, now: Date): Promise<ResolvedSession | null> {
+/**
+ * A live session for this token, or null. Expired, absolute-aged and disabled all mean null.
+ *
+ * `via` keeps the two kinds apart: a cookie only ever resolves a browser session, and a Bearer token
+ * only a native one (PST-T-19.2) — so a web cookie lifted into an Authorization header is nothing,
+ * and a native access token pasted into a cookie is nothing either.
+ */
+export async function resolveSession(
+  db: Db,
+  token: string,
+  now: Date,
+  via: 'cookie' | 'bearer' = 'cookie',
+): Promise<ResolvedSession | null> {
   const row = await db.session.findUnique({
     where: { idHash: hashToken(token) },
     include: { account: { select: { displayName: true, isAdmin: true, totpEnabled: true, disabledAt: true } } },
   });
-  if (row === null) return null;
-  const absoluteEnd = row.createdAt.getTime() + ABSOLUTE_MS;
-  if (row.expiresAt.getTime() <= now.getTime() || absoluteEnd <= now.getTime() || row.account.disabledAt !== null) {
-    return null;
-  }
-  const slid = Math.min(now.getTime() + IDLE_MS, absoluteEnd);
-  if (slid - row.expiresAt.getTime() > SLIDE_EVERY_MS) {
-    await db.session.update({ where: { id: row.id }, data: { expiresAt: new Date(slid) } });
+  if (row === null || row.native !== (via === 'bearer')) return null;
+  if (row.native) {
+    // A native access token lives NATIVE_ACCESS_MS and never slides: renewing is the refresh
+    // token's job, and the refresh token's window is what bounds the session.
+    if (row.expiresAt.getTime() <= now.getTime() || row.account.disabledAt !== null) return null;
+  } else {
+    const absoluteEnd = row.createdAt.getTime() + ABSOLUTE_MS;
+    if (row.expiresAt.getTime() <= now.getTime() || absoluteEnd <= now.getTime() || row.account.disabledAt !== null) {
+      return null;
+    }
+    const slid = Math.min(now.getTime() + IDLE_MS, absoluteEnd);
+    if (slid - row.expiresAt.getTime() > SLIDE_EVERY_MS) {
+      await db.session.update({ where: { id: row.id }, data: { expiresAt: new Date(slid) } });
+    }
   }
   const meta = metaOf(row);
   return {

@@ -8,6 +8,7 @@ import { AddressKind, normalizeLocalPart, parseAddress, type Account, type Db, t
 import express, { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { ApiDeps } from '../deps.js';
+import { liveSessionWhere } from './native-sessions.js';
 import { currentSession, handle, refuseUntilReenrolled, requireSession, requireStepUp, sessionOf } from './middleware.js';
 import {
   LinkedElsewhere,
@@ -101,11 +102,11 @@ const PasswordChange = z.object({
   endOtherSessions: z.boolean().optional(),
 });
 /** The per-IP throttle key: every login from one address, counted together. */
-const ANY_LOGIN = '\u0000*';
+export const ANY_LOGIN = '\u0000*';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** An attempt refused by the throttle is an attempt to get past anti-automation (ASVS 5.0 16.3.3). */
-function logThrottled(req: Request): void {
+export function logThrottled(req: Request): void {
   process.stderr.write(`${JSON.stringify({ event: 'auth-throttled', method: req.method, path: req.path, ip: req.ip ?? null, requestId: getAuditContext(req).requestId })}\n`);
 }
 
@@ -149,15 +150,15 @@ function badRequest(res: Response, error: z.ZodError): void {
   });
 }
 
-const anonymous: Actor = { kind: 'anonymous' };
-const asAccount = (accountId: string): Actor => ({ kind: 'account', accountId });
+export const anonymous: Actor = { kind: 'anonymous' };
+export const asAccount = (accountId: string): Actor => ({ kind: 'account', accountId });
 
 /**
  * "Sign out everywhere": every session of the account but `keep` ends, audited as
  * auth.session.revoke-others. Runs inside the caller's transaction. Also used when a recovery-code
  * session re-enrols its authenticator (PST-T-16.28), with `reason` saying so.
  */
-async function endOtherSessions(
+export async function endOtherSessions(
   tx: Prisma.TransactionClient,
   accountId: string,
   keep: string,
@@ -179,7 +180,7 @@ async function endOtherSessions(
 }
 
 /** The account a login names: `local` at the primary domain, or a full primary address. */
-async function findByLogin(db: Db, login: string): Promise<Account | null> {
+export async function findByLogin(db: Db, login: string): Promise<Account | null> {
   let localPart: string;
   let domainWhere: { name: string } | { isPrimary: true };
   try {
@@ -201,7 +202,7 @@ async function findByLogin(db: Db, login: string): Promise<Account | null> {
   return address?.account ?? null;
 }
 
-async function primaryAddress(db: Db, accountId: string): Promise<string | null> {
+export async function primaryAddress(db: Db, accountId: string): Promise<string | null> {
   const address = await db.address.findFirst({
     where: { accountId, kind: AddressKind.primary },
     include: { domain: true },
@@ -234,6 +235,55 @@ function txCookie(rt: AuthRuntime, res: Response, value: string, maxAgeMs: numbe
     sameSite: 'lax',
     path: '/',
     maxAge: maxAgeMs,
+  });
+}
+
+/**
+ * A new authenticator for an account that signed in with a recovery code (PST-REQ-200): the old
+ * secret overwritten, the new one enrolled with its proving step burnt, and a fresh set of recovery
+ * codes — each audited. Shared by the web re-enrolment and the native sign-in's (PST-T-19.2), so the
+ * two leave an account in exactly the same state.
+ */
+export async function replaceAuthenticator(
+  tx: Prisma.TransactionClient,
+  args: { accountId: string; sealed: Uint8Array<ArrayBuffer>; step: number; hashes: string[]; at: Date; context: ReturnType<typeof getAuditContext> },
+): Promise<void> {
+  const { accountId, sealed, step, hashes, at, context } = args;
+  const old = await tx.account.findUniqueOrThrow({ where: { id: accountId }, select: { totpEnabled: true, totpSecret: true } });
+  // 1. The old authenticator stops working: its secret is overwritten in this commit. (The
+  // audit payload's keys avoid the redactor's secret-ish words, so they stay readable.)
+  await recordAudit(tx, {
+    actor: asAccount(accountId),
+    action: 'auth.totp.invalidate',
+    entityType: 'account',
+    entityId: accountId,
+    before: { authenticator: old.totpEnabled && old.totpSecret !== null ? 'enrolled' : 'none' },
+    after: { authenticator: 'invalidated', reason: 'reenrol' },
+    context,
+  });
+  // 2. The new one, with the step its proving code used already burnt.
+  await tx.account.update({
+    where: { id: accountId },
+    data: { totpSecret: sealed, totpEnabled: true, totpLastStep: BigInt(step) },
+  });
+  await recordAudit(tx, {
+    actor: asAccount(accountId),
+    action: 'auth.totp.enrol',
+    entityType: 'account',
+    entityId: accountId,
+    after: { authenticator: 'enrolled', reason: 'reenrol', signedInWith: 'recovery_code', factorNow: 'totp' },
+    context,
+  });
+  // 3. A fresh set of recovery codes; the old set, used or not, goes with the old authenticator.
+  const replaced = await replaceRecoveryCodes(tx, accountId, hashes, at);
+  await recordAudit(tx, {
+    actor: asAccount(accountId),
+    action: 'auth.recovery-codes.regenerate',
+    entityType: 'account',
+    entityId: accountId,
+    before: { count: replaced },
+    after: { count: RECOVERY_CODE_COUNT, reason: 'reenrol' },
+    context,
   });
 }
 
@@ -732,7 +782,7 @@ export function authRoutes(deps: ApiDeps): Router {
     handle(async (req, res) => {
       const session = currentSession(req);
       const rows = await db.session.findMany({
-        where: { accountId: session.accountId, expiresAt: { gt: rt.now() } },
+        where: { accountId: session.accountId, ...liveSessionWhere(rt.now()) },
         orderBy: { createdAt: 'desc' },
       });
       res.json({
@@ -742,6 +792,8 @@ export function authRoutes(deps: ApiDeps): Router {
           expiresAt: row.expiresAt.toISOString(),
           ip: row.ip,
           userAgent: row.userAgent,
+          deviceName: row.deviceName,
+          devicePlatform: row.devicePlatform,
           current: row.id === session.sessionId,
         })),
       });
@@ -964,43 +1016,8 @@ export function authRoutes(deps: ApiDeps): Router {
             data: { secondFactor: 'totp' },
           });
           if (count !== 1) return false as const;
-          const old = await tx.account.findUniqueOrThrow({ where: { id: me.accountId }, select: { totpEnabled: true, totpSecret: true } });
           const context = getAuditContext(req);
-          // 1. The old authenticator stops working: its secret is overwritten in this commit. (The
-          // audit payload's keys avoid the redactor's secret-ish words, so they stay readable.)
-          await recordAudit(tx, {
-            actor: asAccount(me.accountId),
-            action: 'auth.totp.invalidate',
-            entityType: 'account',
-            entityId: me.accountId,
-            before: { authenticator: old.totpEnabled && old.totpSecret !== null ? 'enrolled' : 'none' },
-            after: { authenticator: 'invalidated', reason: 'reenrol' },
-            context,
-          });
-          // 2. The new one, with the step its proving code used already burnt.
-          await tx.account.update({
-            where: { id: me.accountId },
-            data: { totpSecret: sealed, totpEnabled: true, totpLastStep: BigInt(step) },
-          });
-          await recordAudit(tx, {
-            actor: asAccount(me.accountId),
-            action: 'auth.totp.enrol',
-            entityType: 'account',
-            entityId: me.accountId,
-            after: { authenticator: 'enrolled', reason: 'reenrol', signedInWith: 'recovery_code', factorNow: 'totp' },
-            context,
-          });
-          // 3. A fresh set of recovery codes; the old set, used or not, goes with the old authenticator.
-          const replaced = await replaceRecoveryCodes(tx, me.accountId, hashes, at);
-          await recordAudit(tx, {
-            actor: asAccount(me.accountId),
-            action: 'auth.recovery-codes.regenerate',
-            entityType: 'account',
-            entityId: me.accountId,
-            before: { count: replaced },
-            after: { count: RECOVERY_CODE_COUNT, reason: 'reenrol' },
-            context,
-          });
+          await replaceAuthenticator(tx, { accountId: me.accountId, sealed, step, hashes, at, context });
           // 4. A recovery-code sign-in means the authenticator was lost or taken, so every other
           // session of the account ends with it, audited as "sign out everywhere" is (PST-T-16.28).
           return endOtherSessions(tx, me.accountId, me.sessionId, context, 'reenrol');
