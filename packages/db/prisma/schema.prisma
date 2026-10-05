@@ -338,13 +338,38 @@ model Session {
   /// How a password session's second factor was satisfied: "totp" or "recovery_code" (PST-REQ-200).
   /// A recovery-code session must enrol a new authenticator before any step-up action. Null for OIDC.
   secondFactor String? @map("second_factor")
+  /// A native session (PST-T-19.2, the D3 App contract): a device signed in without a browser.
+  /// Its `idHash` is the current access token's, `expiresAt` that token's short expiry, and it
+  /// renews by rotating refresh tokens rather than by sliding.
+  native         Boolean @default(false)
+  /// What the device called itself ("Matthew's iPhone"), for the sessions screen.
+  deviceName     String? @map("device_name")
+  devicePlatform String? @map("device_platform")
 
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  refreshes NativeRefresh[]
 
   @@index([accountId])
   @@index([expiresAt])
   @@index([oidcIssuer, oidcSubject])
   @@map("session")
+}
+
+/// A native session's refresh tokens (PST-T-19.2). Only hashes are stored. Each use rotates:
+/// the presented row is marked `replacedAt` and a new one is issued. A replaced token presented
+/// again is reuse — the session ends — and ending the session removes every row with it.
+model NativeRefresh {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId  String    @map("session_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  replacedAt DateTime? @map("replaced_at") @db.Timestamptz(6)
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("native_refresh")
 }
 
 model Setting {

@@ -37,6 +37,7 @@ import { sesSnsRoutes } from './ses/index.js';
 import { importRoutes } from './import/index.js';
 import { mobileconfigOnceRoutes, mobileconfigRoutes } from './mobileconfig/index.js';
 import { accountIdentityRoutes, adminRoutes, authRoutes, csrfGuard, d3authAdminRoutes, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
+import { manifestRoute, nativeRoutes } from './auth/native.js';
 import { isSecureOrigin } from './auth/sessions.js';
 import type { ApiDeps } from './deps.js';
 
@@ -106,6 +107,8 @@ export function createApp(deps: ApiDeps): Express {
   app.use(autoconfigRoutes(deps));
   // The MTA-STS policy (PST-T-4.12, PST-REQ-094): no session, no CSRF, GET only, text/plain.
   app.use(mtaStsRoutes(deps));
+  // The D3 App manifest, unauthenticated, for D3 Constellation (PST-T-19.1).
+  app.use(manifestRoute(deps));
 
   // Nothing under /api is cacheable unless a route says otherwise (ASVS 5.0 14.3.2, 14.2.2).
   const noStore = (_req: Request, res: Response, next: NextFunction): void => {
@@ -128,6 +131,7 @@ export function createApp(deps: ApiDeps): Express {
     jsonBody(req, res, next);
   };
   app.use('/api', noStore, auditContext(), json, mutationAuditGuard(deps.db), csrfGuard(deps));
+  app.use('/api/auth/native', nativeRoutes(deps));
   app.use('/api/auth', authRoutes(deps));
   if (adminDevEnabled(deps.env)) app.use('/api/admin/dev', requireAdmin(deps), adminDevRoutes(deps));
   app.use('/api/admin/health', requireAdmin(deps), adminHealthRoutes(deps));

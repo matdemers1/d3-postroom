@@ -91,6 +91,7 @@ function fakeDb(opts: { secondFactor?: string | null; codes?: { id: string; code
           oidcIssuer: null,
           oidcSubject: null,
           secondFactor: session.secondFactor,
+          native: false,
           account: { displayName: 'Matt', isAdmin: true, totpEnabled: true, disabledAt: null },
         }),
       update: () => Promise.resolve({}),

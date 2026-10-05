@@ -50,7 +50,14 @@ export interface SessionRowText {
  * title when the agent cannot be named ("Unknown browser" says nothing to the person holding it), or
  * as a marker on the row's right edge beside a named agent ("Chrome on macOS").
  */
-export function sessionRowText(s: Pick<AccountSession, 'userAgent' | 'ip' | 'current'>): SessionRowText {
+export function sessionRowText(
+  s: Pick<AccountSession, 'userAgent' | 'ip' | 'current'> & Partial<Pick<AccountSession, 'deviceName' | 'devicePlatform'>>,
+): SessionRowText {
+  // A native app names itself (PST-T-19.4): "Matt's iPhone" says more than any user agent could.
+  if (typeof s.deviceName === 'string' && s.deviceName !== '') {
+    const app = s.devicePlatform === 'macos' ? 'Constellation on Mac' : 'Constellation';
+    return { title: s.deviceName, lead: `${app} · ${s.ip ?? 'Unknown address'}`, marked: s.current };
+  }
   const agent = describeAgent(s.userAgent);
   const unnamed = agent === 'Unknown device' || agent === 'Unknown browser';
   const ip = s.ip ?? 'Unknown address';

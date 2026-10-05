@@ -3,6 +3,7 @@
 import { audited, getAuditContext, recordAudit } from '@postroom/audit';
 import { Router } from 'express';
 import type { ApiDeps } from '../deps.js';
+import { liveSessionWhere } from './native-sessions.js';
 import { currentSession, handle, requireStepUp } from './middleware.js';
 import { runtimeFor } from './runtime.js';
 import { deleteSession } from './sessions.js';
@@ -19,7 +20,7 @@ export function adminRoutes(deps: ApiDeps): Router {
     handle(async (req, res) => {
       const me = currentSession(req);
       const rows = await db.session.findMany({
-        where: { expiresAt: { gt: rt.now() } },
+        where: liveSessionWhere(rt.now()),
         include: { account: { select: { displayName: true } } },
         orderBy: { createdAt: 'desc' },
         take: 500,
@@ -33,6 +34,8 @@ export function adminRoutes(deps: ApiDeps): Router {
           expiresAt: row.expiresAt.toISOString(),
           ip: row.ip,
           userAgent: row.userAgent,
+          deviceName: row.deviceName,
+          devicePlatform: row.devicePlatform,
           current: row.id === me.sessionId,
         }));
       res.setHeader('Cache-Control', 'no-store');

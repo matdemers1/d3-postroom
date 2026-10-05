@@ -897,6 +897,9 @@ export interface AccountSession {
   expiresAt: string;
   ip: string | null;
   userAgent: string | null;
+  /** The name a native app gave when it signed in (PST-T-19.4); null for a browser. */
+  deviceName: string | null;
+  devicePlatform: string | null;
   current: boolean;
 }
 
@@ -909,6 +912,8 @@ export interface AdminSession {
   expiresAt: string;
   ip: string | null;
   userAgent: string | null;
+  deviceName: string | null;
+  devicePlatform: string | null;
   current: boolean;
 }
 
