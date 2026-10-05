@@ -60,6 +60,7 @@ describe('the route table', () => {
       'Live SMTP',
       'Jobs',
       'Sign-in sessions',
+      'People',
       'Sign in with D3 Auth',
       'Suppressions',
       'Setup',

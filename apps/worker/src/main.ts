@@ -30,6 +30,7 @@ import { createThreadSweeper } from './sweep/thread-sweep.js';
 import { createUploadSweeper, DEFAULT_UPLOAD_MAX_AGE_MS } from './sweep/upload-sweep.js';
 import { startTrainingLoop } from './training/index.js';
 import { startRetentionLoop } from './retention/index.js';
+import { startAccountPurgeLoop } from './account-deletion/purge.js';
 import { startScheduledLoop } from './scheduled/index.js';
 import { accountCapFromEnv, createWebmailCapsEnforcer } from '@postroom/submission/caps';
 
@@ -157,6 +158,12 @@ await runDaemon({
     // pass removes files a crash left without a row. Its own block and its own shutdown hook.
     const retention = startRetentionLoop({ db, blobs: lazyBlobs, intervalMs: envInt(ctx.env, 'RETENTION_SWEEP_MS', 3_600_000), log: ctx.log });
     ctx.onShutdown(() => retention.stop());
+
+    // PST-T-20.3 (PST-ADR-016): accounts whose deletion grace period has passed are purged — every
+    // message's blob reference released, so the last one crypto-shreds it — and then deleted. Its
+    // own block and its own shutdown hook.
+    const accountPurge = startAccountPurgeLoop({ db, blobs: lazyBlobs, intervalMs: envInt(ctx.env, 'ACCOUNT_PURGE_MS', 3_600_000), log: ctx.log });
+    ctx.onShutdown(() => accountPurge.stop());
 
     // PST-T-7.1 (PST-REQ-122): DMARC aggregate and TLS-RPT reports mailed to the report mailboxes
     // (REPORTS_MAILBOX / TLSRPT_MAILBOX) become rows for the Deliverability screen. Its own block

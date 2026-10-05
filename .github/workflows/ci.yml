@@ -179,9 +179,11 @@ jobs:
   # SHA, labelled with the revision and schema Shipyard verifies before and after a swap.
   # The D3 App contract (PST-T-19.5): the conformance suite D3 Constellation's contract publishes,
   # run against this commit's api on a fresh database with a throwaway administrator — manifest,
-  # native sign-in, me, refresh rotation and reuse, revoke, and (destructive, on that throwaway
-  # account) throttling. Beside the gates rather than in front of `images`: it proves the native
-  # contract, and a contract regression should fail the PR without holding back a fix elsewhere.
+  # native sign-in, me, refresh rotation and reuse, revoke, push through a mock relay, invite
+  # acceptance, deletion (wrong code, last owner, a disposable member scheduled) and (destructive,
+  # on that throwaway account) throttling. Beside the gates rather than in front of `images`: it
+  # proves the native contract, and a contract regression should fail the PR without holding back a
+  # fix elsewhere.
   #
   # The suite's image is private while matdemers1/d3-app-contract is (the owner's choice), and this
   # repository's own token cannot read another repository's package. D3_CONTRACT_TOKEN — a token
@@ -239,7 +241,11 @@ jobs:
           docker run --rm --network host -v "$PWD:/out" ghcr.io/matdemers1/d3-app-conformance:contract-1 \
             --base "$(jq -r .base "$ARGS")" --allow-http --product postroom \
             --email "$(jq -r .email "$ARGS")" --password "$(jq -r .password "$ARGS")" \
-            --totp-secret "$(jq -r .totpSecret "$ARGS")" --destructive --relay-listen 18555 --junit /out/conformance.xml
+            --totp-secret "$(jq -r .totpSecret "$ARGS")" --main-is-last-owner \
+            --invite-token "$(jq -r .inviteToken "$ARGS")" \
+            --delete-email "$(jq -r .deleteEmail "$ARGS")" --delete-password "$(jq -r .deletePassword "$ARGS")" \
+            --delete-totp-secret "$(jq -r .deleteTotpSecret "$ARGS")" \
+            --destructive --relay-listen 18555 --junit /out/conformance.xml
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always() && env.D3_CONTRACT_TOKEN != ''
         with:

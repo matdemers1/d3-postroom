@@ -127,6 +127,10 @@ model Account {
   /// The last TOTP time step accepted, so a code cannot be replayed within its window.
   totpLastStep BigInt?     @map("totp_last_step")
   disabledAt   DateTime?   @map("disabled_at") @db.Timestamptz(6)
+  /// The account asked to be deleted (PST-T-20.3, PST-ADR-016): disabled at once, and purged —
+  /// its mailbox crypto-shredded — once `deleteAfter` passes. An admin re-enabling it clears both.
+  deletionRequestedAt DateTime? @map("deletion_requested_at") @db.Timestamptz(6)
+  deleteAfter         DateTime? @map("delete_after") @db.Timestamptz(6)
   /// A person, or a service mailbox an ecosystem app submits through (PST-T-1.12).
   kind         AccountKind @default(person)
   createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -177,6 +181,10 @@ model Account {
 
   // PST-T-16.7: single-use TOTP recovery codes (PST-REQ-197).
   recoveryCodes RecoveryCode[]
+
+  // PST-T-20.2: invites this account (an admin) made, and the one it was made from.
+  invitesMade    AccountInvite[] @relation("InviteCreatedBy")
+  invitedBy      AccountInvite[] @relation("InviteAccount")
 
   @@map("account")
 }
@@ -1587,4 +1595,32 @@ model RecoveryCode {
 
   @@index([accountId])
   @@map("recovery_code")
+}
+
+/// An invitation to make an account here (PST-T-20.2, PST-REQ-170): an admin names the address and
+/// whether it is an admin; the person chooses their name, password and authenticator, on the web at
+/// /invite/<token> or natively through the D3 App contract. Only the token's SHA-256 is stored. It
+/// works once: the account exists from the first step, and the token is then spent.
+model AccountInvite {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash   String    @unique @map("token_hash")
+  /// The new account's primary address at the primary domain (lowercase, CHECK-enforced).
+  localPart   String    @map("local_part")
+  /// A suggested display name; the person may choose another.
+  displayName String?   @map("display_name")
+  isAdmin     Boolean   @default(false) @map("is_admin")
+  createdById String?   @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz(6)
+  /// The account the invite made. Kept null when that account is purged.
+  accountId   String?   @map("account_id") @db.Uuid
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  createdBy Account? @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  account   Account? @relation("InviteAccount", fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([accountId])
+  @@map("account_invite")
 }

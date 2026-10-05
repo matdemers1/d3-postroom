@@ -50,6 +50,21 @@ export interface NativeReenrol {
 }
 
 /**
+ * An invite's second step (PST-T-20.2): the account exists, and this challenge carries the
+ * authenticator it is enrolling. Native or web: a challenge is finished only where it was begun.
+ */
+export interface InviteEnrolment {
+  accountId: string;
+  address: string;
+  secret: string;
+  exp: number;
+  attempts: number;
+  checking: boolean;
+  surface: 'native' | 'web';
+  device?: { name: string; platform: string };
+}
+
+/**
  * A TOTP re-enrolment in flight for one session that signed in with a recovery code (PST-REQ-200).
  * Keyed by session id; nothing is written to the account until a code from the new secret proves it.
  */
@@ -107,6 +122,8 @@ export interface AuthRuntime {
   challenges: BoundedMap<TotpChallenge>;
   reenrols: BoundedMap<PendingReenrol>;
   nativeReenrols: BoundedMap<NativeReenrol>;
+  /** Invites between their two steps (PST-T-20.2). */
+  inviteEnrols: BoundedMap<InviteEnrolment>;
   /** Re-enrolment Begins per session id (PST-T-16.28). */
   reenrolBegins: WindowLimiter;
 }
@@ -222,6 +239,7 @@ export function runtimeFor(deps: ApiDeps): AuthRuntime {
     challenges: new BoundedMap(1_000),
     reenrols: new BoundedMap(256),
     nativeReenrols: new BoundedMap(256),
+    inviteEnrols: new BoundedMap(256),
     reenrolBegins: new WindowLimiter(REENROL_BEGINS_PER_WINDOW, REENROL_TTL_MS, 1_000),
   };
   runtimes.set(deps, rt);

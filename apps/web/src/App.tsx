@@ -34,10 +34,13 @@ import { PaneBoundary } from './screens/PaneBoundary';
 import { Shell } from './screens/Shell';
 import { SignIn } from './screens/SignIn';
 import { ReEnrol } from './screens/reenrol/ReEnrol';
+import { InviteAccept } from './screens/invite/InviteAccept';
+import { isInvitePath } from './screens/invite/token';
+import { AdminPeople } from './screens/AdminPeople';
 
 export const THEME_KEY = 'postroom-theme';
 
-type ShellRouteId = Exclude<RouteId, 'setup' | 'signin' | 'mail' | 'mailFolder'>;
+type ShellRouteId = Exclude<RouteId, 'setup' | 'signin' | 'invite' | 'mail' | 'mailFolder'>;
 
 /** The element for every route in the table (PST-T-14.3). A route added to routes.ts without a
  * screen here fails the typecheck, so the table and the router cannot disagree. */
@@ -65,13 +68,15 @@ const SCREENS: Readonly<Record<ShellRouteId, ReactElement>> = {
   adminSmtp: <AdminSmtpViewer />,
   adminJobs: <AdminJobs />,
   adminSessions: <AdminSessions />,
+  // PST-T-20.2/20.3: invites, and deletions in their grace period.
+  adminPeople: <AdminPeople />,
   // PST-T-17.7: Sign in with D3 Auth, configured from the console.
   adminSignIn: <AdminD3Auth />,
   adminSuppressions: <AdminSuppressions />,
   adminSetup: <SetupWizard />,
 };
 
-const isShellRoute = (id: RouteId): id is ShellRouteId => id !== 'setup' && id !== 'signin' && id !== 'mail' && id !== 'mailFolder';
+const isShellRoute = (id: RouteId): id is ShellRouteId => id !== 'setup' && id !== 'signin' && id !== 'invite' && id !== 'mail' && id !== 'mailFolder';
 
 /** An old URL (/account/*, /app-passwords) lands on its new home, keeping its query string. */
 function Moved({ to }: { to: string }) {
@@ -127,6 +132,9 @@ function Gate() {
       </EntryShell>
     );
   }
+
+  // PST-T-20.2: an invite link is for someone with no account yet — before any sign-in redirect.
+  if (isInvitePath(location.pathname)) return <InviteAccept />;
 
   const target = redirectFor(state, location.pathname, location.search);
   if (target !== null && target !== location.pathname) return <Navigate to={target} replace />;

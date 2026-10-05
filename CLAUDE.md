@@ -8,7 +8,7 @@ wrapped. demers.dev stays on Outlook and is out of scope forever.
 
 The plan of record is **PST** in Foreman (`foreman_brief PST`). Documents: `foreman://PST/overview`,
 `/discovery`, `/research`, `/architecture`, `/data_model`, `/ux_flows`, `/api_contract`,
-`/test_strategy`, `/feature_ideas`. ADRs PST-ADR-001…013, risks PST-R-001…012, 17 phases (PST-P-0…16).
+`/test_strategy`, `/feature_ideas`. ADRs PST-ADR-001…016, risks PST-R-001…012, 17 phases (PST-P-0…16).
 Cite requirements and tasks by human ID (`PST-REQ-049`, `PST-T-1.5`) in commits; declare
 attribution with `foreman_attribute`.
 
@@ -63,7 +63,7 @@ is topological, so a clean build works in one command.
   its own DMARC `p=reject`. Never touch it.
 - No time estimates anywhere; T-shirt sizes only. No Claude attribution in commits.
 
-## The native app contract (PST-P-19)
+## The native app contract (PST-P-19, PST-P-20)
 
 D3 Constellation reaches Postroom through the D3 App contract (`matdemers1/d3-app-contract`,
 CON-ADR-003). All of it is `apps/api/src/auth/native.ts`, `native-sessions.ts` and `d3auth-bearer.ts`:
@@ -93,6 +93,30 @@ CON-ADR-003). All of it is `apps/api/src/auth/native.ts`, `native-sessions.ts` a
   from the relay forgets it. Every notification is envelope v1 sealed to the device and signed with
   HMAC-SHA256 over `timestamp.body`. The worker pushes new Priority mail after filing, never awaited.
   Only https relays, except `RELAY_ALLOW_LOOPBACK_HTTP=1` for CI's mock relay.
-- Conformance: `apps/api/test/conformance-server.ts` boots the api on a throwaway database and writes
-  the suite's arguments; CI's `conformance` job runs `ghcr.io/matdemers1/d3-app-conformance:contract-1`
-  against it, and needs a `D3_CONTRACT_TOKEN` (read:packages) secret while the contract repo is private.
+- **Invites** (PST-T-20.2, `auth/account-lifecycle.ts`, `invite-accept.ts`): an admin invites from
+  Admin › People (`/api/admin/people`, step-up) — an address at the primary domain, member or admin —
+  and gets `https://<host>/invite/<token>` once (only the hash is stored; 7 days). The web page and
+  `POST /api/auth/native/invite` (`endpoints.inviteAccept`) take the same two steps: `{token,
+  displayName, password}` makes the account (token spent) → `{challenge, enrolment}`; `{challenge,
+  enrolTotp}` enrols TOTP, issues ten recovery codes and a session (cookie, or native tokens +
+  `recoveryCodes`). Unknown/used/withdrawn/expired is one `410 invite_invalid`; a policy miss is
+  `422 weak_password` with a `detail`. A wrong code keeps the challenge (15 min). An account left
+  without its authenticator is finished by the same token with the same password.
+- **Deletion** (PST-T-20.3, PST-ADR-016): `POST /api/auth/native/delete-account`
+  (`endpoints.deleteAccount`), Bearer only (native session or linked D3 Auth token; a cookie is
+  `session_revoked`). Order: session → body → host-name confirmation (`422`) → throttle → TOTP
+  (burned; `invalid_code`) → last owner (`409 last_owner`: the last enabled admin who can sign in) →
+  `202 {graceUntil}` seven days out. At once: `disabled_at`, every session row, every app password
+  revoked, every push registration gone. An admin restores it from Admin › People during the grace
+  period. The worker's purge (`apps/worker/src/account-deletion/purge.ts`, `ACCOUNT_PURGE_MS`,
+  hourly) then deletes messages releasing each blob reference — the last one crypto-shreds — and
+  held sends, uploads, finished outbound mail, then the account row (its DAV data, keys, addresses
+  go by cascade). Mail still queued outbound defers the purge.
+- **Open in D3 Constellation** (PST-T-20.1, `apps/web/src/components/OpenInConstellation.tsx`): on
+  Apple devices only, the reading toolbar's button and the phone bar's ⋯ menu open
+  `d3constellation://<host>/postroom/message/<id>`.
+- Conformance: `apps/api/test/conformance-server.ts` boots the api on a throwaway database — the
+  conformance admin as the only owner, an unused member invite and a disposable member — and writes
+  the suite's arguments (CI passes `--main-is-last-owner --invite-token --delete-*`); CI's
+  `conformance` job runs `ghcr.io/matdemers1/d3-app-conformance:contract-1` against it, and needs
+  a `D3_CONTRACT_TOKEN` (read:packages) secret while the contract repo is private.
