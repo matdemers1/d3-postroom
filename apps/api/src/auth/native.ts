@@ -86,7 +86,7 @@ export function manifestRoute(deps: ApiDeps): Router {
           link: issuer === null ? null : `${base}/api/auth/native/link`,
           inviteAccept: null,
           deleteAccount: null,
-          relayRegister: null,
+          relayRegister: `${base}/api/push/native/register`,
         },
       });
     }),

@@ -31,6 +31,7 @@
 // Lock order matches smtp-in's Rejects path (blob, then mailbox): inbound id → blob → mailboxes in
 // account-id order.
 import { BUCKET_FOLDERS, bucketOfMailbox, PEOPLE_KEYWORD, PRIORITY_KEYWORD } from '@postroom/classifier';
+import { pushToAccount } from '@postroom/push';
 import { SpecialUse, type Prisma } from '@postroom/db';
 import { fileLocalMessage } from '@postroom/dsn';
 import { indexMessage } from '@postroom/search';
@@ -504,5 +505,42 @@ export async function fileStage(
     });
   }
 
+  notifyPriority(deps, prior.parse, inbound.receivedAt, result.copies);
   return result;
+}
+
+/**
+ * PST-T-20.5: a message newly filed to Priority reaches every device registered for
+ * postroom.priority — the sender's name, the subject, a link that opens it — collapsed per thread.
+ * People and Everything mail push nothing. After the filing transaction and never awaited: a slow or
+ * missing relay must not hold up delivery, and a failure is logged by the push itself.
+ */
+function notifyPriority(deps: StageDeps, parse: ParseResult, receivedAt: Date, copies: readonly FiledCopy[]): void {
+  const push = deps.push;
+  const kek = deps.kek;
+  if (push === undefined || kek === undefined) return;
+  for (const copy of copies) {
+    if (!copy.created || copy.bucket !== 'priority') continue;
+    void (async () => {
+      const message = await deps.db.message.findUnique({ where: { id: copy.messageId }, select: { threadId: true } });
+      const thread = message?.threadId ?? copy.messageId;
+      await pushToAccount(
+        deps.db,
+        kek(),
+        copy.accountId,
+        {
+          v: 1,
+          category: 'postroom.priority',
+          title: parse.fromName ?? parse.fromAddress ?? 'New mail',
+          body: parse.subject ?? '',
+          thread,
+          link: `d3constellation://${push.host}/postroom/message/${copy.messageId}`,
+          sentAt: (parse.sentAt === null ? receivedAt : new Date(parse.sentAt)).toISOString(),
+        },
+        { collapseId: thread, ...(push.fetch === undefined ? {} : { fetch: push.fetch }) },
+      );
+    })().catch((error: unknown) => {
+      deps.log('priority-push-failed', { messageId: copy.messageId, error: error instanceof Error ? error.message : String(error) });
+    });
+  }
 }

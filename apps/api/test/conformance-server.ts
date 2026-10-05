@@ -25,7 +25,7 @@ await seed(db, { operatorName: 'Operator', domain: 'd3cloud.io' });
 const password = `conformance ${Math.random().toString(36).slice(2)} staple`;
 const { totpSecret } = await createAccount(db, { login: 'conformance', password, isAdmin: true, displayName: 'Conformance' });
 const origin = `http://127.0.0.1:${port}`;
-const app = createApp({ db, env: {}, config: baseConfig(new TestClock(), { webOrigin: origin }) });
+const app = createApp({ db, env: {}, config: baseConfig(new TestClock(), { webOrigin: origin, relayAllowLoopbackHttp: true }) });
 
 const server = app.listen(port, '127.0.0.1', () => {
   writeFileSync(

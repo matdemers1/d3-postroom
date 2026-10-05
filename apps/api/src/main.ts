@@ -16,6 +16,7 @@ await runDaemon({
       config: {
         webDist: envString(ctx.env, 'WEB_DIST', '') || undefined,
         webOrigin: envString(ctx.env, 'WEB_ORIGIN', 'http://localhost:3300'),
+        relayAllowLoopbackHttp: ctx.env['RELAY_ALLOW_LOOPBACK_HTTP'] === '1',
         revision: revision(ctx.env),
         // Blank means unset (envString's rule), so an empty variable never becomes a real secret.
         passwordPepper: envString(ctx.env, 'PASSWORD_PEPPER', '') || undefined,

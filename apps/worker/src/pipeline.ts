@@ -61,6 +61,8 @@ export interface PipelineOptions {
   accountCap?: AccountCap;
   /** PST-T-11.15: the operator alert for an ARF complaint (the feedback stage); without it none is sent, and the result says so. */
   sendAlert?: SendAlert;
+  /** PST-T-20.5: Priority mail pushed to D3 Constellation; absent, nothing is pushed. */
+  push?: StageDeps['push'];
 }
 
 export interface RunOptions {
@@ -113,6 +115,7 @@ export function createInboundPipeline(options: PipelineOptions): InboundPipeline
     ...(options.vacationDailyCap === undefined ? {} : { vacationDailyCap: options.vacationDailyCap }),
     ...(options.accountCap === undefined ? {} : { accountCap: options.accountCap }),
     ...(options.sendAlert === undefined ? {} : { sendAlert: options.sendAlert }),
+    ...(options.push === undefined ? {} : { push: options.push }),
   };
 
   const record = async (id: string, stage: StageName, result: Json): Promise<void> => {

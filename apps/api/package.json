@@ -37,6 +37,7 @@
     "@postroom/mime": "workspace:*",
     "@postroom/pgp": "workspace:*",
     "@postroom/phish": "workspace:*",
+    "@postroom/push": "workspace:*",
     "@postroom/queue": "workspace:*",
     "@postroom/search": "workspace:*",
     "@postroom/submission": "workspace:*",
