@@ -21,6 +21,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Modal, ModalClose, Tooltip } from '@d3cloud/ui';
 import { api, rawMessageUrl, type Mailbox, type MessageDetail } from '../../api';
+import { OpenInConstellation } from '../../components/OpenInConstellation';
 import { snoozeChoices } from '../compose';
 import { mailboxLabel } from '../format';
 import { useFocusReturn } from '../focusReturn';
@@ -143,6 +144,8 @@ export function ThreadToolbar({ detail, canArchive, canTrash, onAction, onMoveTo
           <span className="pr-toolbar__divider" aria-hidden="true" />
         </div>
       )}
+      {/* PST-T-20.1: the same message in D3 Constellation, on Apple devices only. */}
+      <OpenInConstellation messageId={detail.id} />
       <Menu>
         <HintTip text="More actions" align="end">
           <MenuTrigger>
