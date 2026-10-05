@@ -30,7 +30,8 @@ describe.skipIf(baseUrl === undefined)('Priority mail through the relay (PST-T-2
   const device = createECDH('prime256v1');
   device.generateKeys();
   const relayFetch: typeof fetch = (input, init) => {
-    sent.push({ url: String(input), body: String(init?.body ?? '') });
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    sent.push({ url, body: typeof init?.body === 'string' ? init.body : '' });
     return Promise.resolve(new Response('{}', { status: 202 }));
   };
 
