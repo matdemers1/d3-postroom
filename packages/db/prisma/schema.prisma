@@ -135,6 +135,7 @@ model Account {
   outboundMessages OutboundMessage[]
   threads          Thread[]
   identityLinks    IdentityLink[]
+  relayRegistrations RelayRegistration[]
   addresses        Address[]
   addressTargets   AddressTarget[]
   correspondents   Correspondent[]
@@ -287,10 +288,38 @@ model IdentityLink {
   lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  relayRegistrations RelayRegistration[]
 
   @@unique([issuer, subject])
   @@index([accountId])
   @@map("identity_link")
+}
+
+/// A device's push registration (PST-T-20.4, the D3 App contract's push): the relay to post to and
+/// the device key every notification is sealed to. Postroom never holds an APNs token. It belongs to
+/// what signed the device in — a native session, or for a D3 Auth token the identity link — and
+/// goes with it; a 410 from the relay forgets it too.
+model RelayRegistration {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId       String   @map("account_id") @db.Uuid
+  sessionId       String?  @unique @map("session_id") @db.Uuid
+  identityLinkId  String?  @map("identity_link_id") @db.Uuid
+  /// P-256, X9.63 uncompressed, 65 bytes.
+  devicePublicKey Bytes    @map("device_public_key")
+  relayUrl        String   @map("relay_url")
+  registration    String
+  /// The relay's send key, sealed under the KEK: whoever holds it can push to the device.
+  sendKeySealed   Bytes    @map("send_key_sealed")
+  categories      String[]
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  session      Session?      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  identityLink IdentityLink? @relation(fields: [identityLinkId], references: [id], onDelete: Cascade)
+
+  @@unique([relayUrl, registration])
+  @@index([accountId])
+  @@map("relay_registration")
 }
 
 /// A protocol credential. IMAP/SMTP/DAV/Sieve accept these only, never the account password.
@@ -348,6 +377,7 @@ model Session {
 
   account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
   refreshes NativeRefresh[]
+  relayRegistrations RelayRegistration[]
 
   @@index([accountId])
   @@index([expiresAt])

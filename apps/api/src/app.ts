@@ -38,6 +38,7 @@ import { importRoutes } from './import/index.js';
 import { mobileconfigOnceRoutes, mobileconfigRoutes } from './mobileconfig/index.js';
 import { accountIdentityRoutes, adminRoutes, authRoutes, csrfGuard, d3authAdminRoutes, requireAdmin, requireSession, setupPageGuard } from './auth/index.js';
 import { manifestRoute, nativeRoutes } from './auth/native.js';
+import { pushRoutes } from './push/routes.js';
 import { isSecureOrigin } from './auth/sessions.js';
 import type { ApiDeps } from './deps.js';
 
@@ -132,6 +133,8 @@ export function createApp(deps: ApiDeps): Express {
   };
   app.use('/api', noStore, auditContext(), json, mutationAuditGuard(deps.db), csrfGuard(deps));
   app.use('/api/auth/native', nativeRoutes(deps));
+  // Push registration for D3 Constellation (PST-T-20.4).
+  app.use('/api/push', pushRoutes(deps));
   app.use('/api/auth', authRoutes(deps));
   if (adminDevEnabled(deps.env)) app.use('/api/admin/dev', requireAdmin(deps), adminDevRoutes(deps));
   app.use('/api/admin/health', requireAdmin(deps), adminHealthRoutes(deps));

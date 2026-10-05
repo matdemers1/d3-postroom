@@ -29,6 +29,13 @@ export interface ApiConfig {
   domain?: string | undefined;
   /** The clock. Injected by tests so the five-minute step-up window can be walked past. */
   now?: (() => Date) | undefined;
+  /**
+   * Accept a loopback http push relay (RELAY_ALLOW_LOOPBACK_HTTP=1) — for CI's mock relay only;
+   * production relays are https, always (PST-T-20.4).
+   */
+  relayAllowLoopbackHttp?: boolean | undefined;
+  /** How notifications reach the relay. Injected by tests. */
+  relayFetch?: typeof fetch | undefined;
 }
 
 export interface ApiDeps {

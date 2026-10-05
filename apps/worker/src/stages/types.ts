@@ -257,6 +257,11 @@ export interface StageDeps {
   readonly accountCap?: AccountCap;
   /** PST-T-11.15: the operator alert for an ARF complaint, through the D3 Auth relay (PST-REQ-096). */
   readonly sendAlert?: SendAlert;
+  /**
+   * PST-T-20.5: Priority mail pushed to D3 Constellation through the relay. `host` is the public
+   * host the notification's d3constellation:// link names; absent means no pushes.
+   */
+  readonly push?: { readonly host: string; readonly fetch?: typeof fetch };
 }
 
 /** What a stage sees: the spool row and the results of the stages before it. */

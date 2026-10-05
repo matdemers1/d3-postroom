@@ -104,6 +104,9 @@ importers:
       '@postroom/phish':
         specifier: workspace:*
         version: link:../../packages/phish
+      '@postroom/push':
+        specifier: workspace:*
+        version: link:../../packages/push
       '@postroom/queue':
         specifier: workspace:*
         version: link:../../packages/queue
@@ -512,6 +515,9 @@ importers:
       '@postroom/mime':
         specifier: workspace:*
         version: link:../../packages/mime
+      '@postroom/push':
+        specifier: workspace:*
+        version: link:../../packages/push
       '@postroom/queue':
         specifier: workspace:*
         version: link:../../packages/queue
@@ -726,6 +732,15 @@ importers:
         version: link:../mime
 
   packages/proxy-protocol: {}
+
+  packages/push:
+    dependencies:
+      '@postroom/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@postroom/db':
+        specifier: workspace:*
+        version: link:../db
 
   packages/queue:
     dependencies:

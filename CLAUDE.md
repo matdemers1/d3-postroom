@@ -87,6 +87,12 @@ CON-ADR-003). All of it is `apps/api/src/auth/native.ts`, `native-sessions.ts` a
   `POST /api/auth/native/link` proves the account once with password and code.
 - `/api/auth/native/*` is exempt from the CSRF header (no cookie is read or set there), and so is any
   request carrying a Bearer token and no cookie.
+- **Push** (PST-T-20.4/20.5, `packages/push`): `POST /api/push/native/register` takes the device's
+  P-256 key and its relay registration; the send key is sealed under the KEK. A registration belongs
+  to the native session that made it (cascade), or for a D3 Auth token to the identity link; a 410
+  from the relay forgets it. Every notification is envelope v1 sealed to the device and signed with
+  HMAC-SHA256 over `timestamp.body`. The worker pushes new Priority mail after filing, never awaited.
+  Only https relays, except `RELAY_ALLOW_LOOPBACK_HTTP=1` for CI's mock relay.
 - Conformance: `apps/api/test/conformance-server.ts` boots the api on a throwaway database and writes
   the suite's arguments; CI's `conformance` job runs `ghcr.io/matdemers1/d3-app-conformance:contract-1`
   against it, and needs a `D3_CONTRACT_TOKEN` (read:packages) secret while the contract repo is private.

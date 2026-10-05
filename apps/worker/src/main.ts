@@ -71,6 +71,8 @@ await runDaemon({
       blobs: lazyBlobs,
       log: ctx.log,
       kek: () => loadKek({ env: ctx.env }),
+      // PST-T-20.5: Priority mail to D3 Constellation; the link names the webmail's public host.
+      ...(envString(ctx.env, 'WEB_ORIGIN', '') === '' ? {} : { push: { host: new URL(envString(ctx.env, 'WEB_ORIGIN', '')).host } }),
       vacationDailyCap: envInt(ctx.env, 'SIEVE_VACATION_DAILY_CAP', 200),
       accountCap,
       // PST-T-11.15: one operator alert per ARF complaint, through the D3 Auth relay.
