@@ -118,5 +118,6 @@ CON-ADR-003). All of it is `apps/api/src/auth/native.ts`, `native-sessions.ts` a
 - Conformance: `apps/api/test/conformance-server.ts` boots the api on a throwaway database — the
   conformance admin as the only owner, an unused member invite and a disposable member — and writes
   the suite's arguments (CI passes `--main-is-last-owner --invite-token --delete-*`); CI's
-  `conformance` job runs `ghcr.io/matdemers1/d3-app-conformance:contract-1` against it, and needs
-  a `D3_CONTRACT_TOKEN` (read:packages) secret while the contract repo is private.
+  `conformance` job runs `ghcr.io/matdemers1/d3-app-conformance:contract-1` against it, with no
+  token; when the image cannot be pulled, `contract-suite` writes the reason to its summary and
+  `conformance` is skipped, never green (CON-T-002).
