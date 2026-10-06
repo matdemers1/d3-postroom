@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { ReportError, dmarcPassed, parseReportAttachment, unwrapReport, type DmarcAggregateReport, type TlsRptReport } from '../../src/index.js';
+import { ReportError, dmarcPassed, parseReportAttachment, parseTlsRpt, serializeTlsRpt, unwrapReport, type DmarcAggregateReport, type TlsRptReport } from '../../src/index.js';
 
 const dir = join(import.meta.dirname, '..', 'fixtures');
 const file = (suffix: string): { filename: string; bytes: Buffer } => {
@@ -85,6 +85,41 @@ describe('Google TLS-RPT report (.json.gz)', () => {
       },
     ]);
     expect(r.policies[1]).toMatchObject({ policyType: 'no-policy-found', policyString: [], failures: [] });
+  });
+});
+
+// Nightly fuzz run 37015732321 (GitHub issue #35, PST-T-002 / PST-REQ-088): a TLS-RPT report whose
+// "total-failure-session-count" is the JSON number -0. count() let it through (-0 < 0 is false) and
+// kept it as -0, which serializeTlsRpt writes as 0, so the fuzz target's round-trip check failed. A
+// count of -0 is zero; it is read as 0.
+describe('TLS-RPT count of -0 (fuzz crasher, issue #35)', () => {
+  // The target's first byte picks the attachment guise; the report is the rest.
+  const bytes = readFileSync(join(import.meta.dirname, '../../../../fuzz/dmarc-report/fixtures/tlsrpt-negative-zero-count.bin')).subarray(1);
+
+  it('reads -0 as 0 and round-trips through the serializer', () => {
+    const report = parseTlsRpt(bytes);
+    const zero = report.policies.find((p) => p.policyType === 'no-policy-found');
+    expect(Object.is(zero?.totalFailure, 0)).toBe(true);
+    expect(parseTlsRpt(serializeTlsRpt(report))).toStrictEqual(report);
+  });
+
+  it('reads -0 as 0 in every count field', () => {
+    const doc = {
+      'organization-name': 'Example',
+      'date-range': { 'start-datetime': '2026-09-24T00:00:00Z', 'end-datetime': '2026-09-24T23:59:59Z' },
+      'contact-info': 'tls@example.com',
+      'report-id': 'r1',
+      policies: [
+        {
+          policy: { 'policy-type': 'sts', 'policy-domain': 'd3cloud.io' },
+          summary: { 'total-successful-session-count': 1, 'total-failure-session-count': 1 },
+          'failure-details': [{ 'result-type': 'certificate-expired', 'failed-session-count': 1 }],
+        },
+      ],
+    };
+    const text = JSON.stringify(doc).replace(/"(total-successful-session-count|total-failure-session-count|failed-session-count)":1/g, '"$1":-0');
+    const p = parseTlsRpt(Buffer.from(text)).policies[0];
+    expect([p?.totalSuccessful, p?.totalFailure, p?.failures[0]?.failedSessionCount].every((n) => Object.is(n, 0))).toBe(true);
   });
 });
 

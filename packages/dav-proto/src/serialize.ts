@@ -54,7 +54,9 @@ export function serializeXml(root: XmlElement, options: SerializeOptions = {}): 
   const taken = new Set<string>();
   const namespaces = collectNamespaces(root);
   for (const ns of namespaces) {
-    const preferred = PREFERRED_PREFIXES[ns];
+    // Own keys only: a namespace named `__proto__` or `constructor` has no preferred prefix, rather
+    // than Object.prototype's member serialised as `[object Object]:` (fuzz crasher, issue #28).
+    const preferred = Object.hasOwn(PREFERRED_PREFIXES, ns) ? PREFERRED_PREFIXES[ns] : undefined;
     if (preferred !== undefined) {
       prefixes.set(ns, preferred);
       taken.add(preferred);

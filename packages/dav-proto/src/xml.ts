@@ -240,7 +240,8 @@ class Parser {
       if (!/^#[0-9]{1,7}$/.test(name)) this.fail('entity', 'malformed character reference');
       out = this.charFromCode(parseInt(name.slice(1), 10));
     } else {
-      const v = PREDEFINED[name];
+      // Own keys only: `&constructor;` must not expand to Object.prototype's member (issue #28).
+      const v = Object.hasOwn(PREDEFINED, name) ? PREDEFINED[name] : undefined;
       if (v === undefined) this.fail('entity', `undefined entity &${name.slice(0, 20)};`);
       out = v;
     }

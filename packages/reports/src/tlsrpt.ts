@@ -95,7 +95,8 @@ function count(o: Obj, key: string, path: string): number {
   const v = own(o, key);
   if (v === undefined || v === null) missing(path);
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > MAX_COUNT) invalid(path, v);
-  return v;
+  // JSON's -0 passes `v < 0` and is zero; keep it as 0 so the report round-trips (fuzz crasher, issue #35).
+  return v === 0 ? 0 : v;
 }
 
 function strList(o: Obj, key: string, path: string, max: number): string[] {
