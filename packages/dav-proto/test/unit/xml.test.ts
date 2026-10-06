@@ -67,6 +67,31 @@ describe('parseXml — what it keeps', () => {
     expect(serialized).not.toMatch(/xmlns:\w+="http:\/\/www\.w3\.org\/XML\/1998\/namespace"/);
     expect(parseXml(serialized)).toEqual(tree);
   });
+
+  // Nightly fuzz runs 37337228161 and 37476798363 (GitHub issue #28, PST-T-002 / PST-REQ-088): the
+  // serializer looked a namespace's preferred prefix up on a plain object, so a namespace named
+  // `__proto__` (or `constructor`, `toString`, …) found Object.prototype's member instead of nothing
+  // and was written as `<[object Object]:propfind xmlns:[object Object]="__proto__"/>`. Re-parsing
+  // that threw XmlError (`expected a name (at 40)`) from the round-trip parseXml call, past the fuzz
+  // target's allowed() guard.
+  it.each(['proto-namespace-propfind-roundtrip.xml', 'proto-namespace-mkcalendar-roundtrip.xml'])(
+    'round-trips a namespace named __proto__ with a generated prefix (fuzz crasher %s, issue #28)',
+    (fixture) => {
+      const tree = parseXml(readFileSync(join(import.meta.dirname, '../../../../fuzz/dav-proto/fixtures', fixture)));
+      expect(tree.ns).toBe('__proto__');
+      const serialized = serializeXml(tree);
+      expect(serialized).toMatch(/^<x\d+:\w+ xmlns:/m);
+      expect(serialized).not.toContain('[object Object]');
+      expect(parseXml(serialized)).toEqual(tree);
+    },
+  );
+
+  it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty'])('gives a namespace named %s a generated prefix', (ns) => {
+    const tree = parseXml(`<p:a xmlns:p="${ns}"><p:b/></p:a>`);
+    const serialized = serializeXml(tree);
+    expect(serialized).toContain(`<x0:a xmlns:x0="${ns}">`);
+    expect(parseXml(serialized)).toEqual(tree);
+  });
 });
 
 describe('parseXml — XXE and entity expansion are impossible', () => {
@@ -97,6 +122,10 @@ describe('parseXml — XXE and entity expansion are impossible', () => {
     expect(code(() => parseXml('<a>&#0;</a>'))).toBe('entity');
     expect(code(() => parseXml('<a>&#xD800;</a>'))).toBe('entity');
     expect(code(() => parseXml('<a>&amp</a>'))).toBe('entity');
+    // Only the five predefined entities: not anything else Object.prototype happens to have (issue #28).
+    for (const name of ['__proto__', 'constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+      expect(code(() => parseXml(`<a>&${name};</a>`))).toBe('entity');
+    }
   });
 });
 
