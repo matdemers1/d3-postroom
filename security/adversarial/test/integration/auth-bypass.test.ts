@@ -113,6 +113,16 @@ describe.skipIf(DATABASE_URL === undefined)('adversarial: auth bypass (PST-REQ-0
   });
 
   it('submission: empty, NUL-embedded, truncated and undecodable credentials never authenticate', async () => {
+    // The right credential as two base64 blobs glued together: invalid only because the head ends
+    // in '=' padding mid-string. The head is padded only when its byte length is not a multiple of
+    // 3, and the login is random, so cut it one byte later when it would be — otherwise the glued
+    // string is just valid base64 of the right credential.
+    const credential = Buffer.from(`${NUL}${alice.address}${NUL}${alice.smtpPassword}`, 'utf8');
+    let cut = Buffer.byteLength(`${NUL}${alice.address}${NUL}`);
+    if (cut % 3 === 0) cut += 1;
+    const head = credential.subarray(0, cut).toString('base64');
+    expect(head, 'the glued case needs padding mid-string').toMatch(/=$/);
+    const glued = `${head}${credential.subarray(cut).toString('base64')}`;
     const attempts = [
       'AUTH PLAIN =',
       `AUTH PLAIN ${b64(`${NUL}${NUL}`)}`,
@@ -125,7 +135,7 @@ describe.skipIf(DATABASE_URL === undefined)('adversarial: auth bypass (PST-REQ-0
       `AUTH PLAIN ${b64(`${NUL}${alice.address}${NUL}${alice.smtpPassword}`).slice(0, -4)}`,
       'AUTH PLAIN !!!not-base64!!!',
       `AUTH PLAIN ${Buffer.from([0x00, 0xff, 0xfe, 0x00, 0x41]).toString('base64')}`,
-      `AUTH PLAIN ${b64(`${NUL}${alice.address}${NUL}`)}${b64(alice.smtpPassword)}`,
+      `AUTH PLAIN ${glued}`,
     ];
     for (const line of attempts) {
       const c = await sub();
