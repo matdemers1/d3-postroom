@@ -13,7 +13,8 @@ individual commit.
   `delivery`, `dav`, `api`, `worker`), sharing the WireGuard sidecar's network namespace.
 - **Edge.** A stateless AWS Lightsail forwarder and PROXY v2 codec — per-IP connection caps, a
   `421` when home is unreachable, per-IP slots released on client error — plus cloud-init
-  provisioning scripts. Not yet provisioned against a real AWS account.
+  provisioning scripts. Provisioned on Lightsail in `us-east-1` with a static IP whose PTR is
+  `mx.d3cloud.io`.
 - **Crypto and blob store.** A sealed KEK, per-blob DEKs, streaming AEAD that never buffers a whole
   message, and an encrypted content-addressed blob store, refcounted, fsync-before-return.
 - **Audit.** `audited()` transactions, request context, redaction, and a runtime mutation guard
@@ -49,6 +50,21 @@ individual commit.
 - **CI/CD.** `ci.yml` (lint → unit → integration → e2e → fuzz-smoke → GHCR `sha-` images) and
   `security.yml` (gitleaks, Semgrep, ZAP), every action pinned to a commit SHA and every image to a
   digest. Deploys through Shipyard, never by SSH.
+- **Go-live (PST-T-4.5), 2026-09-28.** MX published as `10 mx.d3cloud.io`; the edge open to the
+  internet on 25, 465, 587 and 993 (4190 closed until ManageSieve runs in production); Let's
+  Encrypt certificates by ACME DNS-01; MTA-STS (testing) and TLS-RPT. AWS lifted the port-25 block
+  and set the PTR; outbound is relayed through Amazon SES (`DELIVERY_SES_DOMAINS=*`) while the
+  edge's address earns sending reputation. DKIM no longer covers the Message-ID SES replaces
+  (PST-T-11.19), and SES's Message-ID is kept as an alias so replies thread (PST-T-11.20).
+- **Webmail rebuilds.** Calm Webmail (P14, PST-ADR-011), The Finished Webmail on `@d3cloud/ui` 1.4
+  with compose attachments (P15, PST-ADR-012/013), the design-audit closeout (P16), phone admin
+  and Sign in with D3 Auth configured from the console (P17, PST-ADR-014/015), and the d3cloud.io
+  family mark (P18).
+- **PGP and S/MIME (P12).** Verify and decrypt in Inspect; sign and encrypt outbound with keys
+  sealed under the KEK.
+- **D3 App contract (P19–P20).** `/.well-known/d3-app.json`, native sessions, D3 Auth Bearer
+  tokens, native invites, account deletion with a grace period (PST-ADR-016), and end-to-end
+  encrypted push through a relay.
 - **Public release hygiene (PST-T-13.1, PST-REQ-162).** `.gitleaks.toml` extending the default
   rule set with a narrow, path-exact allowlist for documented synthetic test material; a `gitleaks`
   job scanning full history on every push, pull request and nightly; this README, CHANGELOG,
@@ -56,8 +72,16 @@ individual commit.
 
 ### Known gaps
 
-- The Lightsail edge has never been provisioned against a real AWS account.
-- Postroom has never sent or received mail over the public internet; MX has not been published.
-- Later features (Foreman phases P11–P12) are not started.
+- Outbound leaves through Amazon SES, not direct from the edge: the north-star send to Gmail by
+  direct MX (PST-T-1.14) has not been made, and `DELIVERY_SES_DOMAINS` has not been narrowed.
+- ManageSieve (4190) is not exposed on the public edge.
+- The device QA passes (iPhone Mail, Apple Mail, Thunderbird; iPhone and macOS Calendar and
+  Contacts) have not been run, and their checklist is not written yet (PST-T-3.16, PST-T-3.5,
+  PST-T-8.7, PST-T-11.5).
+- The clean-machine restore drill with the escrowed KEK (PST-T-13.3) and the remaining runbook
+  drills (PST-T-13.2) are still ahead.
+- The Cloudflare canary Worker (PST-T-4.6) is not written.
+- The D3 App conformance job in CI skips until it has a token for the private contract image
+  (PST-T-19.5).
 
 [Unreleased]: https://github.com/matdemers1/d3-postroom/commits/main

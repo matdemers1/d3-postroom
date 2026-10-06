@@ -10,14 +10,20 @@ checks passed, how a message travelled, why it landed where it did.
 
 > [!warning] This is a personal learning build, for one domain
 > Postroom serves **d3cloud.io only**. `demers.dev` stays on Outlook and is out of scope forever.
-> It has not gone live, has never received or sent real mail on the public internet, and makes no
-> claim of production readiness. The point of building it is understanding every part of the
-> protocol stack, not competing with a mature MTA.
+> It is a learning build and makes no claim of production readiness: the point of building it is
+> understanding every part of the protocol stack, not competing with a mature MTA.
+
+**Live since 2026-09-28.** Postroom has served d3cloud.io's mail since go-live (PST-T-4.5): MX is
+published as `10 mx.d3cloud.io`, and the edge is open to the internet on 25, 465, 587 and 993
+(4190 stays closed until a ManageSieve daemon runs in production). Outbound mail is relayed
+through Amazon SES for now (`DELIVERY_SES_DOMAINS=*`) while the edge's new address earns sending
+reputation — AWS has already lifted the port-25 block and set the PTR, so direct MX delivery is
+the next step, not a blocker. The webmail runs at `mail.d3cloud.io`.
 
 ## Architecture
 
 ```
-Internet ──25/465/587/993/4190──▶ AWS Lightsail edge (stateless) ──WireGuard, PROXY v2──▶ home
+Internet ──25/465/587/993──▶ AWS Lightsail edge (stateless) ───────WireGuard, PROXY v2──▶ home
                                                                                                │
                                                                ┌───────────────────────────────┘
                                                                ▼
@@ -29,7 +35,8 @@ Internet ──25/465/587/993/4190──▶ AWS Lightsail edge (stateless) ─�
 - **The edge** (`edge/`) is a stateless forwarder on AWS Lightsail (`us-east-1`). It holds no mail
   and no keys, terminates nothing, and only forwards the mail ports home over WireGuard with
   PROXY v2 so the home daemons see real client addresses. Outbound `:25` goes through it too —
-  Comcast blocks it at home.
+  Comcast blocks it at home. It forwards 25, 465, 587 and 993 today; 4190 (ManageSieve) is
+  forwarded by the code but closed in the firewall until that daemon runs in production.
 - **Everything else** runs on a home server (a ZimaOS box behind a Cloudflare Tunnel), deployed by
   [Shipyard](https://shipyard.d3cloud.io), never by SSH: one image with a per-daemon entrypoint
   (`smtp-in`, `submission`, `imap`, `delivery`, `dav`, `api`, `worker`), sharing the WireGuard
@@ -38,10 +45,13 @@ Internet ──25/465/587/993/4190──▶ AWS Lightsail edge (stateless) ─�
 - **The webmail** (`apps/web`) is React 19 on `@d3cloud/ui`, served by `apps/api`. Sign-in is dual:
   app-native (Argon2id + pepper + TOTP) or Sign in with D3 Auth, linked by `(iss, sub)`, never
   email.
-- **Direct MX delivery** with an SES fallback adapter for outbound that can't be delivered direct.
-- **Nothing listens on the public internet until the security gate passes**: the adversarial suite,
-  parser fuzzing (Jazzer.js, nightly), Semgrep, gitleaks, ZAP and an ASVS 5.0 L2 self-assessment.
-  MX is published only after that gate is green.
+- **Direct MX delivery** with an SES fallback adapter. In production every domain currently goes
+  through SES (`DELIVERY_SES_DOMAINS=*`) while the edge address builds reputation; narrowing that
+  list is how outbound moves to direct delivery (`docs/runbooks/ses.md`).
+- **Nothing listened on the public internet until the security gate passed**: the adversarial
+  suite, parser fuzzing (Jazzer.js, nightly), Semgrep, gitleaks, ZAP and an ASVS 5.0 L2
+  self-assessment. The gate report went green (`security/gate-report.md`) before MX was published
+  on 2026-09-28, and those checks keep running in CI.
 
 ## Layout
 
@@ -49,7 +59,7 @@ Internet ──25/465/587/993/4190──▶ AWS Lightsail edge (stateless) ─�
 |---|---|
 | `apps/` | `edge` forwarder, `smtp-in`, `submission`, `imap`, `delivery`, `dav`, `api`, `worker`, `web` |
 | `packages/` | protocol parsers and shared libraries — `smtp-proto`, `mime`, `imap-proto`, `dav-proto`, `ical`, `vcard`, `sieve`, `auth-checks`, `dnsbl`, `classifier`, `threading`, `phish`, `trackers`, `blobstore`, `queue`, `crypto`, `credentials`, `audit`, `alerts`, `reports`, `dsn`, `imip`, `pgp`, `rfc5322`, `search`, `dns`, `config`, `daemon`, `db`, `proxy-protocol`, … |
-| `workers/canary` | Cloudflare Worker that watches the whole thing from outside |
+| `workers/canary` | Cloudflare Worker that will watch the whole thing from outside (PST-T-4.6, not written yet) |
 | `edge/` | Lightsail provisioning script and cloud-init for the stateless forwarder |
 | `security/adversarial` | The adversarial test suite (PST-REQ-089/090/091's gate) |
 | `fuzz/` | Jazzer.js fuzz harnesses and their seed corpora, one target per parser |
@@ -59,24 +69,38 @@ Internet ──25/465/587/993/4190──▶ AWS Lightsail edge (stateless) ─�
 
 ## Status by phase
 
-Read against the plan of record (Foreman project `PST`, 14 phases). Built means merged to `main`
-and covered by CI; nothing here is deployed to the public internet yet.
+Read against the plan of record, Foreman project `PST`, which has 21 phases (P0–P20). Complete means
+Foreman has closed the phase; in progress means it is open, usually on an operator step (device
+QA, a drill, the north-star send) rather than on code.
 
-| Phase | Area | Status |
+| Phase | Name | Status |
 |---|---|---|
-| P0 | Monorepo scaffold, one-image daemon runtime, edge forwarder + PROXY v2 codec (dev), crypto (KEK/DEK, streaming AEAD), audit transactions, blob store, API skeleton, D3 Auth manifest, CI pipeline | Built |
-| P1 | SMTP wire protocol, DNS + SPF/DKIM/DMARC/ARC checks, DKIM keys (KEK-sealed), Postgres job queue with `NOTIFY`/leases/backoff/dead-letter/replay, outbound + delivery attempts, app passwords | Built |
-| P2 | MIME parsing, inbound spool and verdicts, greylisting, idempotent filing | Built |
-| P3 | IMAP4rev1/rev2, threading, full-text + trigram search, CalDAV/CardDAV protocol groundwork | Built |
-| P4 | Security gate: adversarial suite, fuzzing, Semgrep custom rules, ASVS 5.0 L2 self-assessment (253 requirements, no open fail) | Built |
-| P5–P10 | DKIM rotation, tracker/image-proxy stripping, admin Health/Jobs screens, blocklist monitor, DST-correct iCalendar/vCard with fuzzing, Sieve interpreter, retention + crypto-shred, full account export | Built |
-| P11–P12 | Live edge deploy to AWS, outbound-first go-live rehearsal, later features | **Not started** |
-| P13 | Public release hygiene (this phase): gitleaks over full history, README/CHANGELOG/SECURITY/CONTRIBUTING, licensing | In progress |
+| P0 | Foundation — monorepo, CI, schema, crypto, blob store, audit, dual login, Shipyard deploy, Lightsail edge | In progress |
+| P1 | The North Star — Outbound: submission, queue, DKIM, direct MX delivery, SES fallback | In progress |
+| P2 | Inbound Core: smtp-in, streaming MIME, SPF/DKIM/DMARC/ARC, durable 250 | Complete |
+| P3 | IMAP and Basic Webmail | In progress |
+| P4 | Security Gate and Go-Live: gate report, MX, MTA-STS, TLS-RPT | In progress |
+| P5 | The Self-Sorting Inbox | Complete |
+| P6 | Transparency: Inspect, tracker blocking, live SMTP viewer, delivery timeline | Complete |
+| P7 | Deliverability and Operations | In progress |
+| P8 | Calendars and Contacts | In progress |
+| P9 | Composer and Rules | Complete |
+| P10 | Data and Accounts | Complete |
+| P11 | Hardening | In progress |
+| P12 | PGP and S/MIME | Complete |
+| P13 | Ship: public release, runbooks, clean-machine restore drill | In progress |
+| P14 | Calm Webmail | Complete |
+| P15 | The Finished Webmail | Complete |
+| P16 | Design Audit Closeout | In progress |
+| P17 | Phone Admin and Close-out Polish | Complete |
+| P18 | Family Mark | Complete |
+| P19 | Native App Contract | In progress |
+| P20 | Native App Contract II — Links, Account Lifecycle & Push | In progress |
 
-**Not done, explicitly:** the Lightsail edge has never been provisioned against a real AWS account;
-Postroom has never sent or received mail over the public internet; MX has not been published for
-any domain. The edge/WireGuard code and its provisioning scripts exist and are exercised by CI and
-by the `docker-compose.e2e.yml` override, but "live" is still ahead.
+**Not done, explicitly:** outbound mail has not yet been delivered direct from the edge to Gmail
+(the north-star run, PST-T-1.14) — today it leaves through SES; the device QA passes on iPhone
+Mail, Apple Mail and Thunderbird have not been run; the clean-machine KEK restore drill is still
+ahead (PST-T-13.3); ManageSieve is not exposed publicly.
 
 ## Running it locally
 
@@ -128,7 +152,7 @@ compose file Shipyard rewrites at deploy time.
 
 - `docs/runbooks/` — backups and restore, DKIM rotation, retention/crypto-shred, calibration
   corpus, export, SES fallback, alerts, fuzz-crasher triage
-- `docs/dns.md` — the DNS records Postroom needs once the tunnel is up
+- `docs/dns.md` — the DNS records Postroom publishes, MX included
 - `docs/d3auth/` — the D3 Auth app manifest and registration steps
 - `docs/security/` — the security gate write-up and the ASVS self-assessment
 - `SECURITY.md` — how to report a vulnerability
